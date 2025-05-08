@@ -1,7 +1,7 @@
 //import logo from './logo.svg';
 import './App.css';
-import React,{useEffect} from 'react';
-import { BrowserRouter as Router, Routes, Route,Navigate, Link } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { useSelector } from "react-redux";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -16,7 +16,7 @@ function App() {
   });
   return (
     <Router>
-    {/* <nav>
+      {/* <nav>
       <Link to="/">Home</Link> | <Link to="/about">About</Link>
     </nav>
     <Routes>
@@ -24,11 +24,11 @@ function App() {
       <Route path="/about" element={<About />} />
       <Route path="*" element={<NotFound />} />
     </Routes> */}
-    <Routes>
+      <Routes>
         <Route
           exact
           path="/"
-          element={isLoggedIn ?  <Layout><Navigate to="/home/user" /></Layout> : <LoginPage />}
+          element={isLoggedIn ? <Layout><Navigate to="/home/dashboard" /></Layout> : <LoginPage />}
         ></Route>
         <Route exact path="/registerpage" element={<RegisterPage />}></Route>
         <Route
@@ -37,7 +37,7 @@ function App() {
           element={isLoggedIn ? <Layout><HomePage /></Layout> : <Navigate to="/" />}
         ></Route>
       </Routes>
-  </Router>
+    </Router>
   );
 }
 

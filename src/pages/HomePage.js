@@ -2,7 +2,10 @@ import React, { useState, useEffect } from "react";
 import NavBar from "../components/NavBar";
 import { Route, Routes, Navigate } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
-import Userslist from "./Userslist";
+import DashboardPage from "./DashboardPage";
+import EventPage from "./EventPage";
+import DealPage from "./DealPage";
+import BookingPage from "./BookingPage";
 function HomePage() {
   const navigate = useNavigate();
   const [navbarHeight, setNavbarHeight] = useState(0);
@@ -29,16 +32,16 @@ function HomePage() {
     <div>
       {/* <NavBar onNavbarHeightChange={handleNavbarHeightChange} /> */}
 
-      <div style={{ marginTop: "64px" }}>
+      <div>
         {/* Your router content */}
         <Routes>
           <Route
-            path="/user"
-            element={<Userslist navbarHeight={navbarHeight} />}
+            path="/dashboard"
+            element={<DashboardPage navbarHeight={navbarHeight} />}
           />
-          {/* <Route path="/addproduct" element={<AddProduct />} />
-          <Route path="/masterpage" element={<MasterPage />} />
-          <Route path="/productlist" element={<ProductList />} /> */}
+          <Route path="/eventpage" element={<EventPage />} />
+          <Route path="/dealpage" element={<DealPage />} />
+          <Route path="/bookingpage" element={<BookingPage />} />
           {/* <Route path="/user/:id" element={<UserDetails />} /> */}
           {/* <Route path="/redeemrequests" element={<GiftRequestsPage />} />
 
