@@ -27,7 +27,11 @@
 .App-link {
   color: #61dafb;
 }
-
+.header {
+  background: linear-gradient(90deg, #004D40, #00796B, #00B8D4, #80DEEA);
+  color: white;
+  font-weight: bold;
+}
 @keyframes App-logo-spin {
   from {
     transform: rotate(0deg);

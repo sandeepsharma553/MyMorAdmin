@@ -3,6 +3,11 @@ import NavBar from "../components/NavBar";
 import { Route, Routes, Navigate } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 import DashboardPage from "./DashboardPage";
+import DiningMenuPage from "./DiningMenuPage";
+import CleaningSchedulePage from "./CleaningSchedulePage";
+import MaintenancePage from "./MaintenancePage";
+import AcademicGroupPage from "./AcademicGroupPage";
+import ReportIncidentPage from "./ReportIncidentPage";
 import EventPage from "./EventPage";
 import DealPage from "./DealPage";
 import BookingPage from "./BookingPage";
@@ -35,13 +40,16 @@ function HomePage() {
       <div>
         {/* Your router content */}
         <Routes>
-          <Route
-            path="/dashboard"
-            element={<DashboardPage navbarHeight={navbarHeight} />}
-          />
+          <Route path="/dashboard" element={<DashboardPage navbarHeight={navbarHeight} />}/>
+          <Route path="/diningmenupage" element={<DiningMenuPage />} />
+          <Route path="/cleaningpage" element={<CleaningSchedulePage />} />
+          <Route path="/maintenancepage" element={<MaintenancePage />} />
+          <Route path="/bookingpage" element={<BookingPage />} />
+          <Route path="/academicpage" element={<AcademicGroupPage />} />
+          <Route path="/reportpage" element={<ReportIncidentPage />} />
           <Route path="/eventpage" element={<EventPage />} />
           <Route path="/dealpage" element={<DealPage />} />
-          <Route path="/bookingpage" element={<BookingPage />} />
+         
           {/* <Route path="/user/:id" element={<UserDetails />} /> */}
           {/* <Route path="/redeemrequests" element={<GiftRequestsPage />} />
 

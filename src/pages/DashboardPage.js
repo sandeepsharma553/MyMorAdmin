@@ -8,8 +8,8 @@ export default function DashboardPage(props) {
       {/* Top bar with Add button */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-          + Add
+       <button className="px-4 py-2 bg-black text-white rounded hover:bg-black">
+          + Add Group
         </button>
       </div>
 
