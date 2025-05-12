@@ -20,7 +20,8 @@ export const LoginAdmin = createAsyncThunk(
   "auth/loginadmin",
   async (userData, { rejectWithValue }) => {
     try {
-      const response ={ 'isSuccess': true,'message':'ok','data':{'Id':1,'name': 'sandeep','userRole':1}} //await adminLogin("login", userData);
+      const response =await adminLogin("Auth/Login", userData);
+      //{ 'isSuccess': true,'message':'ok','data':{'Id':1,'name': 'sandeep','userRole':1}} //await adminLogin("login", userData);
       console.log(response);
       return response;
     } catch (error) {
