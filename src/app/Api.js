@@ -1,7 +1,7 @@
 // api.js
 import axios from "axios";
 
-// const API_BASE_URL = "https://localhost:7019/HGH"; // Your API base URL
+// const API_BASE_URL = "https://localhost:7057/api"; // Your API base URL
 const API_BASE_URL = "https://mymorapi-954388218374.asia-south1.run.app/api";
 const apiCall = async (endpoint, method = "GET", data = null) => {
   // console.log(`${API_BASE_URL}/${endpoint}`);

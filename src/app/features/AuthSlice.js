@@ -86,7 +86,7 @@ const AuthSlice = createSlice({
           localStorage.setItem("userData", JSON.stringify(action.payload.data));
         } else {
           state.isLoading = false;
-          state.error = "Invalid user role or login failed.";
+          state.error = "Invalid user or login failed.";
         }
       })
       .addCase(LoginAdmin.rejected, (state, action) => {

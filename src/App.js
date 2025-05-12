@@ -10,10 +10,10 @@ import Layout from './components/Layout';
 function App() {
   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
   // const auth = useSelector((state) => state.auth.user?.data?.userRole);
-  useEffect(() => {
-    // console.log(auth);
-    console.log(isLoggedIn);
-  });
+  // useEffect(() => {
+  //   // console.log(auth);
+  //   console.log(isLoggedIn);
+  // });
   return (
     <Router>
       {/* <nav>
