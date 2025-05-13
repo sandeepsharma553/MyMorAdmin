@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import NavBar from "../components/NavBar";
-import { Route, Routes, Navigate } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 import DashboardPage from "./DashboardPage";
 import DiningMenuPage from "./DiningMenuPage";
@@ -13,12 +12,12 @@ import DealPage from "./DealPage";
 import BookingPage from "./BookingPage";
 function HomePage() {
   const navigate = useNavigate();
-  const [navbarHeight, setNavbarHeight] = useState(0);
+ // const [navbarHeight, setNavbarHeight] = useState(0);
   const [userRole, setUserRole] = useState();
   console.log(userRole);
-  const handleNavbarHeightChange = (height) => {
-    setNavbarHeight(height);
-  };
+  // const handleNavbarHeightChange = (height) => {
+  //   setNavbarHeight(height);
+  // };
   // const userRole = 2;
   useEffect(() => {
     const storedUserData = localStorage.getItem("userData");
@@ -40,7 +39,7 @@ function HomePage() {
       <div>
         {/* Your router content */}
         <Routes>
-          <Route path="/dashboard" element={<DashboardPage navbarHeight={navbarHeight} />}/>
+          <Route path="/dashboard" element={<DashboardPage />}/>
           <Route path="/diningmenupage" element={<DiningMenuPage />} />
           <Route path="/cleaningpage" element={<CleaningSchedulePage />} />
           <Route path="/maintenancepage" element={<MaintenancePage />} />

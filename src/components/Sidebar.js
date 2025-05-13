@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { BeatLoader } from "react-spinners";
 import dummyProfileImage from "../assets/logo1.png";
 import { useNavigate } from "react-router-dom";
-import { LayoutDashboard, Calendar, BadgePercent,Menu, BookOpen,BrushCleaning,Group,Settings, Users,MessageSquareWarning } from "lucide-react";
+import { LayoutDashboard, Calendar,Menu, BookOpen,BrushCleaning,Settings, Users,MessageSquareWarning } from "lucide-react";
 
 function Sidebar({ user, onSectionClick, isLoading, error }) {
   const [activeSection, setActiveSection] = useState("dashboard");
@@ -16,7 +16,7 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
   };
   console.log(user)
 
-  const profileImage = user?.fileName === "null" ? dummyProfileImage : user?.fileName;
+  //const profileImage = user?.fileName === "null" ? dummyProfileImage : user?.fileName;
 
   return (
     <div

@@ -13,7 +13,7 @@ import Button from "@mui/material/Button";
 import Tooltip from "@mui/material/Tooltip";
 import MenuItem from "@mui/material/MenuItem";
 // import AdbIcon from "@mui/icons-material/Adb";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import Badge from "@mui/material/Badge";
 import { useNavigate } from "react-router-dom";
 
@@ -44,7 +44,7 @@ function NavBar({ onLogout, onNavbarHeightChange }) {
       const userData = JSON.parse(storedUserData);
       setUserRole(userData.userRole);
     }
-    console.log(userRole);
+  
     if (navbarRef.current) {
       const navbarHeight = navbarRef.current.offsetHeight;
       onNavbarHeightChange(navbarHeight);

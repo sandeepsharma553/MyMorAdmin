@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 export default function BookingPage(props) {
   const { navbarHeight } = props;
   console.log("navh", navbarHeight);

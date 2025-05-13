@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
-import { Menu, X } from 'lucide-react'; // uses lucide-react for icons
 import '../index.css';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import Footer from './Footer';
 
 export default function Layout({ children }) {
-  const [isOpen, setIsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
     <div className="flex flex-col h-screen overflow-hidden">

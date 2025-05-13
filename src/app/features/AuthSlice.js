@@ -76,7 +76,7 @@ const AuthSlice = createSlice({
         state.isLoading = true;
       })
       .addCase(LoginAdmin.fulfilled, (state, action) => {
-        const userData = action.payload.data;
+        //const userData = action.payload.data;
         if (
           action.payload.isSuccess
         ) {

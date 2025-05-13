@@ -1,7 +1,7 @@
 //import logo from './logo.svg';
 import './App.css';
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from "react-redux";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -9,11 +9,11 @@ import HomePage from "./pages/HomePage";
 import Layout from './components/Layout';
 function App() {
   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
-  // const auth = useSelector((state) => state.auth.user?.data?.userRole);
-  // useEffect(() => {
-  //   // console.log(auth);
-  //   console.log(isLoggedIn);
-  // });
+  const auth = useSelector((state) => state.auth.user?.data?.userRole);
+  useEffect(() => {
+     console.log(auth);
+    console.log(isLoggedIn);
+  });
   return (
     <Router>
       {/* <nav>

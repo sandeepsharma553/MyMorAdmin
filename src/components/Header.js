@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, MenuIcon } from 'lucide-react';
+import {  MenuIcon } from 'lucide-react';
 import '../index.css';
 import Menu from "@mui/material/Menu";
 import Box from "@mui/material/Box";
@@ -9,7 +9,7 @@ import logoImage from "../assets/logo1.png";
 import Avatar from "@mui/material/Avatar";
 import Tooltip from "@mui/material/Tooltip";
 import MenuItem from "@mui/material/MenuItem";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import { logoutAdmin } from "../app/features/AuthSlice";
 export default function Header({ onClick }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);

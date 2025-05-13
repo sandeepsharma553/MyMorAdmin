@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React from "react";
 export default function DashboardPage(props) {
   const { navbarHeight } = props;
   console.log("navh", navbarHeight);

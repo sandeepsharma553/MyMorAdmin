@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 export default function CleaningSchedulePage(props) {
   const { navbarHeight } = props;
   console.log("navh", navbarHeight);
@@ -7,28 +7,28 @@ export default function CleaningSchedulePage(props) {
   const [editingUser, setEditingUser] = useState(null);
   const [userToDelete, setUserToDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-   const [data, setData] = useState(
-        Array.from({ length: 20 }, (_, i) => ({
-          id: i + 1,
-          name: `User ${i + 1}`,
-          email: `user${i + 1}@example.com`,
-          role: i % 2 === 0 ? 'Admin' : 'Member',
-        }))
-      );
+  //  const [data, setData] = useState(
+  //       Array.from({ length: 20 }, (_, i) => ({
+  //         id: i + 1,
+  //         name: `User ${i + 1}`,
+  //         email: `user${i + 1}@example.com`,
+  //         role: i % 2 === 0 ? 'Admin' : 'Member',
+  //       }))
+  //     );
   const handleAddUser = () => {
     if (!newUser.name || !newUser.email) return;
 
     if (editingUser) {
       // Update existing user
-      setData((prev) =>
-        prev.map((u) => (u.id === editingUser.id ? { ...newUser } : u))
-      );
+      // setData((prev) =>
+      //   prev.map((u) => (u.id === editingUser.id ? { ...newUser } : u))
+      // );
     } else {
       // Add new user
-      setData((prev) => [
-        { ...newUser, id: prev.length + 1 },
-        ...prev,
-      ]);
+      // setData((prev) => [
+      //   { ...newUser, id: prev.length + 1 },
+      //   ...prev,
+      // ]);
     }
 
     // Reset
@@ -38,7 +38,7 @@ export default function CleaningSchedulePage(props) {
   };
   const handleDeleteUser = () => {
     if (!userToDelete) return;
-    setData((prev) => prev.filter((u) => u.id !== userToDelete.id));
+    // setData((prev) => prev.filter((u) => u.id !== userToDelete.id));
     setConfirmDeleteOpen(false);
     setUserToDelete(null);
   };

@@ -1,67 +1,17 @@
-import { Card, CardContent } from "@mui/material";
-import React, { useState, useEffect, useRef } from "react";
+import React from "react";
 
 export default function MaintenancePage(props) {
   const { navbarHeight } = props;
   console.log("navh", navbarHeight);
-  const maintenanceData = [
-    {
-      id: "#2025-014",
-      user: "Emily S.",
-      issue: "Plumbing",
-      location: "Room A12",
-      submitted: "Apr 10,2025",
-      status: "New"
-    },
-    {
-      id: "#2025-013",
-      user: "John D.",
-      issue: "Electrical",
-      location: "Room B08",
-      submitted: "In Progress",
-      status: "New"
-    },
-    {
-      id: "#2025-012",
-      user: "Emma S.",
-      issue: "Sink",
-      location: "Room D24",
-      submitted: "In Progress",
-      status: "In Prog"
-    },
-    {
-      id: "#2025-011",
-      user: "Liam W.",
-      issue: "AC",
-      location: "Room C07",
-      submitted: "Completed",
-      status: "Update"
-    },
-    {
-      id: "#2025-010",
-      user: "Noah M.",
-      issue: "At assigned",
-      location: "Olivia",
-      submitted: "View",
-      status: "Nuby"
-    },
-    {
-      id: "#2025-009",
-      user: "Olivia J.",
-      issue: "Plumbing",
-      location: "Kevin",
-      submitted: "Adrellnov",
-      status: "Kevin"
-    }
-  ];
-  
+ 
+ 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Maintenance</h1>
        <button className="px-4 py-2 bg-black text-white rounded hover:bg-black">
-          + Add Group
+          + Add 
         </button>
       </div>
       <div className="p-4 space-y-4">
