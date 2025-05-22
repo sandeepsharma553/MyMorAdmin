@@ -6,6 +6,7 @@ import { useSelector } from "react-redux";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import HomePage from "./pages/HomePage";
+import PrivacyPolicyScreen from "./pages/PrivacyPolicyScreen";
 import Layout from './components/Layout';
 function App() {
   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
@@ -31,6 +32,7 @@ function App() {
           element={isLoggedIn ? <Layout><Navigate to="/home/dashboard" /></Layout> : <LoginPage />}
         ></Route>
         <Route exact path="/registerpage" element={<RegisterPage />}></Route>
+        <Route exact path="/privacy" element={<PrivacyPolicyScreen />}></Route>
         <Route
           index
           path="/home/*"
