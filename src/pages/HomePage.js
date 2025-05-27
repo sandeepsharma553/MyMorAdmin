@@ -11,6 +11,7 @@ import EventPage from "./EventPage";
 import DealPage from "./DealPage";
 import BookingPage from "./BookingPage";
 import AccountDeletionRequest from "./AccountDeletionRequest";
+import UniversityPage from "./UniversityPage";
 function HomePage() {
   const navigate = useNavigate();
  // const [navbarHeight, setNavbarHeight] = useState(0);
@@ -50,6 +51,7 @@ function HomePage() {
           <Route path="/eventpage" element={<EventPage />} />
           <Route path="/dealpage" element={<DealPage />} />
           <Route path="/requestdelete" element={<AccountDeletionRequest />} />
+          <Route path="/university" element={<UniversityPage />} />
          
           {/* <Route path="/user/:id" element={<UserDetails />} /> */}
           {/* <Route path="/redeemrequests" element={<GiftRequestsPage />} />

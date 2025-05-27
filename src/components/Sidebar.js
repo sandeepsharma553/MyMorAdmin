@@ -139,6 +139,18 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
             Event
           </h4>
         </div>
+        <div
+          className={`cursor-pointer ${activeSection === "university"
+              ? "bg-blue-200 border-b-2 border-blue-500"
+              : "hover:bg-gray-300"
+            } rounded-md`}
+          onClick={() => handleClick("university")}
+        >
+          <h4 className="flex items-center gap-2 p-2 text-lg font-semibold">
+            <Calendar size={20} />
+            University
+          </h4>
+        </div>
 
         {/* <div
           className={`cursor-pointer ${activeSection === "dealpage"

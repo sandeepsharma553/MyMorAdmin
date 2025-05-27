@@ -1,11 +1,11 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { adminLogin, adminRegister } from "../Api";
-
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../../firebase";
 export const createAdmin = createAsyncThunk(
   "auth/createadmin",
   async (userData, { rejectWithValue }) => {
     try {
-      const response = await adminRegister("registration", userData);
+      const response = ""//await adminRegister("registration", userData);
       console.log(response);
       window.location.href = "/";
       return response;
@@ -20,8 +20,10 @@ export const LoginAdmin = createAsyncThunk(
   "auth/loginadmin",
   async (userData, { rejectWithValue }) => {
     try {
-      const response =await adminLogin("Auth/Login", userData);
-      //{ 'isSuccess': true,'message':'ok','data':{'Id':1,'name': 'sandeep','userRole':1}} //await adminLogin("login", userData);
+
+      const res = await signInWithEmailAndPassword(auth, userData.EmailID, userData.Password);
+      console.log("User logged in:", res.user);
+     const response =  { 'isSuccess': true,'message':'ok','data':res.user.uid} //await adminLogin("login", userData);
       console.log(response);
       return response;
     } catch (error) {

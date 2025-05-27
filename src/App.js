@@ -1,6 +1,6 @@
 //import logo from './logo.svg';
 import './App.css';
-import React, { useEffect } from 'react';
+import React, { useEffect,useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from "react-redux";
 import LoginPage from "./pages/LoginPage";
@@ -8,13 +8,23 @@ import RegisterPage from "./pages/RegisterPage";
 import HomePage from "./pages/HomePage";
 import PrivacyPolicyScreen from "./pages/PrivacyPolicyScreen";
 import Layout from './components/Layout';
+import { onAuthStateChanged,} from "firebase/auth";
+import { auth } from "./firebase";
 function App() {
-  const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
-  const auth = useSelector((state) => state.auth.user?.data?.userRole);
+   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
+  // const auth = useSelector((state) => state.auth.user?.data?.userRole);
+  const [user, setUser] = useState(null);
   useEffect(() => {
-     console.log(auth);
+     console.log(user);
     console.log(isLoggedIn);
+
   });
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
   return (
     <Router>
       {/* <nav>
