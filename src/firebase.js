@@ -3,6 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getAnalytics } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
+import { getDatabase } from 'firebase/database';
 const firebaseConfig = {
     apiKey: "AIzaSyAFFDyHvLlcQLErywNMN8z7I7hVf97whYs",
     authDomain: "mymor-one.firebaseapp.com",
@@ -18,5 +19,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const analytics = getAnalytics(app);
 const db = getFirestore(app);
-
-export { auth,analytics,db };
+//const db = getDatabase(app);
+const firestore = getFirestore(app)
+export { auth,analytics,db,firestore };

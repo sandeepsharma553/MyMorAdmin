@@ -1,48 +1,81 @@
 import React, { useState, useEffect } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc } from "firebase/firestore";
-import { db } from "../../src/firebase";
+import { db } from "../firebase";
 import { useSelector } from "react-redux";
 import { ref, set } from 'firebase/database';
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 
-const UniversityPage = (props) => {
+const HostelPage = (props) => {
   const [modalOpen, setModalOpen] = useState(false);
-  const [newData, setNew] = useState({ name: '', id: 0 });
+  const [newData, setNew] = useState({ name: '', id: 0, uniId:0 });
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([])
+  const [universities, setUniversities] = useState([]);
   const [isLoading, setIsLoading] = useState(false)
   const uid = useSelector((state) => state.auth.user);
   useEffect(() => {
     getList()
+    fetchUniversities()
   }, [])
   const getList = async () => {
     setIsLoading(true)
-    const querySnapshot = await getDocs(collection(db, 'University'));
-    const documents = querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-    console.log(documents)
-    setList(documents)
+    const uniSnapshot = await getDocs(collection(db, 'University'));
+    const universityMap = {};
+    uniSnapshot.forEach(doc => {
+      universityMap[doc.id] = doc.data().name;
+    });
+
+    // Step 2: Get all hostels
+    const hostelSnapshot = await getDocs(collection(db, 'Hostel'));
+    const hostelsWithUni = hostelSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        name: data.name,
+        uniId: data.uniId,
+        universityName: universityMap[data.uniId] || "Unknown"
+      };
+    });
+
+    console.log(hostelsWithUni)
+    setList(hostelsWithUni)
     setIsLoading(false)
   }
+  const fetchUniversities = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, "University"));
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setUniversities(data);
+    } catch (error) {
+      console.error("Error fetching universities:", error);
+    }
+  };
   const handleAdd = async () => {
     if (!newData.name) return;
+    if (!newData.uniId) {
+     
+      toast.warning("Please select a university");
+      return;
+    }
     if (editingData) {
       try {
-        const docRef = doc(db, 'University', newData.id);
+        const docRef = doc(db, 'Hostel', newData.id);
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
-          toast.warning('university does not exist! Cannot update.');
+          toast.warning('hostel does not exist! Cannot update.');
           return;
         }
-        await updateDoc(doc(db, 'University', newData.id), {
+        await updateDoc(doc(db, 'Hostel', newData.id), {
           uid: uid,
           name: newData.name,
+          uniId:newData.uniId,
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -52,30 +85,22 @@ const UniversityPage = (props) => {
         console.error('Error updating document: ', error);
       }
     } else {
+      console.log(newData,'hos')
       try {
-        const q = query(collection(db, 'University'), where('name', '==', newData.name));
+        const q = query(collection(db, 'Hostel'), where('name', '==', newData.name));
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
           toast.warn('Duplicate found! Not adding.');
           return;
         }
-        await addDoc(collection(db, "University"), {
+        await addDoc(collection(db, "Hostel"), {
           uid: uid,
           name: newData.name,
+          uniId:newData.uniId,
           createdBy: uid,
           createdDate: new Date(),
         });
-        // set(ref(db, 'University/'), {
-        //   name: newData.name,
-        //   createdBy:uid,
-        //   createdDate: new Date(),
-        // }).then(() => {
-        //   console.log('Data added successfully!');
-        // })
-        // .catch((error) => {
-        //   console.error('Error adding data: ', error);
-        // });
         toast.success("Successfully saved");
         getList()
       } catch (error) {
@@ -86,12 +111,12 @@ const UniversityPage = (props) => {
     // Reset
     setModalOpen(false);
     setEditing(null);
-    setNew({ name: '', id: 0,});
+    setNew({ name: '', id: 0, uniId:0 });
   };
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, 'University', newData.id));
+      await deleteDoc(doc(db, 'Hostel', newData.id));
       toast.success('Successfully deleted!');
       getList()
     } catch (error) {
@@ -105,11 +130,11 @@ const UniversityPage = (props) => {
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">University</h1>
+        <h1 className="text-2xl font-semibold">Hostel</h1>
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
-            setNew({ name: '',id:0 });
+            setNew({ name: '', id:0, uniId:0 });
             setModalOpen(true);
           }}>
           + Add
@@ -126,12 +151,14 @@ const UniversityPage = (props) => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">University</th>
+                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Hostel</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {list.map((item, i) => (
                   <tr key={i}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.universityName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button className="text-blue-600 hover:underline mr-3" onClick={() => {
@@ -166,6 +193,20 @@ const UniversityPage = (props) => {
                 value={newData.name}
                 onChange={(e) => setNew({ ...newData, name: e.target.value })}
               />
+              <select
+                value={newData.uniId}
+                onChange={(e) => {
+                  setNew({ ...newData, uniId: e.target.value })
+                }}
+                className="w-full border p-2 rounded"
+              >
+                <option value="">-- Select --</option>
+                {universities.map((uni) => (
+                  <option key={uni.id} value={uni.id}>
+                    {uni.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex justify-end mt-6 space-x-3">
               <button
@@ -216,4 +257,4 @@ const UniversityPage = (props) => {
   );
 };
 
-export default UniversityPage;
+export default HostelPage;
