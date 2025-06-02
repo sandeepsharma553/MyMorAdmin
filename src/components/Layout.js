@@ -24,7 +24,7 @@ export default function Layout({ children }) {
         > */}
         <aside
           className={`bg-gray-100 transition-all duration-300
-        ${sidebarOpen ? 'w-64' : 'w-0'} overflow-hidden`}
+        ${sidebarOpen ? 'w-64' : 'w-0'} overflow-hidden `}
         >
           <Sidebar />
         </aside>

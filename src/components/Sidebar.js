@@ -20,11 +20,11 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
 
   return (
     <div
-      className="bg-gray-200 p-2 w-60 min-h-screen shadow flex flex-col items-center  md:relative "
-      style={{ height: "100vh", maxHeight: "calc(100vh - 64px)" }}
+      className="bg-gray-200 p-2 w-60 min-h-screen shadow flex flex-col items-center  md:relative  "
+      style={{ height: "100vh"}}
     >
       {/* User Profile */}
-      <div className="pb-2">
+      <div className="pb-2 fixed-top">
         {isLoading ? ( // Display loader if isLoading is true
           <BeatLoader size={8} color={"#ffffff"} loading={true} /> // Replace 'Loader' with your loader component
         ) : (
@@ -41,8 +41,8 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
       </div>
 
       {/* User Sections */}
-      <div className="w-full flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-100">
-        <div
+      <div className="w-full scroll-container custom-scroll overflow-hidden scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-100">
+        <div 
           className={`cursor-pointer ${activeSection === "dashboard"
             ? "bg-blue-200 border-b-2 border-blue-500"
             : "hover:bg-gray-300"
@@ -163,6 +163,8 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
             Hostel
           </h4>
         </div>
+       
+       
 
         {/* <div
           className={`cursor-pointer ${activeSection === "dealpage"
