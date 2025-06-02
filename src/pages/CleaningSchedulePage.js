@@ -9,7 +9,7 @@ export default function CleaningSchedulePage(props) {
   const { navbarHeight } = props;
   
   const [modalOpen, setModalOpen] = useState(false);
-  const [newData, setNew] = useState({ roomtype: '', id: 0, time: '', hall: '' });
+  const [form, setForm] = useState({ roomtype: '', id: 0, time: '', hall: '',day:'',date:'' });
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -18,11 +18,9 @@ export default function CleaningSchedulePage(props) {
   const uid = useSelector((state) => state.auth.user);
   useEffect(() => {
     getList()
-    const day = getDayFromDate()
-    setNew({ ...newData, day: day })
   }, [])
-  const getDayFromDate = () => {
-    const date = new Date;
+  const getDayFromDate = (dateString) => {
+    const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { weekday: 'long' });
   };
   const getList = async () => {
@@ -37,22 +35,23 @@ export default function CleaningSchedulePage(props) {
   }
   const handleAdd = async (e) => {
     e.preventDefault();
-    if (!newData.roomtype) return;
+    if (!form.roomtype) return;
     if (editingData) {
       try {
-        const docRef = doc(db, 'CleaningSchedule', newData.id);
+        const docRef = doc(db, 'CleaningSchedule', form.id);
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
           toast.warning('CleaningSchedule does not exist! Cannot update.');
           return;
         }
-        await updateDoc(doc(db, 'CleaningSchedule', newData.id), {
+        await updateDoc(doc(db, 'CleaningSchedule', form.id), {
           uid: uid,
-          roomtype: newData.roomtype,
-          hall: newData.hall,
-          day: newData.day,
-          time: newData.time,
+          roomtype: form.roomtype,
+          hall: form.hall,
+          day: form.day,
+          time: form.time,
+          date:form.date,
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -65,10 +64,13 @@ export default function CleaningSchedulePage(props) {
       try {
         await addDoc(collection(db, "CleaningSchedule"), {
           uid: uid,
-          roomtype: newData.roomtype,
-          hall: newData.hall,
-          day: newData.day,
-          time: newData.time,
+          roomtype: form.roomtype,
+          hall: form.hall,
+          day: form.day,
+          time: form.time,
+          date:form.date,
+          createdBy:uid,
+          createdDate:new Date(),
         });
         toast.success("Successfully saved");
         getList()
@@ -80,12 +82,12 @@ export default function CleaningSchedulePage(props) {
     // Reset
     setModalOpen(false);
     setEditing(null);
-    setNew({ roomtype: '', id: 0, time: '', hall: '' });
+    setForm({ roomtype: '', id: 0, time: '', hall: '',day:'',date:'' });
   };
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, 'CleaningSchedule', newData.id));
+      await deleteDoc(doc(db, 'CleaningSchedule', form.id));
       toast.success('Successfully deleted!');
       getList()
     } catch (error) {
@@ -102,7 +104,7 @@ export default function CleaningSchedulePage(props) {
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
-            setNew({ roomtype: '', id: 0,  time: '', hall: '' });
+            setForm({ roomtype: '', id: 0,  time: '', hall: '',day:'',date:'' });
             setModalOpen(true);
           }}>
           + Add
@@ -135,12 +137,12 @@ export default function CleaningSchedulePage(props) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button className="text-blue-600 hover:underline mr-3" onClick={() => {
                         setEditing(item);
-                        setNew(item);
+                        setForm(item);
                         setModalOpen(true);
                       }}>Edit</button>
                       <button className="text-red-600 hover:underline" onClick={() => {
                         setDelete(item);
-                        setNew(item);
+                        setForm(item);
                         setConfirmDeleteOpen(true);
                       }}>Delete</button>
                     </td>
@@ -163,32 +165,45 @@ export default function CleaningSchedulePage(props) {
               <input
                 type="text"
                 className="w-full border border-gray-300 p-2 rounded"
-                value={newData.roomtype}
-                onChange={(e) => setNew({ ...newData, roomtype: e.target.value })}
+                value={form.roomtype}
+                onChange={(e) => setForm({ ...form, roomtype: e.target.value })}
                 required
               />
               <label className="block font-medium mb-1">Hall</label>
               <input
                 type="text"
                 className="w-full border border-gray-300 p-2 rounded"
-                value={newData.hall}
-                onChange={(e) => setNew({ ...newData, hall: e.target.value })}
+                value={form.hall}
+                onChange={(e) => setForm({ ...form, hall: e.target.value })}
                 required
               />
+              <label className="block font-medium mb-1">Date:</label>
+                <input
+                  type="date"
+                  className="w-full border border-gray-300 p-2 rounded"
+                  onChange={(e) => {
+                    const selectedDate = e.target.value;
+                    console.log(selectedDate)
+                    const day = getDayFromDate(selectedDate);
+                    setForm(prev => ({ ...prev, date: selectedDate, day }));
+                  }}
+                  required
+                />
+             
               <label className="block font-medium mb-1">Day</label>
               <input
                 type="text"
                 className="w-full border border-gray-300 p-2 rounded"
-                value={newData.day}
-                onChange={(e) => setNew({ ...newData, day: e.target.value })}
+                value={form.day}
+                onChange={(e) => setForm({ ...form, day: e.target.value })}
                 required
               />
               <label className="block font-medium mb-1">Time</label>
               <input
                 type="text"
                 className="w-full border border-gray-300 p-2 rounded"
-                value={newData.time}
-                onChange={(e) => setNew({ ...newData, time: e.target.value })}
+                value={form.time}
+                onChange={(e) => setForm({ ...form, time: e.target.value })}
                 required
               />
             </div>
