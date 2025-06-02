@@ -15,7 +15,7 @@ function App() {
   // const auth = useSelector((state) => state.auth.user?.data?.userRole);
   const [user, setUser] = useState(null);
   useEffect(() => {
-     console.log(user);
+
     console.log(isLoggedIn);
 
   });

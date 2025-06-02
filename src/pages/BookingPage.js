@@ -7,7 +7,7 @@ import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 export default function BookingPage(props) {
   const { navbarHeight } = props;
-  console.log("navh", navbarHeight);
+  
   const [roomType, setRoomType] = useState('Study Room');
   const [date, setDate] = useState('2025-05-14');
   const [selectedTime, setSelectedTime] = useState('');

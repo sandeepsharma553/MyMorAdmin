@@ -1,7 +1,7 @@
   import React, { useState } from "react";
   export default function DealPage(props) {
     const { navbarHeight } = props;
-    console.log("navh", navbarHeight);
+    
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const [modalOpen, setModalOpen] = useState(false);

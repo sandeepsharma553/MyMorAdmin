@@ -14,7 +14,6 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
     }
     navigate(`/home/${section}`);
   };
-  console.log(user)
 
   //const profileImage = user?.fileName === "null" ? dummyProfileImage : user?.fileName;
 

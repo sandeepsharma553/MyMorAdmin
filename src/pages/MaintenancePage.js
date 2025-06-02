@@ -7,7 +7,6 @@ import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 export default function MaintenancePage(props) {
   const { navbarHeight } = props;
-  console.log("navh", navbarHeight);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({ id: 0, roomno: "", problemcategory: "", itemcategory: "", item: "", description: "", cause: "", comments: "", image: null, });
   const [editingData, setEditing] = useState(null);
@@ -22,18 +21,39 @@ export default function MaintenancePage(props) {
   }, [])
   const getList = async () => {
     setIsLoading(true)
-    const querySnapshot = await getDocs(collection(db, 'Maintenance'));
-    const documents = querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-    setList(documents)
+
+    const querySnapshot = await getDocs(collection(db, 'User'));
+    const userMap = {};
+    querySnapshot.forEach(doc => {
+      const data = doc.data();
+
+      const username =
+        data.username || 
+        data.UserName || 
+        data.USERNAME || 
+        "Unknown"; // fallback if none found
+      userMap[doc.data().uid] = username
+    });
+  
+    // Step 2: Get all hostels
+    const maintenanceSnapshot = await getDocs(collection(db, 'Maintenance'));
+    const maintenanceWithuser = maintenanceSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...doc.data(),
+        userName: userMap[data.uid] || ""
+      };
+    });
+
+    setList(maintenanceWithuser)
     setIsLoading(false)
-    console.log(documents)
+    console.log(maintenanceWithuser,'man')
   }
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.roomno) return;
+    setIsLoading(true)
     let imageUrl = "";
     if (form.image) {
       const imageRef = ref(storage, `maintenance/${Date.now()}_${form.image.name}`);
@@ -86,7 +106,7 @@ export default function MaintenancePage(props) {
         console.error("Error saving data:", error);
       }
     }
-
+    setIsLoading(false)
     // Reset
     setModalOpen(false);
     setEditing(null);

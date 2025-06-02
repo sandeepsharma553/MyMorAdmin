@@ -1,7 +1,7 @@
 import React from "react";
 export default function AcademicGroupPage(props) {
   const { navbarHeight } = props;
-  console.log("navh", navbarHeight);
+  
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}

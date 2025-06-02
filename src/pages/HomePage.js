@@ -17,7 +17,7 @@ function HomePage() {
   const navigate = useNavigate();
  // const [navbarHeight, setNavbarHeight] = useState(0);
   const [userRole, setUserRole] = useState();
-  console.log(userRole);
+  
   // const handleNavbarHeightChange = (height) => {
   //   setNavbarHeight(height);
   // };
@@ -28,7 +28,7 @@ function HomePage() {
       const userData = JSON.parse(storedUserData);
       setUserRole(userData.userRole);
     }
-    console.log(userRole);
+    
     if (userRole === 4) {
       navigate("allVisits");
     }

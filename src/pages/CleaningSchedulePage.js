@@ -7,7 +7,7 @@ import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 export default function CleaningSchedulePage(props) {
   const { navbarHeight } = props;
-  console.log("navh", navbarHeight);
+  
   const [modalOpen, setModalOpen] = useState(false);
   const [newData, setNew] = useState({ roomtype: '', id: 0, time: '', hall: '' });
   const [editingData, setEditing] = useState(null);
