@@ -42,7 +42,7 @@ export default function MaintenancePage(props) {
       return {
         id: doc.id,
         ...doc.data(),
-        userName: userMap[data.uid] || ""
+        username: userMap[data.uid] || ""
       };
     });
 
@@ -99,6 +99,8 @@ export default function MaintenancePage(props) {
           cause: form.cause,
           comments: form.comments,
           imageUrl,
+          createdBy: uid,
+          createdDate: new Date(),
         });
         toast.success("Successfully saved");
         getList()
@@ -111,6 +113,7 @@ export default function MaintenancePage(props) {
     setModalOpen(false);
     setEditing(null);
     setForm({ id: 0, roomno: "", problemcategory: "", itemcategory: "", item: "", description: "", cause: "", comments: "", image: null, });
+    setFileName('No file chosen');
   };
   const handleDelete = async () => {
     if (!deleteData) return;
@@ -203,17 +206,13 @@ export default function MaintenancePage(props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {[...Array(5)].map((_, i) => (
+              {list.map((item, i) => (
                 <tr key={i}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">#2025-01 {i + 1}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">John {i + 1}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Plumbing</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    Room A12
-                    {/* <button className="text-blue-600 hover:underline mr-3">Edit</button>
-                  <button className="text-red-600 hover:underline">Delete</button> */}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Apr 10,2025</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.uid}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.username}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.problemcategory}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">{item.roomno}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.createdDate}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">New</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">View</td>
                 </tr>
