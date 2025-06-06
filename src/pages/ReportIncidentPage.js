@@ -5,6 +5,7 @@ import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import dayjs from 'dayjs';
 export default function ReportIncidentPage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);
@@ -48,7 +49,8 @@ export default function ReportIncidentPage(props) {
 
     setList(repotincidentWithuser)
     setIsLoading(false)
-    console.log(repotincidentWithuser, 'man')
+    console.log(repotincidentWithuser[0].datetime.seconds, 'man')
+    console.log(repotincidentWithuser[2].datetime.seconds, 'man')
   }
   const handleAdd = async (e) => {
     e.preventDefault();
@@ -174,7 +176,7 @@ export default function ReportIncidentPage(props) {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.username}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.incidenttype}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Open</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.datetime}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.datetime.seconds !=undefined ? dayjs(item.datetime.seconds * 1000).format('YYYY-MM-DD'): dayjs(item.datetime).format('YYYY-MM-DD')}</td>
                 </tr>
               ))}
             </tbody>
