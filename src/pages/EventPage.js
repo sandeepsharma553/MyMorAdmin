@@ -48,7 +48,8 @@ export default function EventPage(props) {
     rules: '',
     boothOption: false,
     vendorInfo: '',
-    sponsorship: ''
+    sponsorship: '',
+    interestedCount:0
   }
   const [form, setForm] = useState(initialFormData);
   const uid = useSelector((state) => state.auth.user);
