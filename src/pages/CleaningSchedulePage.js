@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc } from "firebase/firestore";
 import { db } from "../../src/firebase";
 import { useSelector } from "react-redux";
-import { ref, set } from 'firebase/database';
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 export default function CleaningSchedulePage(props) {

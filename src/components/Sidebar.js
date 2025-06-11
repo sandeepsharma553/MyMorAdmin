@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { BeatLoader } from "react-spinners";
 import dummyProfileImage from "../assets/logo1.png";
 import { useNavigate } from "react-router-dom";
-import { LayoutDashboard, Calendar, Menu, BookOpen, BrushCleaning, Settings, Users, MessageSquareWarning } from "lucide-react";
+import { LayoutDashboard, Calendar, Menu, BookOpen, BrushCleaning, Settings, Users, MessageSquareWarning,
+  Handshake,Utensils ,GraduationCap,Hotel} from "lucide-react";
 
 function Sidebar({ user, onSectionClick, isLoading, error }) {
   const [activeSection, setActiveSection] = useState("dashboard");
@@ -139,6 +140,18 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
           </h4>
         </div>
         <div
+          className={`cursor-pointer ${activeSection === "dealpage"
+            ? "bg-blue-200 border-b-2 border-blue-500"
+            : "hover:bg-gray-300"
+            } rounded-md`}
+          onClick={() => handleClick("dealpage")}
+        >
+          <h4 className="flex items-center gap-2 p-2 text-lg font-semibold">
+            <Utensils size={20} />
+            Deals
+          </h4>
+        </div>
+        <div
           className={`cursor-pointer ${activeSection === "university"
             ? "bg-blue-200 border-b-2 border-blue-500"
             : "hover:bg-gray-300"
@@ -146,7 +159,7 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
           onClick={() => handleClick("university")}
         >
           <h4 className="flex items-center gap-2 p-2 text-lg font-semibold">
-            <Calendar size={20} />
+            <GraduationCap size={20} />
             University
           </h4>
         </div>
@@ -158,7 +171,7 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
           onClick={() => handleClick("hostel")}
         >
           <h4 className="flex items-center gap-2 p-2 text-lg font-semibold">
-            <Calendar size={20} />
+            <Hotel size={20} />
             Hostel
           </h4>
         </div>
