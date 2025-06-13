@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
 import { db, storage } from "../../src/firebase";
-import { useSelector } from "react-redux";
-import { ClipLoader, FadeLoader } from "react-spinners";
+import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import dayjs from 'dayjs';
 export default function DealPage(props) {
   const { navbarHeight } = props;
 
@@ -18,15 +16,35 @@ export default function DealPage(props) {
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
-  const initialFormData = {
+  const initialForm = {
     id: 0,
     name: '',
     description: '',
+    shortdescription: '',
     discount: '',
     category: '',
-    type: ''
+    type: '',
+    tags: '',
+    businessName: '',
+    location: '',
+    onlineOnly: false,
+    deliveryOptions: '',
+    startDateTime: '',
+    endDateTime: '',
+    recurring: false,
+    happyHour: '',
+    originalPrice: '',
+    bundleOffer: '',
+    quantityLimit: '',
+    redeemVia: '',
+    usageRules: '',
+    verification: '',
+    footfallGoal: '',
+    pushNotification: false,
+    reminderNotification: false,
+    enableQiPoints: false,
   }
-  const [form, setForm] = useState(initialFormData);
+  const [form, setForm] = useState(initialForm);
   const pageSize = 10;
   const mockData = list
   const filteredData = mockData.filter(
@@ -55,7 +73,11 @@ export default function DealPage(props) {
     console.log(documents)
   }
   const handleChange = (e) => {
-    const { name, value, type, checked, files, prices } = e.target;
+    const { name, value, type, checked, files } = e.target;
+    setForm(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value,
+    }));
     if (type === 'file') {
       setForm({ ...form, [name]: files[0] });
       if (files.length > 0) {
@@ -89,6 +111,8 @@ export default function DealPage(props) {
       }
       const dealData = {
         ...form,
+        startDateTime: Timestamp.fromDate(new Date(form.startDateTime)),
+        endDateTime: form.endDateTime ? Timestamp.fromDate(new Date(form.endDateTime)) : null,
         ...(posterUrl && { posterUrl }),
       };
       delete dealData.id;
@@ -103,7 +127,7 @@ export default function DealPage(props) {
         }
         const dealRef = doc(db, 'deals', form.id);
         await updateDoc(dealRef, dealData);
-        toast.success('✅ Deal updated successfully');
+        toast.success('Deal updated successfully');
       }
       else {
         await addDoc(collection(db, 'deals'), dealData);
@@ -116,7 +140,7 @@ export default function DealPage(props) {
     getList()
     setModalOpen(false);
     setEditing(null);
-    setForm(initialFormData);
+    setForm(initialForm);
     setFileName('No file chosen');
   };
   const handleDelete = async () => {
@@ -139,7 +163,7 @@ export default function DealPage(props) {
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
-            setForm(initialFormData);
+            setForm(initialForm);
             setModalOpen(true);
           }}>
           + Add
@@ -190,7 +214,7 @@ export default function DealPage(props) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.category}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.discount}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {item.posterUrl != "" ? (<img src={item.posterUrl} width={80} height={80} />) : null}
+                      {item.posterUrl != "" ? (<img src={item.posterUrl} width={80} height={80} />) : null}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button className="text-blue-600 hover:underline mr-3" onClick={() => {
@@ -199,6 +223,8 @@ export default function DealPage(props) {
                           ...prev,
                           ...item,
                           id: item.id,
+                          startDateTime: item.startDateTime?.toDate().toISOString().slice(0, 16) || '',
+                          endDateTime: item.endDateTime?.toDate().toISOString().slice(0, 16) || '',
                           poster: null // poster cannot be pre-filled (file inputs are read-only for security)
                         }));
                         setModalOpen(true);
@@ -245,9 +271,11 @@ export default function DealPage(props) {
             <h2 className="text-xl font-bold mb-4">Create Deal</h2>
             <form onSubmit={handleSubmit} className="space-y-4" >
               <div className="space-y-4">
-                <input name="name" placeholder="Name" value={form.name}
+                <input name="name" placeholder="Title" value={form.name}
                   onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
 
+                <input name="shortdescription" placeholder="Short Description" value={form.shortdescription}
+                  onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                 <textarea name="description" placeholder="Description" value={form.description} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required></textarea>
 
                 <select name="category" value={form.category} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required >
@@ -257,8 +285,6 @@ export default function DealPage(props) {
                   <option value="Movies">Movies</option>
                   <option value="Fitness">Fitness</option>
                 </select>
-
-                <input name="discount" placeholder="discount" value={form.discount} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">
                     <input type="file" name="poster" accept="image/*" className="hidden"
@@ -275,6 +301,73 @@ export default function DealPage(props) {
                   <img src={form.posterUrl} alt="Poster Preview" width="150" />
                 )}
 
+                <input name="tag" placeholder="Tags (vegan, student special, happy hour, etc.)" value={form.tag} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                <input name="businessname" placeholder="Business Name" value={form.businessname} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+
+                <section>
+                  <h3 className="text-xl font-semibold mb-2">📍 Location</h3>
+                  <input name="location" value={form.location} onChange={handleChange} placeholder="Store Location" className="w-full border border-gray-300 p-2 rounded" />
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" name="onlineOnly" checked={form.onlineOnly} onChange={handleChange} />
+                    Online Only Deal?
+                  </label>
+                  <input name="deliveryOptions" value={form.deliveryOptions} onChange={handleChange} placeholder="Delivery or Pickup Options" className="w-full border border-gray-300 p-2 rounded" />
+                </section>
+
+                {/* 📅 Timing */}
+                <section>
+                  <h3 className="text-xl font-semibold mb-2">📅 Timing</h3>
+                  <label>Start Date Time</label>
+                  <input type="datetime-local" name="startDateTime" value={form.startDateTime} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                  <label>End Date Time</label>
+                  <input type="datetime-local" name="endDateTime" value={form.endDateTime} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" name="recurring" checked={form.recurring} onChange={handleChange} />
+                    Recurring Deal?
+                  </label>
+                  <input name="happyHour" value={form.happyHour} onChange={handleChange} placeholder="Happy Hour Timing (e.g. 3–6pm)" className="w-full border border-gray-300 p-2 rounded" />
+                </section>
+
+                {/* 💸 Pricing */}
+                <section>
+                  <h3 className="text-xl font-semibold mb-2">💸 Pricing</h3>
+                  <input type="number" min={0} name="originalPrice" value={form.originalPrice} onChange={handleChange} placeholder="Original Price" className="w-full border border-gray-300 p-2 rounded" />
+                  <input type="number" min={0} name="discount" value={form.discount} onChange={handleChange} placeholder="Discounted Price / % Off" className="w-full border border-gray-300 p-2 rounded" />
+                  <input name="bundleOffer" value={form.bundleOffer} onChange={handleChange} placeholder="Bundle Offer" className="w-full border border-gray-300 p-2 rounded" />
+                  <input type="number" min={0} name="quantityLimit" value={form.quantityLimit} onChange={handleChange} placeholder="Quantity Limit" className="w-full border border-gray-300 p-2 rounded" />
+                </section>
+
+                {/* ⚙ Redemption & Rules */}
+                <section>
+                  <h3 className="text-xl font-semibold mb-2">⚙ Redemption & Rules</h3>
+                  <select name="redeemVia" value={form.redeemVia} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded">
+                    <option value="">Select Redemption Method</option>
+                    <option value="qr">QR Code</option>
+                    <option value="mention">In-store Mention</option>
+                    <option value="onlineCode">Online Code</option>
+                    <option value="appTap">App Tap-to-Redeem</option>
+                  </select>
+                  <textarea name="usageRules" value={form.usageRules} onChange={handleChange} placeholder="Usage Rules" className="w-full border border-gray-300 p-2 rounded" />
+                  <input name="verification" value={form.verification} onChange={handleChange} placeholder="Verification Needed" className="w-full border border-gray-300 p-2 rounded" />
+                </section>
+
+                {/* 🧠 Engagement & Tracking */}
+                <section>
+                  <h3 className="text-xl font-semibold mb-2">🧠 Engagement & Tracking</h3>
+                  <input type="number" min={0} name="footfallGoal" value={form.footfallGoal} onChange={handleChange} placeholder="Estimated Footfall" className="w-full border border-gray-300 p-2 rounded" />
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" name="pushNotification" checked={form.pushNotification} onChange={handleChange} />
+                    Push Notification Opt-in
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" name="reminderNotification" checked={form.reminderNotification} onChange={handleChange} />
+                    Reminder Notification
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" name="enableQiPoints" checked={form.enableQiPoints} onChange={handleChange} />
+                    Enable Qi Points for Engagement
+                  </label>
+                </section>
               </div>
               <div className="flex justify-end mt-6 space-x-3">
                 <button

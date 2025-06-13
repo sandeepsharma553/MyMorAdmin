@@ -133,7 +133,7 @@ export default function EventPage(props) {
         }
         const eventRef = doc(db, 'events', form.id);
         await updateDoc(eventRef, eventData);
-        toast.success('✅ Event updated successfully');
+        toast.success('Event updated successfully');
       }
       else {
         await addDoc(collection(db, 'events'), eventData);

@@ -32,6 +32,16 @@
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none;  /* IE and Edge */
 }
+
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield; /* Firefox */
+}
 /* Hide scrollbar for IE, Edge and Firefox */
 .custom-scroll {
   -ms-overflow-style: none;  /* IE and Edge */
