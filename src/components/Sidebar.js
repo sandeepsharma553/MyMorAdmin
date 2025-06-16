@@ -3,7 +3,7 @@ import { BeatLoader } from "react-spinners";
 import dummyProfileImage from "../assets/logo1.png";
 import { useNavigate } from "react-router-dom";
 import { LayoutDashboard, Calendar, Menu, BookOpen, BrushCleaning, Settings, Users, MessageSquareWarning,
-  Handshake,Utensils ,GraduationCap,Hotel} from "lucide-react";
+  Handshake,Utensils ,GraduationCap,Hotel,Bell} from "lucide-react";
 
 function Sidebar({ user, onSectionClick, isLoading, error }) {
   const [activeSection, setActiveSection] = useState("dashboard");
@@ -125,6 +125,18 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
           <h4 className="flex items-center gap-2 p-2 text-lg font-semibold">
             <MessageSquareWarning size={20} />
             Report Incident
+          </h4>
+        </div>
+        <div
+          className={`cursor-pointer ${activeSection === "announcement"
+            ? "bg-blue-200 border-b-2 border-blue-500"
+            : "hover:bg-gray-300"
+            } rounded-md`}
+          onClick={() => handleClick("announcement")}
+        >
+          <h4 className="flex items-center gap-2 p-2 text-lg font-semibold">
+            <Bell size={20} />
+            Announcement 
           </h4>
         </div>
         <div

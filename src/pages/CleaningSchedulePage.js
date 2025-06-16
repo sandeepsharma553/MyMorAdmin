@@ -14,7 +14,7 @@ export default function CleaningSchedulePage(props) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
-  const uid = useSelector((state) => state.auth.user);
+    const uid = useSelector((state) => state.auth.user);
   useEffect(() => {
     getList()
   }, [])

@@ -306,7 +306,7 @@ export default function DealPage(props) {
 
                 <section>
                   <h3 className="text-xl font-semibold mb-2">📍 Location</h3>
-                  <input name="location" value={form.location} onChange={handleChange} placeholder="Store Location" className="w-full border border-gray-300 p-2 rounded" />
+                  <input name="location" value={form.location} onChange={handleChange} placeholder="Store Location" className="w-full border border-gray-300 p-2 rounded" required />
                   <label className="flex items-center gap-2">
                     <input type="checkbox" name="onlineOnly" checked={form.onlineOnly} onChange={handleChange} />
                     Online Only Deal?
@@ -318,9 +318,9 @@ export default function DealPage(props) {
                 <section>
                   <h3 className="text-xl font-semibold mb-2">📅 Timing</h3>
                   <label>Start Date Time</label>
-                  <input type="datetime-local" name="startDateTime" value={form.startDateTime} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                  <input type="datetime-local" name="startDateTime" value={form.startDateTime} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                   <label>End Date Time</label>
-                  <input type="datetime-local" name="endDateTime" value={form.endDateTime} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                  <input type="datetime-local" name="endDateTime" value={form.endDateTime} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded"  required/>
                   <label className="flex items-center gap-2">
                     <input type="checkbox" name="recurring" checked={form.recurring} onChange={handleChange} />
                     Recurring Deal?
@@ -331,10 +331,10 @@ export default function DealPage(props) {
                 {/* 💸 Pricing */}
                 <section>
                   <h3 className="text-xl font-semibold mb-2">💸 Pricing</h3>
-                  <input type="number" min={0} name="originalPrice" value={form.originalPrice} onChange={handleChange} placeholder="Original Price" className="w-full border border-gray-300 p-2 rounded" />
+                  <input type="number" min={0} name="originalPrice" value={form.originalPrice} onChange={handleChange} placeholder="Original Price" className="w-full border border-gray-300 p-2 rounded" required />
                   <input type="number" min={0} name="discount" value={form.discount} onChange={handleChange} placeholder="Discounted Price / % Off" className="w-full border border-gray-300 p-2 rounded" />
                   <input name="bundleOffer" value={form.bundleOffer} onChange={handleChange} placeholder="Bundle Offer" className="w-full border border-gray-300 p-2 rounded" />
-                  <input type="number" min={0} name="quantityLimit" value={form.quantityLimit} onChange={handleChange} placeholder="Quantity Limit" className="w-full border border-gray-300 p-2 rounded" />
+                  <input type="number" min={0} name="quantityLimit" value={form.quantityLimit} onChange={handleChange} placeholder="Quantity Limit" className="w-full border border-gray-300 p-2 rounded" required/>
                 </section>
 
                 {/* ⚙ Redemption & Rules */}

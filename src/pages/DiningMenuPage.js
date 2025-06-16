@@ -17,7 +17,7 @@ export default function DiningMenuPage(props) {
   const [data, setData] = useState([]);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [fileName, setFileName] = useState('No file chosen');
-  const uid = useSelector((state) => state.auth.user);
+    const uid = useSelector((state) => state.auth.user);
 
   const [form, setForm] = useState({
     date: '',

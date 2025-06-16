@@ -13,11 +13,12 @@ import BookingPage from "./BookingPage";
 import AccountDeletionRequest from "./AccountDeletionRequest";
 import UniversityPage from "./UniversityPage";
 import HostelPage from "./HostelPage";
+import AnnouncementPage from "./AnnouncementPage";
 function HomePage() {
   const navigate = useNavigate();
- // const [navbarHeight, setNavbarHeight] = useState(0);
+  // const [navbarHeight, setNavbarHeight] = useState(0);
   const [userRole, setUserRole] = useState();
-  
+
   // const handleNavbarHeightChange = (height) => {
   //   setNavbarHeight(height);
   // };
@@ -28,7 +29,7 @@ function HomePage() {
       const userData = JSON.parse(storedUserData);
       setUserRole(userData.userRole);
     }
-    
+
     if (userRole === 4) {
       navigate("allVisits");
     }
@@ -42,19 +43,20 @@ function HomePage() {
       <div>
         {/* Your router content */}
         <Routes>
-          <Route path="/dashboard" element={<DashboardPage />}/>
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/diningmenupage" element={<DiningMenuPage />} />
           <Route path="/cleaningpage" element={<CleaningSchedulePage />} />
           <Route path="/maintenancepage" element={<MaintenancePage />} />
           <Route path="/bookingpage" element={<BookingPage />} />
           <Route path="/academicpage" element={<AcademicGroupPage />} />
+          <Route path="/announcement" element={<AnnouncementPage />} />
           <Route path="/reportpage" element={<ReportIncidentPage />} />
           <Route path="/eventpage" element={<EventPage />} />
           <Route path="/dealpage" element={<DealPage />} />
           <Route path="/requestdelete" element={<AccountDeletionRequest />} />
           <Route path="/university" element={<UniversityPage />} />
           <Route path="/hostel" element={<HostelPage />} />
-         
+
           {/* <Route path="/user/:id" element={<UserDetails />} /> */}
           {/* <Route path="/redeemrequests" element={<GiftRequestsPage />} />
 

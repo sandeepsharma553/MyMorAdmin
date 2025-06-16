@@ -15,7 +15,7 @@ export default function AcademicGroupPage(props) {
   const [fileName, setFileName] = useState('No file chosen');
   const [isLoading, setIsLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1);
-  const uid = useSelector((state) => state.auth.user);
+    const uid = useSelector((state) => state.auth.user);
   const initialForm = {
     id: 0,
     title: '',
@@ -138,7 +138,7 @@ export default function AcademicGroupPage(props) {
         creatorId: uid,
         ...(posterUrl && { posterUrl }),
       };
-      delete form.id;
+    
       delete form.poster;
 
       if (editingData) {
@@ -155,7 +155,7 @@ export default function AcademicGroupPage(props) {
         toast.success('Group updated successfully!');
 
       } else {
-
+        delete form.id;
         const newGroupRef = push(dbRef(database, 'groups/'));
         set(newGroupRef, {
           ...form,

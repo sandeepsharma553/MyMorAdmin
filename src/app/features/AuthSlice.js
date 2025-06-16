@@ -23,7 +23,7 @@ export const LoginAdmin = createAsyncThunk(
 
       const res = await signInWithEmailAndPassword(auth, userData.EmailID, userData.Password);
       console.log("User logged in:", res.user);
-     const response =  { 'isSuccess': true,'message':'ok','data':res.user.uid} //await adminLogin("login", userData);
+      const response =  { 'isSuccess': true,'message':'ok','data':res.user.uid} //await adminLogin("login", userData);
       console.log(response);
       return response;
     } catch (error) {

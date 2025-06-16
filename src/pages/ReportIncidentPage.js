@@ -16,7 +16,7 @@ export default function ReportIncidentPage(props) {
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
-  const uid = useSelector((state) => state.auth.user);
+    const uid = useSelector((state) => state.auth.user);
   useEffect(() => {
     getList()
   }, [])
