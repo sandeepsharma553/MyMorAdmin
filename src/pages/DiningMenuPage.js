@@ -87,7 +87,7 @@ export default function DiningMenuPage(props) {
   };
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log(form)
+   
     if (!form.date) {
       toast.warning("Please select a date.");
       return;
@@ -268,9 +268,7 @@ export default function DiningMenuPage(props) {
       }
 
       setData(nestedData);
-      console.log(nestedData);
-      // setData(menuMap)
-      // console.log(data)
+    
     };
     reader.readAsBinaryString(file);
     setIsLoading(false)
@@ -306,7 +304,7 @@ export default function DiningMenuPage(props) {
     // for (const date in menuMap) {
     //   const docRef = db.collection("menus").doc(date);
     //   await docRef.set(menuMap[date]);
-    //   console.log(`Uploaded: ${date}`);
+    
     // }
   };
   const handleDownload = async () => {
@@ -433,7 +431,7 @@ export default function DiningMenuPage(props) {
                   className="w-full border border-gray-300 p-2 rounded"
                   onChange={(e) => {
                     const selectedDate = e.target.value;
-                    console.log(selectedDate)
+                  
                     const day = getDayFromDate(selectedDate);
                     setForm(prev => ({ ...prev, date: selectedDate, day }));
                   }}

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-const AccountDeletionRequest = () => {
+const AccountDeletionPage = () => {
   const [form, setForm] = useState({ email: "", message: "" });
   const [submitted, setSubmitted] = useState(false);
 
@@ -64,4 +64,4 @@ const AccountDeletionRequest = () => {
   );
 };
 
-export default AccountDeletionRequest;
+export default AccountDeletionPage;

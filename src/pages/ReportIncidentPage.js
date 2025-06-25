@@ -49,8 +49,7 @@ export default function ReportIncidentPage(props) {
 
     setList(repotincidentWithuser)
     setIsLoading(false)
-    console.log(repotincidentWithuser[0].datetime.seconds, 'man')
-    console.log(repotincidentWithuser[2].datetime.seconds, 'man')
+    
   }
   const handleAdd = async (e) => {
     e.preventDefault();

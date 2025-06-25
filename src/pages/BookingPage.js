@@ -32,7 +32,6 @@ export default function BookingPage(props) {
     }));
     setList(documents)
     setIsLoading(false)
-    console.log(documents)
   }
   const handleAdd = async (e) => {
     e.preventDefault();

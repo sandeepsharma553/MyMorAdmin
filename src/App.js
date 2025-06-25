@@ -1,24 +1,18 @@
 //import logo from './logo.svg';
 import './App.css';
-import React, { useEffect,useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from "react-redux";
 import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
 import HomePage from "./pages/HomePage";
-import PrivacyPolicyScreen from "./pages/PrivacyPolicyScreen";
+import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
+import SupportPage from "./pages/SupportPage";
 import Layout from './components/Layout';
-import { onAuthStateChanged,} from "firebase/auth";
+import { onAuthStateChanged, } from "firebase/auth";
 import { auth } from "./firebase";
 function App() {
-   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
-  // const auth = useSelector((state) => state.auth.user?.data?.userRole);
+  const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
   const [user, setUser] = useState(null);
-  useEffect(() => {
-
-    console.log(isLoggedIn);
-
-  });
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -41,8 +35,8 @@ function App() {
           path="/"
           element={isLoggedIn ? <Layout><Navigate to="/home/dashboard" /></Layout> : <LoginPage />}
         ></Route>
-        <Route exact path="/registerpage" element={<RegisterPage />}></Route>
-        <Route exact path="/privacy" element={<PrivacyPolicyScreen />}></Route>
+        <Route exact path="/privacy" element={<PrivacyPolicyPage />}></Route>
+        <Route exact path="/support" element={<SupportPage />}></Route>
         <Route
           index
           path="/home/*"

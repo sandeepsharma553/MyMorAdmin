@@ -48,7 +48,7 @@ export default function MaintenancePage(props) {
 
     setList(maintenanceWithuser)
     setIsLoading(false)
-    console.log(maintenanceWithuser,'man')
+   
   }
   const handleAdd = async (e) => {
     e.preventDefault();

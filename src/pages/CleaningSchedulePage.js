@@ -182,7 +182,7 @@ export default function CleaningSchedulePage(props) {
                   className="w-full border border-gray-300 p-2 rounded"
                   onChange={(e) => {
                     const selectedDate = e.target.value;
-                    console.log(selectedDate)
+                   
                     const day = getDayFromDate(selectedDate);
                     setForm(prev => ({ ...prev, date: selectedDate, day }));
                   }}

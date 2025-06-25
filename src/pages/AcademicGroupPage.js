@@ -74,7 +74,6 @@ export default function AcademicGroupPage(props) {
           );
 
           setList(groupsWithCount);
-          console.log(groupsWithCount);
         } else {
           setList([]);
         }
@@ -147,7 +146,7 @@ export default function AcademicGroupPage(props) {
           creatorId: uid,
           ...(posterUrl && { posterUrl }),
         }).then(() => {
-          console.log('Group updated successfully!');
+          
         })
           .catch((error) => {
             console.error('Error updating data:', error);
@@ -163,7 +162,7 @@ export default function AcademicGroupPage(props) {
           ...(posterUrl && { posterUrl }),
         })
           .then(() => {
-            console.log('Group created successfully!');
+          
           })
           .catch((error) => {
             console.error('Error saving data:', error);
@@ -189,7 +188,7 @@ export default function AcademicGroupPage(props) {
       const groupRef = dbRef(database, `groups/${form.id}`); // adjust your path as needed
       remove(groupRef)
         .then(() => {
-          console.log('Group deleted successfully!');
+          
         })
         .catch((error) => {
           console.error('Error deleting group:', error);

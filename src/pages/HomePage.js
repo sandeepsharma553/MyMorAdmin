@@ -10,38 +10,29 @@ import ReportIncidentPage from "./ReportIncidentPage";
 import EventPage from "./EventPage";
 import DealPage from "./DealPage";
 import BookingPage from "./BookingPage";
-import AccountDeletionRequest from "./AccountDeletionRequest";
+import AccountDeletionPage from "./AccountDeletionPage";
 import UniversityPage from "./UniversityPage";
 import HostelPage from "./HostelPage";
 import AnnouncementPage from "./AnnouncementPage";
+import EmployeePage from "./EmployeePage";
 function HomePage() {
   const navigate = useNavigate();
-  // const [navbarHeight, setNavbarHeight] = useState(0);
   const [userRole, setUserRole] = useState();
 
-  // const handleNavbarHeightChange = (height) => {
-  //   setNavbarHeight(height);
-  // };
-  // const userRole = 2;
   useEffect(() => {
     const storedUserData = localStorage.getItem("userData");
     if (storedUserData) {
       const userData = JSON.parse(storedUserData);
       setUserRole(userData.userRole);
     }
-
     if (userRole === 4) {
       navigate("allVisits");
     }
   }, [navigate, userRole]);
-  // Redirect to "All Visits" if userRole is 4
 
   return (
     <div>
-      {/* <NavBar onNavbarHeightChange={handleNavbarHeightChange} /> */}
-
       <div>
-        {/* Your router content */}
         <Routes>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/diningmenupage" element={<DiningMenuPage />} />
@@ -53,19 +44,10 @@ function HomePage() {
           <Route path="/reportpage" element={<ReportIncidentPage />} />
           <Route path="/eventpage" element={<EventPage />} />
           <Route path="/dealpage" element={<DealPage />} />
-          <Route path="/requestdelete" element={<AccountDeletionRequest />} />
+          <Route path="/requestdelete" element={<AccountDeletionPage />} />
           <Route path="/university" element={<UniversityPage />} />
           <Route path="/hostel" element={<HostelPage />} />
-
-          {/* <Route path="/user/:id" element={<UserDetails />} /> */}
-          {/* <Route path="/redeemrequests" element={<GiftRequestsPage />} />
-
-          <Route path="/allVisits" element={<AllExpenses />} />
-          <Route path="/addVisit" element={<AddVisitPage />} /> */}
-
-          {/* Add more routes here */}
-
-          {/* Add more routes here */}
+          <Route path="/employee" element={<EmployeePage />} />
         </Routes>
       </div>
     </div>

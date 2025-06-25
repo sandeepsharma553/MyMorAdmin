@@ -98,7 +98,7 @@ export default function AnnouncementPage(props) {
             };
 
             delete form.poster;
-            console.log(form)
+        
             if (editingData) {
                 const announcementRef = dbRef(database, `announcements/${form.id}`);
                 const snapshot = await get(announcementRef);
@@ -149,7 +149,7 @@ export default function AnnouncementPage(props) {
             const groupRef = dbRef(database, `announcements/${form.id}`); // adjust your path as needed
             remove(groupRef)
                 .then(() => {
-                    console.log('deleted successfully!');
+                    
                 })
                 .catch((error) => {
                     console.error('Error deleting group:', error);
@@ -236,8 +236,7 @@ export default function AnnouncementPage(props) {
                                                     poster: null // poster cannot be pre-filled (file inputs are read-only for security)
                                                 }));
                                                 setModalOpen(true);
-                                                console.log(form, 'form')
-                                                console.log(editingData, 'd')
+                                    
                                             }}>Edit</button>
                                             <button className="text-red-600 hover:underline" onClick={() => {
                                                 setDelete(item);

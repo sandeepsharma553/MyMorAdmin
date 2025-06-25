@@ -69,7 +69,6 @@ export default function EventPage(props) {
     }));
     setList(documents)
     setIsLoading(false)
-    console.log(documents)
   }
   const handleChange = (e) => {
     const { name, value, type, checked, files, prices } = e.target;
@@ -93,7 +92,7 @@ export default function EventPage(props) {
     e.preventDefault();
     let posterUrl = '';
     try {
-      console.log(form, 'form')
+   
       if (form.id == 0) {
         if (!form.poster) {
           toast.error("Please choose the file")
@@ -163,7 +162,7 @@ export default function EventPage(props) {
   };
   const formatDateTime = (isoString) => {
     const date = dayjs(isoString.seconds * 1000).format('YYYY-MM-DD hh:mm A');
-    // console.log(date)
+   
     // const year = date.getFullYear();
     // const month = `${date.getMonth() + 1}`.padStart(2, '0');
     // const day = `${date.getDate()}`.padStart(2, '0');

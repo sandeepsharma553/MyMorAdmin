@@ -25,7 +25,7 @@ const UniversityPage = (props) => {
       id: doc.id,
       ...doc.data(),
     }));
-    console.log(documents)
+  
     setList(documents)
     setIsLoading(false)
   }
@@ -71,7 +71,7 @@ const UniversityPage = (props) => {
         //   createdBy:uid,
         //   createdDate: new Date(),
         // }).then(() => {
-        //   console.log('Data added successfully!');
+        //  
         // })
         // .catch((error) => {
         //   console.error('Error adding data: ', error);

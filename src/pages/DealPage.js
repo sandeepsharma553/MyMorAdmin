@@ -70,7 +70,6 @@ export default function DealPage(props) {
     }));
     setList(documents)
     setIsLoading(false)
-    console.log(documents)
   }
   const handleChange = (e) => {
     const { name, value, type, checked, files } = e.target;

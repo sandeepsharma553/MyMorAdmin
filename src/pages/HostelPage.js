@@ -40,7 +40,6 @@ const HostelPage = (props) => {
       };
     });
 
-    console.log(hostelsWithUni)
     setList(hostelsWithUni)
     setIsLoading(false)
   }
@@ -85,7 +84,7 @@ const HostelPage = (props) => {
         console.error('Error updating document: ', error);
       }
     } else {
-      console.log(newData,'hos')
+   
       try {
         const q = query(collection(db, 'Hostel'), where('name', '==', newData.name));
         const querySnapshot = await getDocs(q);

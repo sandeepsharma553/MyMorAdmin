@@ -40,7 +40,7 @@ const LoginPage = ({ onLogin }) => {
     try {
       await dispatch(LoginAdmin(values));
     } catch (error) {
-      showToastMessage(error.message || "Failed to login");
+      showToastMessage(error.code || "Failed to login");
     }
   };
 
