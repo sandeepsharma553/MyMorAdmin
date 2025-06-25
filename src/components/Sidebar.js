@@ -1,13 +1,19 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { BeatLoader } from "react-spinners";
 import dummyProfileImage from "../assets/logo1.png";
 import { useNavigate } from "react-router-dom";
-import { LayoutDashboard, Calendar, Menu, BookOpen, BrushCleaning, Settings, Users, MessageSquareWarning,
-  Handshake,Utensils ,GraduationCap,Hotel,Bell,UserPlus} from "lucide-react";
-
+import {
+  LayoutDashboard, Calendar, Menu, BookOpen, BrushCleaning, Settings, Users, MessageSquareWarning,
+  Handshake, Utensils, GraduationCap, Hotel, Bell, UserPlus
+} from "lucide-react";
+import { useSelector } from "react-redux";
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from "../../src/firebase";
 function Sidebar({ user, onSectionClick, isLoading, error }) {
   const [activeSection, setActiveSection] = useState("dashboard");
   const navigate = useNavigate();
+  const uid = useSelector((state) => state.auth.user.uid);
+  const [permission, setPermission] = useState(null)
   const handleClick = (section) => {
     setActiveSection(section);
     if (onSectionClick) {
@@ -15,13 +21,29 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
     }
     navigate(`/home/${section}`);
   };
+  useEffect(() => {
+    if (uid) {
+      getEmployeeByUid();
+      console.log({ permission, uid })
+    }
 
-  //const profileImage = user?.fileName === "null" ? dummyProfileImage : user?.fileName;
+  }, [uid])
+
+  const getEmployeeByUid = async () => {
+    if (!uid) throw new Error('UID is missing');
+    const docRef = doc(db, 'employee', uid);
+    const docSnap = await getDoc(docRef);
+    const user = { id: docSnap.id, ...docSnap.data() }
+    if (user.permissions?.legth > 0) {
+      console.log(user.permissions)
+      setPermission(user.permissions)
+    }
+  }
 
   return (
     <div
       className="bg-gray-200 p-2 w-60 min-h-screen shadow flex flex-col items-center  md:relative  "
-      style={{ height: "100vh"}}
+      style={{ height: "100vh" }}
     >
       {/* User Profile */}
       <div className="pb-2 fixed-top">
@@ -42,7 +64,7 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
 
       {/* User Sections */}
       <div className="w-full scroll-container custom-scroll overflow-hidden scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-100">
-        <div 
+        <div
           className={`cursor-pointer ${activeSection === "dashboard"
             ? "bg-blue-200 border-b-2 border-blue-500"
             : "hover:bg-gray-300"
@@ -63,7 +85,7 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
         >
           <h4 className="flex items-center gap-2 p-2 text-lg font-semibold">
             <UserPlus size={20} />
-           Employee
+            Employee
           </h4>
         </div>
         <div
@@ -147,7 +169,7 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
         >
           <h4 className="flex items-center gap-2 p-2 text-lg font-semibold">
             <Bell size={20} />
-            Announcement 
+            Announcement
           </h4>
         </div>
         <div
@@ -198,8 +220,8 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
             Hostel
           </h4>
         </div>
-       
-       
+
+
 
         {/* <div
           className={`cursor-pointer ${activeSection === "dealpage"

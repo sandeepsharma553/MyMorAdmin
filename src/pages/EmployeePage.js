@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
+import { collection, addDoc, getDocs, updateDoc, doc,setDoc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
 import { db, storage, auth } from "../firebase";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -22,7 +22,6 @@ export default function EmployeePage(props) {
   const uid = useSelector((state) => state.auth.user.uid);
   const user = useSelector((state) => state.auth.user);
    
-    console.log(user)
   const initialForm = {
     id: 0,
     name: '',
@@ -147,18 +146,20 @@ export default function EmployeePage(props) {
         await updateProfile(user, {
           displayName: form.name,
         })
-        await addDoc(collection(db, 'employee'), employeeData);
+        await setDoc(doc(db, "employee", user.uid), employeeData);
         toast.success('Empoyee created successfully');
       }
-
+      getList()
+      setModalOpen(false);
+      setEditing(null);
+      setForm(initialForm);
+      setFileName('No file chosen');
     } catch (error) {
+      if(error.code === 'auth/email-already-in-use'){
+        toast.error('this email already in use')
+      }
       console.error("Error saving data:", error);
     }
-    getList()
-    setModalOpen(false);
-    setEditing(null);
-    setForm(initialForm);
-    setFileName('No file chosen');
   };
   const handleDelete = async () => {
     if (!deleteData) return;
