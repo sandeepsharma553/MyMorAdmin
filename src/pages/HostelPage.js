@@ -15,7 +15,7 @@ const HostelPage = (props) => {
   const [list, setList] = useState([])
   const [universities, setUniversities] = useState([]);
   const [isLoading, setIsLoading] = useState(false)
-    const uid = useSelector((state) => state.auth.user);
+      const uid = useSelector((state) => state.auth.user.uid);
   useEffect(() => {
     getList()
     fetchUniversities()

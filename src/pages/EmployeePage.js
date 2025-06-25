@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
-import { db, storage,auth } from "../firebase";
+import { db, storage, auth } from "../firebase";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { createUserWithEmailAndPassword,updateProfile } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { useSelector } from "react-redux";
+import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
 export default function EmployeePage(props) {
   const { navbarHeight } = props;
   const [searchTerm, setSearchTerm] = useState('');
@@ -17,7 +18,11 @@ export default function EmployeePage(props) {
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
-  const uid = useSelector((state) => state.auth.user);
+  const [selected, setSelected] = useState([]);
+  const uid = useSelector((state) => state.auth.user.uid);
+  const user = useSelector((state) => state.auth.user);
+   
+    console.log(user)
   const initialForm = {
     id: 0,
     name: '',
@@ -27,10 +32,11 @@ export default function EmployeePage(props) {
     designation: '',
     department: '',
     role: '',
-    isActive: true
+    isActive: true,
+    permissions: [],
   }
   const [form, setForm] = useState(initialForm);
- 
+  const MENU_OPTIONS = ["Dashboard", "Employee", "Settings", "Reports"];
   const pageSize = 10;
   const mockData = list
   const filteredData = mockData.filter(
@@ -56,11 +62,11 @@ export default function EmployeePage(props) {
     }));
     setList(documents)
     setIsLoading(false)
-   
+
   }
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
-  
+
     if (type === 'file') {
       setForm({ ...form, [name]: files[0] });
       if (files.length > 0) {
@@ -77,12 +83,28 @@ export default function EmployeePage(props) {
     const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return EMAIL_REGEX.test(email.trim());
   };
+  const handlePermissionChange = (e) => {
+    const element = e?.target;
+    if (!element || !element.options) {
+      console.warn("Multi-select element is not valid");
+      return;
+    }
+
+    const selected = [];
+    for (let i = 0; i < element.options.length; i++) {
+      const opt = element.options[i];
+      if (opt.selected) selected.push(opt.value);
+    }
+
+    setForm((prev) => ({ ...prev, permissions: selected }));
+    console.log(form)
+  };
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       if (!isEmailValid(form.email)) {
         toast.error("Please enter a valid email address");
-        return;                
+        return;
       }
       if (form.id == 0) {
         if (!form.image) {
@@ -119,12 +141,12 @@ export default function EmployeePage(props) {
         toast.success('Employee updated successfully');
       }
       else {
-        const password = form.name + "" + "321"
-        const userCredential = await createUserWithEmailAndPassword(auth,form.email, password);
+        const password = `${form.name}321`;
+        const userCredential = await createUserWithEmailAndPassword(auth, form.email, password);
         const user = userCredential.user;
         await updateProfile(user, {
-            displayName: form.name,
-          })
+          displayName: form.name,
+        })
         await addDoc(collection(db, 'employee'), employeeData);
         toast.success('Empoyee created successfully');
       }
@@ -237,6 +259,7 @@ export default function EmployeePage(props) {
                           ...prev,
                           ...item,
                           id: item.id,
+                          permissions: item.permissions?.length > 0 ? item.permissions: [],
                           image: null
                         }));
                         setModalOpen(true);
@@ -318,6 +341,28 @@ export default function EmployeePage(props) {
                 {form.imageUrl && (
                   <img src={form.imageUrl} alt="Image Preview" width="150" />
                 )}
+                <div>
+
+                  <Select
+                    className="w-full border border-gray-300 p-2 rounded"
+                    multiple
+                    displayEmpty
+                    value={form.permissions}
+                    onChange={e => setForm({ ...form, permissions: e.target.value })}
+                    renderValue={selected =>
+                      selected.length ? selected.join(', ') : 'Select Permission'
+                    }
+                    sx={{ minWidth: 260 }}
+                  >
+                    {MENU_OPTIONS.map(skill => (
+                      <MenuItem key={skill} value={skill}>
+                        <Checkbox checked={form.permissions.indexOf(skill) > -1} />
+                        <ListItemText primary={skill} />
+                      </MenuItem>
+                    ))}
+
+                  </Select>
+                </div>
                 <label className="flex items-center gap-3 cursor-pointer select-none">
                   <span className="text-sm font-medium">Status</span>
                   <input

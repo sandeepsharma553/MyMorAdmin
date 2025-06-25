@@ -15,7 +15,7 @@ export default function AcademicGroupPage(props) {
   const [fileName, setFileName] = useState('No file chosen');
   const [isLoading, setIsLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1);
-    const uid = useSelector((state) => state.auth.user);
+  const uid = useSelector((state) => state.auth.user.uid);
   const initialForm = {
     id: 0,
     title: '',

@@ -52,7 +52,7 @@ export default function EventPage(props) {
     interestedCount:0
   }
   const [form, setForm] = useState(initialFormData);
-    const uid = useSelector((state) => state.auth.user);
+      const uid = useSelector((state) => state.auth.user.uid);
   useEffect(() => {
     getList()
   }, [])

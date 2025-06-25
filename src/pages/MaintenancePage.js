@@ -15,7 +15,7 @@ export default function MaintenancePage(props) {
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
-    const uid = useSelector((state) => state.auth.user);
+      const uid = useSelector((state) => state.auth.user.uid);
   useEffect(() => {
     getList()
   }, [])

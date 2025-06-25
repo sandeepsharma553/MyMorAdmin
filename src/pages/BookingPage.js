@@ -18,7 +18,7 @@ export default function BookingPage(props) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
-    const uid = useSelector((state) => state.auth.user);
+      const uid = useSelector((state) => state.auth.user.uid);
   const times = ['9:00 AM', '10:00 AM', '11:00 AM', '2:00 AM'];
   useEffect(() => {
     getList()
