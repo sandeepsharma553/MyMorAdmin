@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/HomePage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import SupportPage from "./pages/SupportPage";
+import AccountDeletionPage from "./pages/AccountDeletionPage";
 import Layout from './components/Layout';
 import { onAuthStateChanged, } from "firebase/auth";
 import { auth } from "./firebase";
@@ -37,6 +38,7 @@ function App() {
         ></Route>
         <Route exact path="/privacy" element={<PrivacyPolicyPage />}></Route>
         <Route exact path="/support" element={<SupportPage />}></Route>
+        <Route path="/requestdelete" element={<AccountDeletionPage />} />
         <Route
           index
           path="/home/*"
