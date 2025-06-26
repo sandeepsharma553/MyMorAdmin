@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../../firebase";
+import { auth, db } from "../../firebase";
+import { doc, getDoc } from 'firebase/firestore';
 import { ToastContainer, toast } from "react-toastify";
 
 const getLoginErrorMessage = (code) => {
@@ -24,11 +25,33 @@ const getLoginErrorMessage = (code) => {
   }
 }
 export const LoginAdmin = createAsyncThunk(
+
   "auth/loginadmin",
-  async (userData, { rejectWithValue }) => {
+  async (userData, { dispatch, rejectWithValue }) => {
     try {
       const res = await signInWithEmailAndPassword(auth, userData.EmailID, userData.Password);
       const response = { 'isSuccess': true, 'message': 'ok', 'data': res.user }
+      const employee = await dispatch(getEmployeeByUid(res.user.uid)).unwrap();
+      // return { response, employee };
+      return response;
+    } catch (error) {
+
+      toast.error(getLoginErrorMessage(error.code))
+
+      return rejectWithValue(error.code || "Failed to login");
+    }
+  }
+);
+export const getEmployeeByUid = createAsyncThunk(
+  "auth/getEemployeeByUid",
+  async (uid, { rejectWithValue }) => {
+    try {
+
+      if (!uid) throw new Error('UID is missing');
+
+      const docRef = doc(db, 'employee', uid);
+      const docSnap = await getDoc(docRef);
+      const response = { id: docSnap.id, ...docSnap.data() }
       return response;
     } catch (error) {
 
@@ -44,6 +67,7 @@ export const logoutAdmin = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       localStorage.removeItem("userData");
+      localStorage.removeItem("employee");
       return null;
     } catch (error) {
       return rejectWithValue(error.message || "Failed to logout"); // Provide a custom error message
@@ -58,6 +82,10 @@ const AuthSlice = createSlice({
     isLoading: false,
     error: null,
     user: JSON.parse(localStorage.getItem("userData")) || null,
+    employee:
+      localStorage.getItem('employee') !== null && localStorage.getItem('employee') !== 'undefined'
+        ? JSON.parse(localStorage.getItem('employee'))
+        : null,
   },
   reducers: {},
   extraReducers: (builder) => {
@@ -70,7 +98,7 @@ const AuthSlice = createSlice({
           action.payload.isSuccess
         ) {
           state.isLoading = false;
-          state.user = action.payload;
+          state.user = action.payload.data;
           state.isLoggedIn = true;
           localStorage.setItem("userData", JSON.stringify(action.payload.data));
         } else {
@@ -81,13 +109,36 @@ const AuthSlice = createSlice({
       .addCase(LoginAdmin.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload.error;
-      });
+      })
+      .addCase(getEmployeeByUid.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(getEmployeeByUid.fulfilled, (state, action) => {
+        console.log(action.payload)
+        if (
+          action.payload
+        ) {
+          state.isLoading = false;
+          state.employee = action.payload;
+          localStorage.setItem("employee", JSON.stringify(action.payload));
+        } else {
+          state.isLoading = false;
+          state.error = "user not found.";
+        }
+      })
+      .addCase(getEmployeeByUid.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload.error;
+      })
+
     builder.addCase(logoutAdmin.fulfilled, (state) => {
       state.isLoading = false;
       state.isLoggedIn = false;
       state.user = null;
       state.error = null;
+      state.employee = null;
       localStorage.removeItem("userData");
+      localStorage.removeItem("employee");
     });
   },
 });

@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { collection, addDoc, getDocs, updateDoc, doc,setDoc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
-import { db, storage, auth } from "../firebase";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { useSelector } from "react-redux";
 import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
+import { collection, addDoc, getDocs, updateDoc, doc, setDoc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
+import { db, storage, auth, firebaseConfig } from "../firebase";
+import { initializeApp, deleteApp, FirebaseApp } from 'firebase/app';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getAuth, createUserWithEmailAndPassword, updateProfile, deleteUser } from "firebase/auth";
+import { useSelector } from "react-redux";
+import { getFunctions, httpsCallable, } from "firebase/functions";
 export default function EmployeePage(props) {
   const { navbarHeight } = props;
   const [searchTerm, setSearchTerm] = useState('');
@@ -18,10 +20,8 @@ export default function EmployeePage(props) {
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
-  const [selected, setSelected] = useState([]);
   const uid = useSelector((state) => state.auth.user.uid);
   const user = useSelector((state) => state.auth.user);
-   
   const initialForm = {
     id: 0,
     name: '',
@@ -35,7 +35,9 @@ export default function EmployeePage(props) {
     permissions: [],
   }
   const [form, setForm] = useState(initialForm);
-  const MENU_OPTIONS = ["Dashboard", "Employee", "Settings", "Reports"];
+  const MENU_OPTIONS = ["Dashboard", "Employee", "Dining Menu", "Cleaning Schedule","Maintenance","Booking Room",
+    "Academic Groups","Report Incident","Announcement","Event","Deal","University","Hostel"
+  ];
   const pageSize = 10;
   const mockData = list
   const filteredData = mockData.filter(
@@ -61,7 +63,7 @@ export default function EmployeePage(props) {
     }));
     setList(documents)
     setIsLoading(false)
-
+   console.log(documents)
   }
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
@@ -82,22 +84,7 @@ export default function EmployeePage(props) {
     const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return EMAIL_REGEX.test(email.trim());
   };
-  const handlePermissionChange = (e) => {
-    const element = e?.target;
-    if (!element || !element.options) {
-      console.warn("Multi-select element is not valid");
-      return;
-    }
 
-    const selected = [];
-    for (let i = 0; i < element.options.length; i++) {
-      const opt = element.options[i];
-      if (opt.selected) selected.push(opt.value);
-    }
-
-    setForm((prev) => ({ ...prev, permissions: selected }));
-    console.log(form)
-  };
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -105,12 +92,12 @@ export default function EmployeePage(props) {
         toast.error("Please enter a valid email address");
         return;
       }
-      if (form.id == 0) {
-        if (!form.image) {
-          toast.error("Please choose the file")
-          return;
-        }
-      }
+      // if (form.id == 0) {
+      //   if (!form.image) {
+      //     toast.error("Please choose the file")
+      //     return;
+      //   }
+      // }
       let imageUrl = form.imageUrl || '';
       const isNewImage = form.image instanceof File;
 
@@ -120,14 +107,20 @@ export default function EmployeePage(props) {
         await uploadBytes(storageRef, form.image);
         imageUrl = await getDownloadURL(storageRef);
       }
+      const password = `${form.name}321`;
       const employeeData = {
         ...form,
         uid,
+        password,
         ...(imageUrl && { imageUrl }),
       };
       delete employeeData.id;
       delete employeeData.image;
+      const tempApp = initializeApp(firebaseConfig, 'employeeCreator');
+      const tempAuth = getAuth(tempApp);
+
       if (editingData) {
+        delete employeeData.password;
         const docRef = doc(db, 'employee', form.id);
         const docSnap = await getDoc(docRef);
 
@@ -140,14 +133,14 @@ export default function EmployeePage(props) {
         toast.success('Employee updated successfully');
       }
       else {
-        const password = `${form.name}321`;
-        const userCredential = await createUserWithEmailAndPassword(auth, form.email, password);
+        const userCredential = await createUserWithEmailAndPassword(tempAuth, form.email, password);
         const user = userCredential.user;
         await updateProfile(user, {
           displayName: form.name,
         })
         await setDoc(doc(db, "employee", user.uid), employeeData);
         toast.success('Empoyee created successfully');
+
       }
       getList()
       setModalOpen(false);
@@ -155,7 +148,7 @@ export default function EmployeePage(props) {
       setForm(initialForm);
       setFileName('No file chosen');
     } catch (error) {
-      if(error.code === 'auth/email-already-in-use'){
+      if (error.code === 'auth/email-already-in-use') {
         toast.error('this email already in use')
       }
       console.error("Error saving data:", error);
@@ -164,9 +157,27 @@ export default function EmployeePage(props) {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, 'employee', form.id));
-      toast.success('Successfully deleted!');
-      getList()
+      const uid = form.id;
+      const response = await fetch(
+        'https://us-central1-mymor-one.cloudfunctions.net/deleteUserByUid',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ uid }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'Failed to send code');
+      }
+      else if (data.success) {
+        await deleteDoc(doc(db, 'employee', form.id));
+        toast.success('Successfully deleted!');
+        getList()
+      }
+
     } catch (error) {
       console.error('Error deleting document: ', error);
     }
@@ -215,6 +226,7 @@ export default function EmployeePage(props) {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Designation</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Department</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Role</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Password</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Image</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
@@ -236,7 +248,7 @@ export default function EmployeePage(props) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.designation}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.department}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.role}</td>
-
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.password}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <span
                         style={{
@@ -251,7 +263,7 @@ export default function EmployeePage(props) {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.imageUrl != "" ? (<img src={item.imageUrl} width={80} height={80} />) : null}
+                      {item?.imageUrl != "" || item?.imageUrl !=undefined ? (<img src={item.imageUrl} width={80} height={80} />) : null}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button className="text-blue-600 hover:underline mr-3" onClick={() => {
@@ -260,7 +272,7 @@ export default function EmployeePage(props) {
                           ...prev,
                           ...item,
                           id: item.id,
-                          permissions: item.permissions?.length > 0 ? item.permissions: [],
+                          permissions: item.permissions?.length > 0 ? item.permissions : [],
                           image: null
                         }));
                         setModalOpen(true);
@@ -310,7 +322,7 @@ export default function EmployeePage(props) {
                 <input name="name" placeholder="Name" value={form.name}
                   onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
 
-                <input name="email" placeholder="Email" value={form.email}
+                <input name="email" placeholder="Email" value={form.email} disabled={editingData}
                   onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                 {form.email && !isEmailValid(form.email) && (
                   <p className="text-red-500 text-sm mt-1">Invalid email format</p>
@@ -325,6 +337,7 @@ export default function EmployeePage(props) {
                   <option value="">Select Role</option>
                   <option value="HR">HR</option>
                   <option value="Manager">Manager</option>
+                  <option value="Staff">Staff</option>
 
                 </select>
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">

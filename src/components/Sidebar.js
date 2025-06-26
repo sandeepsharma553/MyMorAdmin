@@ -7,12 +7,10 @@ import {
   Handshake, Utensils, GraduationCap, Hotel, Bell, UserPlus
 } from "lucide-react";
 import { useSelector } from "react-redux";
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from "../../src/firebase";
-function Sidebar({ user, onSectionClick, isLoading, error }) {
+function Sidebar({ onSectionClick, isLoading, error }) {
   const [activeSection, setActiveSection] = useState("dashboard");
   const navigate = useNavigate();
-  const uid = useSelector((state) => state.auth.user.uid);
+  const employee = useSelector((state) => state.auth.employee);
   const [permission, setPermission] = useState(null)
   const handleClick = (section) => {
     setActiveSection(section);
@@ -22,23 +20,9 @@ function Sidebar({ user, onSectionClick, isLoading, error }) {
     navigate(`/home/${section}`);
   };
   useEffect(() => {
-    if (uid) {
-      getEmployeeByUid();
-      console.log({ permission, uid })
-    }
-
-  }, [uid])
-
-  const getEmployeeByUid = async () => {
-    if (!uid) throw new Error('UID is missing');
-    const docRef = doc(db, 'employee', uid);
-    const docSnap = await getDoc(docRef);
-    const user = { id: docSnap.id, ...docSnap.data() }
-    if (user.permissions?.legth > 0) {
-      console.log(user.permissions)
-      setPermission(user.permissions)
-    }
-  }
+    setPermission(employee.permissions)
+    console.log(permission)
+  }, [employee])
 
   return (
     <div

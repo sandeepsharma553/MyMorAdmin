@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import {  MenuIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { MenuIcon } from 'lucide-react';
 import '../index.css';
 import Menu from "@mui/material/Menu";
 import Box from "@mui/material/Box";
@@ -14,72 +15,78 @@ import { logoutAdmin } from "../app/features/AuthSlice";
 export default function Header({ onClick }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [anchorElUser, setAnchorElUser] = useState(null);
-  const settings = ["Logout"];
+  const settings = ["ChangePassword", "Logout"];
   const handleOpenUserMenu = (event) => {
     setAnchorElUser(event.currentTarget);
   };
   const handleCloseUserMenu = () => {
     setAnchorElUser(null);
   };
+  const navigate = useNavigate();
   const dispatch = useDispatch();
   const handleLogout = () => {
-    dispatch(logoutAdmin()); // Assuming your token is stored as "userToken"
-    // Close the user menu after logout
+    dispatch(logoutAdmin());
+    handleCloseUserMenu();
+  };
+  const handleMenuSelect = (setting) => {
+    if (setting === "ChangePassword") {
+      navigate("/home/changepassword");
+    } else if (setting === "Logout") {
+      handleLogout();
+    }
     handleCloseUserMenu();
   };
   return (
     <header className="bg-blue-600 text-white p-2 header">
-       <div className="flex items-center justify-between">
-      <div className="flex items-center space-x-4">
-        <button
-          className="p-2"
-          onClick={() => {
-            setSidebarOpen(!sidebarOpen)
-            onClick(!sidebarOpen)
-          }}
-        >
-          {sidebarOpen ? <MenuIcon size={24} /> : <MenuIcon size={24} />}
-        </button>
-        <h1 className="text-xl font-bold">My Mor</h1>
-      </div>
-      <div className="flex items-center">
-        <Box sx={{ flexGrow: 0, }}>
-          <Tooltip title="Open settings">
-            <IconButton onClick={handleOpenUserMenu} sx={{ p: 0 }}>
-              <Avatar alt="" src={logoImage} />
-            </IconButton>
-          </Tooltip>
-          <Menu
-            sx={{ mt: "45px" }}
-            id="menu-appbar"
-            anchorEl={anchorElUser}
-            anchorOrigin={{
-              vertical: "top",
-              horizontal: "right",
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <button
+            className="p-2"
+            onClick={() => {
+              setSidebarOpen(!sidebarOpen)
+              onClick(!sidebarOpen)
             }}
-            keepMounted
-            transformOrigin={{
-              vertical: "top",
-              horizontal: "right",
-            }}
-            open={Boolean(anchorElUser)}
-            onClose={handleCloseUserMenu}
           >
-            {settings.map((setting) => (
-              <MenuItem
-                key={setting}
-                onClick={
-                  setting === "Logout" ? handleLogout : handleCloseUserMenu
-                }
-              >
-                <Typography textAlign="center">{setting}</Typography>
-              </MenuItem>
-            ))}
-          </Menu>
-        </Box>
-      </div>
+            {sidebarOpen ? <MenuIcon size={24} /> : <MenuIcon size={24} />}
+          </button>
+          <h1 className="text-xl font-bold">My Mor</h1>
+        </div>
+        <div className="flex items-center">
+          <Box sx={{ flexGrow: 0, }}>
+            <Tooltip title="Open settings">
+              <IconButton onClick={handleOpenUserMenu} sx={{ p: 0 }}>
+                <Avatar alt="" src={logoImage} />
+              </IconButton>
+            </Tooltip>
+            <Menu
+              sx={{ mt: "45px" }}
+              id="menu-appbar"
+              anchorEl={anchorElUser}
+              anchorOrigin={{
+                vertical: "top",
+                horizontal: "right",
+              }}
+              keepMounted
+              transformOrigin={{
+                vertical: "top",
+                horizontal: "right",
+              }}
+              open={Boolean(anchorElUser)}
+              onClose={handleCloseUserMenu}
+            >
+              {settings.map((setting) => (
+                <MenuItem
+                  key={setting}
+                  onClick={() => handleMenuSelect(setting)}
+                >
+                  <Typography textAlign="center">{setting}</Typography>
+                </MenuItem>
+              ))}
+            </Menu>
+          </Box>
+        </div>
       </div>
     </header>
-  
+
   );
 }

@@ -6,6 +6,7 @@ import Footer from './Footer';
 
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* <button

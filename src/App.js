@@ -10,16 +10,19 @@ import SupportPage from "./pages/SupportPage";
 import AccountDeletionPage from "./pages/AccountDeletionPage";
 import Layout from './components/Layout';
 import { onAuthStateChanged, } from "firebase/auth";
-import { auth } from "./firebase";
+import { auth, db } from "./firebase";
+
 function App() {
   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
   const [user, setUser] = useState(null);
+  const uid = useSelector((state) => state?.auth?.user?.uid);
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+      setUser(currentUser)
     });
     return () => unsubscribe();
   }, []);
+
   return (
     <Router>
       {/* <nav>
@@ -43,6 +46,7 @@ function App() {
           index
           path="/home/*"
           element={isLoggedIn ? <Layout><HomePage /></Layout> : <Navigate to="/" />}
+
         ></Route>
       </Routes>
     </Router>
