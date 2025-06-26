@@ -35,9 +35,25 @@ export default function EmployeePage(props) {
     permissions: [],
   }
   const [form, setForm] = useState(initialForm);
-  const MENU_OPTIONS = ["Dashboard", "Employee", "Dining Menu", "Cleaning Schedule","Maintenance","Booking Room",
-    "Academic Groups","Report Incident","Announcement","Event","Deal","University","Hostel"
+  const MENU_OPTIONS1 = ["Dashboard", "Employee", "Dining Menu", "Cleaning Schedule", "Maintenance", "Booking Room",
+    "Academic Groups", "Report Incident", "Announcement", "Event", "Deal", "University", "Hostel"
   ];
+  const MENU_OPTIONS = [{ key: "dashboard", label: "Dashboard" },
+  // { key: "employee", label: "Employee", },
+  { key: "diningmenupage", label: "Dining Menu", },
+  { key: "cleaningpage", label: "Cleaning Schedule", },
+  { key: "maintenancepage", label: "Maintenance", },
+  { key: "bookingpage", label: "Book a Room", },
+  { key: "academicpage", label: "Academic Groups", },
+  { key: "reportpage", label: "Report Incident", },
+  { key: "announcement", label: "Announcement", },
+  { key: "eventpage", label: "Event", },
+  { key: "dealpage", label: "Deals", },
+  { key: "university", label: "University", },
+  { key: "hostel", label: "Hostel", },];
+  const LABEL_BY_KEY = Object.fromEntries(
+    MENU_OPTIONS.map(({ key, label }) => [key, label])
+  );
   const pageSize = 10;
   const mockData = list
   const filteredData = mockData.filter(
@@ -63,7 +79,7 @@ export default function EmployeePage(props) {
     }));
     setList(documents)
     setIsLoading(false)
-   console.log(documents)
+    console.log(documents)
   }
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
@@ -263,7 +279,7 @@ export default function EmployeePage(props) {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item?.imageUrl != "" || item?.imageUrl !=undefined ? (<img src={item.imageUrl} width={80} height={80} />) : null}
+                      {item?.imageUrl != "" || item?.imageUrl != undefined ? (<img src={item.imageUrl} width={80} height={80} />) : null}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button className="text-blue-600 hover:underline mr-3" onClick={() => {
@@ -358,23 +374,23 @@ export default function EmployeePage(props) {
                 <div>
 
                   <Select
-                    className="w-full border border-gray-300 p-2 rounded"
+                   className="w-full border border-gray-300 p-2 rounded"
                     multiple
                     displayEmpty
                     value={form.permissions}
-                    onChange={e => setForm({ ...form, permissions: e.target.value })}
-                    renderValue={selected =>
-                      selected.length ? selected.join(', ') : 'Select Permission'
+                    onChange={(e) => setForm({ ...form, permissions: e.target.value })}
+                    renderValue={(selected) =>
+                      selected.length
+                        ? (selected).map((k) => LABEL_BY_KEY[k]).join(", ")
+                        : "Select Permission"
                     }
-                    sx={{ minWidth: 260 }}
                   >
-                    {MENU_OPTIONS.map(skill => (
-                      <MenuItem key={skill} value={skill}>
-                        <Checkbox checked={form.permissions.indexOf(skill) > -1} />
-                        <ListItemText primary={skill} />
+                    {MENU_OPTIONS.map(({ key, label }) => (
+                      <MenuItem key={key} value={key}>
+                        <Checkbox checked={form.permissions.includes(key)} />
+                        <ListItemText primary={label} />
                       </MenuItem>
                     ))}
-
                   </Select>
                 </div>
                 <label className="flex items-center gap-3 cursor-pointer select-none">
