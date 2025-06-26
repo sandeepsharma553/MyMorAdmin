@@ -26,6 +26,7 @@ const SECTIONS = [
   { key: "dealpage", label: "Deals", Icon: Utensils },
   { key: "university", label: "University", Icon: GraduationCap },
   { key: "hostel", label: "Hostel", Icon: Hotel },
+  { key: "resources", label: "Resources", Icon: Hotel },
 ];
 
 function Sidebar({ onSectionClick, isLoading }) {

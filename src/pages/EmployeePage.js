@@ -50,7 +50,9 @@ export default function EmployeePage(props) {
   { key: "eventpage", label: "Event", },
   { key: "dealpage", label: "Deals", },
   { key: "university", label: "University", },
-  { key: "hostel", label: "Hostel", },];
+  { key: "hostel", label: "Hostel", },
+  { key: "resources", label: "Resources", },
+];
   const LABEL_BY_KEY = Object.fromEntries(
     MENU_OPTIONS.map(({ key, label }) => [key, label])
   );
