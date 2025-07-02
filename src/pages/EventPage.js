@@ -7,6 +7,12 @@ import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import dayjs from 'dayjs';
 import MapLocationInput from "../components/MapLocationInput";
+import { MapPin } from "lucide-react";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
+import Button from "@mui/material/Button";
 export default function EventPage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);
@@ -17,6 +23,7 @@ export default function EventPage(props) {
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
   const [category, setCategory] = useState(null)
+  const [showMapModal, setShowMapModal] = useState(false);
   const initialFormData = {
     id: 0,
     eventName: '',
@@ -312,11 +319,19 @@ export default function EventPage(props) {
 
                 <input name="address" placeholder="Address / Room" value={form.address} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
 
-                <input name="mapLocation" placeholder="Map Location (lat,long)" value={form.mapLocation} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-                <MapLocationInput
-                  value={form.mapLocation}
-                  onChange={(val) => setForm({ ...form, mapLocation: val })}
-                />
+                {/* <input name="mapLocation" placeholder="Map Location (lat,long)" value={form.mapLocation} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" /> */}
+
+                <div className="relative">
+                  <input
+                    name="mapLocation"
+                    readOnly      
+                    placeholder="Select on map"
+                    value={form.mapLocation}
+                    onClick={() => setShowMapModal(true)}
+                    className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer"
+                  />
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                </div>
                 <input name="onlineLink" placeholder="Online Event Link" value={form.onlineLink} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">
@@ -483,6 +498,33 @@ export default function EventPage(props) {
           </div>
         </div>
       )}
+      <Dialog
+        open={showMapModal}
+        onClose={() => setShowMapModal(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Pick a Location</DialogTitle>
+
+        <DialogContent dividers sx={{ overflow: "hidden" }}>
+          <MapLocationInput
+            value={form.mapLocation}
+            onChange={(val) => setForm({ ...form, mapLocation: val })}
+          />
+        </DialogContent>
+
+        <DialogActions>
+          <Button onClick={() => setShowMapModal(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => setShowMapModal(false)}
+            disabled={!form.mapLocation}
+          >
+            Save location
+          </Button>
+        </DialogActions>
+      </Dialog>
+
 
       <ToastContainer />
 

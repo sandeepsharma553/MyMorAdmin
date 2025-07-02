@@ -11,23 +11,14 @@ import usePlacesAutocomplete, {
 } from "use-places-autocomplete";
 
 const containerStyle = { height: "300px", width: "100%" };
-
+const fallbackPos = { lat: 28.6139, lng: 77.2090 };
 function MapLocationInput({ value = "", onChange }) {
-
+    const [markerPos, setMarkerPos] = useState({ lat: 28.6139, lng: 77.209 });
     const { isLoaded } = useJsApiLoader({
         googleMapsApiKey: process.env.REACT_APP_GOOGLE_API_KEY,
         libraries: ["places"],
     });
 
-
-    const [markerPos, setMarkerPos] = useState({ lat: 28.6139, lng: 77.209 });
-
-
-    useEffect(() => {
-        if (!value) return;
-        const [lat, lng] = value.split(",").map(Number);
-        if (!isNaN(lat) && !isNaN(lng)) setMarkerPos({ lat, lng });
-    }, [value]);
 
 
     const updatePosition = useCallback(
@@ -39,6 +30,24 @@ function MapLocationInput({ value = "", onChange }) {
         [onChange]
     );
 
+    useEffect(() => {
+        if (value) return;               // parent already supplied coords
+        if (!navigator.geolocation) {
+            console.info("Geolocation not supported; using fallback.");
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            ({ coords }) => updatePosition(coords.latitude, coords.longitude),
+            () => console.info("User denied geolocation; using fallback.")
+        );
+    }, []);
+
+    useEffect(() => {
+        if (!value) return;
+        const [lat, lng] = value.split(",").map(Number);
+        if (!isNaN(lat) && !isNaN(lng)) setMarkerPos({ lat, lng });
+    }, [value]);
 
     const {
         ready,
