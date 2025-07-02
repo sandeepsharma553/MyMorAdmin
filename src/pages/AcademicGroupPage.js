@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { db, database, storage } from "../../src/firebase";
 import { ref as dbRef, onValue, set, push, update, remove, get } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { collection, addDoc, getDocs, } from "firebase/firestore";
 import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -15,6 +16,7 @@ export default function AcademicGroupPage(props) {
   const [fileName, setFileName] = useState('No file chosen');
   const [isLoading, setIsLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1);
+  const [academicCatlist, setAcademicCatList] = useState([])
   const uid = useSelector((state) => state.auth.user.uid);
   const initialForm = {
     id: 0,
@@ -49,8 +51,18 @@ export default function AcademicGroupPage(props) {
   );
   useEffect(() => {
     getList()
+    getAcademicCatList()
   }, [])
-
+  const getAcademicCatList = async () => {
+    setIsLoading(true)
+    const querySnapshot = await getDocs(collection(db, 'academiccategory'));
+    const documents = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    setAcademicCatList(documents)
+    setIsLoading(false)
+  }
 
 
   const getList = async () => {
@@ -93,7 +105,7 @@ export default function AcademicGroupPage(props) {
   const handleChange = (e) => {
     const { name, value, type, checked, files } = e.target;
     if (type === 'checkbox') {
-      setForm(prev => ({ ...prev, [name]: checked }));        
+      setForm(prev => ({ ...prev, [name]: checked }));
     }
     else if (type === 'file') {
       setForm({ ...form, [name]: files[0] });
@@ -136,7 +148,7 @@ export default function AcademicGroupPage(props) {
         creatorId: uid,
         ...(posterUrl && { posterUrl }),
       };
-    
+
       delete form.poster;
 
       if (editingData) {
@@ -145,7 +157,7 @@ export default function AcademicGroupPage(props) {
           creatorId: uid,
           ...(posterUrl && { posterUrl }),
         }).then(() => {
-          
+
         })
           .catch((error) => {
             console.error('Error updating data:', error);
@@ -161,7 +173,7 @@ export default function AcademicGroupPage(props) {
           ...(posterUrl && { posterUrl }),
         })
           .then(() => {
-          
+
           })
           .catch((error) => {
             console.error('Error saving data:', error);
@@ -187,7 +199,7 @@ export default function AcademicGroupPage(props) {
       const groupRef = dbRef(database, `groups/${form.id}`); // adjust your path as needed
       remove(groupRef)
         .then(() => {
-          
+
         })
         .catch((error) => {
           console.error('Error deleting group:', error);
@@ -308,11 +320,10 @@ export default function AcademicGroupPage(props) {
                 ></textarea>
                 <select name="category" value={form.category} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required >
                   <option value="">Select Category</option>
-                  <option value="StudyGroup">Study Group</option>
-                  <option value="Foodies">Foodies</option>
-                  <option value="Gaming">Gaming</option>
-                  <option value="Crypto">Crypto</option>
-                  <option value="Events">Events</option>
+
+                  {academicCatlist.map((item, i) => (
+                    <option value={item.name}>{item.name}</option>
+                  ))}
                 </select>
                 <input name="tags" value={form.tags} onChange={handleChange} placeholder="Tags / Interests (comma separated)" className="w-full border border-gray-300 p-2 rounded" />
                 {/* 📸 Media */}
