@@ -81,6 +81,7 @@ export default function MaintenancePage(props) {
           imageUrl,
           updatedBy: uid,
           updatedDate: new Date(),
+          status:'Resolved'
         });
         toast.success('Successfully updated');
         getList()
@@ -101,6 +102,7 @@ export default function MaintenancePage(props) {
           imageUrl,
           createdBy: uid,
           createdDate: new Date(),
+          status:'Pending'
         });
         toast.success("Successfully saved");
         getList()

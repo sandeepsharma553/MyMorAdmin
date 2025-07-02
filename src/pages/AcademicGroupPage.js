@@ -38,7 +38,7 @@ export default function AcademicGroupPage(props) {
     autoAlert: true,
   }
   const [form, setForm] = useState(initialForm);
-  const pageSize = 5;
+  const pageSize = 10;
   const mockData = list
   const filteredData = mockData
 
@@ -203,7 +203,7 @@ export default function AcademicGroupPage(props) {
   };
 
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto">
+    <main className="flex-1 p-6 bg-gray-100 overflow-auto no-scrollbar">
       {/* Top bar with Add button */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Academic Group</h1>
@@ -216,7 +216,7 @@ export default function AcademicGroupPage(props) {
           + Add Group
         </button>
       </div>
-      <div className="overflow-x-auto bg-white rounded shadow">
+      <div className="overflow-x-auto bg-white rounded shadow no-scrollbar">
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
             <FadeLoader color="#36d7b7" loading={isLoading} />

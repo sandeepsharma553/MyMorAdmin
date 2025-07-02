@@ -15,6 +15,7 @@ export default function EventPage(props) {
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
+  const [category, setCategory] = useState(null)
   const initialFormData = {
     id: 0,
     eventName: '',
@@ -49,12 +50,13 @@ export default function EventPage(props) {
     boothOption: false,
     vendorInfo: '',
     sponsorship: '',
-    interestedCount:0
+    interestedCount: 0
   }
   const [form, setForm] = useState(initialFormData);
-      const uid = useSelector((state) => state.auth.user.uid);
+  const uid = useSelector((state) => state.auth.user.uid);
   useEffect(() => {
     getList()
+    getCategory()
   }, [])
   const getDayFromDate = () => {
     const date = new Date;
@@ -68,6 +70,16 @@ export default function EventPage(props) {
       ...doc.data(),
     }));
     setList(documents)
+    setIsLoading(false)
+  }
+  const getCategory = async () => {
+    setIsLoading(true)
+    const querySnapshot = await getDocs(collection(db, 'eventcategory'));
+    const documents = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    setCategory(documents)
     setIsLoading(false)
   }
   const handleChange = (e) => {
@@ -92,7 +104,7 @@ export default function EventPage(props) {
     e.preventDefault();
     let posterUrl = '';
     try {
-   
+
       if (form.id == 0) {
         if (!form.poster) {
           toast.error("Please choose the file")
@@ -162,7 +174,7 @@ export default function EventPage(props) {
   };
   const formatDateTime = (isoString) => {
     const date = dayjs(isoString.seconds * 1000).format('YYYY-MM-DD hh:mm A');
-   
+
     // const year = date.getFullYear();
     // const month = `${date.getMonth() + 1}`.padStart(2, '0');
     // const day = `${date.getDate()}`.padStart(2, '0');
@@ -179,7 +191,7 @@ export default function EventPage(props) {
 
 
   const addPriceOption = () => {
-    setForm({ ...form, prices: [...form.prices, { type: '', amount: '',validUntil: ''  }] });
+    setForm({ ...form, prices: [...form.prices, { type: '', amount: '', validUntil: '' }] });
   };
 
   const handlePriceChange = (index, field, value) => {
@@ -271,10 +283,11 @@ export default function EventPage(props) {
 
                 <select name="category" value={form.category} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required >
                   <option value="">Select Category</option>
-                  <option value="Social">Social</option>
-                  <option value="Academic">Academic</option>
-                  <option value="Party">Party</option>
-                  <option value="Workshop">Workshop</option>
+
+                  {category.map((item, i) => (
+                    <option value={item.name}>{item.name}</option>
+                  ))}
+
                 </select>
 
                 <input name="tags" placeholder="Tags (comma separated)" value={form.tags} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
@@ -286,6 +299,7 @@ export default function EventPage(props) {
                 {form.isRecurring && (
                   <select name="frequency" value={form.frequency} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded">
                     <option value="">Select Frequency</option>
+
                     <option value="Daily">Daily</option>
                     <option value="Weekly">Weekly</option>
                     <option value="Monthly">Monthly</option>
@@ -345,14 +359,14 @@ export default function EventPage(props) {
                             <option value="VIP">VIP</option>
                           </select>
                         )}
-                       {form.priceType === 'MultiPriceTimer' && (
-                        <select name="Type" value={price.type} onChange={(e) => handlePriceChange(index, 'type', e.target.value)} className="w-full border border-gray-300 p-2 rounded" required >
-                          <option value="">Select Type</option>
-                          <option value="Fisrt Day">Fisrt Day</option>
-                          <option value="Second Day">Second Day</option>
-                          <option value="Third Day">Third Day</option>
-                        </select>
-                       )}
+                        {form.priceType === 'MultiPriceTimer' && (
+                          <select name="Type" value={price.type} onChange={(e) => handlePriceChange(index, 'type', e.target.value)} className="w-full border border-gray-300 p-2 rounded" required >
+                            <option value="">Select Type</option>
+                            <option value="Fisrt Day">Fisrt Day</option>
+                            <option value="Second Day">Second Day</option>
+                            <option value="Third Day">Third Day</option>
+                          </select>
+                        )}
                         <input
                           placeholder="Amount"
                           type="number"

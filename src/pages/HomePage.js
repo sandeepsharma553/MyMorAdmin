@@ -17,6 +17,7 @@ import AnnouncementPage from "./AnnouncementPage";
 import EmployeePage from "./EmployeePage";
 import ChangePasswordPage from "./ChangePasswordPage";
 import ResourcesPage from "./ResourcesPage";
+import SettingPage from "./SettingPage";
 function HomePage() {
   const navigate = useNavigate();
   const [userRole, setUserRole] = useState();
@@ -52,6 +53,7 @@ function HomePage() {
           <Route path="/employee" element={<EmployeePage />} />
           <Route path="/changepassword" element={<ChangePasswordPage />} />
           <Route path="/resources" element={<ResourcesPage />} />
+          <Route path="/setting" element={<SettingPage />} />
         </Routes>
       </div>
     </div>

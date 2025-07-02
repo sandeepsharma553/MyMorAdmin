@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword,signOut } from "firebase/auth";
 import { auth, db } from "../../firebase";
 import { doc, getDoc } from 'firebase/firestore';
 import { ToastContainer, toast } from "react-toastify";
@@ -66,6 +66,8 @@ export const logoutAdmin = createAsyncThunk(
   "auth/logout",
   async (_, { rejectWithValue }) => {
     try {
+      signOut(auth);
+      localStorage.removeItem('loginTime');
       localStorage.removeItem("userData");
       localStorage.removeItem("employee");
       return null;
@@ -101,6 +103,7 @@ const AuthSlice = createSlice({
           state.user = action.payload.data;
           state.isLoggedIn = true;
           localStorage.setItem("userData", JSON.stringify(action.payload.data));
+          localStorage.setItem('loginTime', Date.now());
         } else {
           state.isLoading = false;
           state.error = "Invalid user or login failed.";

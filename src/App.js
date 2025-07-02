@@ -9,20 +9,44 @@ import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import SupportPage from "./pages/SupportPage";
 import AccountDeletionPage from "./pages/AccountDeletionPage";
 import Layout from './components/Layout';
-import { onAuthStateChanged, } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from "./firebase";
 
 function App() {
   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
   const [user, setUser] = useState(null);
   const uid = useSelector((state) => state?.auth?.user?.uid);
+  const sessionDuration = 24 * 60 * 60 * 1000;
+  const sessionDuration1 = 60 * 1000;
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser)
     });
     return () => unsubscribe();
   }, []);
+  useEffect(() => {
+    const loginTime = localStorage.getItem('loginTime');
+    if (loginTime) {
+      const expirationTime = Number(loginTime) + sessionDuration;
+      const timeLeft = expirationTime - Date.now();
 
+      if (timeLeft <= 0) {
+        signOut(auth);
+        localStorage.removeItem('loginTime');
+        localStorage.removeItem("userData");
+        localStorage.removeItem("employee");
+      } else {
+        const timer = setTimeout(() => {
+          signOut(auth);
+          localStorage.removeItem('loginTime');
+          localStorage.removeItem("userData");
+          localStorage.removeItem("employee");
+        }, timeLeft);
+
+        return () => clearTimeout(timer);
+      }
+    }
+  }, []);
   return (
     <Router>
       {/* <nav>

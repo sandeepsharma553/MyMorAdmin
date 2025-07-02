@@ -7,19 +7,29 @@ import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 export default function BookingPage(props) {
   const { navbarHeight } = props;
-  
+
   const [roomType, setRoomType] = useState('Study Room');
   const [date, setDate] = useState('2025-05-14');
   const [selectedTime, setSelectedTime] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
-  const [newData, setNew] = useState({ roomname: '', id: 0, time: '', date: '',status:'' });
+  const [newData, setNew] = useState({ roomname: '', id: 0, time: '', date: '', status: '' });
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
-      const uid = useSelector((state) => state.auth.user.uid);
+  const uid = useSelector((state) => state.auth.user.uid);
   const times = ['9:00 AM', '10:00 AM', '11:00 AM', '2:00 AM'];
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+  const mockData = list
+  const filteredData = mockData
+
+  const totalPages = Math.ceil(filteredData.length / pageSize);
+  const paginatedData = filteredData.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
   useEffect(() => {
     getList()
   }, [])
@@ -50,7 +60,7 @@ export default function BookingPage(props) {
           roomname: newData.roomname,
           date: newData.date,
           time: newData.time,
-          status:'Active',
+          status: 'Active',
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -66,7 +76,7 @@ export default function BookingPage(props) {
           roomname: newData.roomname,
           date: newData.date,
           time: newData.time,
-          status:'Booked'
+          status: 'Booked'
         });
         toast.success("Successfully saved");
         getList()
@@ -78,7 +88,7 @@ export default function BookingPage(props) {
     // Reset
     setModalOpen(false);
     setEditing(null);
-    setNew({ roomname: '', id: 0, time: '', date: '',status:'' });
+    setNew({ roomname: '', id: 0, time: '', date: '', status: '' });
   };
   const handleDelete = async () => {
     if (!deleteData) return;
@@ -100,7 +110,7 @@ export default function BookingPage(props) {
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
-            setNew({ roomtype: '', id: 0, time: '', date: '',status:'' });
+            setNew({ roomtype: '', id: 0, time: '', date: '', status: '' });
             setModalOpen(true);
           }}>
           + Add
@@ -164,17 +174,24 @@ export default function BookingPage(props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {list.map((item, i) => (
-                <tr key={i}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.roomname}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.date}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.time}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    Booked
-
+              {paginatedData.length === 0 ? (
+                <tr>
+                  <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
+                    No matching data found.
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <button className="text-blue-600 hover:underline mr-3" onClick={() => {
+                </tr>
+              ) : (
+                paginatedData.map((item, i) => (
+                  <tr key={i}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.roomname}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.date}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.time}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      Booked
+
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <button className="text-blue-600 hover:underline mr-3" onClick={() => {
                         setEditing(item);
                         setNew(item);
                         setModalOpen(true);
@@ -184,12 +201,34 @@ export default function BookingPage(props) {
                         setNew(item);
                         setConfirmDeleteOpen(true);
                       }}>Delete</button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         )}
+      </div>
+      <div className="flex justify-between items-center mt-4">
+        <p className="text-sm text-gray-600">
+          Page {currentPage} of {totalPages}
+        </p>
+        <div className="space-x-2">
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
       </div>
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
