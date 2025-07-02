@@ -92,11 +92,10 @@ export default function AcademicGroupPage(props) {
   };
   const handleChange = (e) => {
     const { name, value, type, checked, files } = e.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
-    if (type === 'file') {
+    if (type === 'checkbox') {
+      setForm(prev => ({ ...prev, [name]: checked }));        
+    }
+    else if (type === 'file') {
       setForm({ ...form, [name]: files[0] });
       if (files.length > 0) {
         setFileName(files[0].name);

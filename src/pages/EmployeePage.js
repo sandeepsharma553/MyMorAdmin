@@ -40,19 +40,21 @@ export default function EmployeePage(props) {
   ];
   const MENU_OPTIONS = [{ key: "dashboard", label: "Dashboard" },
   // { key: "employee", label: "Employee", },
-  { key: "diningmenupage", label: "Dining Menu", },
-  { key: "cleaningpage", label: "Cleaning Schedule", },
-  { key: "maintenancepage", label: "Maintenance", },
-  { key: "bookingpage", label: "Book a Room", },
-  { key: "academicpage", label: "Academic Groups", },
-  { key: "reportpage", label: "Report Incident", },
-  { key: "announcement", label: "Announcement", },
-  { key: "eventpage", label: "Event", },
-  { key: "dealpage", label: "Deals", },
-  { key: "university", label: "University", },
-  { key: "hostel", label: "Hostel", },
-  { key: "resources", label: "Resources", },
-];
+  { key: "announcement", label: "Announcement" },
+  { key: "diningmenupage", label: "Dining Menu" },
+  { key: "cleaningpage", label: "Cleaning Schedule" },
+  { key: "maintenancepage", label: "Maintenance" },
+  { key: "bookingpage", label: "Book a Room" },
+  { key: "academicpage", label: "Academic Groups" },
+  { key: "reportpage", label: "Report Incident" },
+  { key: "feedback", label: "Feedback" },
+  { key: "resources", label: "Resources" },
+  { key: "eventpage", label: "Event" },
+  { key: "dealpage", label: "Deals" },
+  { key: "university", label: "University" },
+  { key: "hostel", label: "Hostel" },
+  { key: "setting", label: "Setting" },
+  ];
   const LABEL_BY_KEY = Object.fromEntries(
     MENU_OPTIONS.map(({ key, label }) => [key, label])
   );
@@ -376,7 +378,7 @@ export default function EmployeePage(props) {
                 <div>
 
                   <Select
-                   className="w-full border border-gray-300 p-2 rounded"
+                    className="w-full border border-gray-300 p-2 rounded"
                     multiple
                     displayEmpty
                     value={form.permissions}

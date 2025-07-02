@@ -15,20 +15,20 @@ const hasPermission = (perm, key) =>
 const SECTIONS = [
   { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
   { key: "employee", label: "Employee", Icon: UserPlus },
+  { key: "announcement", label: "Announcement", Icon: Bell },
   { key: "diningmenupage", label: "Dining Menu", Icon: Menu },
   { key: "cleaningpage", label: "Cleaning Schedule", Icon: BrushCleaning },
   { key: "maintenancepage", label: "Maintenance", Icon: Settings },
   { key: "bookingpage", label: "Book a Room", Icon: BookOpen },
   { key: "academicpage", label: "Academic Groups", Icon: Users },
   { key: "reportpage", label: "Report Incident", Icon: MessageSquareWarning },
-  { key: "announcement", label: "Announcement", Icon: Bell },
+  { key: "feedback", label: "Feedback", Icon: SettingsIcon },
+  { key: "resources", label: "Resources", Icon: Hotel },
   { key: "eventpage", label: "Event", Icon: Calendar },
   { key: "dealpage", label: "Deals", Icon: Utensils },
-  { key: "resources", label: "Resources", Icon: Hotel },
   { key: "university", label: "University", Icon: GraduationCap },
   { key: "hostel", label: "Hostel", Icon: Hotel },
   { key: "setting", label: "Setting", Icon: SettingsIcon },
-
 ];
 
 function Sidebar({ onSectionClick, isLoading }) {

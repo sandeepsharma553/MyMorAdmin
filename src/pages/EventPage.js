@@ -6,6 +6,7 @@ import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import dayjs from 'dayjs';
+import MapLocationInput from "../components/MapLocationInput";
 export default function EventPage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);
@@ -312,7 +313,10 @@ export default function EventPage(props) {
                 <input name="address" placeholder="Address / Room" value={form.address} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
 
                 <input name="mapLocation" placeholder="Map Location (lat,long)" value={form.mapLocation} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-
+                <MapLocationInput
+                  value={form.mapLocation}
+                  onChange={(val) => setForm({ ...form, mapLocation: val })}
+                />
                 <input name="onlineLink" placeholder="Online Event Link" value={form.onlineLink} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">

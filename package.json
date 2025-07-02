@@ -7,6 +7,7 @@
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^7.1.0",
     "@mui/material": "^7.1.0",
+    "@react-google-maps/api": "^2.20.7",
     "@reduxjs/toolkit": "^2.6.1",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
@@ -28,7 +29,9 @@
     "react-router-dom": "^7.4.0",
     "react-scripts": "5.0.1",
     "react-spinners": "^0.17.0",
+    "react-to-print": "^3.1.1",
     "react-toastify": "^11.0.5",
+    "use-places-autocomplete": "^4.0.1",
     "web-vitals": "^2.1.4",
     "xlsx": "^0.18.5",
     "yup": "^1.6.1"

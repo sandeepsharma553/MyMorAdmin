@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect,useRef } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc } from "firebase/firestore";
 import { db, storage } from "../../src/firebase";
 import { useSelector } from "react-redux";
@@ -7,7 +7,7 @@ import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import dayjs from 'dayjs';
 import { useReactToPrint } from "react-to-print";
-export default function ReportIncidentPage(props) {
+export default function FeedbackPage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({ id: 0, incidenttype: "", other: "", description: "", datetime: "", isreport: false, image: null, });
@@ -138,7 +138,7 @@ export default function ReportIncidentPage(props) {
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Report Incident</h1>
+        <h1 className="text-2xl font-semibold">Feedback</h1>
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
@@ -310,90 +310,90 @@ export default function ReportIncidentPage(props) {
           </div>
         </div>
       )}
-       {viewModalOpen && (
-              <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-                  <h2 className="text-xl font-bold mb-4">Feedback</h2>
+      {viewModalOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
+            <h2 className="text-xl font-bold mb-4">Feedback</h2>
+
+            {/* printable area */}
+            <div ref={contentRef} className="space-y-3">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+
+                <span className="font-medium">User:</span>
+                <span>{viewData?.username}</span>
+                <span className="font-medium">Incident Type.:</span>
+                <span>{viewData?.incidenttype}</span>
       
-                  {/* printable area */}
-                  <div ref={contentRef} className="space-y-3">
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-      
-                      <span className="font-medium">User:</span>
-                      <span>{viewData?.username}</span>
-                      <span className="font-medium">Incident Type.:</span>
-                      <span>{viewData?.incidenttype}</span>
-            
-                      <span className="font-medium">Description:</span>
-                      <span className="col-span-1">{viewData?.description}</span>
-      
-                    </div>
-      
-                    {viewData?.imageUrl && (
-                      <img
-                        src={viewData.imageUrl}
-                        alt="uploaded"
-                        className="mt-4 w-[250px] h-[250px] object-cover rounded-lg border"
-                      />
-                    )}
-                  </div>
-      
-                  {/* modal footer */}
-                  <div className="flex justify-end gap-3 mt-6">
-                    <button
-                      onClick={() => setViewModalOpen(false)}
-                      className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-                    >
-                      Close
-                    </button>
-      
-                  </div>
-                </div>
+                <span className="font-medium">Description:</span>
+                <span className="col-span-1">{viewData?.description}</span>
+
               </div>
-            )}
-            {printModalOpen && (
-              <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-                <div className="bg-white w-full max-w-6xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-                  <div ref={contentRef}>
-                    <h2 className="text-xl font-bold mb-4">Feedback</h2>
-                    <table className="min-w-full text-sm border border-gray-300">
-                      <thead className="bg-gray-100">
-                        <tr>
-                          <th className="border p-2">User</th>
-                          <th className="border p-2">Incident Type.</th>
-                          <th className="border p-2">Description</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {list.map((item, idx) => (
-                          <tr key={idx} className="odd:bg-white even:bg-gray-50">
-      
-                            <td className="border p-2">{item.username}</td>
-                            <td className="border p-2">{item.incidenttype}</td>
-                            <td className="border p-2">{item.description}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-      
-                  <div className="flex justify-end gap-3 mt-6">
-                    <button
-                      onClick={() => setPrintModalOpen(false)}
-                      className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-                    >
-                      Close
-                    </button>
-                    <button
-                      onClick={handlePrint}
-                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                    >
-                      Print
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+
+              {viewData?.imageUrl && (
+                <img
+                  src={viewData.imageUrl}
+                  alt="uploaded"
+                  className="mt-4 w-[250px] h-[250px] object-cover rounded-lg border"
+                />
+              )}
+            </div>
+
+            {/* modal footer */}
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setViewModalOpen(false)}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Close
+              </button>
+
+            </div>
+          </div>
+        </div>
+      )}
+      {printModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-6xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
+            <div ref={contentRef}>
+              <h2 className="text-xl font-bold mb-4">Feedback</h2>
+              <table className="min-w-full text-sm border border-gray-300">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="border p-2">User</th>
+                    <th className="border p-2">Incident Type.</th>
+                    <th className="border p-2">Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((item, idx) => (
+                    <tr key={idx} className="odd:bg-white even:bg-gray-50">
+
+                      <td className="border p-2">{item.username}</td>
+                      <td className="border p-2">{item.incidenttype}</td>
+                      <td className="border p-2">{item.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setPrintModalOpen(false)}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Close
+              </button>
+              <button
+                onClick={handlePrint}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Print
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <ToastContainer />
     </main>
   );

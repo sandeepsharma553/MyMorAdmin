@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc } from "firebase/firestore";
 import { db, storage } from "../../src/firebase";
 import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { useReactToPrint } from "react-to-print";
 export default function MaintenancePage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);
@@ -15,7 +16,12 @@ export default function MaintenancePage(props) {
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
-      const uid = useSelector((state) => state.auth.user.uid);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [viewData, setViewData] = useState(null);
+  const contentRef = useRef(null);
+  const uid = useSelector((state) => state.auth.user.uid);
+
   useEffect(() => {
     getList()
   }, [])
@@ -28,13 +34,13 @@ export default function MaintenancePage(props) {
       const data = doc.data();
 
       const username =
-        data.username || 
-        data.UserName || 
-        data.USERNAME || 
+        data.username ||
+        data.UserName ||
+        data.USERNAME ||
         "Unknown"; // fallback if none found
       userMap[doc.data().uid] = username
     });
-  
+
     // Step 2: Get all hostels
     const maintenanceSnapshot = await getDocs(collection(db, 'Maintenance'));
     const maintenanceWithuser = maintenanceSnapshot.docs.map(doc => {
@@ -48,7 +54,7 @@ export default function MaintenancePage(props) {
 
     setList(maintenanceWithuser)
     setIsLoading(false)
-   
+
   }
   const handleAdd = async (e) => {
     e.preventDefault();
@@ -81,7 +87,7 @@ export default function MaintenancePage(props) {
           imageUrl,
           updatedBy: uid,
           updatedDate: new Date(),
-          status:'Resolved'
+          status: 'Resolved'
         });
         toast.success('Successfully updated');
         getList()
@@ -102,7 +108,7 @@ export default function MaintenancePage(props) {
           imageUrl,
           createdBy: uid,
           createdDate: new Date(),
-          status:'Pending'
+          status: 'Pending'
         });
         toast.success("Successfully saved");
         getList()
@@ -129,9 +135,15 @@ export default function MaintenancePage(props) {
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
+  const openView = (row) => {
+    setViewData(row);
+    setViewModalOpen(true);
+  };
+
+  const handlePrint = useReactToPrint({ contentRef });
+
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
-      {/* Top bar with Add button */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Maintenance</h1>
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
@@ -142,7 +154,9 @@ export default function MaintenancePage(props) {
           }}>
           + Add
         </button>
+
       </div>
+
       <div className="p-4 space-y-4">
         {/* Stats Summary */}
         <div className="grid grid-cols-5 gap-4 text-center">
@@ -188,13 +202,24 @@ export default function MaintenancePage(props) {
             <option>Date Range Jan 1, 2024 - Dec 31</option>
           </select>
         </div>
+        <div className="flex justify-between items-center mb-4">
+          <label></label>
+          <button
+            onClick={() => setPrintModalOpen(true)}
+            className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+          >
+            Print
+          </button>
+        </div>
       </div>
       <div className="overflow-x-auto bg-white rounded shadow">
+
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
             <FadeLoader color="#36d7b7" loading={isLoading} />
           </div>
         ) : (
+
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -216,7 +241,14 @@ export default function MaintenancePage(props) {
                   <td className="px-6 py-4 whitespace-nowrap text-sm">{item.roomno}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.createdDate}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">New</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">View</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <button
+                      onClick={() => openView(item)}
+                      className="text-blue-600 underline hover:text-blue-800"
+                    >
+                      View
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -239,7 +271,7 @@ export default function MaintenancePage(props) {
                 />
                 <label className="block font-medium mb-1">Problem Category</label>
                 <select className="w-full border border-gray-300 p-2 rounded"
-                value={form.problemcategory} onChange={(e) => setForm({ ...form, problemcategory: e.target.value })} required>
+                  value={form.problemcategory} onChange={(e) => setForm({ ...form, problemcategory: e.target.value })} required>
                   <option value="">select</option>
                   <option value="Shower">Shower</option>
                   <option value="Sink">Sink</option>
@@ -251,7 +283,7 @@ export default function MaintenancePage(props) {
                 </select>
                 <label className="block font-medium mb-1">Item Category</label>
                 <select className="w-full border border-gray-300 p-2 rounded"
-                value={form.itemcategory} onChange={(e) => setForm({ ...form, itemcategory: e.target.value })} required>
+                  value={form.itemcategory} onChange={(e) => setForm({ ...form, itemcategory: e.target.value })} required>
                   <option value="">select</option>
                   <option value="Shower">Shower</option>
                   <option value="Sink">Sink</option>
@@ -262,8 +294,8 @@ export default function MaintenancePage(props) {
                   <option value="Lighting">Lighting</option>
                 </select>
                 <label className="block font-medium mb-1">Item</label>
-                <select className="w-full border border-gray-300 p-2 rounded" 
-                value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} required>
+                <select className="w-full border border-gray-300 p-2 rounded"
+                  value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} required>
                   <option value="">select</option>
                   <option value="Shower">Shower</option>
                   <option value="Sink">Sink</option>
@@ -274,7 +306,7 @@ export default function MaintenancePage(props) {
                   <option value="Lighting">Lighting</option>
                 </select>
                 <label className="block font-medium mb-1">Description</label>
-                <textarea className="w-full border border-gray-300 p-2 rounded" onChange={(e) => setForm({ ...form, description: e.target.value })}/>
+                <textarea className="w-full border border-gray-300 p-2 rounded" onChange={(e) => setForm({ ...form, description: e.target.value })} />
                 <label className="block font-medium mb-1">Cause (Optional)</label>
                 <textarea className="w-full border border-gray-300 p-2 rounded" onChange={(e) => setForm({ ...form, cause: e.target.value })} />
                 <label className="block font-medium mb-1">Comments</label>
@@ -289,7 +321,7 @@ export default function MaintenancePage(props) {
                           setFileName('No file chosen');
                         }
                         if (e.target.files[0]) {
-                        setForm({ ...form, image: e.target.files[0] })
+                          setForm({ ...form, image: e.target.files[0] })
                         }
                       }}
                     />
@@ -337,6 +369,110 @@ export default function MaintenancePage(props) {
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {viewModalOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
+            <h2 className="text-xl font-bold mb-4">Maintenance Request</h2>
+
+            {/* printable area */}
+            <div ref={contentRef} className="space-y-3">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+
+
+                <span className="font-medium">User:</span>
+                <span>{viewData?.username}</span>
+
+                <span className="font-medium">Room No.:</span>
+                <span>{viewData?.roomno}</span>
+
+                <span className="font-medium">Problem Category:</span>
+                <span>{viewData?.problemcategory}</span>
+
+                <span className="font-medium">Item Category:</span>
+                <span>{viewData?.itemcategory}</span>
+
+                <span className="font-medium">Item:</span>
+                <span>{viewData?.item}</span>
+
+                <span className="font-medium">Description:</span>
+                <span className="col-span-1">{viewData?.description}</span>
+
+                <span className="font-medium">Cause:</span>
+                <span className="col-span-1">{viewData?.cause || "—"}</span>
+
+                <span className="font-medium">Comments:</span>
+                <span className="col-span-1">{viewData?.comments || "—"}</span>
+
+
+              </div>
+
+              {viewData?.imageUrl && (
+                <img
+                  src={viewData.imageUrl}
+                  alt="uploaded"
+                  className="mt-4 w-[250px] h-[250px] object-cover rounded-lg border"
+                />
+              )}
+            </div>
+
+            {/* modal footer */}
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setViewModalOpen(false)}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Close
+              </button>
+
+            </div>
+          </div>
+        </div>
+      )}
+      {printModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-6xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
+            <div ref={contentRef}>
+              <h2 className="text-xl font-bold mb-4">All Maintenance Requests</h2>
+              <table className="min-w-full text-sm border border-gray-300">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="border p-2">User</th>
+                    <th className="border p-2">Room No.</th>
+                    <th className="border p-2">Issue Type</th>
+                    <th className="border p-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((item, idx) => (
+                    <tr key={idx} className="odd:bg-white even:bg-gray-50">
+
+                      <td className="border p-2">{item.username}</td>
+                      <td className="border p-2">{item.roomno}</td>
+                      <td className="border p-2">{item.problemcategory}</td>
+                      <td className="border p-2">{item.status || "New"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setPrintModalOpen(false)}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Close
+              </button>
+              <button
+                onClick={handlePrint}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Print
               </button>
             </div>
           </div>
