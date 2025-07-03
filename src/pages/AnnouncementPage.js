@@ -16,7 +16,7 @@ export default function AnnouncementPage(props) {
     const [list, setList] = useState([])
     const [isLoading, setIsLoading] = useState(false)
     const [fileName, setFileName] = useState('No file chosen');
-    const uid = useSelector((state) => state.auth.user)
+    const uid = useSelector((state) => state.auth.user.uid)
     const initialForm = {
         id: 0,
         title: '',
@@ -88,6 +88,7 @@ export default function AnnouncementPage(props) {
                 posterUrl = await getDownloadURL(storRef);
             }
             const userName = await fetchUser(uid);
+            console.log(uid)
             const annoucementData = {
                 ...form,
                 uid: uid,
@@ -98,7 +99,7 @@ export default function AnnouncementPage(props) {
             };
 
             delete form.poster;
-        
+
             if (editingData) {
                 const announcementRef = dbRef(database, `announcements/${form.id}`);
                 const snapshot = await get(announcementRef);
@@ -110,8 +111,6 @@ export default function AnnouncementPage(props) {
                     ...form,
                     uid: uid,
                     user: userName,
-                    likes: [],
-                    comments: [],
                     date: Timestamp.fromDate(new Date(form.date)),
                     createdAt: Timestamp.now(),
                     ...(posterUrl && { posterUrl }),
@@ -149,7 +148,7 @@ export default function AnnouncementPage(props) {
             const groupRef = dbRef(database, `announcements/${form.id}`); // adjust your path as needed
             remove(groupRef)
                 .then(() => {
-                    
+
                 })
                 .catch((error) => {
                     console.error('Error deleting group:', error);
@@ -236,7 +235,7 @@ export default function AnnouncementPage(props) {
                                                     poster: null // poster cannot be pre-filled (file inputs are read-only for security)
                                                 }));
                                                 setModalOpen(true);
-                                    
+
                                             }}>Edit</button>
                                             <button className="text-red-600 hover:underline" onClick={() => {
                                                 setDelete(item);

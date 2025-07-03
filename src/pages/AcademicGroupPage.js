@@ -12,11 +12,13 @@ export default function AcademicGroupPage(props) {
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [viewGroup, setViewGroup] = useState(null);
   const [list, setList] = useState([])
   const [fileName, setFileName] = useState('No file chosen');
   const [isLoading, setIsLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1);
   const [academicCatlist, setAcademicCatList] = useState([])
+  const [selectedGroup, setSelected] = useState(null);
   const uid = useSelector((state) => state.auth.user.uid);
   const initialForm = {
     id: 0,
@@ -72,20 +74,32 @@ export default function AcademicGroupPage(props) {
       onValue(groupRef, async (snapshot) => {
         const data = snapshot.val();
         if (data) {
-          const groupEntries = Object.entries(data);
+          // const groupEntries = Object.entries(data);
 
-          const groupsWithCount = await Promise.all(
-            groupEntries.map(async ([key, val]) => {
-              const memberCount = await getMemberCount(key);
-              return {
-                id: key,
-                ...val,
-                membercount: memberCount
-              };
-            })
-          );
+          // const groupsWithCount = await Promise.all(
+          //   groupEntries.map(async ([key, val]) => {
+          //     const memberCount = await getMemberCount(key);
+          //     return {
+          //       id: key,
+          //       ...val,
+          //       membercount: memberCount
+          //     };
+          //   })
+          // );
 
-          setList(groupsWithCount);
+          // setList(groupsWithCount);
+          const arr = await Promise.all(Object.entries(data).map(async ([gid, v]) => {
+            const requests = v.joinRequests || {};
+            const members = v.members || {};
+            return {
+              id: gid,
+              ...v,
+              memberCount: members ? Object.keys(members).length : 0,
+              requests
+            };
+          }));
+          setList(arr);
+          console.log(arr)
         } else {
           setList([]);
         }
@@ -182,6 +196,7 @@ export default function AcademicGroupPage(props) {
 
 
       }
+
     }
     catch (error) {
       console.error('Error updating document: ', error);
@@ -212,7 +227,17 @@ export default function AcademicGroupPage(props) {
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
-
+  const approve = async (gid, uid) => {
+    await set(dbRef(database, `groups/${gid}/members/${uid}`), true);
+    await update(dbRef(database, `groups/${gid}/joinRequests/${uid}`), { status: 'approved' });
+    toast.success('User approved');
+    setSelected(null)
+  };
+  const reject = async (gid, uid) => {
+    await update(dbRef(database, `groups/${gid}/joinRequests/${uid}`), { status: 'rejected' });
+    toast.info('User rejected');
+    setSelected(null)
+  };
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto no-scrollbar">
       {/* Top bar with Add button */}
@@ -240,6 +265,7 @@ export default function AcademicGroupPage(props) {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Group Description</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Members</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -250,25 +276,78 @@ export default function AcademicGroupPage(props) {
                   </td>
                 </tr>
               ) : (
-                paginatedData.map((item, i) => (
-                  <tr key={i}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.description}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.membercount}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <button className="text-blue-600 hover:underline mr-3" onClick={() => {
-                        setEditing(item);
-                        setForm(item);
-                        setModalOpen(true);
-                      }}>Edit</button>
-                      <button className="text-red-600 hover:underline" onClick={() => {
-                        setDelete(item);
-                        setForm(item);
-                        setConfirmDeleteOpen(true);
-                      }}>Delete</button>
-                    </td>
-                  </tr>
-                ))
+                paginatedData.map((item, i) => {
+                  const pending =
+                    Object.values(item.requests || {}).filter(
+                      (r) => r.status === "pending"
+                    ).length;
+
+                  return (
+                    <tr key={i}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        {item.title}
+                      </td>
+
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {item.description}
+                      </td>
+
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {item.memberCount}
+                      </td>
+
+
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <button
+                          disabled={!pending}
+                          className="text-blue-600 disabled:opacity-40"
+                          onClick={() => setSelected(item)}
+                        >
+                          {pending} pending
+                        </button>
+                      </td>
+
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {item.type != 'Your' ? (
+                          <div>
+                            <button
+                              className="text-blue-600 hover:underline mr-3"
+                              onClick={() => {
+                                setEditing(item);
+                                setForm(item);
+                                setModalOpen(true);
+                              }}
+                            >
+                              Edit
+                            </button>
+
+                            <button
+                              className="text-red-600 hover:underline"
+                              onClick={() => {
+                                setDelete(item);
+                                setForm(item);
+                                setConfirmDeleteOpen(true);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            className="text-blue-600 hover:underline mr-3"
+                            onClick={() => {
+                              console.log(item)
+                              setViewGroup(item);
+                            }}
+                          >
+                            View
+                          </button>
+                        )}
+
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -441,6 +520,72 @@ export default function AcademicGroupPage(props) {
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {selectedGroup && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white w-[24rem] max-h-[90vh] overflow-y-auto p-6 rounded shadow-lg">
+            <h2 className="text-lg font-semibold mb-4">
+              Join Requests – {selectedGroup.title}
+            </h2>
+
+            {Object.entries(selectedGroup.requests)
+              .filter(([_, r]) => r.status === 'pending')
+              .map(([uid, r]) => (
+                <div key={uid} className="flex justify-between items-center mb-2">
+                  <span>{r.name || uid}</span>
+                  <div className="space-x-2">
+                    <button
+                      onClick={() => approve(selectedGroup.id, uid)}
+
+                      className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                    >Approve</button>
+                    <button
+                      onClick={() => reject(selectedGroup.id, uid)}
+                      className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                    >Reject</button>
+                  </div>
+                </div>
+              ))}
+
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => setSelected(null)}
+                className="px-4 py-2 bg-gray-300 rounded"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+
+      )}
+      {viewGroup && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-lg p-6 rounded-lg shadow-lg">
+            <h2 className="text-xl font-semibold mb-4">Group Details</h2>
+
+            <div className="space-y-2">
+              <p><strong>Name:</strong> {viewGroup?.title}</p>
+              <p><strong>Description:</strong> {viewGroup?.description}</p>
+              <p><strong>Category:</strong> {viewGroup?.category || '—'}</p>
+              <p><strong>Members:</strong> {viewGroup?.memberCount}</p>
+              <p><strong>Pending requests:</strong> {
+                Object.values(viewGroup?.requests || {}).filter(r => r?.status === 'pending').length
+              }</p>
+              <p><strong>Creator ID:</strong> {viewGroup?.creatorId}</p>
+
+            </div>
+
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => setViewGroup(null)}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Close
               </button>
             </div>
           </div>

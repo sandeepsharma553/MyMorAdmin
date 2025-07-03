@@ -8,14 +8,14 @@ import { ToastContainer, toast } from "react-toastify";
 
 const HostelPage = (props) => {
   const [modalOpen, setModalOpen] = useState(false);
-  const [newData, setNew] = useState({ name: '', id: 0, uniId:0 });
+  const [newData, setNew] = useState({ name: '', id: 0, uniId: 0 });
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([])
   const [universities, setUniversities] = useState([]);
   const [isLoading, setIsLoading] = useState(false)
-      const uid = useSelector((state) => state.auth.user.uid);
+  const uid = useSelector((state) => state.auth.user.uid);
   useEffect(() => {
     getList()
     fetchUniversities()
@@ -58,7 +58,7 @@ const HostelPage = (props) => {
   const handleAdd = async () => {
     if (!newData.name) return;
     if (!newData.uniId) {
-     
+
       toast.warning("Please select a university");
       return;
     }
@@ -74,7 +74,7 @@ const HostelPage = (props) => {
         await updateDoc(doc(db, 'Hostel', newData.id), {
           uid: uid,
           name: newData.name,
-          uniId:newData.uniId,
+          uniId: newData.uniId,
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -84,7 +84,7 @@ const HostelPage = (props) => {
         console.error('Error updating document: ', error);
       }
     } else {
-   
+
       try {
         const q = query(collection(db, 'Hostel'), where('name', '==', newData.name));
         const querySnapshot = await getDocs(q);
@@ -96,7 +96,7 @@ const HostelPage = (props) => {
         await addDoc(collection(db, "Hostel"), {
           uid: uid,
           name: newData.name,
-          uniId:newData.uniId,
+          uniId: newData.uniId,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -110,7 +110,7 @@ const HostelPage = (props) => {
     // Reset
     setModalOpen(false);
     setEditing(null);
-    setNew({ name: '', id: 0, uniId:0 });
+    setNew({ name: '', id: 0, uniId: 0 });
   };
   const handleDelete = async () => {
     if (!deleteData) return;
@@ -133,7 +133,7 @@ const HostelPage = (props) => {
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
-            setNew({ name: '', id:0, uniId:0 });
+            setNew({ name: '', id: 0, uniId: 0 });
             setModalOpen(true);
           }}>
           + Add
@@ -149,16 +149,16 @@ const HostelPage = (props) => {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">University</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Hostel</th>
+                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">University</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {list.map((item, i) => (
                   <tr key={i}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.universityName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.universityName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button className="text-blue-600 hover:underline mr-3" onClick={() => {
                         setEditing(item);
