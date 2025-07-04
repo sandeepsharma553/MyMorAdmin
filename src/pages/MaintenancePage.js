@@ -241,12 +241,19 @@ export default function MaintenancePage(props) {
                   <td className="px-6 py-4 whitespace-nowrap text-sm">{item.roomno}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.createdDate}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">New</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
                     <button
                       onClick={() => openView(item)}
                       className="text-blue-600 underline hover:text-blue-800"
                     >
                       View
+                    </button>
+                    <br/>
+                    <button
+                      onClick={() => openView(item)}
+                      className="text-blue-600 underline hover:text-blue-800"
+                    >
+                      Print
                     </button>
                   </td>
                 </tr>
@@ -428,7 +435,12 @@ export default function MaintenancePage(props) {
               >
                 Close
               </button>
-
+              <button
+                onClick={() => handlePrint()}
+                className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+              >
+                Print
+              </button>
             </div>
           </div>
         </div>

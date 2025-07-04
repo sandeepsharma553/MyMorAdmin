@@ -5,10 +5,10 @@ import { useSelector } from "react-redux";
 import { ref, set } from 'firebase/database';
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-
+import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
 const HostelPage = (props) => {
   const [modalOpen, setModalOpen] = useState(false);
-  const [newData, setNew] = useState({ name: '', id: 0, uniId: 0 });
+
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -16,65 +16,79 @@ const HostelPage = (props) => {
   const [universities, setUniversities] = useState([]);
   const [isLoading, setIsLoading] = useState(false)
   const uid = useSelector((state) => state.auth.user.uid);
+  const initialForm = {
+    id: 0,
+    name: '',
+    uniIds: [],
+  }
+  const [form, setForm] = useState(initialForm);
   useEffect(() => {
     getList()
-    fetchUniversities()
   }, [])
+
   const getList = async () => {
     setIsLoading(true)
-    const uniSnapshot = await getDocs(collection(db, 'University'));
-    const universityMap = {};
-    uniSnapshot.forEach(doc => {
-      universityMap[doc.id] = doc.data().name;
-    });
 
-    // Step 2: Get all hostels
-    const hostelSnapshot = await getDocs(collection(db, 'Hostel'));
-    const hostelsWithUni = hostelSnapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        name: data.name,
-        uniId: data.uniId,
-        universityName: universityMap[data.uniId] || "Unknown"
-      };
-    });
-
-    setList(hostelsWithUni)
-    setIsLoading(false)
-  }
-  const fetchUniversities = async () => {
     try {
-      const snapshot = await getDocs(collection(db, "University"));
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setUniversities(data);
-    } catch (error) {
-      console.error("Error fetching universities:", error);
+      const [uniSnap, hostelSnap] = await Promise.all([
+        getDocs(collection(db, 'University')),
+        getDocs(collection(db, 'Hostel')),
+      ]);
+
+      const uniArr = uniSnap.docs.map(d => ({ id: d.id, name: d.data().name }));
+      const uniMap = uniArr.reduce((acc, cur) => {
+        acc[cur.id] = cur.name;
+        return acc;
+      }, {});
+
+      const hostelArr = hostelSnap.docs.map(d => {
+        const { name, uniIds = [] } = d.data();
+        const universityNames = (uniIds)
+          .map(id => uniMap[id] ?? "Unknown");     // keep order / handle missing
+        return { id: d.id, name, uniIds, universityNames };
+      });
+
+      setList(hostelArr);
+      setUniversities(uniArr);
+      console.log(hostelArr)
+    } catch (err) {
+      console.error('getList error:', err);
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }
+  // const fetchUniversities = async () => {
+  //   try {
+  //     const snapshot = await getDocs(collection(db, "University"));
+  //     const data = snapshot.docs.map(doc => ({
+  //       id: doc.id,
+  //       ...doc.data(),
+  //     }));
+  //     setUniversities(data);
+  //   } catch (error) {
+  //     console.error("Error fetching universities:", error);
+  //   }
+  // };
   const handleAdd = async () => {
-    if (!newData.name) return;
-    if (!newData.uniId) {
+    if (!form.name) return;
+    if (!form.uniIds) {
 
       toast.warning("Please select a university");
       return;
     }
     if (editingData) {
       try {
-        const docRef = doc(db, 'Hostel', newData.id);
+        const docRef = doc(db, 'Hostel', form.id);
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
           toast.warning('hostel does not exist! Cannot update.');
           return;
         }
-        await updateDoc(doc(db, 'Hostel', newData.id), {
+        await updateDoc(doc(db, 'Hostel', form.id), {
           uid: uid,
-          name: newData.name,
-          uniId: newData.uniId,
+          name: form.name,
+          uniIds: form.uniIds,
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -86,7 +100,7 @@ const HostelPage = (props) => {
     } else {
 
       try {
-        const q = query(collection(db, 'Hostel'), where('name', '==', newData.name));
+        const q = query(collection(db, 'Hostel'), where('name', '==', form.name));
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
@@ -95,8 +109,8 @@ const HostelPage = (props) => {
         }
         await addDoc(collection(db, "Hostel"), {
           uid: uid,
-          name: newData.name,
-          uniId: newData.uniId,
+          name: form.name,
+          uniIds: form.uniIds,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -110,12 +124,12 @@ const HostelPage = (props) => {
     // Reset
     setModalOpen(false);
     setEditing(null);
-    setNew({ name: '', id: 0, uniId: 0 });
+    setForm(initialForm);
   };
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, 'Hostel', newData.id));
+      await deleteDoc(doc(db, 'Hostel', form.id));
       toast.success('Successfully deleted!');
       getList()
     } catch (error) {
@@ -133,7 +147,7 @@ const HostelPage = (props) => {
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
-            setNew({ name: '', id: 0, uniId: 0 });
+            setForm(initialForm);
             setModalOpen(true);
           }}>
           + Add
@@ -158,16 +172,22 @@ const HostelPage = (props) => {
                 {list.map((item, i) => (
                   <tr key={i}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.universityName}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      <ul className="list-disc list-inside space-y-1">
+                        {item.universityNames.map((name) => (
+                          <li key={name}>{name}</li>
+                        ))}
+                      </ul>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button className="text-blue-600 hover:underline mr-3" onClick={() => {
                         setEditing(item);
-                        setNew(item);
+                        setForm(item);
                         setModalOpen(true);
                       }}>Edit</button>
                       <button className="text-red-600 hover:underline" onClick={() => {
                         setDelete(item);
-                        setNew(item);
+                        setForm(item);
                         setConfirmDeleteOpen(true);
                       }}>Delete</button>
                     </td>
@@ -183,29 +203,52 @@ const HostelPage = (props) => {
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
-            <h2 className="text-xl font-bold mb-4">Add New User</h2>
+            <h2 className="text-xl font-bold mb-4">Add New</h2>
             <div className="space-y-4">
               <input
                 type="text"
                 placeholder="Name"
                 className="w-full border border-gray-300 p-2 rounded"
-                value={newData.name}
-                onChange={(e) => setNew({ ...newData, name: e.target.value })}
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
-              <select
-                value={newData.uniId}
+              {/* <select
+                value={form.uniId}
                 onChange={(e) => {
-                  setNew({ ...newData, uniId: e.target.value })
+                  setForm({ ...form, uniId: e.target.value })
                 }}
                 className="w-full border p-2 rounded"
               >
                 <option value="">-- Select --</option>
                 {universities.map((uni) => (
                   <option key={uni.id} value={uni.id}>
-                    {uni.name}
+                    {uni.name}Trinity College
                   </option>
                 ))}
-              </select>
+              </select> */}
+              <Select
+                className="w-full border border-gray-300 p-2 rounded"
+                multiple
+                displayEmpty
+                value={form.uniIds}
+                onChange={(e) => setForm({ ...form, uniIds: e.target.value })}
+                renderValue={(selected) =>
+                  selected.length
+                    ? selected.map((id) => {
+                      const uni = universities.find((u) => u.id === id);
+                      return uni?.name || '';
+                    }).join(", ")
+                    : "Select University"
+                }
+              >
+                {universities.map(({ id, name }) => (
+                  <MenuItem key={id} value={id}>
+                    <Checkbox checked={form.uniIds.includes(id)} />
+                    <ListItemText primary={name} />
+                  </MenuItem>
+                ))}
+              </Select>
+
             </div>
             <div className="flex justify-end mt-6 space-x-3">
               <button

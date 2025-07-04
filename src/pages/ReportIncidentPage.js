@@ -205,6 +205,13 @@ export default function ReportIncidentPage(props) {
                     >
                       View
                     </button>
+                    <p></p>
+                    <button
+                      onClick={() => openView(item)}
+                      className="text-blue-600 underline hover:text-blue-800"
+                    >
+                      Print
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -346,7 +353,12 @@ export default function ReportIncidentPage(props) {
                     >
                       Close
                     </button>
-      
+                    <button
+                onClick={() => handlePrint()}
+                className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+              >
+                Print
+              </button>
                   </div>
                 </div>
               </div>
