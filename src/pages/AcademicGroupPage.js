@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, database, storage } from "../../src/firebase";
-import { ref as dbRef, onValue, set, push, update, remove, get } from 'firebase/database';
+import { ref as dbRef, onValue, set, push, update, remove, get,serverTimestamp } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, addDoc, getDocs, } from "firebase/firestore";
 import { useSelector } from "react-redux";
@@ -227,8 +227,15 @@ export default function AcademicGroupPage(props) {
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
-  const approve = async (gid, uid) => {
+  const approve = async (gid, uid,item) => {
     await set(dbRef(database, `groups/${gid}/members/${uid}`), true);
+    await set(dbRef(database, `groups/${gid}/members/${uid}`), {
+      uid: item.uid,
+      name: item.name || '',
+      photoURL: item.photoURL ?? '',
+      isAdmin: false,
+      joinedAt: serverTimestamp(),
+  });
     await update(dbRef(database, `groups/${gid}/joinRequests/${uid}`), { status: 'approved' });
     toast.success('User approved');
     setSelected(null)
@@ -539,7 +546,7 @@ export default function AcademicGroupPage(props) {
                   <span>{r.name || uid}</span>
                   <div className="space-x-2">
                     <button
-                      onClick={() => approve(selectedGroup.id, uid)}
+                      onClick={() => approve(selectedGroup.id, uid,r)}
 
                       className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
                     >Approve</button>
