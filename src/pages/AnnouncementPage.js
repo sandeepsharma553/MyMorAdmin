@@ -17,6 +17,7 @@ export default function AnnouncementPage(props) {
     const [isLoading, setIsLoading] = useState(false)
     const [fileName, setFileName] = useState('No file chosen');
     const uid = useSelector((state) => state.auth.user.uid)
+    const user = useSelector((state) => state.auth.user)
     const initialForm = {
         id: 0,
         title: '',
@@ -114,6 +115,7 @@ export default function AnnouncementPage(props) {
                     date: Timestamp.fromDate(new Date(form.date)),
                     createdAt: Timestamp.now(),
                     ...(posterUrl && { posterUrl }),
+                    photoURL: user.photoURL
                 })
                 toast.success('Annoucement updated successfully');
             }
@@ -129,6 +131,7 @@ export default function AnnouncementPage(props) {
                     date: Timestamp.fromDate(new Date(form.date)),
                     createdAt: Timestamp.now(),
                     ...(posterUrl && { posterUrl }),
+                    photoURL: user.photoURL
                 })
                 toast.success('Annoucement created successfully');
             }
