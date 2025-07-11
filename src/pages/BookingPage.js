@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc } from "firebase/firestore";
 import { db } from "../../src/firebase";
 import { useSelector } from "react-redux";
 import { ref, set } from 'firebase/database';
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
+import { DateRange } from 'react-date-range';
+import 'react-date-range/dist/styles.css';
+import 'react-date-range/dist/theme/default.css';
+import { enUS } from 'date-fns/locale';
+import { format, parse, isValid } from 'date-fns';
 export default function BookingPage(props) {
   const { navbarHeight } = props;
-
   const [roomType, setRoomType] = useState('Study Room');
   const [date, setDate] = useState('2025-05-14');
   const [selectedTime, setSelectedTime] = useState('');
@@ -21,6 +25,18 @@ export default function BookingPage(props) {
   const uid = useSelector((state) => state.auth.user.uid);
   const times = ['9:00 AM', '10:00 AM', '11:00 AM', '2:00 AM'];
   const [currentPage, setCurrentPage] = useState(1);
+  const [roomFilter, setRoomFilter] = useState("All");
+  const [rooms, setRooms] = useState([]);
+  const [range, setRange] = useState([
+    {
+      startDate: new Date(new Date().setMonth(new Date().getMonth() - 2)),
+      endDate: new Date(),
+      key: 'selection'
+    }
+  ]);
+  const [showPicker, setShowPicker] = useState(false);
+  const [formattedRange, setFormattedRange] = useState('');
+  const pickerRef = useRef();
   const pageSize = 10;
   const mockData = list
   const filteredData = mockData
@@ -31,18 +47,67 @@ export default function BookingPage(props) {
     currentPage * pageSize
   );
   useEffect(() => {
-    getList()
-  }, [])
+    getList();
+  }, [roomFilter, range]);
   const getList = async () => {
-    setIsLoading(true)
-    const querySnapshot = await getDocs(collection(db, 'BookingRoom'));
-    const documents = querySnapshot.docs.map(doc => ({
+    setIsLoading(true);
+
+    const userSnap = await getDocs(collection(db, 'User'));
+    const userMap = {};
+    userSnap.forEach(doc => {
+      const data = doc.data();
+      userMap[data.uid] = {
+        username: data.username || data.UserName || data.USERNAME || "Unknown",
+        email: data.email || "No email"
+      };
+    });
+
+    const bookingSnap = await getDocs(collection(db, 'BookingRoom'));
+    const allBookings = bookingSnap.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
+      username: userMap[doc.data().uid]?.username || "Unknown",
+      email: userMap[doc.data().uid]?.email || "N/A"
     }));
-    setList(documents)
-    setIsLoading(false)
-  }
+
+
+    const roomFiltered = roomFilter === "All"
+      ? allBookings
+      : allBookings.filter(b => b.roomname === roomFilter);
+
+    const startDate = toLocalDateOnly(range[0].startDate);
+    const endDate = toLocalDateOnly(range[0].endDate);
+    const dateFiltered1 = roomFiltered;
+    console.log(startDate)
+    const dateFiltered = roomFiltered.filter(b => {
+      if (!b.date) return false;
+      let bookingDate;
+      if (/\d{4}-\d{2}-\d{2}/.test(b.date)) {
+        bookingDate = new Date(b.date);
+      } else {
+        bookingDate = parse(b.date, 'dd/MM/yyyy', new Date());
+      }
+      if (!isValid(bookingDate)) {
+        console.warn("Invalid booking date:", b.date);
+        return false;
+      }
+      bookingDate.setHours(0, 0, 0, 0);
+      return bookingDate >= startDate && bookingDate <= endDate;
+    });
+
+    const uniqueRooms = Array.from(new Set(allBookings.map(b => b.roomname))).filter(Boolean);
+    setRooms(["All", ...uniqueRooms]);
+
+    setList(dateFiltered);
+    setCurrentPage(1); // Reset to page 1 after filtering
+    setIsLoading(false);
+  };
+  const toLocalDateOnly = (date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!newData.roomname) return;
@@ -102,8 +167,19 @@ export default function BookingPage(props) {
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
+  const handleRangeChange = (ranges) => {
+    const selected = ranges.selection;
+    setRange([selected]);
+
+    if (selected.startDate && selected.endDate) {
+      const formatted = `${format(selected.startDate, 'MM/dd/yyyy')} - ${format(selected.endDate, 'MM/dd/yyyy')}`;
+      setFormattedRange(formatted);
+      setShowPicker(false);
+    }
+  };
+
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto">
+    <main className="flex-1 p-1 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Booking</h1>
@@ -120,28 +196,56 @@ export default function BookingPage(props) {
       <div className="flex items-center space-x-4">
 
 
-        {/* Room Type Dropdown */}
         <select
-          className="border rounded-md px-4 py-2 w-full"
-          value={roomType}
-          onChange={(e) => setRoomType(e.target.value)}
+          className="border px-3 py-2 rounded text-sm"
+          value={roomFilter}
+          onChange={(e) => setRoomFilter(e.target.value)}
         >
-          <option>Study Room</option>
-          <option>Meeting Room</option>
-          <option>Conference Room</option>
+          {rooms.map(room => (
+            <option key={room} value={room}>{room}</option>
+          ))}
         </select>
 
-        {/* Date Picker */}
-        <input
+
+        {/* <input
           type="date"
           className="border rounded-md px-4 py-2 w-full"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-        />
+        /> */}
+        <div>
+          <input
+            type="text"
+            readOnly
+            value={formattedRange}
+            onClick={() => setShowPicker(!showPicker)}
+            className="w-full border border-gray-300 p-2 rounded"
+          />
+          {showPicker && (
+            <div
+              ref={pickerRef}
+              style={{
+                position: 'absolute',
+                top: 50,
+                zIndex: 1000,
+                boxShadow: '0px 2px 10px rgba(0,0,0,0.2)'
+              }}
+            >
+              <DateRange
+                editableDateInputs={true}
+                onChange={handleRangeChange}
+                moveRangeOnFirstSelection={false}
+                ranges={range}
+                locale={enUS}
+
+              />
+            </div>
+          )}
+        </div>
       </div>
       <div className="p-4 space-y-4  ">
-
-        {/* Time Buttons */}
+        {/* 
+       
         <div className="flex flex-wrap gap-2">
           {times.map((time) => (
             <button
@@ -154,7 +258,7 @@ export default function BookingPage(props) {
             </button>
           ))}
           <button className="px-4 py-2 border rounded-md bg-white">Add Room</button>
-        </div>
+        </div> */}
       </div>
       <div className="overflow-x-auto bg-white rounded shadow">
 
@@ -166,10 +270,11 @@ export default function BookingPage(props) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Room Name</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Username</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Email</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Date</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Time</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Bookimg Status</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
@@ -183,13 +288,11 @@ export default function BookingPage(props) {
               ) : (
                 paginatedData.map((item, i) => (
                   <tr key={i}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.roomname}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.date}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.time}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      Booked
-
-                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-800">{item.username}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{item.email}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{item.date}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{item.time}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{item.status}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <button className="text-blue-600 hover:underline mr-3" onClick={() => {
                         setEditing(item);

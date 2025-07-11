@@ -41,6 +41,7 @@ export default function EmployeePage(props) {
   const MENU_OPTIONS = [{ key: "dashboard", label: "Dashboard" },
   // { key: "employee", label: "Employee", },
   { key: "announcement", label: "Announcement" },
+  { key: "student", label: "Student" },
   { key: "diningmenupage", label: "Dining Menu" },
   { key: "cleaningpage", label: "Cleaning Schedule" },
   { key: "maintenancepage", label: "Maintenance" },

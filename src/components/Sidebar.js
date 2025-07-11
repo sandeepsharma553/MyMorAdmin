@@ -15,6 +15,7 @@ const hasPermission = (perm, key) =>
 const SECTIONS = [
   { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
   { key: "employee", label: "Employee", Icon: UserPlus },
+  { key: "student", label: "Student", Icon: UserPlus },
   { key: "announcement", label: "Announcement", Icon: Bell },
   { key: "diningmenupage", label: "Dining Menu", Icon: Menu },
   { key: "cleaningpage", label: "Cleaning Schedule", Icon: BrushCleaning },
