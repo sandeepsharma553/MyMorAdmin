@@ -9,19 +9,41 @@ import { useReactToPrint } from "react-to-print";
 export default function MaintenancePage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ id: 0, roomno: "", problemcategory: "", itemcategory: "", item: "", description: "", cause: "", comments: "", image: null, });
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1);
   const [fileName, setFileName] = useState('No file chosen');
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [viewData, setViewData] = useState(null);
   const contentRef = useRef(null);
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    inProgress: 0,
+    resolved: 0,
+    closed: 0
+  });
+  const [filterOptions, setFilterOptions] = useState({
+    statuses: [],
+    problemCategories: [],
+    locations: []
+  });
   const uid = useSelector((state) => state.auth.user.uid);
-
+  const initialForm = {
+    id: 0, roomno: "", problemcategory: "", itemcategory: "", item: "", description: "", cause: "", comments: "", image: null,
+  }
+  const [form, setForm] = useState(initialForm);
+  const pageSize = 10;
+  const mockData = list
+  const totalPages = Math.ceil(mockData.length / pageSize);
+  const paginatedData = mockData.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
   useEffect(() => {
     getList()
   }, [])
@@ -53,6 +75,20 @@ export default function MaintenancePage(props) {
     });
 
     setList(maintenanceWithuser)
+    const total = maintenanceWithuser.length;
+    const pending = maintenanceWithuser.filter(item => item.status === "Pending").length;
+    const inProgress = maintenanceWithuser.filter(item => item.status === "In Progress").length;
+    const resolved = maintenanceWithuser.filter(item => item.status === "Resolved").length;
+    const closed = maintenanceWithuser.filter(item => item.status === "Closed").length;
+
+    setStats({ total, pending, inProgress, resolved, closed });
+    const unique = (arr) => [...new Set(arr.filter(Boolean))];
+
+    const statuses = unique(maintenanceWithuser.map(item => item.status));
+    const problemCategories = unique(maintenanceWithuser.map(item => item.problemcategory));
+    const locations = unique(maintenanceWithuser.map(item => item.roomno));
+
+    setFilterOptions({ statuses, problemCategories, locations });
     setIsLoading(false)
 
   }
@@ -120,7 +156,7 @@ export default function MaintenancePage(props) {
     // Reset
     setModalOpen(false);
     setEditing(null);
-    setForm({ id: 0, roomno: "", problemcategory: "", itemcategory: "", item: "", description: "", cause: "", comments: "", image: null, });
+    setForm(initialForm);
     setFileName('No file chosen');
   };
   const handleDelete = async () => {
@@ -141,7 +177,17 @@ export default function MaintenancePage(props) {
   };
 
   const handlePrint = useReactToPrint({ contentRef });
-
+  const updateStatus = async (id, newStatus) => {
+    try {
+      const requestRef = doc(db, 'Maintenance', id);
+      await updateDoc(requestRef, { status: newStatus });
+      toast.success("Status updated!");
+      getList();
+    } catch (error) {
+      console.error("Error updating status:", error);
+      toast.error("Failed to update status.");
+    }
+  };
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       <div className="flex justify-between items-center mb-4">
@@ -149,7 +195,7 @@ export default function MaintenancePage(props) {
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
-            setForm({ id: 0, roomno: "", problemcategory: "", itemcategory: "", item: "", description: "", cause: "", comments: "", image: null, });
+            setForm(initialForm);
             setModalOpen(true);
           }}>
           + Add
@@ -157,61 +203,55 @@ export default function MaintenancePage(props) {
 
       </div>
 
-      <div className="p-4 space-y-4">
-        {/* Stats Summary */}
-        <div className="grid grid-cols-5 gap-4 text-center">
-          <div className="bg-white rounded-2xl shadow p-4">
-            <div className="text-gray-500 text-sm">Quick Stats</div>
-          </div>
-          <div className="bg-white rounded-2xl shadow p-4">
-            <div className="text-2xl font-bold">125</div>
-            <div className="text-gray-500 text-sm">Total</div>
-          </div>
-          <div className="bg-white rounded-2xl shadow p-4">
-            <div className="text-2xl font-bold">29</div>
-            <div className="text-gray-500 text-sm">Pending</div>
-          </div>
-          <div className="bg-white rounded-2xl shadow p-4">
-            <div className="text-2xl font-bold">10</div>
-            <div className="text-gray-500 text-sm">In Progress</div>
-          </div>
-          <div className="bg-white rounded-2xl shadow p-4">
-            <div className="text-gray-500 text-sm">In Progress Submitted On</div>
-          </div>
-          <div className="bg-white rounded-2xl shadow p-4">
-            <div className="text-gray-500 text-sm">Completed Status</div>
-          </div>
-          <div className="bg-white rounded-2xl shadow p-4">
-            <div className="text-2xl font-bold">4</div>
-            <div className="text-gray-500 text-sm">Actions</div>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 text-center">
 
-        {/* Filters */}
-        <div className="grid grid-cols-4 gap-4">
-          <select className="p-2 rounded border border-gray-300">
-            <option>Status</option>
-          </select>
-          <select className="p-2 rounded border border-gray-300">
-            <option>Request Type</option>
-          </select>
-          <select className="p-2 rounded border border-gray-300">
-            <option>Location</option>
-          </select>
-          <select className="p-2 rounded border border-gray-300">
-            <option>Date Range Jan 1, 2024 - Dec 31</option>
-          </select>
+        <div className="bg-white rounded-xl shadow p-2">
+          <div className="text-lg font-bold">{stats.total}</div>
+          <div className="text-gray-500 text-xs">Total</div>
         </div>
-        <div className="flex justify-between items-center mb-4">
-          <label></label>
-          <button
-            onClick={() => setPrintModalOpen(true)}
-            className="px-4 py-2 bg-black text-white rounded hover:bg-black"
-          >
-            Print
-          </button>
+        <div className="bg-white rounded-xl shadow p-2">
+          <div className="text-lg font-bold">{stats.pending}</div>
+          <div className="text-gray-500 text-xs">Pending</div>
+        </div>
+        <div className="bg-white rounded-xl shadow p-2">
+          <div className="text-lg font-bold">{stats.inProgress}</div>
+          <div className="text-gray-500 text-xs">In Progress</div>
+        </div>
+        <div className="bg-white rounded-xl shadow p-2">
+          <div className="text-lg font-bold">{stats.resolved}</div>
+          <div className="text-gray-500 text-xs">Resolved</div>
+        </div>
+        <div className="bg-white rounded-xl shadow p-2">
+          <div className="text-lg font-bold">{stats.closed}</div>
+          <div className="text-gray-500 text-xs">Closed</div>
         </div>
       </div>
+
+      {/* <div className="grid grid-cols-4 gap-4">
+        <select className="p-2 rounded border border-gray-300">
+          <option>Status</option>
+          {filterOptions.statuses.map((status, idx) => (
+            <option key={idx} value={status}>{status}</option>
+          ))}
+        </select>
+        <select className="p-2 rounded border border-gray-300">
+          <option>Request Type</option>
+          {filterOptions.problemCategories.map((type, idx) => (
+            <option key={idx} value={type}>{type}</option>
+          ))}
+        </select>
+        <select className="p-2 rounded border border-gray-300">
+          <option>Location</option>
+          {filterOptions.locations.map((loc, idx) => (
+            <option key={idx} value={loc}>{loc}</option>
+          ))}
+        </select>
+        <select className="p-2 rounded border border-gray-300">
+          <option>Date Range Jan 1, 2024 - Dec 31</option>
+        
+        </select>
+      </div> */}
+      <br />
       <div className="overflow-x-auto bg-white rounded shadow">
 
         {isLoading ? (
@@ -233,34 +273,91 @@ export default function MaintenancePage(props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {list.map((item, i) => (
-                <tr key={i}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.uid}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.username}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.problemcategory}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">{item.roomno}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.createdDate}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">New</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    <button
-                      onClick={() => openView(item)}
-                      className="text-blue-600 underline hover:text-blue-800"
-                    >
-                      View
-                    </button>
-                    <br/>
-                    <button
-                      onClick={() => openView(item)}
-                      className="text-blue-600 underline hover:text-blue-800"
-                    >
-                      Print
-                    </button>
+              {paginatedData.length === 0 ? (
+                <tr>
+                  <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
+                    No matching users found.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                paginatedData.map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.uid}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.username}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.problemcategory}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">{item.roomno}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.createdDate}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+
+                      <div className="mb-2">
+                        <span
+                          className={`px-3 py-1 rounded-full text-white text-xs font-semibold
+                           ${item.status === 'Pending' ? 'bg-yellow-500' :
+                              item.status === 'In Progress' ? 'bg-blue-500' :
+                                item.status === 'Resolved' ? 'bg-green-500' :
+                                  item.status === 'Closed' ? 'bg-gray-500' : 'bg-red-500'
+                            }`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
+
+                      {item.status !== 'Resolved' && item.status !== 'Closed' && (
+                        <select
+                          value={item.status}
+                          onChange={(e) => updateStatus(item.id, e.target.value)}
+                          className="w-full border border-gray-300 p-1 rounded text-xs bg-white focus:outline-none"
+                        >
+                          <option value="">Update Status</option>
+                          {item.status !== 'Pending' && <option value="Pending">Pending</option>}
+                          {item.status !== 'In Progress' && <option value="In Progress">In Progress</option>}
+                          <option value="Resolved">Resolved</option>
+                          <option value="Closed">Closed</option>
+                        </select>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <button
+                        onClick={() => openView(item)}
+                        className="text-blue-600 underline hover:text-blue-800"
+                      >
+                        View
+                      </button>
+                      <br />
+                      <button
+                        onClick={() => openView(item)}
+                        className="text-blue-600 underline hover:text-blue-800"
+                      >
+                        Print
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         )}
+      </div>
+      <div className="flex justify-between items-center mt-4">
+        <p className="text-sm text-gray-600">
+          Page {currentPage} of {totalPages}
+        </p>
+        <div className="space-x-2">
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
       </div>
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">

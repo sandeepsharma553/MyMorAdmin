@@ -385,7 +385,7 @@ export default function AcademicGroupPage(props) {
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold mb-4">Add</h2>
+            <h2 className="text-xl font-bold mb-4">Add Academic Group</h2>
             <form onSubmit={handleAdd} className="space-y-4">
               <div className="space-y-4">
                 <input
@@ -414,7 +414,7 @@ export default function AcademicGroupPage(props) {
                 <input name="tags" value={form.tags} onChange={handleChange} placeholder="Tags / Interests (comma separated)" className="w-full border border-gray-300 p-2 rounded" />
                 {/* 📸 Media */}
                 <section className="space-y-4">
-                  <h2 className="text-xl font-semibold">📸 Media & Branding</h2>
+                  <h2 className="text-xl font-semibold">📸 Upload Logo </h2>
                   <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                     <label className="cursor-pointer">
                       <input type="file" name="poster" accept="image/*" className="hidden"
@@ -430,8 +430,8 @@ export default function AcademicGroupPage(props) {
                   {form.posterUrl && (
                     <img src={form.posterUrl} alt="Poster Preview" width="150" />
                   )}
-                  <input name="emoji" value={form.emoji} onChange={handleChange} placeholder="Emoji/Icon (optional)" className="w-full border border-gray-300 p-2 rounded" />
-                  <input name="themeColor" value={form.themeColor} onChange={handleChange} placeholder="Theme Color (hex or name)" className="w-full border border-gray-300 p-2 rounded" />
+                  <input name="emoji" style={{display:'none'}} value={form.emoji} onChange={handleChange} placeholder="Emoji/Icon (optional)" className="w-full border border-gray-300 p-2 rounded" />
+                  <input name="themeColor" style={{display:'none'}} value={form.themeColor} onChange={handleChange} placeholder="Theme Color (hex or name)" className="w-full border border-gray-300 p-2 rounded" />
                 </section>
 
                 {/* 🔒 Privacy */}
@@ -447,7 +447,7 @@ export default function AcademicGroupPage(props) {
                 </section>
 
                 {/* 👥 Membership */}
-                <section className="space-y-4">
+                <section className="space-y-4"  style={{display:'none'}}>
                   <h2 className="text-xl font-semibold">👥 Membership Settings</h2>
                   <input name="maxMembers" type="number" min={0} value={form.maxMembers} onChange={handleChange} placeholder="Max Members" className="w-full border border-gray-300 p-2 rounded" />
                   <label className="flex items-center space-x-2">
@@ -457,7 +457,7 @@ export default function AcademicGroupPage(props) {
                 </section>
 
                 {/* 🛠 Engagement */}
-                <section className="space-y-4">
+                <section className="space-y-4" style={{display:'none'}}>
                   <h2 className="text-xl font-semibold">🛠 Engagement Tools</h2>
                   {['groupChat', 'eventsEnabled', 'pollsEnabled', 'resourcesEnabled'].map((key) => (
                     <label key={key} className="flex items-center space-x-2">
@@ -468,7 +468,7 @@ export default function AcademicGroupPage(props) {
                 </section>
 
                 {/* 📍 Location */}
-                <section className="space-y-4">
+                <section className="space-y-4" style={{display:'none'}}>
                   <h2 className="text-xl font-semibold">📍 Location-Based</h2>
                   <input name="location" value={form.location} onChange={handleChange} placeholder="Group Location or Radius" className="w-full border border-gray-300 p-2 rounded" />
                   <label className="flex items-center space-x-2">
@@ -478,7 +478,7 @@ export default function AcademicGroupPage(props) {
                 </section>
 
                 {/* 🔔 Notifications */}
-                <section className="space-y-4">
+                <section className="space-y-4" style={{display:'none'}}>
                   <h2 className="text-xl font-semibold">🔔 Notifications</h2>
                   <label className="flex items-center space-x-2">
                     <input type="checkbox" name="notifications" checked={form.notifications} onChange={handleChange} />

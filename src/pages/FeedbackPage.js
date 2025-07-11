@@ -1,4 +1,4 @@
-import React, { useState, useEffect,useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc } from "firebase/firestore";
 import { db, storage } from "../../src/firebase";
 import { useSelector } from "react-redux";
@@ -10,7 +10,7 @@ import { useReactToPrint } from "react-to-print";
 export default function FeedbackPage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ id: 0, incidenttype: "", other: "", description: "", datetime: "", isreport: false, image: null, });
+  const [currentPage, setCurrentPage] = useState(1);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -22,6 +22,17 @@ export default function FeedbackPage(props) {
   const [viewData, setViewData] = useState(null);
   const contentRef = useRef(null);
   const uid = useSelector((state) => state.auth.user.uid);
+  const initialForm = {
+    id: 0, incidenttype: "", other: "", description: "", datetime: "", isreport: false, image: null,
+  }
+  const [form, setForm] = useState(initialForm);
+  const pageSize = 10;
+  const mockData = list
+  const totalPages = Math.ceil(mockData.length / pageSize);
+  const paginatedData = mockData.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
   useEffect(() => {
     getList()
   }, [])
@@ -112,7 +123,7 @@ export default function FeedbackPage(props) {
     // Reset
     setModalOpen(false);
     setEditing(null);
-    setForm({ id: 0, incidenttype: "", other: "", description: "", datetime: "", isreport: false, image: null, });
+    setForm(initialForm);
     setFileName('No file chosen');
   };
   const handleDelete = async () => {
@@ -133,7 +144,17 @@ export default function FeedbackPage(props) {
   };
 
   const handlePrint = useReactToPrint({ contentRef });
-
+  const updateStatus = async (id, newStatus) => {
+    try {
+      const requestRef = doc(db, 'repotincident', id);
+      await updateDoc(requestRef, { status: newStatus });
+      toast.success("Status updated!");
+      getList();
+    } catch (error) {
+      console.error("Error updating status:", error);
+      toast.error("Failed to update status.");
+    }
+  };
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}
@@ -142,14 +163,14 @@ export default function FeedbackPage(props) {
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
-            setForm({ id: 0, incidenttype: "", other: "", description: "", datetime: "", isreport: false, image: null, });
+            setForm(initialForm);
             setModalOpen(true);
           }}>
           + Add
         </button>
       </div>
       <div className="p-4 space-y-4">
-        <div className="grid grid-cols-4 gap-4">
+        {/* <div className="grid grid-cols-4 gap-4">
           <select className="p-2 rounded border border-gray-300">
             <option>Status</option>
           </select>
@@ -162,7 +183,7 @@ export default function FeedbackPage(props) {
           <select className="p-2 rounded border border-gray-300">
             <option>Submitted by</option>
           </select>
-        </div>
+        </div> */}
         <div className="flex justify-between items-center mb-4">
           <label></label>
           <button
@@ -185,32 +206,89 @@ export default function FeedbackPage(props) {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Report ID</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Submitted by</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Incident Type</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Date Submitted</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {list.map((item, i) => (
-                <tr key={i}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.uid}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.username}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.incidenttype}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Open</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.datetime.seconds != undefined ? dayjs(item.datetime.seconds * 1000).format('YYYY-MM-DD') : dayjs(item.datetime).format('YYYY-MM-DD')}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <button
-                      onClick={() => openView(item)}
-                      className="text-blue-600 underline hover:text-blue-800"
-                    >
-                      View
-                    </button>
+              {paginatedData.length === 0 ? (
+                <tr>
+                  <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
+                    No matching users found.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                paginatedData.map((item, i) => (
+                  <tr key={i}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.uid}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.username}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.incidenttype}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.datetime.seconds != undefined ? dayjs(item.datetime.seconds * 1000).format('YYYY-MM-DD') : dayjs(item.datetime).format('YYYY-MM-DD')}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+
+                      <div className="mb-2">
+                        <span
+                          className={`px-3 py-1 rounded-full text-white text-xs font-semibold
+       ${item.status === 'Pending' ? 'bg-yellow-500' :
+                              item.status === 'In Progress' ? 'bg-blue-500' :
+                                item.status === 'Resolved' ? 'bg-green-500' :
+                                  item.status === 'Closed' ? 'bg-gray-500' : 'bg-red-500'
+                            }`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
+
+                      {item.status !== 'Resolved' && item.status !== 'Closed' && (
+                        <select
+                          value={item.status}
+                          onChange={(e) => updateStatus(item.id, e.target.value)}
+                          className="w-full border border-gray-300 p-1 rounded text-xs bg-white focus:outline-none"
+                        >
+                          <option value="">Update Status</option>
+                          {item.status !== 'Pending' && <option value="Pending">Pending</option>}
+                          {item.status !== 'In Progress' && <option value="In Progress">In Progress</option>}
+                          <option value="Resolved">Resolved</option>
+                          <option value="Closed">Closed</option>
+                        </select>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <button
+                        onClick={() => openView(item)}
+                        className="text-blue-600 underline hover:text-blue-800"
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         )}
+      </div>
+      <div className="flex justify-between items-center mt-4">
+        <p className="text-sm text-gray-600">
+          Page {currentPage} of {totalPages}
+        </p>
+        <div className="space-x-2">
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
       </div>
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -323,7 +401,7 @@ export default function FeedbackPage(props) {
                 <span>{viewData?.username}</span>
                 <span className="font-medium">Incident Type.:</span>
                 <span>{viewData?.incidenttype}</span>
-      
+
                 <span className="font-medium">Description:</span>
                 <span className="col-span-1">{viewData?.description}</span>
 

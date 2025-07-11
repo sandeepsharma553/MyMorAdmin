@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { collection, addDoc, getDocs, updateDoc, doc, setDoc, deleteDoc, query, where, getDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, updateDoc, doc, setDoc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
 import { db } from "../../src/firebase";
 import { useSelector } from "react-redux";
 import * as XLSX from "xlsx";
-import { saveAs } from "file-saver"
+import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import diningMenuFile from "../assets/excel/dining_menu.xlsx";
@@ -12,23 +12,32 @@ export default function DiningMenuPage(props) {
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [editingData, setEditing] = useState(null);
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [data, setData] = useState([]);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [fileName, setFileName] = useState('No file chosen');
-      const uid = useSelector((state) => state.auth.user.uid);
-
+  const [currentPage, setCurrentPage] = useState(1);
+  const uid = useSelector((state) => state.auth.user.uid);
   const [form, setForm] = useState({
     date: '',
     day: '',
     meals: {
-      breakfast: { time: '', items: [''] },
-      lunch: { time: '', items: [''] },
-      dinner: { time: '', items: [''] }
-    }
+      breakfast: { time: '', items: [{ name: '', tags: [] }] },
+      lunch: { time: '', items: [{ name: '', tags: [] }] },
+      dinner: { time: '', items: [{ name: '', tags: [] }] }
+    },
+    uid: uid
   });
+  const pageSize = 10;
+  const mockData = list
 
+  const totalPages = Math.ceil(mockData.length / pageSize);
+  const paginatedData = mockData.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
   const handleChange = (meal, index, value) => {
     const updatedItems = [...form.meals[meal].items];
     updatedItems[index] = value;
@@ -45,17 +54,24 @@ export default function DiningMenuPage(props) {
   };
 
   const addItem = (meal) => {
-    setForm({
-      ...form,
-      meals: {
-        ...form.meals,
-        [meal]: {
-          ...form.meals[meal],
-          items: [...form.meals[meal].items, '']
+    setForm((prevForm) => {
+      const updatedItems = [
+        ...prevForm.meals[meal].items,
+        { name: "", tags: [] }
+      ];
+      return {
+        ...prevForm,
+        meals: {
+          ...prevForm.meals,
+          [meal]: {
+            ...prevForm.meals[meal],
+            items: updatedItems
+          }
         }
-      }
+      };
     });
   };
+
   const removeItem = (meal, index) => {
     const updatedItems = form.meals[meal].items.filter((_, i) => i !== index);
     setForm({
@@ -87,38 +103,40 @@ export default function DiningMenuPage(props) {
   };
   const handleSubmit = async (e) => {
     e.preventDefault();
-   
     if (!form.date) {
       toast.warning("Please select a date.");
       return;
     }
     try {
-
       const menuRef = doc(db, 'menus', form.date);
       const docSnap = await getDoc(menuRef);
-    
-      if (docSnap.exists()) {
-        toast.warn('Menu for this date already exists!');
-      } else {
-        await setDoc(menuRef, form);
-        toast.success('Menu saved!');
-        setModalOpen(false);
-        getList(form.date);
-        setForm({
-          date: '',
-          day: '',
-          meals: {
-            breakfast: { time: '', items: [''] },
-            lunch: { time: '', items: [''] },
-            dinner: { time: '', items: [''] }
-          }
-        })
-
+      if (editingData) {
+        if (docSnap.exists()) {
+          await updateDoc(menuRef, form);
+          toast.success("Menu updated successfully!");
+        }
       }
+      else {
+        if (docSnap.exists()) {
+          toast.warn('Menu for this date already exists!');
+          return;
+        } else {
+          await setDoc(menuRef, form);
+          toast.success("Menu created successfully!");
 
-
-
-     
+        }
+      }
+      setModalOpen(false);
+      getList(form.date);
+      setForm({
+        date: '',
+        day: '',
+        meals: {
+          breakfast: { time: '', items: [''] },
+          lunch: { time: '', items: [''] },
+          dinner: { time: '', items: [''] }
+        }
+      })
     }
     catch (error) {
       console.error("Error saving data:", error);
@@ -132,6 +150,7 @@ export default function DiningMenuPage(props) {
     getList(currentdate)
   }, [])
   const getList = async (date) => {
+    console.log(date)
     setIsLoading(true)
     const { start, end } = getWeekRange(date);
     const q = query(
@@ -147,6 +166,7 @@ export default function DiningMenuPage(props) {
     }));
 
     setList(weekMenus)
+    console.log(weekMenus)
     setIsLoading(false)
 
   }
@@ -165,11 +185,11 @@ export default function DiningMenuPage(props) {
   };
 
   const handleDelete = async () => {
-    if (!deleteData) return;
+    if (!deleteData?.date) return;
     try {
-      await deleteDoc(doc(db, 'menus', 1));
+      await deleteDoc(doc(db, 'menus', deleteData.date));
       toast.success('Successfully deleted!');
-      getList()
+      getList(date);
     } catch (error) {
       console.error('Error deleting document: ', error);
     }
@@ -191,13 +211,16 @@ export default function DiningMenuPage(props) {
 
   list.forEach(menu => {
     if (menu.meals) {
-      structuredData.breakfast[menu.day] = menu.meals.breakfast?.items || [];
-      structuredData.lunch[menu.day] = menu.meals.lunch?.items || [];
-      structuredData.dinner[menu.day] = menu.meals.dinner?.items || [];
+      Object.keys(menu.meals).forEach(meal => {
+        const lowerMeal = meal.toLowerCase();
+        if (structuredData[lowerMeal] && menu.meals[meal]?.items) {
+          structuredData[lowerMeal][menu.day] = menu.meals[meal].items;
+        }
+      });
     }
   });
 
-  const readExcel = (file) => {
+  const readExcel1 = (file) => {
     setIsLoading(true)
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -268,11 +291,79 @@ export default function DiningMenuPage(props) {
       }
 
       setData(nestedData);
-    
+      console.log(nestedData)
     };
     reader.readAsBinaryString(file);
     setIsLoading(false)
   };
+
+
+  const readExcel = (file) => {
+    setIsLoading(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target.result;
+      const workbook = XLSX.read(bstr, { type: "binary" });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+      const nestedData = [];
+      const groupedByDate = {};
+
+      jsonData.forEach(({ Date, Day, Meal, Time, Menu_Items, Tags }) => {
+        // ✅ Convert Date to ISO string
+        let formattedDate;
+        if (typeof Date === 'number') {
+          // Excel serial to JS Date
+          formattedDate = XLSX.SSF.format("yyyy-mm-dd", Date);
+        } else if (Date instanceof Date) {
+          formattedDate = Date.toISOString().split('T')[0];
+        } else {
+          formattedDate = new Date(Date).toISOString().split('T')[0]; // fallback
+        }
+
+        const key = formattedDate + "|" + Day;
+        const mealKey = Meal.toLowerCase();
+        if (!groupedByDate[key]) {
+          groupedByDate[key] = {
+            date: formattedDate,
+            day: Day,
+            meals: {}
+          };
+        }
+
+        if (!groupedByDate[key].meals[Meal.toLowerCase()]) {
+          groupedByDate[key].meals[Meal.toLowerCase()] = {
+            time: Time,
+            items: [],
+          };
+        }
+        const tagsArray = typeof Tags === 'string'
+          ? Tags.split(',').map(tag => tag.trim()).filter(Boolean)
+          : [];
+        groupedByDate[key].meals[mealKey].items.push({
+          name: Menu_Items,
+          tags: tagsArray
+        });
+
+        // groupedByDate[key].meals[Meal.toLowerCase()].items.push(Item);
+
+      });
+
+      for (const key in groupedByDate) {
+        nestedData.push(groupedByDate[key]);
+      }
+
+      setData(nestedData);
+      console.log(nestedData);
+      setIsLoading(false);
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
 
   const saveToFirebase = async () => {
     try {
@@ -284,12 +375,12 @@ export default function DiningMenuPage(props) {
       for (const entry of data) {
         const docRef = doc(db, "menus", entry.date);
         const docSnap = await getDoc(docRef);
-    
+
         if (docSnap.exists()) {
           toast.warn(`Menu for ${entry.date} already exists. Skipping...`);
           continue; // Skip this entry
         }
-    
+
         await setDoc(docRef, entry);
       }
 
@@ -304,7 +395,7 @@ export default function DiningMenuPage(props) {
     // for (const date in menuMap) {
     //   const docRef = db.collection("menus").doc(date);
     //   await docRef.set(menuMap[date]);
-    
+
     // }
   };
   const handleDownload = async () => {
@@ -317,6 +408,26 @@ export default function DiningMenuPage(props) {
     link.click();
     document.body.removeChild(link);
   };
+  const dietaryTags = [
+    { id: 'V', name: 'Vegetarian' },
+    { id: 'VG', name: 'Vegan' },
+    { id: 'VGO', name: 'Vegan Option' },
+    { id: 'GF', name: 'Gluten-Free' },
+    { id: 'DF', name: 'Dairy-Free' },
+    { id: 'DFO', name: 'Dairy-Free Option' },
+    { id: 'NF', name: 'Nut-Free' },
+    { id: 'SF', name: 'Shellfish-Free' },
+    { id: 'SF-C', name: 'Contains Shellfish' },
+    { id: 'CSF', name: 'Contains Seafood' },
+    { id: 'EF', name: 'Egg-Free' },
+    { id: 'HF', name: 'Halal-Friendly' },
+    { id: 'KF', name: 'Kosher-Friendly' },
+    { id: 'SOYF', name: 'Soy-Free' },
+    { id: 'P', name: 'Contains Pork' },
+    { id: 'NV', name: 'Non-Vegetarian' },
+    { id: 'PS', name: 'Pescatarian' },
+  ];
+  console.log(form)
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}
@@ -333,33 +444,34 @@ export default function DiningMenuPage(props) {
           />
           <button className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition" onClick={handleDownload}>Download Excel File</button>
           <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
-          <label className="cursor-pointer">
-            <input type="file" accept=".xlsx, .xls" className="hidden"
-              onChange={(e) => {
-                if (e.target.files.length > 0) {
-                  setFileName(e.target.files[0].name);
-                } else {
-                  setFileName('No file chosen');
-                }
-                const file = e.target.files[0];
-                if (file) readExcel(file);
-              }}
-            />
-            📁 Choose File
-          </label>
-          <span className="text-sm text-gray-600 truncate max-w-[150px]">
-            {fileName}
-          </span>
+            <label className="cursor-pointer">
+              <input type="file" accept=".xlsx, .xls" className="hidden"
+                onChange={(e) => {
+                  if (e.target.files.length > 0) {
+                    setFileName(e.target.files[0].name);
+                  } else {
+                    setFileName('No file chosen');
+                  }
+                  const file = e.target.files[0];
+                  if (file) readExcel(file);
+                }}
+              />
+              📁 Choose File
+            </label>
+            <span className="text-sm text-gray-600 truncate max-w-[150px]">
+              {fileName}
+            </span>
           </div>
           <button className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition"
-          disabled={!data.length}
-          onClick={saveToFirebase}>
+            disabled={!data.length}
+            onClick={saveToFirebase}>
             Upload Excel
           </button>
 
           <button className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition"
             onClick={() => {
               setModalOpen(true);
+              setEditing(null)
             }}>
             + Add
           </button>
@@ -372,51 +484,154 @@ export default function DiningMenuPage(props) {
               <FadeLoader color="#36d7b7" loading={isLoading} />
             </div>
           ) : (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            // <table className="min-w-full divide-y divide-gray-200">
+            //   <thead className="bg-gray-50">
+            //     <tr>
+            //       <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Meal</th>
+            //       {days.map(day => (
+            //         <th key={day} className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+            //           {day}
+            //         </th>
+            //       ))}
+            //       {/* <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th> */}
+            //     </tr>
+            //   </thead>
+            //   <tbody className="divide-y divide-gray-200">
+            //     {["breakfast", "lunch", "dinner"].map(mealType => (
+            //       <tr key={mealType}>
+            //         <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700 capitalize">
+            //           {mealType}
+            //         </td>
+            //         {days.map(day => (
+            //           <td key={day} className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+            //             <ul className="list-disc list-inside space-y-1">
+            //               {(structuredData[mealType.toLowerCase()][day] || []).map((item, index) => (
+            //                 <li key={index}>{item}</li>
+            //               ))}
+            //             </ul>
+            //           </td>
+            //         ))}
+            //         <td className="px-6 py-4 whitespace-nowrap text-sm">
+            //           <button className="text-blue-600 hover:underline mr-3" onClick={() => {
+            //             setEditing(menu);
+            //             setForm(menu);
+            //             setModalOpen(true)
+            //           }}>
+            //             Edit
+            //           </button>
+            //           <button className="text-red-600 hover:underline" onClick={() => setConfirmDeleteOpen(true)}>
+            //           Delete
+            //         </button>
+            //         </td>
+            //       </tr>
+            //     ))}
+            //   </tbody>
+            // </table>
+
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-100">
                 <tr>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Meal</th>
-                  {days.map(day => (
-                    <th key={day} className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                      {day}
-                    </th>
-                  ))}
-                  {/* <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th> */}
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Date</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Day</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Breakfast</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Lunch</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Dinner</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
                 </tr>
               </thead>
+
               <tbody className="divide-y divide-gray-200">
-                {["breakfast", "lunch", "dinner"].map(mealType => (
-                  <tr key={mealType}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700 capitalize">
-                      {mealType}
+                {paginatedData.length === 0 ? (
+                  <tr>
+                    <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
+                      No matching users found.
                     </td>
-                    {days.map(day => (
-                      <td key={day} className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        <ul className="list-disc list-inside space-y-1">
-                          {(structuredData[mealType.toLowerCase()][day] || []).map((item, index) => (
-                            <li key={index}>{item}</li>
-                          ))}
-                        </ul>
-                      </td>
-                    ))}
-                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    <button className="text-blue-600 hover:underline mr-3" onClick={() => setModalOpen(true)}>
-                      Edit
-                    </button>
-                    <button className="text-red-600 hover:underline" onClick={() => setConfirmDeleteOpen(true)}>
-                      Delete
-                    </button>
-                  </td> */}
                   </tr>
-                ))}
+                ) : (
+                  paginatedData.map((menu) => (
+                    <tr key={menu.date}>
+                      <td className="px-4 py-3 whitespace-nowrap text-gray-800 font-medium">{menu.date}</td>
+                      <td className="px-4 py-3 text-gray-700">{menu.day}</td>
+
+                      {['breakfast', 'lunch', 'dinner'].map((meal) => (
+                        <td key={meal} className="px-4 py-3 align-top w-1/4">
+                          <ul className="space-y-2">
+                            {menu.meals?.[meal]?.items?.map((item, i) => (
+                              <li key={i}>
+                                <div className="font-semibold text-gray-900">{item.name}</div>
+                                {item.tags?.length > 0 && (
+                                  <div className="text-xs text-gray-500">
+                                    {item.tags.map((tag, index) => (
+                                      <span
+                                        key={index}
+                                        className="inline-block bg-gray-100 border border-gray-300 text-gray-600 text-xs px-1.5 py-0.5 mr-1 rounded"
+                                      >
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                      ))}
+
+                      <td className="px-4 py-3 text-sm">
+                        <button
+                          className="text-blue-600 hover:underline mr-3"
+                          onClick={() => {
+                            setEditing(menu);
+                            setForm(menu);
+                            setModalOpen(true);
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="text-red-600 hover:underline"
+                          onClick={() => {
+                            setConfirmDeleteOpen(true);
+                            setDelete(menu);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
 
 
+
           )}
+
         </div>
 
 
+      </div>
+      <div className="flex justify-between items-center mt-4">
+        <p className="text-sm text-gray-600">
+          Page {currentPage} of {totalPages}
+        </p>
+        <div className="space-x-2">
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
       </div>
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -428,10 +643,12 @@ export default function DiningMenuPage(props) {
                 <label className="block font-medium mb-1">Date:</label>
                 <input
                   type="date"
+                  value={form.date}
+                  disabled={editingData !== null}
                   className="w-full border border-gray-300 p-2 rounded"
                   onChange={(e) => {
                     const selectedDate = e.target.value;
-                  
+
                     const day = getDayFromDate(selectedDate);
                     setForm(prev => ({ ...prev, date: selectedDate, day }));
                   }}
@@ -465,16 +682,69 @@ export default function DiningMenuPage(props) {
                   />
 
                   {form.meals[meal].items.map((item, index) => (
-                    <div key={index} className="mb-2">
+                    <div key={index} className="mb-2 space-y-4">
                       <input
                         type="text"
                         className="w-full border border-gray-300 p-2 rounded"
                         placeholder={`Item ${index + 1}`}
-                        value={item}
-                        onChange={(e) => handleChange(meal, index, e.target.value)}
+                        value={item.name}
+                        onChange={(e) => {
+                          const updatedItems = [...form.meals[meal].items];
+                          updatedItems[index].name = e.target.value;
+                          setForm({
+                            ...form,
+                            meals: {
+                              ...form.meals,
+                              [meal]: {
+                                ...form.meals[meal],
+                                items: updatedItems
+                              }
+                            }
+                          });
+                        }}
                         required
                       />
+
+                      <Select
+                        className="w-full"
+                        multiple
+                        displayEmpty
+                        value={item.tags}
+                        onChange={(e) => {
+                          const selected = e.target.value;
+                          const updatedItems = [...form.meals[meal].items];
+                          updatedItems[index].tags = selected;
+                          setForm({
+                            ...form,
+                            meals: {
+                              ...form.meals,
+                              [meal]: {
+                                ...form.meals[meal],
+                                items: updatedItems,
+                              },
+                            },
+                          });
+                        }}
+                        renderValue={(selected) =>
+                          selected.length
+                            ? selected
+                              .map((id) => {
+                                const tag = dietaryTags.find((t) => t.id === id);
+                                return tag?.name || id;
+                              })
+                              .join(", ")
+                            : "Select Tags"
+                        }
+                      >
+                        {dietaryTags.map(({ id, name }) => (
+                          <MenuItem key={id} value={id}>
+                            <Checkbox checked={item.tags.includes(id)} />
+                            <ListItemText primary={name} />
+                          </MenuItem>
+                        ))}
+                      </Select>
                     </div>
+
                   ))}
 
                   <button
@@ -518,7 +788,7 @@ export default function DiningMenuPage(props) {
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
-            <h2 className="text-xl font-semibold mb-4 text-red-600">Delete User</h2>
+            <h2 className="text-xl font-semibold mb-4 text-red-600">Delete Dining Menu</h2>
             <p className="mb-4">Are you sure you want to delete <strong>{deleteData?.name}</strong>?</p>
             <div className="flex justify-end space-x-3">
               <button

@@ -332,7 +332,7 @@ export default function EventPage(props) {
                   />
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                 </div>
-                <input name="onlineLink" placeholder="Online Event Link" value={form.onlineLink} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                <input style={{display:'none'}} name="onlineLink" placeholder="Online Event Link" value={form.onlineLink} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">
                     <input type="file" name="poster" accept="image/*" className="hidden"
@@ -348,8 +348,8 @@ export default function EventPage(props) {
                 {form.posterUrl && (
                   <img src={form.posterUrl} alt="Poster Preview" width="150" />
                 )}
-                <input name="promoVideo" placeholder="Promo Video Link" value={form.promoVideo} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-                <input name="theme" placeholder="Theme Color / Emoji" value={form.theme} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                <input name="promoVideo" style={{display:'none'}} placeholder="Promo Video Link" value={form.promoVideo} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                <input name="theme" style={{display:'none'}} placeholder="Theme Color / Emoji" value={form.theme} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
                 <label className="block mb-2"><input type="checkbox" name="rsvp" checked={form.rsvp} onChange={handleChange} /> RSVP Required?</label>
                 <input name="capacity" placeholder="Max Capacity" value={form.capacity} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
                 <input type="datetime-local" name="rsvpDeadline" value={form.rsvpDeadline} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />

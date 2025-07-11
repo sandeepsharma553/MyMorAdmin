@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -7,6 +7,12 @@ import { ref as dbRef, onValue, set, push, update, remove, get } from 'firebase/
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, getDocs, Timestamp } from "firebase/firestore";
 import dayjs from 'dayjs';
+import { DateRange } from 'react-date-range';
+import 'react-date-range/dist/styles.css'; // main style file
+import 'react-date-range/dist/theme/default.css'; // theme css file
+import { enUS } from 'date-fns/locale';
+import { format } from 'date-fns';
+
 export default function AnnouncementPage(props) {
     const { navbarHeight } = props;
     const [modalOpen, setModalOpen] = useState(false)
@@ -15,12 +21,24 @@ export default function AnnouncementPage(props) {
     const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
     const [list, setList] = useState([])
     const [isLoading, setIsLoading] = useState(false)
+    const [currentPage, setCurrentPage] = useState(1);
     const [fileName, setFileName] = useState('No file chosen');
+    const [options, setOptions] = useState(['', '']);
     const uid = useSelector((state) => state.auth.user.uid)
     const user = useSelector((state) => state.auth.user)
+    const [range, setRange] = useState([
+        {
+            startDate: new Date(),
+            endDate: new Date(),
+            key: 'selection'
+        }
+    ]);
+    const [showPicker, setShowPicker] = useState(false);
+    const pickerRef = useRef();
     const initialForm = {
         id: 0,
         title: '',
+        shortdesc: '',
         description: '',
         date: '',
         user: '',
@@ -28,9 +46,19 @@ export default function AnnouncementPage(props) {
         likes: [],
         comments: [],
         bookmarked: false,
-
+        question: '',
+        options: ['', ''],
+        allowMulti: false,
+        link: ''
     }
     const [form, setForm] = useState(initialForm);
+    const pageSize = 10;
+    const mockData = list
+    const totalPages = Math.ceil(mockData.length / pageSize);
+    const paginatedData = mockData.slice(
+        (currentPage - 1) * pageSize,
+        currentPage * pageSize
+    );
     useEffect(() => {
         getList()
     }, [])
@@ -56,16 +84,13 @@ export default function AnnouncementPage(props) {
 
     }
     const handleChange = (e) => {
-        const { name, value, type, files } = e.target;
+        const { name, value, type, files, checked } = e.target;
         if (type === 'file') {
             setForm({ ...form, [name]: files[0] });
-            if (files.length > 0) {
-                setFileName(files[0].name);
-            } else {
-                setFileName('No file chosen');
-            }
-        }
-        else {
+            setFileName(files.length > 0 ? files[0].name : 'No file chosen');
+        } else if (type === 'checkbox') {
+            setForm({ ...form, [name]: checked });
+        } else {
             setForm({ ...form, [name]: value });
         }
     };
@@ -115,7 +140,11 @@ export default function AnnouncementPage(props) {
                     date: Timestamp.fromDate(new Date(form.date)),
                     createdAt: Timestamp.now(),
                     ...(posterUrl && { posterUrl }),
-                    photoURL: user.photoURL
+                    photoURL: user.photoURL,
+                    date: {
+                        startDate: Timestamp.fromDate(new Date(form.date.startDate)),
+                        endDate: Timestamp.fromDate(new Date(form.date.endDate))
+                    }
                 })
                 toast.success('Annoucement updated successfully');
             }
@@ -131,7 +160,11 @@ export default function AnnouncementPage(props) {
                     date: Timestamp.fromDate(new Date(form.date)),
                     createdAt: Timestamp.now(),
                     ...(posterUrl && { posterUrl }),
-                    photoURL: user.photoURL
+                    photoURL: user.photoURL,
+                    date: {
+                        startDate: Timestamp.fromDate(new Date(form.date.startDate)),
+                        endDate: Timestamp.fromDate(new Date(form.date.endDate))
+                    }
                 })
                 toast.success('Annoucement created successfully');
             }
@@ -144,6 +177,11 @@ export default function AnnouncementPage(props) {
         setEditing(null);
         setForm(initialForm);
         setFileName('No file chosen');
+        const cleanOptions = form.options?.map(opt => opt.trim()).filter(Boolean) || [];
+
+        if (form.question && cleanOptions.length >= 2) {
+            form.options = cleanOptions;
+        }
     };
     const handleDelete = async () => {
         if (!deleteData) return;
@@ -165,9 +203,11 @@ export default function AnnouncementPage(props) {
         setDelete(null);
     };
 
-    const formatDateTime = (isoString) => {
-        const date = dayjs(isoString.seconds * 1000).format('YYYY-MM-DD');
-        return date;
+    const formatDateTime = (dateObj) => {
+        if (!dateObj?.startDate || !dateObj?.endDate) return 'N/A';
+        const start = dayjs(dateObj.startDate.seconds ? dateObj.startDate.seconds * 1000 : dateObj.startDate).format('MMM DD, YYYY');
+        const end = dayjs(dateObj.endDate.seconds ? dateObj.endDate.seconds * 1000 : dateObj.endDate).format('MMM DD, YYYY');
+        return `${start} - ${end}`;
     };
     const fetchUser = async (uid) => {
         const querySnapshot = await getDocs(collection(db, 'User'));
@@ -184,6 +224,50 @@ export default function AnnouncementPage(props) {
 
         return userMap[uid] || "";
     };
+    const addOption = () => {
+        setForm(prev => ({
+            ...prev,
+            options: [...(prev.options || []), '']
+        }));
+    };
+    const updateOption = (txt, idx) => {
+        const updated = [...form.options];
+        updated[idx] = txt;
+        setForm(prev => ({
+            ...prev,
+            options: updated
+        }));
+    };
+    const removeOption = (index) => {
+        if (form.options.length <= 2) {
+            toast.warning("At least 2 options required.");
+            return;
+        }
+        const updated = form.options.filter((_, i) => i !== index);
+        setForm(prev => ({ ...prev, options: updated }));
+    };
+    const handleRangeChange = (item) => {
+        const selected = item.selection;
+        setRange([selected]);
+        const bothSelected =
+            selected.startDate &&
+            selected.endDate &&
+            selected.startDate.getTime() !== selected.endDate.getTime();
+
+        if (bothSelected) {
+            setForm((prev) => ({
+                ...prev,
+                date: {
+                    startDate: selected.startDate.toISOString(),
+                    endDate: selected.endDate.toISOString(),
+                },
+            }));
+            setShowPicker(false);
+        }
+    };
+
+    const formattedRange = `${format(range[0].startDate, 'MMM dd, yyyy')} - ${format(range[0].endDate, 'MMM dd, yyyy')}`;
+
     return (
         <main className="flex-1 p-6 bg-gray-100 overflow-auto">
             {/* Top bar with Add button */}
@@ -216,38 +300,63 @@ export default function AnnouncementPage(props) {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">
-                                {list.map((item, i) => (
-                                    <tr key={i}>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700">
-
-                                            <div className="flex-shrink">{item.description}</div></td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{formatDateTime(item.date)}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                                            {item.posterUrl != "" ? (<img src={item.posterUrl} width={80} height={80} />) : null}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            <button className="text-blue-600 hover:underline mr-3" onClick={() => {
-                                                setEditing(item);
-                                                setForm(prev => ({
-                                                    ...prev,
-                                                    ...item,
-                                                    id: item.id,
-                                                    date: formatDateTime(item.date),
-                                                    //  date: item.date?.toDate().toISOString().split('T')[0] || '',
-                                                    poster: null // poster cannot be pre-filled (file inputs are read-only for security)
-                                                }));
-                                                setModalOpen(true);
-
-                                            }}>Edit</button>
-                                            <button className="text-red-600 hover:underline" onClick={() => {
-                                                setDelete(item);
-                                                setForm(item);
-                                                setConfirmDeleteOpen(true);
-                                            }}>Delete</button>
+                                {paginatedData.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
+                                            No matching users found.
                                         </td>
                                     </tr>
-                                ))}
+                                ) : (
+                                    paginatedData.map((item,i) => (
+                                        <tr key={i}>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-700">
+
+                                                <div className="flex-shrink">{item.description}</div></td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{formatDateTime(item.date)}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                                                {item.posterUrl != "" ? (<img src={item.posterUrl} width={80} height={80} />) : null}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <button className="text-blue-600 hover:underline mr-3" onClick={() => {
+                                                    setEditing(item);
+                                                    const startDate = item.date?.startDate?.seconds
+                                                        ? new Date(item.date.startDate.seconds * 1000)
+                                                        : new Date(item.date.startDate);
+                                                    const endDate = item.date?.endDate?.seconds
+                                                        ? new Date(item.date.endDate.seconds * 1000)
+                                                        : new Date(item.date.endDate);
+                                                    setForm(prev => ({
+                                                        ...prev,
+                                                        ...item,
+                                                        id: item.id,
+                                                        date: {
+                                                            startDate: startDate.toISOString(),
+                                                            endDate: endDate.toISOString(),
+                                                        },
+
+                                                        poster: null // poster cannot be pre-filled (file inputs are read-only for security)
+                                                    }));
+                                                    setRange([
+                                                        {
+                                                            startDate,
+                                                            endDate,
+                                                            key: 'selection',
+                                                        },
+                                                    ]);
+
+                                                    setModalOpen(true);
+
+                                                }}>Edit</button>
+                                                <button className="text-red-600 hover:underline" onClick={() => {
+                                                    setDelete(item);
+                                                    setForm(item);
+                                                    setConfirmDeleteOpen(true);
+                                                }}>Delete</button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
                             </tbody>
                         </table>
                     )}
@@ -255,18 +364,73 @@ export default function AnnouncementPage(props) {
 
 
             </div>
+            <div className="flex justify-between items-center mt-4">
+                <p className="text-sm text-gray-600">
+                    Page {currentPage} of {totalPages}
+                </p>
+                <div className="space-x-2">
+                    <button
+                        onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+                    >
+                        Previous
+                    </button>
+                    <button
+                        onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+                    >
+                        Next
+                    </button>
+                </div>
+            </div>
             {modalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-                    <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
+                    <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
                         <h2 className="text-xl font-bold mb-4">Add</h2>
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div className="space-y-4">
                                 <input name="title" placeholder="Title" value={form.title}
                                     onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
+                                <input name="shortdesc" placeholder="Short Description" value={form.shortdesc}
+                                    onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
 
                                 <textarea name="description" placeholder="Description" value={form.description} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required></textarea>
-                                <label>Date</label>
-                                <input type="date" name="date" value={form.date} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
+                                <label>Date Range</label>
+                                <div>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        value={form.date?.startDate && form.date?.endDate
+                                            ? `${format(new Date(form.date.startDate), 'MMM dd, yyyy')} - ${format(new Date(form.date.endDate), 'MMM dd, yyyy')}`
+                                            : ''
+                                        }
+                                        onClick={() => setShowPicker(!showPicker)}
+                                        className="w-full border border-gray-300 p-2 rounded"
+                                    />
+                                    {showPicker && (
+                                        <div
+                                            ref={pickerRef}
+                                            style={{
+                                                position: 'absolute',
+                                                top: 50,
+                                                zIndex: 1000,
+                                                boxShadow: '0px 2px 10px rgba(0,0,0,0.2)'
+                                            }}
+                                        >
+                                            <DateRange
+                                                editableDateInputs={true}
+                                                onChange={handleRangeChange}
+                                                moveRangeOnFirstSelection={false}
+                                                ranges={range}
+                                                minDate={new Date()}
+                                                locale={enUS}
+
+                                            />
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                                     <label className="cursor-pointer">
                                         <input type="file" name="poster" accept="image/*" className="hidden"
@@ -282,7 +446,63 @@ export default function AnnouncementPage(props) {
                                 {form.posterUrl && (
                                     <img src={form.posterUrl} alt="Poster Preview" width="150" />
                                 )}
+                                <label>Create Poll</label><br />
+                                <label>Question</label>
+                                <input
+                                    type="text"
+                                    name="question"
+                                    placeholder="Ask question"
+                                    value={form.question}
+                                    onChange={handleChange}
+                                    className="w-full border border-gray-300 p-2 rounded"
+                                />
+                                {form.options.map((opt, idx) => (
+                                    <div key={idx} className="flex items-center gap-2 mb-2">
+                                        <input
+                                            className="flex-1 border border-gray-300 p-2 rounded"
+                                            placeholder={`Option ${idx + 1}`}
+                                            value={opt}
+                                            onChange={e => updateOption(e.target.value, idx)}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => removeOption(idx)}
+                                            className="text-red-600 text-sm hover:underline"
+                                        >
+                                            ❌
+                                        </button>
+                                    </div>
+                                ))}
 
+                                <button type="button"
+                                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                    onClick={addOption}>
+                                    + Add option
+                                </button>
+                                <input name="link" placeholder="News Link" value={form.link}
+                                    onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+
+                                <div className="flex items-center gap-4 mt-4 cursor-pointer select-none">
+                                    <label htmlFor="toggleMulti" className="text-sm font-medium text-gray-700">
+                                        Allow multiple answers
+                                    </label>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            id="toggleMulti"
+                                            name="allowMulti"
+                                            checked={form.allowMulti}
+                                            onChange={handleChange}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-green-500 transition-colors duration-300"></div>
+                                        <div
+                                            className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform duration-300 peer-checked:translate-x-5"
+                                        ></div>
+                                    </label>
+
+
+                                </div>
                             </div>
                             <div className="flex justify-end mt-6 space-x-3">
                                 <button
