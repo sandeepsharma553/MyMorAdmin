@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Calendar, Menu, BookOpen, BrushCleaning, Settings,
   Users, MessageSquareWarning, Handshake, Utensils, GraduationCap,
-  Hotel, Bell, UserPlus,SettingsIcon
+  Hotel, Bell, UserPlus, SettingsIcon
 } from "lucide-react";
 import { useSelector } from "react-redux";
 
@@ -36,6 +36,8 @@ function Sidebar({ onSectionClick, isLoading }) {
   const [activeSection, setActiveSection] = useState("dashboard");
   const navigate = useNavigate();
   const employee = useSelector(state => state.auth.employee);
+  console.log(employee.role)
+
   const perms = employee?.permissions ?? null;
 
   const handleClick = (sectionKey) => {
@@ -69,7 +71,10 @@ function Sidebar({ onSectionClick, isLoading }) {
       {/* ==== MENU (scrollable section) ==== */}
       <nav className="flex-1 min-h-0 overflow-y-auto px-2 custom-scroll">
         {SECTIONS
-          .filter(({ key }) => !perms || hasPermission(perms, key))
+          .filter(({ key }) => {
+            if (employee?.role === 'admin') return true;
+            return !perms || hasPermission(perms, key);
+          })
           .map(({ key, label, Icon }) => (
 
             <button

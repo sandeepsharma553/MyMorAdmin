@@ -1,79 +1,71 @@
-//import logo from './logo.svg';
 import './App.css';
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from "react-redux";
-import LoginPage from "./pages/LoginPage";
-import HomePage from "./pages/HomePage";
+import LoginPage from "./auth/LoginPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import SupportPage from "./pages/SupportPage";
-import AccountDeletionPage from "./pages/AccountDeletionPage";
+import AccountDeletionPage from "./auth/pages/admin/AccountDeletionPage";
 import Layout from './components/Layout';
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import { auth, db } from "./firebase";
+import SuperAdminLayout from './components/SuperAdminLayout';
+import SuperAdminRoutes from "./routes/SuperAdminRoutes";
+import AdminRoutes from "./routes/AdminRoutes";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
+
+function AppWrapper() {
+  const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
+  const type = useSelector((state) => state.auth.type);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    // Wait a short time for role to load from localStorage/Redux
+    const timer = setTimeout(() => setChecking(false), 100); // adjust if needed
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (checking) return null; // Prevent early rendering and avoid loop
+
+  // Optional logging
+  console.log("LoggedIn:", isLoggedIn, "Role:", type);
+
+  return (
+    <Routes>
+      <Route path="/privacy" element={<PrivacyPolicyPage />} />
+      <Route path="/support" element={<SupportPage />} />
+      <Route path="/requestdelete" element={<AccountDeletionPage />} />
+
+      {!isLoggedIn && (
+        <Route path="*" element={<LoginPage />} />
+      )}
+
+      {isLoggedIn && type === "superadmin" && (
+         <>
+         <Route path="/" element={<Navigate to="/super/dashboard" />} />
+         <Route path="/super/*" element={<SuperAdminLayout><SuperAdminRoutes /></SuperAdminLayout>} />
+         </>
+       
+      )}
+
+      {isLoggedIn && type === "admin" && (
+        <>
+        <Route path="/" element={<Navigate to="/home/dashboard" />} />
+        <Route path="/home/*" element={<Layout><AdminRoutes /></Layout>} />
+        </>
+      )}
+
+      <Route path="*" element={<Navigate to="/" />} />
+    </Routes>
+  );
+}
+
 
 function App() {
-  const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
-  const [user, setUser] = useState(null);
-  const uid = useSelector((state) => state?.auth?.user?.uid);
-  const sessionDuration = 24 * 60 * 60 * 1000;
-  const sessionDuration1 = 60 * 1000;
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser)
-    });
-    return () => unsubscribe();
-  }, []);
-  useEffect(() => {
-    const loginTime = localStorage.getItem('loginTime');
-    if (loginTime) {
-      const expirationTime = Number(loginTime) + sessionDuration;
-      const timeLeft = expirationTime - Date.now();
-
-      if (timeLeft <= 0) {
-        signOut(auth);
-        localStorage.removeItem('loginTime');
-        localStorage.removeItem("userData");
-        localStorage.removeItem("employee");
-      } else {
-        const timer = setTimeout(() => {
-          signOut(auth);
-          localStorage.removeItem('loginTime');
-          localStorage.removeItem("userData");
-          localStorage.removeItem("employee");
-        }, timeLeft);
-
-        return () => clearTimeout(timer);
-      }
-    }
-  }, []);
   return (
-    <Router>
-      {/* <nav>
-      <Link to="/">Home</Link> | <Link to="/about">About</Link>
-    </nav>
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/about" element={<About />} />
-      <Route path="*" element={<NotFound />} />
-    </Routes> */}
-      <Routes>
-        <Route
-          exact
-          path="/"
-          element={isLoggedIn ? <Layout><Navigate to="/home/dashboard" /></Layout> : <LoginPage />}
-        ></Route>
-        <Route exact path="/privacy" element={<PrivacyPolicyPage />}></Route>
-        <Route exact path="/support" element={<SupportPage />}></Route>
-        <Route path="/requestdelete" element={<AccountDeletionPage />} />
-        <Route
-          index
-          path="/home/*"
-          element={isLoggedIn ? <Layout><HomePage /></Layout> : <Navigate to="/" />}
+    
+      <Router>
+        <AppWrapper />
+      </Router>
 
-        ></Route>
-      </Routes>
-    </Router>
   );
 }
 

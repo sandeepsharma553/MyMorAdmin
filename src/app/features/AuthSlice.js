@@ -31,7 +31,7 @@ export const LoginAdmin = createAsyncThunk(
       // console.log(firebaseUser)
       const employee = await dispatch(getEmployeeByUid(firebaseUser.uid)).unwrap();
       // const user = await dispatch(getUserByUid(firebaseUser.uid)).unwrap();
-
+     console.log(employee)
       const response = {
         isSuccess: true,
         firebaseUser,
@@ -54,8 +54,7 @@ export const getEmployeeByUid = createAsyncThunk(
     try {
 
       if (!uid) throw new Error('UID is missing');
-
-      const docRef = doc(db, 'employee', uid);
+      const docRef = doc(db, 'employees', uid);
       const docSnap = await getDoc(docRef);
       console.log(docSnap.data(),'employee')
       const response = { id: docSnap.id, ...docSnap.data() }
@@ -114,7 +113,7 @@ const initialState = {
     localStorage.getItem("employee") !== "undefined"
       ? JSON.parse(localStorage.getItem("employee"))
       : null,
-  role: localStorage.getItem("role") || null,
+      type: localStorage.getItem("type") || null,
 };
 
 // ✅ Auth Slice
@@ -132,16 +131,16 @@ const AuthSlice = createSlice({
       })
       .addCase(LoginAdmin.fulfilled, (state, action) => {
         const {firebaseUser ,user, employee } = action.payload;
-        const role = user.role || employee.role;
+        const type =  employee.type;
 
         state.isLoading = false;
         state.user = user;
         state.employee = employee;
-        state.role = role;
+        state.type = type;
         state.isLoggedIn = true;
         localStorage.setItem("userData", JSON.stringify(firebaseUser));
         localStorage.setItem("employee", JSON.stringify(employee));
-        localStorage.setItem("role", role);
+        localStorage.setItem("type", type);
         localStorage.setItem("loginTime", Date.now().toString());
       })
       .addCase(LoginAdmin.rejected, (state, action) => {

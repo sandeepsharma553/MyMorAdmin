@@ -48,16 +48,7 @@ export default function ChangePasswordPage() {
       await reauthenticateWithCredential(user, credential);
       await updatePassword(user, newPassword);
      
-
-      toast.success("Password updated successfully ✨");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setTimeout(()=>{
-        handleLogout()
-      },1000)
-     
-      const docRef = doc(db, "employee", user.uid);
+      const docRef = doc(db, "employees", user.uid);
       const docSnap = await getDoc(docRef);
       if (!docSnap.exists()) {
        // toast.warning("Employee record does not exist – cannot update.");
@@ -67,6 +58,14 @@ export default function ChangePasswordPage() {
         password: currentPassword
       }
       await updateDoc(docRef, employeeData);
+      toast.success("Password updated successfully ✨");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setTimeout(()=>{
+        handleLogout()
+      },1000) 
+      
 
     } catch (err) {
       console.error(err);

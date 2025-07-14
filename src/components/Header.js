@@ -30,7 +30,7 @@ export default function Header({ onClick }) {
   };
   const handleMenuSelect = (setting) => {
     if (setting === "ChangePassword") {
-      navigate("/home/changepassword");
+      navigate("/home/changepassword") || navigate("/super/changepassword")
     } else if (setting === "Logout") {
       handleLogout();
     }

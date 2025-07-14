@@ -21,6 +21,7 @@ export default function EmployeePage(props) {
   const [fileName, setFileName] = useState('No file chosen');
   const uid = useSelector((state) => state.auth.user.uid);
   const user = useSelector((state) => state.auth.user);
+  console.log('emp',user)
   const initialForm = {
     id: 0,
     name: '',
@@ -76,12 +77,17 @@ export default function EmployeePage(props) {
   }, [])
   const getList = async () => {
     setIsLoading(true)
-    const querySnapshot = await getDocs(collection(db, 'employees'));
+    const q = query(
+      collection(db, 'employees'),
+      where('uid', '==', uid) 
+    );
+    
+    const querySnapshot = await getDocs(q);
     const documents = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
     }));
-    setList(documents)
+    setList(documents);
     setIsLoading(false)
     console.log(documents)
   }

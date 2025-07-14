@@ -34,7 +34,6 @@ export default function AdminRoutes({ route }) {
           <Route path="/eventpage" element={<EventPage />} />
           <Route path="/dealpage" element={<DealPage />} />
           <Route path="/requestdelete" element={<AccountDeletionPage />} />
-       
           <Route path="/employee" element={<EmployeePage />} />
           <Route path="/changepassword" element={<ChangePasswordPage />} />
           <Route path="/resources" element={<ResourcesPage />} />

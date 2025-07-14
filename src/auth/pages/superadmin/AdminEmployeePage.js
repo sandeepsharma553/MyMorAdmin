@@ -8,7 +8,6 @@ import { initializeApp, deleteApp, FirebaseApp } from 'firebase/app';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth, createUserWithEmailAndPassword, updateProfile, deleteUser } from "firebase/auth";
 import { useSelector } from "react-redux";
-import { University } from "lucide-react";
 export default function AdminEmployeePage(props) {
   const { navbarHeight } = props;
   const [searchTerm, setSearchTerm] = useState('');
@@ -18,6 +17,8 @@ export default function AdminEmployeePage(props) {
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([])
+  const [universities, setUniversities] = useState([]);
+  const [hostels, setHostels] = useState([]);
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
   const uid = useSelector((state) => state.auth.user.uid);
@@ -28,10 +29,12 @@ export default function AdminEmployeePage(props) {
     email: '',
     mobileNo: '',
     address: '',
-    university: '',
+    hostelid: '',
     hostel: '',
     role: 'admin',
+    type: 'admin',
     isActive: true,
+    domain: ''
   }
   const [form, setForm] = useState(initialForm);
   const pageSize = 10;
@@ -52,14 +55,34 @@ export default function AdminEmployeePage(props) {
   }, [])
   const getList = async () => {
     setIsLoading(true)
-    const querySnapshot = await getDocs(collection(db, 'employees'));
-    const documents = querySnapshot.docs.map(doc => ({
+    const q = query(
+      collection(db, 'employees'),
+      where('type', '==', 'admin')
+    );
+
+    const querySnapshot = await getDocs(q);
+
+    const superAdmins = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
     }));
-    setList(documents)
+    setList(superAdmins)
+    const [uniSnap, hostelSnap] = await Promise.all([
+      getDocs(collection(db, 'university')),
+      getDocs(collection(db, 'hostel')),
+    ]);
+
+    const uniArr = uniSnap.docs.map(d => ({ id: d.id, name: d.data().name, domain: d.data().domain }));
+    const hostelArr = hostelSnap.docs.map(d => ({
+      id: d.id,
+      name: d.data().name,
+      universityId: d.data().universityId,
+      location: d.data().location
+    }));
+    setUniversities(uniArr);
+    setHostels(hostelArr);
     setIsLoading(false)
-    console.log(documents)
+    console.log(hostelArr)
   }
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
@@ -109,7 +132,6 @@ export default function AdminEmployeePage(props) {
         uid,
         password,
         ...(imageUrl && { imageUrl }),
-        type: 'superadmin',
       };
       delete employeeData.id;
       delete employeeData.image;
@@ -217,12 +239,10 @@ export default function AdminEmployeePage(props) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Hostel</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Name</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Email</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Mobile No</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Designation</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Department</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Role</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Password</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Image</th>
@@ -239,12 +259,10 @@ export default function AdminEmployeePage(props) {
               ) : (
                 paginatedData.map((item) => (
                   <tr key={item.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.hostel}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.email}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.mobileNo}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.designation}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.department}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.role}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.password}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <span
@@ -326,7 +344,65 @@ export default function AdminEmployeePage(props) {
                 )}
                 <input name="mobileNo" placeholder="Mobile No" type="number" min={0} value={form.mobileNo} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                 <textarea name="address" placeholder="Address" value={form.address} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required></textarea>
+                {/* <Select
+                  className="w-full border border-gray-300 p-2 rounded"
+                  multiple
+                  displayEmpty
+                  required
+                  value={form.uniIds}
+                  onChange={(e) => {
+                    const selectedIds = e.target.value;
+                    const firstUni = universities.find(u => u.id === selectedIds[0]);
+                    setForm({
+                      ...form,
+                      uniIds: selectedIds,
+                      domain: firstUni?.domain || ''
+                    });
+                  }}
+                  renderValue={(selected) =>
+                    selected.length
+                      ? selected.map((id) => {
+                        const uni = universities.find((u) => u.id === id);
+                        return uni?.name || '';
+                      }).join(", ")
+                      : "Select University"
+                  }
+                >
+                  {universities.map(({ id, name }) => (
+                    <MenuItem key={id} value={id}>
+                      <Checkbox checked={form.uniIds.includes(id)} />
+                      <ListItemText primary={name} />
+                    </MenuItem>
+                  ))}
+                </Select> */}
+                {/* <select name="hostelid"
+                  value={form.hostelid}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded" required >
+                  <option value="">Select University</option>
 
+                  {universities.map((item, i) => (
+                    <option value={item.id}>{item.name}</option>
+                  ))}
+                </select> */}
+                <select name="hostelid" value={form.hostelid}
+                  onChange={(e) => {
+                    const selectedHostelId = e.target.value;
+                    const selectedHostel = hostels.find(h => h.id === selectedHostelId);
+                    setForm({
+                      ...form,
+                      hostelid: selectedHostelId,
+                      hostel: selectedHostel?.name || "",
+                    });
+                  }}
+                  className="w-full border border-gray-300 p-2 rounded" required >
+                  <option value="">Select Hostel</option>
+                  {hostels.map((item, i) => (
+                    <option value={item.id}>{item.name} - {item.location}</option>
+                  ))}
+                </select>
+                <input name="domain" placeholder="Domain" value={form.domain}
+                  onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">
                     <input type="file" name="image" accept="image/*" className="hidden"
@@ -381,8 +457,6 @@ export default function AdminEmployeePage(props) {
                   Create Employee
                 </button>
               </div>
-            </form>
-            <form onSubmit={handleSubmit} className="p-4 max-w-2xl mx-auto">
             </form>
           </div>
         </div>
