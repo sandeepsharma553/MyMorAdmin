@@ -19,10 +19,9 @@ export default function ResourcesPage(props) {
     const uid = useSelector((state) => state.auth.user.uid);
     const initialForm = {
         title: "",
-        emails: [""],
-        contacts: [""],
-        links: [""],
-        items: [""],
+        emails: [{ email: "", rename: "" }],
+        contacts: [{ contact: "", rename: "" }],
+        links: [{ url: "", rename: "" }],
         images: [],
     }
 
@@ -79,22 +78,32 @@ export default function ResourcesPage(props) {
         });
     };
 
-    const handleArrayChange = (rowIdx, key, itemIdx, value) => {
+    const handleArrayChange = (rowIdx, key, itemIdx, field, value) => {
         setForm(prev => {
             const rows = [...prev];
-            rows[rowIdx][key][itemIdx] = value;
+            if (typeof rows[rowIdx][key][itemIdx] === "object") {
+                rows[rowIdx][key][itemIdx][field] = value;
+            } else {
+                rows[rowIdx][key][itemIdx] = value;
+            }
             return rows;
         });
     };
     const addFieldItem = (rowIdx, key) => {
         setForm(prev => {
             const rows = [...prev];
-            rows[rowIdx][key].push("");
+            if (key === "emails") {
+                rows[rowIdx][key].push({ email: "", rename: "" });
+            } else if (key === "contacts") {
+                rows[rowIdx][key].push({ contact: "", rename: "" });
+            } else if (key === "links") {
+                rows[rowIdx][key].push({ url: "", rename: "" });
+            } else {
+                rows[rowIdx][key].push("");
+            }
             return rows;
         });
     };
-
-
     const removeFieldItem = (rowIdx, key, itemIdx) => {
         setForm(prev => {
             const rows = [...prev];
@@ -222,7 +231,6 @@ export default function ResourcesPage(props) {
                                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Email</th>
                                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Contact</th>
                                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Link</th>
-                                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Items</th>
                                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Documents</th>
                                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
                             </tr>
@@ -244,53 +252,64 @@ export default function ResourcesPage(props) {
                                             <td className="px-4 py-3 align-top">{x.title || '—'}</td>
 
                                             <td className="px-4 py-3 align-top">
-                                                {nonEmpty(x.emails).length ? (
+                                                {Array.isArray(x.emails) && x.emails.length > 0 ? (
                                                     <ul className="list-disc list-inside space-y-1">
-                                                        {nonEmpty(x.emails).map((email, idx) => (
-                                                            <li key={idx}>{email}</li>
+                                                        {x.emails.map((emailObj, idx) => (
+                                                            <li key={idx}>
+                                                                {emailObj.rename ? (
+                                                                    <span title={emailObj.email}>{emailObj.rename}</span>
+                                                                ) : (
+                                                                    emailObj.email
+                                                                )}
+                                                            </li>
                                                         ))}
                                                     </ul>
-                                                ) : '—'}
+                                                ) : (
+                                                    "—"
+                                                )}
                                             </td>
 
                                             <td className="px-4 py-3 align-top">
-                                                {nonEmpty(x.contacts).length ? (
+                                                {Array.isArray(x.contacts) && x.contacts.length > 0 ? (
                                                     <ul className="list-disc list-inside space-y-1">
-                                                        {nonEmpty(x.contacts).map((contact, idx) => (
-                                                            <li key={idx}>{contact}</li>
+                                                        {x.contacts.map((contactObj, idx) => (
+                                                            <li key={idx}>
+                                                                {contactObj.rename ? (
+                                                                    <span title={contactObj.contact}>{contactObj.rename}</span>
+                                                                ) : (
+                                                                    contactObj.contact
+                                                                )}
+                                                            </li>
                                                         ))}
                                                     </ul>
-                                                ) : '—'}
+                                                ) : (
+                                                    "—"
+                                                )}
                                             </td>
 
                                             <td className="px-4 py-3 align-top space-y-1">
-                                                {nonEmpty(x.links).length ? (
+                                                {Array.isArray(x.links) && x.links.length > 0 ? (
                                                     <ul className="list-disc list-inside space-y-1">
-                                                        {nonEmpty(x.links).map((link, idx) => (
+                                                        {x.links.map((linkObj, idx) => (
                                                             <li key={idx}>
                                                                 <a
-                                                                    href={link}
+                                                                    href={linkObj.url}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
                                                                     className="text-blue-600 hover:underline break-all"
+                                                                    title={linkObj.url}
                                                                 >
-                                                                    {link}
+                                                                    {linkObj.rename || linkObj.url}
                                                                 </a>
                                                             </li>
                                                         ))}
                                                     </ul>
-                                                ) : '—'}
+                                                ) : (
+                                                    "—"
+                                                )}
                                             </td>
 
-                                            <td className="px-4 py-3 align-top">
-                                                {nonEmpty(x.items).length ? (
-                                                    <ul className="list-disc list-inside space-y-1">
-                                                        {nonEmpty(x.items).map((item, idx) => (
-                                                            <li key={idx}>{item}</li>
-                                                        ))}
-                                                    </ul>
-                                                ) : '—'}
-                                            </td>
+
 
                                             <td className="px-4 py-3 align-top">
                                                 {x.images?.length ? (
@@ -397,16 +416,33 @@ export default function ResourcesPage(props) {
 
                                     <div>
                                         <label className="block font-medium">Emails:</label>
-                                        {row.emails.map((email, i) => (
+                                        {row.emails.map((emailObj, i) => (
                                             <div key={i} className="flex gap-2 mb-1">
                                                 <input
                                                     type="email"
+                                                    placeholder="Email"
                                                     className="border px-3 py-1 flex-1 rounded"
-                                                    value={email}
-                                                    onChange={(e) => handleArrayChange(rowIdx, "emails", i, e.target.value)}
+                                                    value={emailObj.email}
+                                                    onChange={(e) =>
+                                                        handleArrayChange(rowIdx, "emails", i, "email", e.target.value)
+                                                    }
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Email Rename"
+                                                    className="border px-3 py-1 flex-1 rounded"
+                                                    value={emailObj.rename}
+                                                    onChange={(e) =>
+                                                        handleArrayChange(rowIdx, "emails", i, "rename", e.target.value)
+                                                    }
                                                 />
                                                 {row.emails.length > 1 && (
-                                                    <button type="button" onClick={() => removeFieldItem(rowIdx, "emails", i)}>✕</button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeFieldItem(rowIdx, "emails", i)}
+                                                    >
+                                                        ✕
+                                                    </button>
                                                 )}
                                             </div>
                                         ))}
@@ -419,19 +455,36 @@ export default function ResourcesPage(props) {
                                         </button>
                                     </div>
 
+
                                     <div>
                                         <label className="block font-medium">Contacts:</label>
-                                        {row.contacts.map((contact, i) => (
+                                        {row.contacts.map((contactObj, i) => (
                                             <div key={i} className="flex gap-2 mb-1">
                                                 <input
-                                                    type="number"
-                                                    min={0}
+                                                    type="text"
+                                                    placeholder="Contact"
                                                     className="border px-3 py-1 flex-1 rounded"
-                                                    value={contact}
-                                                    onChange={(e) => handleArrayChange(rowIdx, "contacts", i, e.target.value)}
+                                                    value={contactObj.contact}
+                                                    onChange={(e) =>
+                                                        handleArrayChange(rowIdx, "contacts", i, "contact", e.target.value)
+                                                    }
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Contact Rename"
+                                                    className="border px-3 py-1 flex-1 rounded"
+                                                    value={contactObj.rename}
+                                                    onChange={(e) =>
+                                                        handleArrayChange(rowIdx, "contacts", i, "rename", e.target.value)
+                                                    }
                                                 />
                                                 {row.contacts.length > 1 && (
-                                                    <button type="button" onClick={() => removeFieldItem(rowIdx, "contacts", i)}>✕</button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeFieldItem(rowIdx, "contacts", i)}
+                                                    >
+                                                        ✕
+                                                    </button>
                                                 )}
                                             </div>
                                         ))}
@@ -443,15 +496,28 @@ export default function ResourcesPage(props) {
                                             + Add Contact
                                         </button>
                                     </div>
+
                                     <div>
                                         <label className="block font-medium">Links:</label>
-                                        {row.links.map((link, i) => (
+                                        {row.links.map((linkObj, i) => (
                                             <div key={i} className="flex gap-2 mb-1">
                                                 <input
                                                     type="url"
+                                                    placeholder="URL"
                                                     className="border px-3 py-1 flex-1 rounded"
-                                                    value={link}
-                                                    onChange={(e) => handleArrayChange(rowIdx, "links", i, e.target.value)}
+                                                    value={linkObj.url}
+                                                    onChange={(e) =>
+                                                        handleArrayChange(rowIdx, "links", i, "url", e.target.value)
+                                                    }
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Link Rename"
+                                                    className="border px-3 py-1 flex-1 rounded"
+                                                    value={linkObj.rename}
+                                                    onChange={(e) =>
+                                                        handleArrayChange(rowIdx, "links", i, "rename", e.target.value)
+                                                    }
                                                 />
                                                 {row.links.length > 1 && (
                                                     <button type="button" onClick={() => removeFieldItem(rowIdx, "links", i)}>✕</button>
@@ -466,29 +532,7 @@ export default function ResourcesPage(props) {
                                             + Add Link
                                         </button>
                                     </div>
-                                    <div>
-                                        <label className="block font-medium">Items:</label>
-                                        {row.items.map((item, i) => (
-                                            <div key={i} className="flex gap-2 mb-1">
-                                                <input
-                                                    type="text"
-                                                    className="border px-3 py-1 flex-1 rounded"
-                                                    value={item}
-                                                    onChange={(e) => handleArrayChange(rowIdx, "items", i, e.target.value)}
-                                                />
-                                                {row.items.length > 1 && (
-                                                    <button type="button" onClick={() => removeFieldItem(rowIdx, "items", i)}>✕</button>
-                                                )}
-                                            </div>
-                                        ))}
-                                        <button
-                                            type="button"
-                                            className="text-blue-600 text-sm"
-                                            onClick={() => addFieldItem(rowIdx, "items")}
-                                        >
-                                            + Add Items
-                                        </button>
-                                    </div>
+
                                     <div>
                                         <label className="block font-medium">Documents:</label>
 

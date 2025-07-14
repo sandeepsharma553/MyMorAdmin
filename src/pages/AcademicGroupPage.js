@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, database, storage } from "../../src/firebase";
-import { ref as dbRef, onValue, set, push, update, remove, get,serverTimestamp } from 'firebase/database';
+import { ref as dbRef, onValue, set, push, update, remove, get, serverTimestamp } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, addDoc, getDocs, } from "firebase/firestore";
 import { useSelector } from "react-redux";
@@ -227,7 +227,7 @@ export default function AcademicGroupPage(props) {
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
-  const approve = async (gid, uid,item) => {
+  const approve = async (gid, uid, item) => {
     await set(dbRef(database, `groups/${gid}/members/${uid}`), true);
     await set(dbRef(database, `groups/${gid}/members/${uid}`), {
       uid: item.uid,
@@ -235,7 +235,7 @@ export default function AcademicGroupPage(props) {
       photoURL: item.photoURL ?? '',
       isAdmin: false,
       joinedAt: serverTimestamp(),
-  });
+    });
     await update(dbRef(database, `groups/${gid}/joinRequests/${uid}`), { status: 'approved' });
     toast.success('User approved');
     setSelected(null)
@@ -430,8 +430,8 @@ export default function AcademicGroupPage(props) {
                   {form.posterUrl && (
                     <img src={form.posterUrl} alt="Poster Preview" width="150" />
                   )}
-                  <input name="emoji" style={{display:'none'}} value={form.emoji} onChange={handleChange} placeholder="Emoji/Icon (optional)" className="w-full border border-gray-300 p-2 rounded" />
-                  <input name="themeColor" style={{display:'none'}} value={form.themeColor} onChange={handleChange} placeholder="Theme Color (hex or name)" className="w-full border border-gray-300 p-2 rounded" />
+                  <input name="emoji" style={{ display: 'none' }} value={form.emoji} onChange={handleChange} placeholder="Emoji/Icon (optional)" className="w-full border border-gray-300 p-2 rounded" />
+                  <input name="themeColor" style={{ display: 'none' }} value={form.themeColor} onChange={handleChange} placeholder="Theme Color (hex or name)" className="w-full border border-gray-300 p-2 rounded" />
                 </section>
 
                 {/* 🔒 Privacy */}
@@ -447,7 +447,7 @@ export default function AcademicGroupPage(props) {
                 </section>
 
                 {/* 👥 Membership */}
-                <section className="space-y-4"  style={{display:'none'}}>
+                <section className="space-y-4" style={{ display: 'none' }}>
                   <h2 className="text-xl font-semibold">👥 Membership Settings</h2>
                   <input name="maxMembers" type="number" min={0} value={form.maxMembers} onChange={handleChange} placeholder="Max Members" className="w-full border border-gray-300 p-2 rounded" />
                   <label className="flex items-center space-x-2">
@@ -457,7 +457,7 @@ export default function AcademicGroupPage(props) {
                 </section>
 
                 {/* 🛠 Engagement */}
-                <section className="space-y-4" style={{display:'none'}}>
+                <section className="space-y-4" style={{ display: 'none' }}>
                   <h2 className="text-xl font-semibold">🛠 Engagement Tools</h2>
                   {['groupChat', 'eventsEnabled', 'pollsEnabled', 'resourcesEnabled'].map((key) => (
                     <label key={key} className="flex items-center space-x-2">
@@ -468,7 +468,7 @@ export default function AcademicGroupPage(props) {
                 </section>
 
                 {/* 📍 Location */}
-                <section className="space-y-4" style={{display:'none'}}>
+                <section className="space-y-4" style={{ display: 'none' }}>
                   <h2 className="text-xl font-semibold">📍 Location-Based</h2>
                   <input name="location" value={form.location} onChange={handleChange} placeholder="Group Location or Radius" className="w-full border border-gray-300 p-2 rounded" />
                   <label className="flex items-center space-x-2">
@@ -478,7 +478,7 @@ export default function AcademicGroupPage(props) {
                 </section>
 
                 {/* 🔔 Notifications */}
-                <section className="space-y-4" style={{display:'none'}}>
+                <section className="space-y-4" style={{ display: 'none' }}>
                   <h2 className="text-xl font-semibold">🔔 Notifications</h2>
                   <label className="flex items-center space-x-2">
                     <input type="checkbox" name="notifications" checked={form.notifications} onChange={handleChange} />
@@ -534,7 +534,7 @@ export default function AcademicGroupPage(props) {
       )}
       {selectedGroup && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white w-[24rem] max-h-[90vh] overflow-y-auto p-6 rounded shadow-lg">
+          <div className="bg-white w-[30rem] max-h-[90vh] overflow-y-auto p-6 rounded shadow-lg">
             <h2 className="text-lg font-semibold mb-4">
               Join Requests – {selectedGroup.title}
             </h2>
@@ -542,26 +542,41 @@ export default function AcademicGroupPage(props) {
             {Object.entries(selectedGroup.requests)
               .filter(([_, r]) => r.status === 'pending')
               .map(([uid, r]) => (
-                <div key={uid} className="flex justify-between items-center mb-2">
-                  <span>{r.name || uid}</span>
-                  <div className="space-x-2">
+                <div key={uid} className="border border-gray-200 rounded p-3 mb-3">
+                  <div className="text-sm text-gray-700 mb-1">
+                    <strong>User ID:</strong> {uid}
+                  </div>
+                  <div className="text-sm text-gray-700 mb-1">
+                    <strong>Name:</strong> {r.name || 'Unknown'}
+                  </div>
+                  <div className="text-sm text-gray-700 mb-2">
+                    <strong>Email:</strong> {r.email || 'N/A'}
+                  </div>
+                  <div className="flex justify-end space-x-2">
                     <button
-                      onClick={() => approve(selectedGroup.id, uid,r)}
-
+                      onClick={() => approve(selectedGroup.id, uid, r)}
                       className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                    >Approve</button>
+                    >
+                      Approve
+                    </button>
                     <button
                       onClick={() => reject(selectedGroup.id, uid)}
                       className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-                    >Reject</button>
+                    >
+                      Reject
+                    </button>
                   </div>
                 </div>
               ))}
 
+            {Object.entries(selectedGroup.requests).filter(([_, r]) => r.status === 'pending').length === 0 && (
+              <div className="text-center text-gray-500">No pending join requests.</div>
+            )}
+
             <div className="flex justify-end mt-6">
               <button
                 onClick={() => setSelected(null)}
-                className="px-4 py-2 bg-gray-300 rounded"
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
               >
                 Close
               </button>
