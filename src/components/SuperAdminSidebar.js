@@ -22,7 +22,7 @@ function SuperAdminSidebar({ onSectionClick, isLoading }) {
     const handleClick = (sectionKey) => {
         setActiveSection(sectionKey);
         onSectionClick?.(sectionKey);
-        navigate(`/super/${sectionKey}`);
+        navigate(`/${sectionKey}`);
     };
 
     return (

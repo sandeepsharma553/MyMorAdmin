@@ -16,6 +16,7 @@ const SettingPage = (props) => {
     const [academicCatlist, setAcademicCatList] = useState([])
     const [isLoading, setIsLoading] = useState(false)
     const uid = useSelector((state) => state.auth.user.uid);
+    const emp = useSelector((state) => state.auth.employee);
     const initialForm = {
         id: 0,
         name: ''
@@ -27,7 +28,12 @@ const SettingPage = (props) => {
     }, [])
     const getEventCatList = async () => {
         setIsLoading(true)
-        const querySnapshot = await getDocs(collection(db, 'eventcategory'));
+        const eventCategoryQuery = query(
+            collection(db, 'eventcategory'),
+            where('hostelid', '==', emp.hostelid)
+        );
+
+        const querySnapshot = await getDocs(eventCategoryQuery);
         const documents = querySnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
@@ -38,7 +44,12 @@ const SettingPage = (props) => {
     }
     const getAcademicCatList = async () => {
         setIsLoading(true)
-        const querySnapshot = await getDocs(collection(db, 'academiccategory'));
+        const academicCategoryQuery = query(
+            collection(db, 'academiccategory'),
+            where('hostelid', '==', emp.hostelid)
+        );
+
+        const querySnapshot = await getDocs(academicCategoryQuery);
         const documents = querySnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
@@ -48,7 +59,6 @@ const SettingPage = (props) => {
     }
     const handleChange = (e) => {
         const { name, value } = e.target;
-
         setForm({ ...form, [name]: value });
 
     };
@@ -68,6 +78,7 @@ const SettingPage = (props) => {
                 await updateDoc(doc(db, 'eventcategory', form.id), {
                     uid: uid,
                     name: form.name,
+                    hostelid: emp.hostelid,
                     updatedBy: uid,
                     updatedDate: new Date(),
                 });
@@ -86,6 +97,7 @@ const SettingPage = (props) => {
                 await addDoc(collection(db, "eventcategory"), {
                     uid: uid,
                     name: form.name,
+                    hostelid: emp.hostelid,
                     createdBy: uid,
                     createdDate: new Date(),
                 });
@@ -131,6 +143,7 @@ const SettingPage = (props) => {
                 await updateDoc(doc(db, 'academiccategory', form.id), {
                     uid: uid,
                     name: form.name,
+                    hostelid: emp.hostelid,
                     updatedBy: uid,
                     updatedDate: new Date(),
                 });
@@ -149,6 +162,7 @@ const SettingPage = (props) => {
                 await addDoc(collection(db, "academiccategory"), {
                     uid: uid,
                     name: form.name,
+                    hostelid: emp.hostelid,
                     createdBy: uid,
                     createdDate: new Date(),
                 });

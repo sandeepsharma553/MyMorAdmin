@@ -10,9 +10,9 @@ import { useReactToPrint } from "react-to-print";
 export default function FeedbackPage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
@@ -22,8 +22,9 @@ export default function FeedbackPage(props) {
   const [viewData, setViewData] = useState(null);
   const contentRef = useRef(null);
   const uid = useSelector((state) => state.auth.user.uid);
+  const emp = useSelector((state) => state.auth.employee);
   const initialForm = {
-    id: 0, incidenttype: "", other: "", description: "", datetime: "", isreport: false, image: null,
+    id: 0, incidenttype: "", other: "", description: "", datetime: "", isreport: false, image: null,hostelid:''
   }
   const [form, setForm] = useState(initialForm);
   const pageSize = 10;
@@ -39,7 +40,12 @@ export default function FeedbackPage(props) {
   const getList = async () => {
     setIsLoading(true)
 
-    const querySnapshot = await getDocs(collection(db, 'User'));
+    const usersQuery = query(
+      collection(db, 'users'),
+      where('hostelid', '==', emp.hostelid)
+    );
+    
+    const querySnapshot = await getDocs(usersQuery);
     const userMap = {};
     querySnapshot.forEach(doc => {
       const data = doc.data();
@@ -51,9 +57,13 @@ export default function FeedbackPage(props) {
         "Unknown"; // fallback if none found
       userMap[doc.data().uid] = username
     });
-
-    // Step 2: Get all hostels
-    const repotincidentSnapshot = await getDocs(collection(db, 'repotincident'));
+    const repotincidentQuery = query(
+      collection(db, 'repotincident'),
+      where('hostelid', '==', emp.hostelid)
+    );
+    
+    const repotincidentSnapshot = await getDocs(repotincidentQuery);
+    
     const repotincidentWithuser = repotincidentSnapshot.docs.map(doc => {
       const data = doc.data();
       return {
@@ -93,6 +103,7 @@ export default function FeedbackPage(props) {
           datetime: form.datetime,
           isreport: form.isreport,
           imageUrl,
+          hostelid:emp.hostelid,
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -110,6 +121,7 @@ export default function FeedbackPage(props) {
           datetime: form.datetime,
           isreport: form.isreport,
           imageUrl,
+          hostelid:emp.hostelid,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -230,7 +242,7 @@ export default function FeedbackPage(props) {
                       <div className="mb-2">
                         <span
                           className={`px-3 py-1 rounded-full text-white text-xs font-semibold
-       ${item.status === 'Pending' ? 'bg-yellow-500' :
+                             ${item.status === 'Pending' ? 'bg-yellow-500' :
                               item.status === 'In Progress' ? 'bg-blue-500' :
                                 item.status === 'Resolved' ? 'bg-green-500' :
                                   item.status === 'Closed' ? 'bg-gray-500' : 'bg-red-500'
@@ -260,6 +272,13 @@ export default function FeedbackPage(props) {
                         className="text-blue-600 underline hover:text-blue-800"
                       >
                         View
+                      </button>
+                      <p></p>
+                      <button
+                        onClick={() => openView(item)}
+                        className="text-blue-600 underline hover:text-blue-800"
+                      >
+                        Print
                       </button>
                     </td>
                   </tr>
@@ -424,7 +443,12 @@ export default function FeedbackPage(props) {
               >
                 Close
               </button>
-
+              <button
+                onClick={() => handlePrint()}
+                className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+              >
+                Print
+              </button>
             </div>
           </div>
         </div>

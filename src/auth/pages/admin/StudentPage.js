@@ -5,7 +5,7 @@ import { ToastContainer, toast } from "react-toastify";
 import { db, database, storage } from "../../../firebase";
 import { ref as dbRef, onValue, set, push, update, remove, get } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { collection, getDocs, Timestamp } from "firebase/firestore";
+import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
 import dayjs from 'dayjs';
 
 export default function StudentPage(props) {
@@ -19,6 +19,7 @@ export default function StudentPage(props) {
     const [currentPage, setCurrentPage] = useState(1);
     const uid = useSelector((state) => state.auth.user.uid)
     const user = useSelector((state) => state.auth.user)
+      const emp = useSelector((state) => state.auth.employee);
     const initialForm = {
         id: 0,
         title: '',
@@ -48,7 +49,12 @@ export default function StudentPage(props) {
     }, [])
     const getList = async () => {
         setIsLoading(true)
-        const querySnapshot = await getDocs(collection(db, 'User'));
+        const usersQuery = query(
+            collection(db, 'users'),
+            where('hostelid', '==', emp.hostelid)
+        );
+
+        const querySnapshot = await getDocs(usersQuery);
         const documents = querySnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
@@ -213,7 +219,7 @@ export default function StudentPage(props) {
                                         <tr key={i}>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">{item.username}</td>
                                             <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap pr-16 w-[20px]">
-                                            <div className="flex-shrink">{item.email}</div></td>
+                                                <div className="flex-shrink">{item.email}</div></td>
                                             <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap pl-4">{item.address}</td>
                                             <td className="px-6 py-4">
                                                 {item.photoURL ? (

@@ -10,23 +10,23 @@ import Layout from './components/Layout';
 import SuperAdminLayout from './components/SuperAdminLayout';
 import SuperAdminRoutes from "./routes/SuperAdminRoutes";
 import AdminRoutes from "./routes/AdminRoutes";
-import { AuthProvider, useAuth } from "./auth/AuthContext";
+
 
 function AppWrapper() {
   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
   const type = useSelector((state) => state.auth.type);
+  const user = useSelector((state) => state.auth.user)
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Wait a short time for role to load from localStorage/Redux
-    const timer = setTimeout(() => setChecking(false), 100); // adjust if needed
+
+    const timer = setTimeout(() => setChecking(false), 100);
     return () => clearTimeout(timer);
   }, []);
 
-  if (checking) return null; // Prevent early rendering and avoid loop
+  if (checking) return null;
 
-  // Optional logging
-  console.log("LoggedIn:", isLoggedIn, "Role:", type);
+  console.log("LoggedIn:", isLoggedIn, "Role:", type,"user",user);
 
   return (
     <Routes>
@@ -39,17 +39,17 @@ function AppWrapper() {
       )}
 
       {isLoggedIn && type === "superadmin" && (
-         <>
-         <Route path="/" element={<Navigate to="/super/dashboard" />} />
-         <Route path="/super/*" element={<SuperAdminLayout><SuperAdminRoutes /></SuperAdminLayout>} />
-         </>
-       
+        <>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/*" element={<SuperAdminLayout><SuperAdminRoutes /></SuperAdminLayout>} />
+        </>
+
       )}
 
       {isLoggedIn && type === "admin" && (
         <>
-        <Route path="/" element={<Navigate to="/home/dashboard" />} />
-        <Route path="/home/*" element={<Layout><AdminRoutes /></Layout>} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/*" element={<Layout><AdminRoutes /></Layout>} />
         </>
       )}
 
@@ -61,10 +61,10 @@ function AppWrapper() {
 
 function App() {
   return (
-    
-      <Router>
-        <AppWrapper />
-      </Router>
+
+    <Router>
+      <AppWrapper />
+    </Router>
 
   );
 }

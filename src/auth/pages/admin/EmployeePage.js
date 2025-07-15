@@ -20,8 +20,7 @@ export default function EmployeePage(props) {
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
   const uid = useSelector((state) => state.auth.user.uid);
-  const user = useSelector((state) => state.auth.user);
-  console.log('emp',user)
+  const emp = useSelector((state) => state.auth.employee);
   const initialForm = {
     id: 0,
     name: '',
@@ -33,6 +32,7 @@ export default function EmployeePage(props) {
     role: '',
     isActive: true,
     permissions: [],
+    hostelid:''
   }
   const [form, setForm] = useState(initialForm);
   const MENU_OPTIONS1 = ["Dashboard", "Employee", "Dining Menu", "Cleaning Schedule", "Maintenance", "Booking Room",
@@ -52,8 +52,6 @@ export default function EmployeePage(props) {
   { key: "resources", label: "Resources" },
   { key: "eventpage", label: "Event" },
   { key: "dealpage", label: "Deals" },
-  { key: "university", label: "University" },
-  { key: "hostel", label: "Hostel" },
   { key: "setting", label: "Setting" },
   ];
   const LABEL_BY_KEY = Object.fromEntries(
@@ -79,17 +77,17 @@ export default function EmployeePage(props) {
     setIsLoading(true)
     const q = query(
       collection(db, 'employees'),
-      where('uid', '==', uid) 
+      where('uid', '==', uid)
     );
-    
+
     const querySnapshot = await getDocs(q);
     const documents = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
     }));
     setList(documents);
-    setIsLoading(false)
     console.log(documents)
+    setIsLoading(false)
   }
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
@@ -139,7 +137,8 @@ export default function EmployeePage(props) {
         uid,
         password,
         ...(imageUrl && { imageUrl }),
-        type:'superadmin'
+        type: 'admin',
+        hostelid:emp.hostelid
       };
       delete employeeData.id;
       delete employeeData.image;
@@ -164,6 +163,7 @@ export default function EmployeePage(props) {
         const user = userCredential.user;
         await updateProfile(user, {
           displayName: form.name,
+          photoURL: imageUrl,
         })
         await setDoc(doc(db, "employees", user.uid), employeeData);
         toast.success('Empoyee created successfully');
@@ -451,7 +451,7 @@ export default function EmployeePage(props) {
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
-            <h2 className="text-xl font-semibold mb-4 text-red-600">Delete User</h2>
+            <h2 className="text-xl font-semibold mb-4 text-red-600">Delete Employee</h2>
             <p className="mb-4">Are you sure you want to delete <strong>{deleteData?.name}</strong>?</p>
             <div className="flex justify-end space-x-3">
               <button

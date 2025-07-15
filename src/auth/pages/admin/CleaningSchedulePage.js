@@ -18,6 +18,7 @@ export default function CleaningSchedulePage(props) {
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false)
   const uid = useSelector((state) => state.auth.user.uid);
+  const emp = useSelector((state) => state.auth.employee)
   const initialForm = {
     id: 0,
     roomtype: '',
@@ -43,14 +44,18 @@ export default function CleaningSchedulePage(props) {
   };
   const getList = async () => {
     setIsLoading(true)
-    const querySnapshot = await getDocs(collection(db, 'cleaningschedule'));
+    const q = query(
+      collection(db, 'cleaningschedule'),
+      where("hostelid", "==", emp.hostelid)
+    );
+    
+    const querySnapshot = await getDocs(q);
     const documents = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
     }));
     setList(documents)
     setIsLoading(false)
-    console.log(documents)
   }
   const handleAdd = async (e) => {
     e.preventDefault();
@@ -71,6 +76,7 @@ export default function CleaningSchedulePage(props) {
           day: form.day,
           time: form.time,
           date: form.date,
+          hostelid:emp.hostelid,
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -88,6 +94,7 @@ export default function CleaningSchedulePage(props) {
           day: form.day,
           time: form.time,
           date: form.date,
+          hostelid:emp.hostelid,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -137,6 +144,7 @@ export default function CleaningSchedulePage(props) {
           day: row["Day"] || '',
           time: row["Time"] || '',
           date,
+          hostelid:emp.hostelid,
         };
       });
 

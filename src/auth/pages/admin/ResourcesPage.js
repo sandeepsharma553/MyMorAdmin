@@ -17,12 +17,15 @@ export default function ResourcesPage(props) {
     const [isLoading, setIsLoading] = useState(false)
     const [fileName, setFileName] = useState('No file chosen');
     const uid = useSelector((state) => state.auth.user.uid);
+     const emp = useSelector((state) => state.auth.employee);
     const initialForm = {
         title: "",
         emails: [{ email: "", rename: "" }],
         contacts: [{ contact: "", rename: "" }],
         links: [{ url: "", rename: "" }],
         images: [],
+        hostelid:emp.hostelid,
+        uid:uid,
     }
 
     const [form, setForm] = useState([initialForm]);
@@ -52,14 +55,25 @@ export default function ResourcesPage(props) {
 
     const getList = async () => {
         setIsLoading(true)
-        const querySnapshot = await getDocs(collection(db, 'resources'));
+        const resourcesQuery = query(
+            collection(db, 'resources'),
+          );
+          
+          const querySnapshot = await getDocs(resourcesQuery);
         const documents = querySnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
         }));
-        setList(documents)
+        const filtered = documents.map(group => {
+            const filteredResources = group.resources.filter(resource => resource.hostelid === emp.hostelid);
+            
+            return {
+              ...group,
+              resources: filteredResources
+            };
+          }).filter(group => group.resources.length > 0);
+        setList(filtered)
         setIsLoading(false)
-        console.log(documents)
 
     }
 
@@ -138,7 +152,8 @@ export default function ResourcesPage(props) {
                             return await getDownloadURL(imgRef);
                         })
                     );
-                    return { ...row, images };
+                    const hostelid = emp.hostelid
+                    return { ...row, images, hostelid };
                 })
             );
 

@@ -21,6 +21,7 @@ export default function BookingPage(props) {
   const [bookingTypeList, setBookingTypeList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const uid = useSelector((state) => state.auth.user.uid);
+  const emp = useSelector((state) => state.auth.employee)
   const [currentPage, setCurrentPage] = useState(1);
   const [roomFilter, setRoomFilter] = useState("All");
   const [rooms, setRooms] = useState([]);
@@ -53,7 +54,12 @@ export default function BookingPage(props) {
   const getList = async () => {
     setIsLoading(true);
 
-    const userSnap = await getDocs(collection(db, 'User'));
+    const usersQuery = query(
+         collection(db, 'users'),
+         where('hostelid', '==', emp.hostelid)
+       );
+       
+   const userSnap = await getDocs(usersQuery);
     const userMap = {};
     userSnap.forEach(doc => {
       const data = doc.data();
@@ -63,7 +69,7 @@ export default function BookingPage(props) {
       };
     });
 
-    const bookingSnap = await getDocs(collection(db, 'BookingRoom'));
+    const bookingSnap = await getDocs(collection(db, 'bookingroom'));
     const allBookings = bookingSnap.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
@@ -91,7 +97,13 @@ export default function BookingPage(props) {
       bookingDate.setHours(0, 0, 0, 0);
       return bookingDate >= startDate && bookingDate <= endDate;
     });
-    const bookingTypeSnap = await getDocs(collection(db, 'bookingroomtype'));
+    const bookingTypeQuery = query(
+      collection(db, 'bookingroomtype'),
+      where('hostelid', '==', emp.hostelid)
+    );
+    
+    const bookingTypeSnap = await getDocs(bookingTypeQuery);
+    
     const BookingType = bookingTypeSnap.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
@@ -127,6 +139,7 @@ export default function BookingPage(props) {
           location: form.location,
           // date: form.date,
           // time: form.time,
+          hostelid:emp.hostelid,
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -141,6 +154,7 @@ export default function BookingPage(props) {
           // date: form.date,
           // time: form.time,
           // status: 'Booked'
+          hostelid:emp.hostelid,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -170,7 +184,7 @@ export default function BookingPage(props) {
   const handleReject = async () => {
     if (!editingData) return;
     try {
-      const bookingRef = doc(db, 'BookingRoom', editingData.id);
+      const bookingRef = doc(db, 'bookingroom', editingData.id);
       await updateDoc(bookingRef, {
         status: 'Rejected',
         updatedBy: uid,

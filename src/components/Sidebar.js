@@ -27,8 +27,6 @@ const SECTIONS = [
   { key: "resources", label: "Resources", Icon: Hotel },
   { key: "eventpage", label: "Event", Icon: Calendar },
   { key: "dealpage", label: "Deals", Icon: Utensils },
-  { key: "university", label: "University", Icon: GraduationCap },
-  { key: "hostel", label: "Hostel", Icon: Hotel },
   { key: "setting", label: "Setting", Icon: SettingsIcon },
 ];
 
@@ -36,14 +34,13 @@ function Sidebar({ onSectionClick, isLoading }) {
   const [activeSection, setActiveSection] = useState("dashboard");
   const navigate = useNavigate();
   const employee = useSelector(state => state.auth.employee);
-  console.log(employee.role)
 
   const perms = employee?.permissions ?? null;
 
   const handleClick = (sectionKey) => {
     setActiveSection(sectionKey);
     onSectionClick?.(sectionKey);
-    navigate(`/home/${sectionKey}`);
+    navigate(`/${sectionKey}`);
   };
 
   return (

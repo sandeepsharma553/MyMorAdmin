@@ -22,8 +22,9 @@ export default function ReportIncidentPage(props) {
   const [viewData, setViewData] = useState(null);
   const contentRef = useRef(null);
   const uid = useSelector((state) => state.auth.user.uid);
+  const emp = useSelector((state) => state.auth.employee);
   const initialForm = {
-    id: 0, incidenttype: "", other: "", description: "", datetime: "", isreport: false, image: null,
+    id: 0, incidenttype: "", other: "", description: "", datetime: "", isreport: false, image: null,hostelid:''
   }
   const [form, setForm] = useState(initialForm);
   const pageSize = 10;
@@ -39,7 +40,12 @@ export default function ReportIncidentPage(props) {
   const getList = async () => {
     setIsLoading(true)
 
-    const querySnapshot = await getDocs(collection(db, 'User'));
+    const usersQuery = query(
+      collection(db, 'users'),
+      where('hostelid', '==', emp.hostelid)
+    );
+    
+    const querySnapshot = await getDocs(usersQuery);
     const userMap = {};
     querySnapshot.forEach(doc => {
       const data = doc.data();
@@ -51,9 +57,13 @@ export default function ReportIncidentPage(props) {
         "Unknown"; // fallback if none found
       userMap[doc.data().uid] = username
     });
-
-    // Step 2: Get all hostels
-    const repotincidentSnapshot = await getDocs(collection(db, 'repotincident'));
+    const repotincidentQuery = query(
+      collection(db, 'repotincident'),
+      where('hostelid', '==', emp.hostelid)
+    );
+    
+    const repotincidentSnapshot = await getDocs(repotincidentQuery);
+    
     const repotincidentWithuser = repotincidentSnapshot.docs.map(doc => {
       const data = doc.data();
       return {
@@ -93,6 +103,7 @@ export default function ReportIncidentPage(props) {
           datetime: form.datetime,
           isreport: form.isreport,
           imageUrl,
+          hostelid:emp.hostelid,
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -110,6 +121,7 @@ export default function ReportIncidentPage(props) {
           datetime: form.datetime,
           isreport: form.isreport,
           imageUrl,
+          hostelid:emp.hostelid,
           createdBy: uid,
           createdDate: new Date(),
         });

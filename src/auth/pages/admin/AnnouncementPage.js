@@ -23,9 +23,10 @@ export default function AnnouncementPage(props) {
     const [isLoading, setIsLoading] = useState(false)
     const [currentPage, setCurrentPage] = useState(1);
     const [fileName, setFileName] = useState('No file chosen');
-    const [options, setOptions] = useState(['', '']);
     const uid = useSelector((state) => state.auth.user.uid)
     const user = useSelector((state) => state.auth.user)
+    const emp = useSelector((state) => state.auth.employee)
+
     const [range, setRange] = useState([
         {
             startDate: new Date(),
@@ -42,14 +43,15 @@ export default function AnnouncementPage(props) {
         description: '',
         date: '',
         user: '',
-        role: 'Admin',
+        role: '',
         likes: [],
         comments: [],
         bookmarked: false,
         question: '',
         options: ['', ''],
         allowMulti: false,
-        link: ''
+        link: '',
+        hostelid: ''
     }
     const [form, setForm] = useState(initialForm);
     const pageSize = 10;
@@ -72,12 +74,10 @@ export default function AnnouncementPage(props) {
         onValue(groupRef, async (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                const documents = Object.entries(data).map(([id, value]) => ({
-                    id,
-                    ...value,
-                }));
+                const documents = Object.entries(data)
+                    .map(([id, value]) => ({ id, ...value }))
+                    .filter(item => item.hostelid === emp.hostelid);
                 setList(documents)
-
             }
         });
         setIsLoading(false)
@@ -114,18 +114,7 @@ export default function AnnouncementPage(props) {
                 posterUrl = await getDownloadURL(storRef);
             }
             const userName = await fetchUser(uid);
-            console.log(uid)
-            const annoucementData = {
-                ...form,
-                uid: uid,
-                user: userName,
-                date: Timestamp.fromDate(new Date(form.date)),
-                createdAt: Timestamp.now(),
-                ...(posterUrl && { posterUrl }),
-            };
-
             delete form.poster;
-
             if (editingData) {
                 const announcementRef = dbRef(database, `announcements/${form.id}`);
                 const snapshot = await get(announcementRef);
@@ -144,7 +133,9 @@ export default function AnnouncementPage(props) {
                     date: {
                         startDate: Timestamp.fromDate(new Date(form.date.startDate)),
                         endDate: Timestamp.fromDate(new Date(form.date.endDate))
-                    }
+                    },
+                    hostelid: emp.hostelid,
+                    role: emp.role
                 })
                 toast.success('Annoucement updated successfully');
             }
@@ -164,7 +155,9 @@ export default function AnnouncementPage(props) {
                     date: {
                         startDate: Timestamp.fromDate(new Date(form.date.startDate)),
                         endDate: Timestamp.fromDate(new Date(form.date.endDate))
-                    }
+                    },
+                    hostelid: emp.hostelid,
+                    role: emp.role
                 })
                 toast.success('Annoucement created successfully');
             }
@@ -307,7 +300,7 @@ export default function AnnouncementPage(props) {
                                         </td>
                                     </tr>
                                 ) : (
-                                    paginatedData.map((item,i) => (
+                                    paginatedData.map((item, i) => (
                                         <tr key={i}>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
                                             <td className="px-6 py-4 text-sm text-gray-700">

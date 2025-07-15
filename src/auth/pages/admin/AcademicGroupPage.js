@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { db, database, storage } from "../../../firebase";
 import { ref as dbRef, onValue, set, push, update, remove, get, serverTimestamp } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { collection, addDoc, getDocs, } from "firebase/firestore";
+import { collection, addDoc, getDocs, query,where} from "firebase/firestore";
 import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -20,6 +20,7 @@ export default function AcademicGroupPage(props) {
   const [academicCatlist, setAcademicCatList] = useState([])
   const [selectedGroup, setSelected] = useState(null);
   const uid = useSelector((state) => state.auth.user.uid);
+  const emp = useSelector((state) => state.auth.employee)
   const initialForm = {
     id: 0,
     title: '',
@@ -40,6 +41,7 @@ export default function AcademicGroupPage(props) {
     campusSpecific: false,
     notifications: true,
     autoAlert: true,
+    hostelid: ''
   }
   const [form, setForm] = useState(initialForm);
   const pageSize = 10;
@@ -57,7 +59,12 @@ export default function AcademicGroupPage(props) {
   }, [])
   const getAcademicCatList = async () => {
     setIsLoading(true)
-    const querySnapshot = await getDocs(collection(db, 'academiccategory'));
+    const academicCategoryQuery = query(
+      collection(db, 'academiccategory'),
+      where('hostelid', '==', emp.hostelid)
+  );
+
+  const querySnapshot = await getDocs(academicCategoryQuery);
     const documents = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
@@ -74,32 +81,22 @@ export default function AcademicGroupPage(props) {
       onValue(groupRef, async (snapshot) => {
         const data = snapshot.val();
         if (data) {
-          // const groupEntries = Object.entries(data);
-
-          // const groupsWithCount = await Promise.all(
-          //   groupEntries.map(async ([key, val]) => {
-          //     const memberCount = await getMemberCount(key);
-          //     return {
-          //       id: key,
-          //       ...val,
-          //       membercount: memberCount
-          //     };
-          //   })
-          // );
-
-          // setList(groupsWithCount);
-          const arr = await Promise.all(Object.entries(data).map(async ([gid, v]) => {
-            const requests = v.joinRequests || {};
-            const members = v.members || {};
-            return {
-              id: gid,
-              ...v,
-              memberCount: members ? Object.keys(members).length : 0,
-              requests
-            };
-          }));
+          const arr = await Promise.all(
+            Object.entries(data)
+              .filter(([_, v]) => v.hostelid === emp.hostelid)  // ✅ filter manually
+              .map(async ([gid, v]) => {
+                const requests = v.joinRequests || {};
+                const members = v.members || {};
+                return {
+                  id: gid,
+                  ...v,
+                  memberCount: members ? Object.keys(members).length : 0,
+                  requests
+                };
+              })
+          );
           setList(arr);
-          console.log(arr)
+
         } else {
           setList([]);
         }
@@ -160,6 +157,7 @@ export default function AcademicGroupPage(props) {
       const groupData = {
         ...form,
         creatorId: uid,
+        hostelid: emp.hostelid,
         ...(posterUrl && { posterUrl }),
       };
 
@@ -169,6 +167,7 @@ export default function AcademicGroupPage(props) {
         update(dbRef(database, `groups/${form.id}`), {
           ...form,
           creatorId: uid,
+          hostelid: emp.hostelid,
           ...(posterUrl && { posterUrl }),
         }).then(() => {
 
@@ -184,6 +183,7 @@ export default function AcademicGroupPage(props) {
         set(newGroupRef, {
           ...form,
           creatorId: uid,
+          hostelid: emp.hostelid,
           ...(posterUrl && { posterUrl }),
         })
           .then(() => {
@@ -343,7 +343,7 @@ export default function AcademicGroupPage(props) {
                           <button
                             className="text-blue-600 hover:underline mr-3"
                             onClick={() => {
-                              console.log(item)
+
                               setViewGroup(item);
                             }}
                           >

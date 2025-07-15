@@ -1,10 +1,9 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth, db } from "../../firebase";
-import { doc, getDoc,collection,query, where, getDocs  } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { toast } from "react-toastify";
 
-// 🔸 Map Firebase error codes to user-friendly messages
 const getLoginErrorMessage = (code) => {
   switch (code) {
     case 'auth/invalid-credential':
@@ -21,24 +20,20 @@ const getLoginErrorMessage = (code) => {
   }
 };
 
-// 🔹 Login and fetch user + employee data
+
 export const LoginAdmin = createAsyncThunk(
   "auth/loginadmin",
   async (userData, { dispatch, rejectWithValue }) => {
     try {
       const res = await signInWithEmailAndPassword(auth, userData.EmailID, userData.Password);
       const firebaseUser = res.user;
-      // console.log(firebaseUser)
+      console.log(firebaseUser)
       const employee = await dispatch(getEmployeeByUid(firebaseUser.uid)).unwrap();
-      // const user = await dispatch(getUserByUid(firebaseUser.uid)).unwrap();
-     console.log(employee)
       const response = {
         isSuccess: true,
         firebaseUser,
-        user: employee, 
         employee,
       };
-
       return response;
     } catch (error) {
       toast.error(getLoginErrorMessage(error.code));
@@ -47,7 +42,7 @@ export const LoginAdmin = createAsyncThunk(
   }
 );
 
-// 🔹 Fetch employee by UID (Firestore)
+
 export const getEmployeeByUid = createAsyncThunk(
   "auth/getEemployeeByUid",
   async (uid, { rejectWithValue }) => {
@@ -56,7 +51,6 @@ export const getEmployeeByUid = createAsyncThunk(
       if (!uid) throw new Error('UID is missing');
       const docRef = doc(db, 'employees', uid);
       const docSnap = await getDoc(docRef);
-      console.log(docSnap.data(),'employee')
       const response = { id: docSnap.id, ...docSnap.data() }
       return response;
     } catch (error) {
@@ -67,28 +61,7 @@ export const getEmployeeByUid = createAsyncThunk(
     }
   }
 );
-export const getUserByUid = createAsyncThunk(
-  "auth/getUserByUid",
-  async (uid, { rejectWithValue }) => {
-    try {
 
-      if (!uid) throw new Error('UID is missing');
-      const q = query(collection(db, "User"), where("uid", "==", uid));
-      const snapshot = await getDocs(q);
-    
-      const doc = snapshot.docs[0];
-      return { id: doc.id, ...doc.data() };
-    } catch (error) {
-
-      // toast.error(getLoginErrorMessage(error.code))
-
-      return rejectWithValue(error.code || "Failed to login");
-    }
-  }
-);
-
-
-// 🔹 Logout
 export const logoutAdmin = createAsyncThunk(
   "auth/logout",
   async (_, { rejectWithValue }) => {
@@ -102,7 +75,7 @@ export const logoutAdmin = createAsyncThunk(
   }
 );
 
-// ✅ Initial State
+
 const initialState = {
   isLoggedIn: !!localStorage.getItem("userData"),
   isLoading: false,
@@ -110,13 +83,12 @@ const initialState = {
   user: JSON.parse(localStorage.getItem("userData")) || null,
   employee:
     localStorage.getItem("employee") !== null &&
-    localStorage.getItem("employee") !== "undefined"
+      localStorage.getItem("employee") !== "undefined"
       ? JSON.parse(localStorage.getItem("employee"))
       : null,
-      type: localStorage.getItem("type") || null,
+  type: localStorage.getItem("type") || null,
 };
 
-// ✅ Auth Slice
 const AuthSlice = createSlice({
   name: "auth",
   initialState,
@@ -124,21 +96,30 @@ const AuthSlice = createSlice({
   extraReducers: (builder) => {
     builder
 
-      // 🔸 Login flow
+
       .addCase(LoginAdmin.pending, (state) => {
         state.isLoading = true;
         state.error = null;
       })
       .addCase(LoginAdmin.fulfilled, (state, action) => {
-        const {firebaseUser ,user, employee } = action.payload;
-        const type =  employee.type;
+        const { firebaseUser, employee } = action.payload;
+        const type = employee.type;
 
         state.isLoading = false;
-        state.user = user;
+        state.user = firebaseUser;
         state.employee = employee;
         state.type = type;
         state.isLoggedIn = true;
-        localStorage.setItem("userData", JSON.stringify(firebaseUser));
+        const safeUser = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          photoURL: firebaseUser.photoURL,
+          emailVerified: firebaseUser.emailVerified,
+          phoneNumber: firebaseUser.phoneNumber,
+          providerId: firebaseUser.providerId
+        };
+        localStorage.setItem("userData", JSON.stringify(safeUser));
         localStorage.setItem("employee", JSON.stringify(employee));
         localStorage.setItem("type", type);
         localStorage.setItem("loginTime", Date.now().toString());
@@ -147,8 +128,6 @@ const AuthSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload?.error || "Login failed";
       })
-
-      // 🔸 Get employee
       .addCase(getEmployeeByUid.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -161,19 +140,6 @@ const AuthSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload?.error || "Failed to fetch employee";
       })
-      .addCase(getUserByUid.pending, (state) => {
-        state.isLoading = true;
-        state.error = null;
-      })
-      .addCase(getUserByUid.fulfilled, (state, action) => {
-        state.isLoading = false;
-      })
-      .addCase(getUserByUid.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error = action.payload?.error || "Failed to fetch employee";
-      })
-
-      // 🔸 Logout
       .addCase(logoutAdmin.fulfilled, (state) => {
         state.isLoggedIn = false;
         state.user = null;

@@ -1,7 +1,7 @@
 import React from "react";
 import { Formik, Form, Field, ErrorMessage } from "formik";
 import * as Yup from "yup";
-// import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import "react-toastify/dist/ReactToastify.css";
 import { useDispatch, useSelector } from "react-redux";
 import { BeatLoader } from "react-spinners";
@@ -15,7 +15,7 @@ const LoginPage = ({ onLogin }) => {
   const isLoading = useSelector((state) => state.auth.isLoading);
   const error = useSelector((state) => state.auth.error);
   const dispatch = useDispatch();
-  // const navigate = useNavigate();
+  const navigate = useNavigate();
   const initialValues = {
     EmailID: "",
     Password: "",
@@ -39,6 +39,7 @@ const LoginPage = ({ onLogin }) => {
   const handleSubmit = async (values) => {
     try {
       await dispatch(LoginAdmin(values));
+      navigate("/dashboard", { replace: true });
     } catch (error) {
       showToastMessage(error.code || "Failed to login");
     }
@@ -46,17 +47,17 @@ const LoginPage = ({ onLogin }) => {
 
   return (
     <div className="flex h-screen">
-      {/* Left Panel */}
+
       <div className="w-1/2 bg-black flex flex-col items-center justify-center relative">
         <h1 className="text-white text-4xl font-bold mb-6 z-10">MyMor</h1>
         <img
-          src={rightimage} 
+          src={rightimage}
           alt="Login Visual"
           className="max-w-full h-auto object-contain"
         />
       </div>
 
-      {/* Right Panel */}
+
       <div className="w-1/2 bg-white flex flex-col items-center justify-center px-8">
         <img
           src={logoImage}
@@ -123,7 +124,6 @@ const LoginPage = ({ onLogin }) => {
           </Form>
         </Formik>
         {error && showToastMessage(error)}{" "}
-        {/* Show error toast when there is an error */}
         <ToastContainer />
 
       </div>

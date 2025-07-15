@@ -20,6 +20,7 @@ export default function MaintenancePage(props) {
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [viewData, setViewData] = useState(null);
   const contentRef = useRef(null);
+  const emp = useSelector((state) => state.auth.employee)
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -50,7 +51,12 @@ export default function MaintenancePage(props) {
   const getList = async () => {
     setIsLoading(true)
 
-    const querySnapshot = await getDocs(collection(db, 'User'));
+    const usersQuery = query(
+             collection(db, 'users'),
+             where('hostelid', '==', emp.hostelid)
+           );
+           
+    const querySnapshot = await getDocs(usersQuery);
     const userMap = {};
     querySnapshot.forEach(doc => {
       const data = doc.data();
@@ -63,8 +69,11 @@ export default function MaintenancePage(props) {
       userMap[doc.data().uid] = username
     });
 
-    // Step 2: Get all hostels
-    const maintenanceSnapshot = await getDocs(collection(db, 'Maintenance'));
+    const maintenanceQuery = query(
+      collection(db, 'maintenance'),
+      where('hostelid', '==', emp.hostelid)
+    );
+    const maintenanceSnapshot = await getDocs(maintenanceQuery);
     const maintenanceWithuser = maintenanceSnapshot.docs.map(doc => {
       const data = doc.data();
       return {
@@ -104,14 +113,14 @@ export default function MaintenancePage(props) {
     }
     if (editingData) {
       try {
-        const docRef = doc(db, 'Maintenance', form.id);
+        const docRef = doc(db, 'maintenance', form.id);
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
           toast.warning('Maintenance does not exist! Cannot update.');
           return;
         }
-        await updateDoc(doc(db, 'Maintenance', form.id), {
+        await updateDoc(doc(db, 'maintenance', form.id), {
           uid: uid,
           roomno: form.roomno,
           problemcategory: form.problemcategory,
@@ -121,9 +130,10 @@ export default function MaintenancePage(props) {
           cause: form.cause,
           comments: form.comments,
           imageUrl,
+          hostelid: emp.hostelid,
           updatedBy: uid,
-          updatedDate: new Date(),
-          status: 'Resolved'
+          updatedDate: new Date().toISOString().split('T')[0],
+          status: 'Pending'
         });
         toast.success('Successfully updated');
         getList()
@@ -132,7 +142,7 @@ export default function MaintenancePage(props) {
       }
     } else {
       try {
-        await addDoc(collection(db, "Maintenance"), {
+        await addDoc(collection(db, "maintenance"), {
           uid: uid,
           roomno: form.roomno,
           problemcategory: form.problemcategory,
@@ -142,8 +152,9 @@ export default function MaintenancePage(props) {
           cause: form.cause,
           comments: form.comments,
           imageUrl,
+          hostelid: emp.hostelid,
           createdBy: uid,
-          createdDate: new Date(),
+          createdDate: new Date().toISOString().split('T')[0],
           status: 'Pending'
         });
         toast.success("Successfully saved");
@@ -162,7 +173,7 @@ export default function MaintenancePage(props) {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, 'Maintenance', form.id));
+      await deleteDoc(doc(db, 'maintenance', form.id));
       toast.success('Successfully deleted!');
       getList()
     } catch (error) {
@@ -179,7 +190,7 @@ export default function MaintenancePage(props) {
   const handlePrint = useReactToPrint({ contentRef });
   const updateStatus = async (id, newStatus) => {
     try {
-      const requestRef = doc(db, 'Maintenance', id);
+      const requestRef = doc(db, 'maintenance', id);
       await updateDoc(requestRef, { status: newStatus });
       toast.success("Status updated!");
       getList();

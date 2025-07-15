@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
-import { db, storage } from "../../../firebase";
+import { db, storage } from "../../firebase";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { useSelector } from "react-redux";
 export default function DealPage(props) {
   const { navbarHeight } = props;
-
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
@@ -17,8 +15,6 @@ export default function DealPage(props) {
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
-  const uid = useSelector((state) => state.auth.user.uid);
-  const emp = useSelector((state) => state.auth.employee);
   const initialForm = {
     id: 0,
     name: '',
@@ -46,7 +42,6 @@ export default function DealPage(props) {
     pushNotification: false,
     reminderNotification: false,
     enableQiPoints: false,
-    hostelid:''
   }
   const [form, setForm] = useState(initialForm);
   const pageSize = 10;
@@ -67,12 +62,7 @@ export default function DealPage(props) {
   }, [])
   const getList = async () => {
     setIsLoading(true)
-    const dealsQuery = query(
-      collection(db, 'deals'),
-      where('hostelid', '==', emp.hostelid)
-    );
-    
-    const querySnapshot = await getDocs(dealsQuery);
+    const querySnapshot = await getDocs(collection(db, 'deals'));
     const documents = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
@@ -121,8 +111,6 @@ export default function DealPage(props) {
         startDateTime: Timestamp.fromDate(new Date(form.startDateTime)),
         endDateTime: form.endDateTime ? Timestamp.fromDate(new Date(form.endDateTime)) : null,
         ...(posterUrl && { posterUrl }),
-        hostelid: emp.hostelid,
-        uid:uid
       };
       delete dealData.id;
       delete dealData.poster;

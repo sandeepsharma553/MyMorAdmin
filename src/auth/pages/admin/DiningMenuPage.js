@@ -20,6 +20,7 @@ export default function DiningMenuPage(props) {
   const [fileName, setFileName] = useState('No file chosen');
   const [currentPage, setCurrentPage] = useState(1);
   const uid = useSelector((state) => state.auth.user.uid);
+  const emp = useSelector((state) => state.auth.employee)
   const [form, setForm] = useState({
     date: '',
     day: '',
@@ -28,16 +29,56 @@ export default function DiningMenuPage(props) {
       lunch: { time: '', items: [{ name: '', tags: [] }] },
       dinner: { time: '', items: [{ name: '', tags: [] }] }
     },
-    uid: uid
+    uid: uid,
+    hostelid: emp.hostelid
   });
   const pageSize = 10;
   const mockData = list
-
+ 
   const totalPages = Math.ceil(mockData.length / pageSize);
   const paginatedData = mockData.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   );
+  useEffect(() => {
+    const today = new Date();
+    const currentdate = today.toISOString().split('T')[0];
+    getList(currentdate)
+  }, [])
+  const getList = async (date) => {
+  
+    setIsLoading(true)
+    const { start, end } = getWeekRange(date);
+    const q = query(
+      collection(db, 'menus'),
+      where("hostelid", "==", emp.hostelid),
+      where("date", ">=", start),
+      where("date", "<=", end),
+    );
+
+    const querySnapshot = await getDocs(q);
+    const weekMenus = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    setList(weekMenus)
+    setIsLoading(false)
+
+  }
+  const getWeekRange = (dateStr) => {
+    const date = new Date(dateStr);
+    const day = date.getDay(); // 0 = Sunday
+    const diffToMonday = date.getDate() - day + (day === 0 ? -6 : 1);
+
+    const monday = new Date(date.setDate(diffToMonday));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    const format = (d) => d.toISOString().split("T")[0];
+
+    return { start: format(monday), end: format(sunday) };
+  };
   const handleChange = (meal, index, value) => {
     const updatedItems = [...form.meals[meal].items];
     updatedItems[index] = value;
@@ -135,7 +176,9 @@ export default function DiningMenuPage(props) {
           breakfast: { time: '', items: [''] },
           lunch: { time: '', items: [''] },
           dinner: { time: '', items: [''] }
-        }
+        },
+        uid: uid,
+        hostelid: emp.hostelid
       })
     }
     catch (error) {
@@ -144,45 +187,7 @@ export default function DiningMenuPage(props) {
 
   };
 
-  useEffect(() => {
-    const today = new Date();
-    const currentdate = today.toISOString().split('T')[0];
-    getList(currentdate)
-  }, [])
-  const getList = async (date) => {
-    console.log(date)
-    setIsLoading(true)
-    const { start, end } = getWeekRange(date);
-    const q = query(
-      collection(db, 'menus'),
-      where("date", ">=", start),
-      where("date", "<=", end)
-    );
-
-    const querySnapshot = await getDocs(q);
-    const weekMenus = querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-    setList(weekMenus)
-    console.log(weekMenus)
-    setIsLoading(false)
-
-  }
-  const getWeekRange = (dateStr) => {
-    const date = new Date(dateStr);
-    const day = date.getDay(); // 0 = Sunday
-    const diffToMonday = date.getDate() - day + (day === 0 ? -6 : 1);
-
-    const monday = new Date(date.setDate(diffToMonday));
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-
-    const format = (d) => d.toISOString().split("T")[0];
-
-    return { start: format(monday), end: format(sunday) };
-  };
+ 
 
   const handleDelete = async () => {
     if (!deleteData?.date) return;
@@ -220,84 +225,6 @@ export default function DiningMenuPage(props) {
     }
   });
 
-  const readExcel1 = (file) => {
-    setIsLoading(true)
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target.result;
-      const workbook = XLSX.read(bstr, { type: "binary" });
-
-      // Get first sheet name
-      const sheetName = workbook.SheetNames[0];
-      // Get worksheet
-      const worksheet = workbook.Sheets[sheetName];
-      //const rows = XLSX.utils.sheet_to_json(worksheet);
-
-      // // Convert to JSON
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-      // const menuMap = {};
-      // rows.forEach(row => {
-      //   const { Date, Day, Meal, Time, Item } = row;
-      //   if (!menuMap[Date]) {
-      //     menuMap[Date] = {
-      //       date: Date,
-      //       day: Day,
-      //       meals: {}
-      //     };
-      //   }
-      //   const mealKey = Meal.toLowerCase();
-      //   if (!menuMap[Date].meals[mealKey]) {
-      //     menuMap[Date].meals[mealKey] = {
-      //       time: Time,
-      //       items: []
-      //     };
-      //   }
-      //   menuMap[Date].meals[mealKey].items.push(Item);
-
-      // });
-
-
-      // Convert flat jsonData to nested format
-      const nestedData = [];
-
-      // Group by date + day
-      const groupedByDate = {};
-
-      jsonData.forEach(({ Date, Day, Meal, Time, Item }) => {
-        const key = Date + "|" + Day;
-
-        if (!groupedByDate[key]) {
-          groupedByDate[key] = {
-            date: Date,
-            day: Day,
-            meals: {}
-          };
-        }
-
-        if (!groupedByDate[key].meals[Meal]) {
-          groupedByDate[key].meals[Meal] = {
-            Time,
-            items: [],
-          };
-        }
-
-        groupedByDate[key].meals[Meal].items.push(Item);
-      });
-
-      // Convert grouped object to array
-      for (const key in groupedByDate) {
-        nestedData.push(groupedByDate[key]);
-      }
-
-      setData(nestedData);
-      console.log(nestedData)
-    };
-    reader.readAsBinaryString(file);
-    setIsLoading(false)
-  };
-
-
   const readExcel = (file) => {
     setIsLoading(true);
     const reader = new FileReader();
@@ -330,7 +257,9 @@ export default function DiningMenuPage(props) {
           groupedByDate[key] = {
             date: formattedDate,
             day: Day,
-            meals: {}
+            meals: {},
+            uid:uid,
+            hostelid: emp.hostelid
           };
         }
 
@@ -357,7 +286,6 @@ export default function DiningMenuPage(props) {
       }
 
       setData(nestedData);
-      console.log(nestedData);
       setIsLoading(false);
     };
 
@@ -427,7 +355,6 @@ export default function DiningMenuPage(props) {
     { id: 'NV', name: 'Non-Vegetarian' },
     { id: 'PS', name: 'Pescatarian' },
   ];
-  console.log(form)
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}

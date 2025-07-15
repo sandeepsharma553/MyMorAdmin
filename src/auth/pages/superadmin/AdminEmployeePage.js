@@ -57,7 +57,8 @@ export default function AdminEmployeePage(props) {
     setIsLoading(true)
     const q = query(
       collection(db, 'employees'),
-      where('type', '==', 'admin')
+      where('type', '==', 'admin'),
+      where('uid', '==', uid)
     );
 
     const querySnapshot = await getDocs(q);
@@ -67,6 +68,7 @@ export default function AdminEmployeePage(props) {
       ...doc.data(),
     }));
     setList(superAdmins)
+    console.log(superAdmins)
     const [uniSnap, hostelSnap] = await Promise.all([
       getDocs(collection(db, 'university')),
       getDocs(collection(db, 'hostel')),
@@ -82,7 +84,6 @@ export default function AdminEmployeePage(props) {
     setUniversities(uniArr);
     setHostels(hostelArr);
     setIsLoading(false)
-    console.log(hostelArr)
   }
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
@@ -144,20 +145,42 @@ export default function AdminEmployeePage(props) {
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
-          toast.warning('Deal does not exist! Cannot update.');
+          toast.warning('Employee does not exist! Cannot update.');
           return;
         }
         const empRef = doc(db, 'employees', form.id);
         await updateDoc(empRef, employeeData);
+        await updateDoc(doc(db, "hostel", form.hostelid), {
+          adminUID: form.id
+        });
         toast.success('Employee updated successfully');
       }
       else {
+        const hostelRef = doc(db, "hostel", form.hostelid);
+        const hostelSnap = await getDoc(hostelRef);
+
+        if (!hostelSnap.exists()) {
+          toast.warn("Hostel not found.");
+          return;
+        }
+
+        const hostelData = hostelSnap.data();
+
+        if (hostelData.adminUID) {
+          toast.warn("This hostel already has an assigned admin.");
+          return;
+        }
         const userCredential = await createUserWithEmailAndPassword(tempAuth, form.email, password);
         const user = userCredential.user;
         await updateProfile(user, {
           displayName: form.name,
+          photoURL: imageUrl,
         })
-        await setDoc(doc(db, "employees", user.uid), employeeData);
+        const employeeRef = doc(db, "employees", user.uid);
+        await setDoc(employeeRef, employeeData);
+        await updateDoc(doc(db, "hostel", form.hostelid), {
+          adminUID: user.uid
+        });
         toast.success('Empoyee created successfully');
 
       }
@@ -192,6 +215,11 @@ export default function AdminEmployeePage(props) {
         throw new Error(data.error?.message || 'Failed to send code');
       }
       else if (data.success) {
+        if (form.hostelid) {
+          await updateDoc(doc(db, 'hostel', form.hostelid), {
+            adminUID: null
+          });
+        }
         await deleteDoc(doc(db, 'employees', form.id));
         toast.success('Successfully deleted!');
         getList()
@@ -203,6 +231,76 @@ export default function AdminEmployeePage(props) {
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
+  const handleDisable = async () => {
+    if (!deleteData) return;
+    try {
+      const uid = form.id;
+      const response = await fetch(
+        'https://us-central1-mymor-one.cloudfunctions.net/disableUserByUid',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uid }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to disable user');
+  
+
+      await updateDoc(doc(db, 'employees', form.id), {
+        status: 'disabled',
+        isActive:false
+      });
+  
+      if (form.hostelid) {
+        await updateDoc(doc(db, 'hostel', form.hostelid), {
+          adminUID: null
+        });
+      }
+  
+      toast.success('Account disabled successfully!');
+      getList();
+    } catch (error) {
+      console.error('Error disabling user:', error);
+      toast.error('Error disabling account');
+    }
+    setConfirmDeleteOpen(false);
+    setDelete(null);
+  };
+  const handleEnable = async () => {
+    if (deleteData) return;
+    try {
+      alert(form.id)
+      const uid = form.id;
+      const response = await fetch(
+        'https://us-central1-mymor-one.cloudfunctions.net/enableUserByUid',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uid }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to enable user');
+      await updateDoc(doc(db, 'employees', form.id), {
+        status: 'active',
+        isActive:true
+      });
+      if (form.hostelid) {
+        await updateDoc(doc(db, 'hostel', form.hostelid), {
+          adminUID: form.id
+        });
+      }
+      toast.success('Account enabled successfully!');
+      getList();
+    } catch (error) {
+      console.error('Error enabling user:', error);
+      toast.error('Error enabling account');
+    }
+    setConfirmDeleteOpen(false);
+    setDelete(null);
+  };
+  
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
 
@@ -292,11 +390,29 @@ export default function AdminEmployeePage(props) {
                         }));
                         setModalOpen(true);
                       }}>Edit</button>
-                      <button className="text-red-600 hover:underline" onClick={() => {
-                        setDelete(item);
-                        setForm(item);
-                        setConfirmDeleteOpen(true);
-                      }}>Delete</button>
+                      {item.isActive ? (
+                        <button
+                          className="text-red-600 hover:underline"
+                          onClick={() => {
+                            setDelete(item);
+                            setForm(item);
+                            setConfirmDeleteOpen(true);
+                          }}
+                        >
+                          Disable
+                        </button>
+                      ) : (
+                        <button
+                          className="text-green-600 hover:underline"
+                          onClick={() => {
+                            setDelete(item);
+                            setForm(item);
+                            handleEnable();
+                          }}
+                        >
+                          Activate
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -334,7 +450,7 @@ export default function AdminEmployeePage(props) {
             <h2 className="text-xl font-bold mb-4">Create Employee</h2>
             <form onSubmit={handleSubmit} className="space-y-4" >
               <div className="space-y-4">
-                <input name="name" placeholder="Name" value={form.name}
+                <input name="name" placeholder="Full Name" value={form.name}
                   onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
 
                 <input name="email" placeholder="Email" value={form.email} disabled={editingData}
@@ -477,7 +593,7 @@ export default function AdminEmployeePage(props) {
                 Cancel
               </button>
               <button
-                onClick={handleDelete}
+                onClick={handleDisable}
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
               >
                 Delete

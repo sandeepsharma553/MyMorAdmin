@@ -111,6 +111,7 @@ const HostelPage = (props) => {
           name: form.name,
           uniIds: form.uniIds,
           location: form.location,
+          adminUID: null,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -129,7 +130,20 @@ const HostelPage = (props) => {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, 'hostel', form.id));
+      const hostelRef = doc(db, "hostel", form.id);
+      const hostelSnap = await getDoc(hostelRef);
+    
+      if (!hostelSnap.exists()) {
+        toast.warn("Hostel not found!");
+        return;
+      }
+      const hostelData = hostelSnap.data();
+
+      if (hostelData.adminUID) {
+        toast.warn("Cannot delete hostel. Admin already assigned.");
+        return;
+      }
+      await deleteDoc(hostelRef);
       toast.success('Successfully deleted!');
       getList()
     } catch (error) {
