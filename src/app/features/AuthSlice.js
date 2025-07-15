@@ -11,10 +11,12 @@ const getLoginErrorMessage = (code) => {
     case 'auth/user-not-found':
     case 'auth/wrong-password':
       return 'Invalid e-mail or password';
+      case 'auth/user-disabled':
+        return 'Your account has been disabled. Please contact admin.';
     case 'auth/too-many-requests':
       return 'Too many attempts – please try again later.';
     case 'auth/network-request-failed':
-      return 'Network error – check your connection and retry.';
+    return 'Network error – check your connection and retry.';
     default:
       return 'Something went wrong. Please try again.';
   }
@@ -28,6 +30,9 @@ export const LoginAdmin = createAsyncThunk(
       const res = await signInWithEmailAndPassword(auth, userData.EmailID, userData.Password);
       const firebaseUser = res.user;
       console.log(firebaseUser)
+      if (!firebaseUser || !firebaseUser.uid) {
+        return;
+      }
       const employee = await dispatch(getEmployeeByUid(firebaseUser.uid)).unwrap();
       const response = {
         isSuccess: true,
@@ -54,9 +59,7 @@ export const getEmployeeByUid = createAsyncThunk(
       const response = { id: docSnap.id, ...docSnap.data() }
       return response;
     } catch (error) {
-
       toast.error(getLoginErrorMessage(error.code))
-
       return rejectWithValue(error.code || "Failed to login");
     }
   }
@@ -99,12 +102,10 @@ const AuthSlice = createSlice({
 
       .addCase(LoginAdmin.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(LoginAdmin.fulfilled, (state, action) => {
         const { firebaseUser, employee } = action.payload;
         const type = employee.type;
-
         state.isLoading = false;
         state.user = firebaseUser;
         state.employee = employee;
@@ -126,7 +127,7 @@ const AuthSlice = createSlice({
       })
       .addCase(LoginAdmin.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload?.error || "Login failed";
+        // state.error = action.payload?.error || "Login failed";
       })
       .addCase(getEmployeeByUid.pending, (state) => {
         state.isLoading = true;
@@ -138,7 +139,7 @@ const AuthSlice = createSlice({
       })
       .addCase(getEmployeeByUid.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload?.error || "Failed to fetch employee";
+        // state.error = action.payload?.error || "Failed to fetch employee";
       })
       .addCase(logoutAdmin.fulfilled, (state) => {
         state.isLoggedIn = false;
