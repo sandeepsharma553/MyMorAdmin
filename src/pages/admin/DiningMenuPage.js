@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, setDoc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
-import { db } from "../../../firebase";
+import { db } from "../../firebase";
 import { useSelector } from "react-redux";
 import * as XLSX from "xlsx";
 import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import diningMenuFile from "../../../assets/excel/dining_menu.xlsx";
+import diningMenuFile from "../../assets/excel/dining_menu.xlsx";
 export default function DiningMenuPage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);

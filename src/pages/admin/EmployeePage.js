@@ -3,7 +3,7 @@ import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
 import { collection, addDoc, getDocs, updateDoc, doc, setDoc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
-import { db, storage, auth, firebaseConfig } from "../../../firebase";
+import { db, storage, auth, firebaseConfig } from "../../firebase";
 import { initializeApp, deleteApp, FirebaseApp } from 'firebase/app';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth, createUserWithEmailAndPassword, updateProfile, deleteUser } from "firebase/auth";

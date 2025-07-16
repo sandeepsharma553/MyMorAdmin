@@ -1,9 +1,9 @@
 import { Routes, Route } from "react-router-dom";
-import Dashboard from "../auth/pages/superadmin/SuperDashboard";
-import UniversityPage from "../auth/pages/superadmin/UniversityPage";
-import HostelPage from "../auth/pages/superadmin/HostelPage";
-import AdminEmployeePage from "../auth/pages/superadmin/AdminEmployeePage";
-import ChangePasswordPage from "../auth/pages/admin/ChangePasswordPage";
+import Dashboard from "../pages/superadmin/SuperDashboard";
+import UniversityPage from "../pages/superadmin/UniversityPage";
+import HostelPage from "../pages/superadmin/HostelPage";
+import AdminEmployeePage from "../pages/superadmin/AdminEmployeePage";
+import ChangePasswordPage from "../pages/admin/ChangePasswordPage";
 
 export default function SuperAdminRoutes() {
   return (

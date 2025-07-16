@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc } from "firebase/firestore";
-import { db, storage } from "../../../firebase";
+import { db, storage } from "../../firebase";
 import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import dayjs from 'dayjs';
 import { useReactToPrint } from "react-to-print";
-export default function FeedbackPage(props) {
+export default function ReportIncidentPage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
@@ -171,7 +171,7 @@ export default function FeedbackPage(props) {
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Feedback</h1>
+        <h1 className="text-2xl font-semibold">Report Incident</h1>
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, setDoc, query, where, getDoc } from "firebase/firestore";
-import { db } from "../../../firebase";
+import { db } from "../../firebase";
 import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import * as XLSX from "xlsx";
-import cleaningscheduleFile from "../../../assets/excel/cleaning_schedule.xlsx";
+import cleaningscheduleFile from "../../assets/excel/cleaning_schedule.xlsx";
 export default function CleaningSchedulePage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);

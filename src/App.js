@@ -5,7 +5,7 @@ import { useSelector } from "react-redux";
 import LoginPage from "./auth/LoginPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import SupportPage from "./pages/SupportPage";
-import AccountDeletionPage from "./auth/pages/admin/AccountDeletionPage";
+import AccountDeletionPage from "./pages/admin/AccountDeletionPage";
 import Layout from './components/Layout';
 import SuperAdminLayout from './components/SuperAdminLayout';
 import SuperAdminRoutes from "./routes/SuperAdminRoutes";

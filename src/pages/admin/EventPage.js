@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
+import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc, Timestamp, } from "firebase/firestore";
 import { db, storage } from "../../firebase";
 import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
@@ -24,6 +24,8 @@ export default function EventPage(props) {
   const [fileName, setFileName] = useState('No file chosen');
   const [category, setCategory] = useState(null)
   const [showMapModal, setShowMapModal] = useState(false);
+  const uid = useSelector((state) => state.auth.user.uid);
+  const emp = useSelector((state) => state.auth.employee);
   const initialFormData = {
     id: 0,
     eventName: '',
@@ -58,10 +60,10 @@ export default function EventPage(props) {
     boothOption: false,
     vendorInfo: '',
     sponsorship: '',
-    interestedCount: 0
+    interestedCount: 0,
+    hostelid:''
   }
   const [form, setForm] = useState(initialFormData);
-  const uid = useSelector((state) => state.auth.user.uid);
   useEffect(() => {
     getList()
     getCategory()
@@ -72,7 +74,12 @@ export default function EventPage(props) {
   };
   const getList = async () => {
     setIsLoading(true)
-    const querySnapshot = await getDocs(collection(db, 'events'));
+    const eventsQuery = query(
+      collection(db, 'events'),
+      where('hostelid', '==', emp.hostelid)
+    );
+
+    const querySnapshot = await getDocs(eventsQuery);
     const documents = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
@@ -82,7 +89,12 @@ export default function EventPage(props) {
   }
   const getCategory = async () => {
     setIsLoading(true)
-    const querySnapshot = await getDocs(collection(db, 'eventcategory'));
+    const eventCategoryQuery = query(
+      collection(db, 'eventcategory'),
+      where('hostelid', '==', emp.hostelid)
+    );
+
+    const querySnapshot = await getDocs(eventCategoryQuery);
     const documents = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
@@ -139,6 +151,8 @@ export default function EventPage(props) {
         startDateTime: Timestamp.fromDate(new Date(form.startDateTime)),
         endDateTime: form.endDateTime ? Timestamp.fromDate(new Date(form.endDateTime)) : null,
         ...(posterUrl && { posterUrl }),
+        hostelid: emp.hostelid,
+        uid:uid
       };
       delete eventData.id;
       delete eventData.poster;
@@ -324,7 +338,7 @@ export default function EventPage(props) {
                 <div className="relative">
                   <input
                     name="mapLocation"
-                    readOnly      
+                    readOnly
                     placeholder="Select on map"
                     value={form.mapLocation}
                     onClick={() => setShowMapModal(true)}
@@ -332,7 +346,7 @@ export default function EventPage(props) {
                   />
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                 </div>
-                <input style={{display:'none'}} name="onlineLink" placeholder="Online Event Link" value={form.onlineLink} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                <input style={{ display: 'none' }} name="onlineLink" placeholder="Online Event Link" value={form.onlineLink} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">
                     <input type="file" name="poster" accept="image/*" className="hidden"
@@ -348,8 +362,8 @@ export default function EventPage(props) {
                 {form.posterUrl && (
                   <img src={form.posterUrl} alt="Poster Preview" width="150" />
                 )}
-                <input name="promoVideo" style={{display:'none'}} placeholder="Promo Video Link" value={form.promoVideo} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-                <input name="theme" style={{display:'none'}} placeholder="Theme Color / Emoji" value={form.theme} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                <input name="promoVideo" style={{ display: 'none' }} placeholder="Promo Video Link" value={form.promoVideo} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                <input name="theme" style={{ display: 'none' }} placeholder="Theme Color / Emoji" value={form.theme} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
                 <label className="block mb-2"><input type="checkbox" name="rsvp" checked={form.rsvp} onChange={handleChange} /> RSVP Required?</label>
                 <input name="capacity" placeholder="Max Capacity" value={form.capacity} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
                 <input type="datetime-local" name="rsvpDeadline" value={form.rsvpDeadline} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />

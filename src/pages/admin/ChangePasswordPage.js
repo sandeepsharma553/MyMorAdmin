@@ -3,10 +3,10 @@ import {
   getAuth, reauthenticateWithCredential, EmailAuthProvider, updatePassword
 } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { db } from "../../../firebase";
+import { db } from "../../firebase";
 import { ToastContainer, toast } from "react-toastify";
 import { useDispatch } from "react-redux";
-import { logoutAdmin } from "../../../app/features/AuthSlice";
+import { logoutAdmin } from "../../app/features/AuthSlice";
 import { useSelector } from "react-redux";
 export default function ChangePasswordPage() {
   // const user = useSelector((state) => state);

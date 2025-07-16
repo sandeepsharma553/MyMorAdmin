@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import { db, database, storage } from "../../../firebase";
+import { db, database, storage } from "../../firebase";
 import { ref as dbRef, onValue, set, push, update, remove, get } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, getDocs, Timestamp } from "firebase/firestore";

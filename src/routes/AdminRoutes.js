@@ -1,21 +1,21 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import DashboardPage from "../auth/pages/admin/DashboardPage";
-import DiningMenuPage from "../auth/pages/admin/DiningMenuPage";
-import CleaningSchedulePage from "../auth/pages/admin/CleaningSchedulePage";
-import MaintenancePage from "../auth/pages/admin/MaintenancePage";
-import BookingPage from "../auth/pages/admin/BookingPage";
-import AcademicGroupPage from "../auth/pages/admin/AcademicGroupPage";
-import AnnouncementPage from "../auth/pages/admin/AnnouncementPage";
-import ReportIncidentPage from "../auth/pages/admin/ReportIncidentPage";
-import EventPage from "../auth/pages/admin/EventPage";
-import DealPage from "../auth/pages/admin/DealPage";
-import AccountDeletionPage from "../auth/pages/admin/AccountDeletionPage";
-import EmployeePage from "../auth/pages/admin/EmployeePage";
-import ChangePasswordPage from "../auth/pages/admin/ChangePasswordPage";
-import ResourcesPage from "../auth/pages/admin/ResourcesPage";
-import SettingPage from "../auth/pages/admin/SettingPage";
-import FeedbackPage from "../auth/pages/admin/FeedbackPage";
-import StudentPage from "../auth/pages/admin/StudentPage";
+import DashboardPage from "../pages/admin/DashboardPage";
+import DiningMenuPage from "../pages/admin/DiningMenuPage";
+import CleaningSchedulePage from "../pages/admin/CleaningSchedulePage";
+import MaintenancePage from "../pages/admin/MaintenancePage";
+import BookingPage from "../pages/admin/BookingPage";
+import AcademicGroupPage from "../pages/admin/AcademicGroupPage";
+import AnnouncementPage from "../pages/admin/AnnouncementPage";
+import ReportIncidentPage from "../pages/admin/ReportIncidentPage";
+import EventPage from "../pages/admin/EventPage";
+import DealPage from "../pages/admin/DealPage";
+import AccountDeletionPage from "../pages/admin/AccountDeletionPage";
+import EmployeePage from "../pages/admin/EmployeePage";
+import ChangePasswordPage from "../pages/admin/ChangePasswordPage";
+import ResourcesPage from "../pages/admin/ResourcesPage";
+import SettingPage from "../pages/admin/SettingPage";
+import FeedbackPage from "../pages/admin/FeedbackPage";
+import StudentPage from "../pages/admin/StudentPage";
 
 export default function AdminRoutes({ route }) {
 

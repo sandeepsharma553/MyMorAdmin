@@ -1,25 +1,26 @@
 import React, { useState, useEffect } from "react";
 import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc } from "firebase/firestore";
-import { db } from "../../../firebase";
+import { db } from "../../firebase";
 import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
-const HostelPage = (props) => {
+
+const UniversityPage = (props) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([])
-  const [universities, setUniversities] = useState([]);
   const [isLoading, setIsLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1);
   const uid = useSelector((state) => state.auth.user.uid);
   const initialForm = {
     id: 0,
     name: '',
-    uniIds: [],
-    location: ''
+    location: '',
+    campus: '',
+    domain: '',
+    studomain: ''
   }
   const [form, setForm] = useState(initialForm);
   const pageSize = 10;
@@ -34,60 +35,36 @@ const HostelPage = (props) => {
   useEffect(() => {
     getList()
   }, [])
-
   const getList = async () => {
     setIsLoading(true)
+    const querySnapshot = await getDocs(collection(db, 'university'));
+    const documents = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
 
-    try {
-      const [uniSnap, hostelSnap] = await Promise.all([
-        getDocs(collection(db, 'university')),
-        getDocs(collection(db, 'hostel')),
-      ]);
-
-      const uniArr = uniSnap.docs.map(d => ({ id: d.id, name: d.data().name }));
-      const uniMap = uniArr.reduce((acc, cur) => {
-        acc[cur.id] = cur.name;
-        return acc;
-      }, {});
-
-      const hostelArr = hostelSnap.docs.map(d => {
-        const { name, uniIds = [],location } = d.data();
-        const universityNames = (uniIds)
-          .map(id => uniMap[id] ?? "Unknown");   
-        return { id: d.id, name, uniIds, universityNames,location };
-      });
-
-      setList(hostelArr);
-      setUniversities(uniArr);
-    } catch (err) {
-      console.error('getList error:', err);
-    } finally {
-      setIsLoading(false);
-    }
+    setList(documents)
+    setIsLoading(false)
   }
-
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.name) return;
-    if (!form.uniIds) {
-
-      toast.warning("Please select a university");
-      return;
-    }
     if (editingData) {
       try {
-        const docRef = doc(db, 'hostel', form.id);
+        const docRef = doc(db, 'university', form.id);
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
-          toast.warning('hostel does not exist! Cannot update.');
+          toast.warning('university does not exist! Cannot update.');
           return;
         }
-        await updateDoc(doc(db, 'hostel', form.id), {
+        await updateDoc(doc(db, 'university', form.id), {
           uid: uid,
           name: form.name,
-          uniIds: form.uniIds,
           location: form.location,
+          campus: form.campus,
+          domain: form.domain,
+          studomain: form.studomain,
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -97,21 +74,21 @@ const HostelPage = (props) => {
         console.error('Error updating document: ', error);
       }
     } else {
-
       try {
-        const q = query(collection(db, 'hostel'), where('name', '==', form.name));
+        const q = query(collection(db, 'university'), where('name', '==', form.name));
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
           toast.warn('Duplicate found! Not adding.');
           return;
         }
-        await addDoc(collection(db, "hostel"), {
+        await addDoc(collection(db, "university"), {
           uid: uid,
           name: form.name,
-          uniIds: form.uniIds,
           location: form.location,
-          adminUID: null,
+          campus: form.campus,
+          domain: form.domain,
+          studomain: form.studomain,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -122,7 +99,6 @@ const HostelPage = (props) => {
       }
     }
 
-    // Reset
     setModalOpen(false);
     setEditing(null);
     setForm(initialForm);
@@ -130,20 +106,7 @@ const HostelPage = (props) => {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      const hostelRef = doc(db, "hostel", form.id);
-      const hostelSnap = await getDoc(hostelRef);
-    
-      if (!hostelSnap.exists()) {
-        toast.warn("Hostel not found!");
-        return;
-      }
-      const hostelData = hostelSnap.data();
-
-      if (hostelData.adminUID) {
-        toast.warn("Cannot delete hostel. Admin already assigned.");
-        return;
-      }
-      await deleteDoc(hostelRef);
+      await deleteDoc(doc(db, 'university', form.id));
       toast.success('Successfully deleted!');
       getList()
     } catch (error) {
@@ -157,7 +120,7 @@ const HostelPage = (props) => {
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Hostel</h1>
+        <h1 className="text-2xl font-semibold">University</h1>
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
@@ -177,14 +140,14 @@ const HostelPage = (props) => {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Hostel</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">University</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Location</th>
+                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Campus</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-              {paginatedData.length === 0 ? (
+                {paginatedData.length === 0 ? (
                   <tr>
                     <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
                       No matching users found.
@@ -192,29 +155,23 @@ const HostelPage = (props) => {
                   </tr>
                 ) : (
                   paginatedData.map((item, i) => (
-                  <tr key={i}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      <ul className="list-disc list-inside space-y-1">
-                        {item.universityNames.map((name) => (
-                          <li key={name}>{name}</li>
-                        ))}
-                      </ul>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.location}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button className="text-blue-600 hover:underline mr-3" onClick={() => {
-                        setEditing(item);
-                        setForm(item);
-                        setModalOpen(true);
-                      }}>Edit</button>
-                      <button className="text-red-600 hover:underline" onClick={() => {
-                        setDelete(item);
-                        setForm(item);
-                        setConfirmDeleteOpen(true);
-                      }}>Delete</button>
-                    </td>
-                  </tr>
+                    <tr key={i}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.location}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.campus}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button className="text-blue-600 hover:underline mr-3" onClick={() => {
+                          setEditing(item);
+                          setForm(item);
+                          setModalOpen(true);
+                        }}>Edit</button>
+                        <button className="text-red-600 hover:underline" onClick={() => {
+                          setDelete(item);
+                          setForm(item);
+                          setConfirmDeleteOpen(true);
+                        }}>Delete</button>
+                      </td>
+                    </tr>
                   ))
                 )}
               </tbody>
@@ -248,41 +205,18 @@ const HostelPage = (props) => {
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
-            <h2 className="text-xl font-bold mb-4">Add New</h2>
+            <h2 className="text-xl font-bold mb-4">Add University</h2>
             <form onSubmit={handleAdd} className="space-y-4" >
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Name"
-                className="w-full border border-gray-300 p-2 rounded"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                required
-              />
-              <Select
-                className="w-full border border-gray-300 p-2 rounded"
-                multiple
-                displayEmpty
-                required
-                value={form.uniIds}
-                onChange={(e) => setForm({ ...form, uniIds: e.target.value })}
-                renderValue={(selected) =>
-                  selected.length
-                    ? selected.map((id) => {
-                      const uni = universities.find((u) => u.id === id);
-                      return uni?.name || '';
-                    }).join(", ")
-                    : "Select University"
-                }
-              >
-                {universities.map(({ id, name }) => (
-                  <MenuItem key={id} value={id}>
-                    <Checkbox checked={form.uniIds.includes(id)} />
-                    <ListItemText primary={name} />
-                  </MenuItem>
-                ))}
-              </Select>
-              <input
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  placeholder="Name"
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  required
+                />
+                <input
                   type="text"
                   placeholder="Location"
                   className="w-full border border-gray-300 p-2 rounded"
@@ -290,21 +224,43 @@ const HostelPage = (props) => {
                   onChange={(e) => setForm({ ...form, location: e.target.value })}
                   required
                 />
-               
-            </div>
-            <div className="flex justify-end mt-6 space-x-3">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-              >
-                Cancel
-              </button>
-              <button
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-              >
-                Save
-              </button>
-            </div>
+                <input
+                  type="text"
+                  placeholder="Campus"
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={form.campus}
+                  onChange={(e) => setForm({ ...form, campus: e.target.value })}
+                />
+                <input
+                  type="text"
+                  placeholder="University Domain"
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={form.domain}
+                  onChange={(e) => setForm({ ...form, domain: e.target.value })}
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Student Domain"
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={form.studomain}
+                  onChange={(e) => setForm({ ...form, studomain: e.target.value })}
+
+                />
+              </div>
+              <div className="flex justify-end mt-6 space-x-3">
+                <button
+                  onClick={() => setModalOpen(false)}
+                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Save
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -341,4 +297,4 @@ const HostelPage = (props) => {
   );
 };
 
-export default HostelPage;
+export default UniversityPage;
