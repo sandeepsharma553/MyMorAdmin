@@ -19,7 +19,23 @@ const HostelPage = (props) => {
     id: 0,
     name: '',
     uniIds: [],
-    location: ''
+    location: '',
+    features: {
+      events: true,
+      chat: true,
+      marketplace: true,
+      feedback: true,
+      deal:true,
+      announcement:true,
+      bookingroomL:true,
+      academicgroup:true,
+      diningmenu:true,
+      cleaningschedule:true,
+      maintenance:true,
+      wellbeing:true,
+      reportincedent:true,
+      resource:true,
+    },
   }
   const [form, setForm] = useState(initialForm);
   const pageSize = 10;

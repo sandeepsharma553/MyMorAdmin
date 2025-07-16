@@ -304,7 +304,7 @@ export default function AdminEmployeePage(props) {
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
 
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Employee</h1>
+        <h1 className="text-2xl font-semibold">Hostel Employee</h1>
         <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
