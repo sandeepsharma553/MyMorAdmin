@@ -180,6 +180,16 @@ export default function AdminEmployeePage(props) {
         await updateDoc(doc(db, "hostel", form.hostelid), {
           adminUID: user.uid
         });
+        await addDoc(collection(db, "users", user.uid), {
+          uid: user.uid,
+          firstname: form.name,
+          lastname: '',
+          username: form.name,
+          email: form.email,
+          hostelid: form.hostelid,
+          createdby: user.uid,
+          createddate: new Date(),
+        });
         toast.success('Empoyee created successfully');
 
       }

@@ -27,6 +27,7 @@ const SECTIONS = [
   { key: "resources", label: "Resources", Icon: Hotel },
   { key: "eventpage", label: "Event", Icon: Calendar },
   { key: "dealpage", label: "Deals", Icon: Utensils },
+  { key: "faq", label: "FAQ", Icon: Utensils },
   { key: "setting", label: "Setting", Icon: SettingsIcon },
 ];
 
