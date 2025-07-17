@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Calendar, Menu, BookOpen, BrushCleaning, Settings,
   Users, MessageSquareWarning, Handshake, Utensils, GraduationCap,
-  Hotel, Bell, UserPlus, SettingsIcon
+  Hotel, Bell, UserPlus, SettingsIcon,HelpCircle
 } from "lucide-react";
 import { useSelector } from "react-redux";
 
@@ -27,7 +27,7 @@ const SECTIONS = [
   { key: "resources", label: "Resources", Icon: Hotel },
   { key: "eventpage", label: "Event", Icon: Calendar },
   { key: "dealpage", label: "Deals", Icon: Utensils },
-  { key: "faq", label: "FAQ", Icon: Utensils },
+  { key: "faq", label: "FAQ", Icon: HelpCircle },
   { key: "setting", label: "Setting", Icon: SettingsIcon },
 ];
 
