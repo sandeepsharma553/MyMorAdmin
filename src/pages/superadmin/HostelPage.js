@@ -21,20 +21,24 @@ const HostelPage = (props) => {
     uniIds: [],
     location: '',
     features: {
-      events: true,
-      chat: true,
-      marketplace: true,
-      feedback: true,
-      deal:true,
-      announcement:true,
-      bookingroomL:true,
-      academicgroup:true,
-      diningmenu:true,
-      cleaningschedule:true,
-      maintenance:true,
-      wellbeing:true,
-      reportincedent:true,
-      resource:true,
+      events: false,
+      deals: false,
+      announcement: false,
+      hostelevent: false,
+      diningmenu: false,
+      cleaningschedule: false,
+      maintenance: false,
+      bookingroom: false,
+      academicgroup: false,
+      reportincedent: false,
+      feedback: false,
+      wellbeing: false,
+      faqs: false,
+      resource: false,
+      poi: false,
+      community: false,
+      // chat: false,
+      // marketplace: false,
     },
   }
   const [form, setForm] = useState(initialForm);
@@ -67,10 +71,10 @@ const HostelPage = (props) => {
       }, {});
 
       const hostelArr = hostelSnap.docs.map(d => {
-        const { name, uniIds = [],location } = d.data();
+        const { name, uniIds = [], location, features } = d.data();
         const universityNames = (uniIds)
-          .map(id => uniMap[id] ?? "Unknown");   
-        return { id: d.id, name, uniIds, universityNames,location };
+          .map(id => uniMap[id] ?? "Unknown");
+        return { id: d.id, name, uniIds, universityNames, location, features };
       });
 
       setList(hostelArr);
@@ -86,15 +90,13 @@ const HostelPage = (props) => {
     e.preventDefault();
     if (!form.name) return;
     if (!form.uniIds) {
-
       toast.warning("Please select a university");
       return;
     }
-    if (editingData) {
-      try {
+    try {
+      if (editingData) {
         const docRef = doc(db, 'hostel', form.id);
         const docSnap = await getDoc(docRef);
-
         if (!docSnap.exists()) {
           toast.warning('hostel does not exist! Cannot update.');
           return;
@@ -104,20 +106,14 @@ const HostelPage = (props) => {
           name: form.name,
           uniIds: form.uniIds,
           location: form.location,
+          features: form.features,
           updatedBy: uid,
           updatedDate: new Date(),
         });
         toast.success('Successfully updated');
-        getList()
-      } catch (error) {
-        console.error('Error updating document: ', error);
-      }
-    } else {
-
-      try {
+      } else {
         const q = query(collection(db, 'hostel'), where('name', '==', form.name));
         const querySnapshot = await getDocs(q);
-
         if (!querySnapshot.empty) {
           toast.warn('Duplicate found! Not adding.');
           return;
@@ -128,27 +124,38 @@ const HostelPage = (props) => {
           uniIds: form.uniIds,
           location: form.location,
           adminUID: null,
+          features: form.features,
           createdBy: uid,
           createdDate: new Date(),
         });
         toast.success("Successfully saved");
-        getList()
-      } catch (error) {
-        console.error("Error saving data:", error);
       }
     }
-
+    catch (e) {
+      console.log('error', e)
+    }
     // Reset
     setModalOpen(false);
     setEditing(null);
     setForm(initialForm);
+    getList()
+  };
+  const handleFeatureChange = (e) => {
+    const { name, checked } = e.target;
+    setForm(prev => ({
+      ...prev,
+      features: {
+        ...prev.features,
+        [name]: checked
+      }
+    }));
   };
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
       const hostelRef = doc(db, "hostel", form.id);
       const hostelSnap = await getDoc(hostelRef);
-    
+
       if (!hostelSnap.exists()) {
         toast.warn("Hostel not found!");
         return;
@@ -200,7 +207,7 @@ const HostelPage = (props) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-              {paginatedData.length === 0 ? (
+                {paginatedData.length === 0 ? (
                   <tr>
                     <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
                       No matching users found.
@@ -208,29 +215,49 @@ const HostelPage = (props) => {
                   </tr>
                 ) : (
                   paginatedData.map((item, i) => (
-                  <tr key={i}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      <ul className="list-disc list-inside space-y-1">
-                        {item.universityNames.map((name) => (
-                          <li key={name}>{name}</li>
-                        ))}
-                      </ul>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.location}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button className="text-blue-600 hover:underline mr-3" onClick={() => {
-                        setEditing(item);
-                        setForm(item);
-                        setModalOpen(true);
-                      }}>Edit</button>
-                      <button className="text-red-600 hover:underline" onClick={() => {
-                        setDelete(item);
-                        setForm(item);
-                        setConfirmDeleteOpen(true);
-                      }}>Delete</button>
-                    </td>
-                  </tr>
+                    <tr key={i}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        <ul className="list-disc list-inside space-y-1">
+                          {item.universityNames.map((name) => (
+                            <li key={name}>{name}</li>
+                          ))}
+                        </ul>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.location}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button className="text-blue-600 hover:underline mr-3" onClick={() => {
+                          setEditing(item);
+                          setForm({
+                            ...item,
+                            features: item.features || {
+                              events: false,
+                              deals: false,
+                              announcement: false,
+                              hostelevent: false,
+                              diningmenu: false,
+                              cleaningschedule: false,
+                              maintenance: false,
+                              bookingroom: false,
+                              academicgroup: false,
+                              reportincedent: false,
+                              feedback: false,
+                              wellbeing: false,
+                              faqs: false,
+                              resource: false,
+                              poi: false,
+                              community: false,
+                            }
+                          });
+                          setModalOpen(true);
+                        }}>Edit</button>
+                        <button className="text-red-600 hover:underline" onClick={() => {
+                          setDelete(item);
+                          setForm(item);
+                          setConfirmDeleteOpen(true);
+                        }}>Delete</button>
+                      </td>
+                    </tr>
                   ))
                 )}
               </tbody>
@@ -263,42 +290,42 @@ const HostelPage = (props) => {
       </div>
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
+          <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-bold mb-4">Add New</h2>
             <form onSubmit={handleAdd} className="space-y-4" >
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Name"
-                className="w-full border border-gray-300 p-2 rounded"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                required
-              />
-              <Select
-                className="w-full border border-gray-300 p-2 rounded"
-                multiple
-                displayEmpty
-                required
-                value={form.uniIds}
-                onChange={(e) => setForm({ ...form, uniIds: e.target.value })}
-                renderValue={(selected) =>
-                  selected.length
-                    ? selected.map((id) => {
-                      const uni = universities.find((u) => u.id === id);
-                      return uni?.name || '';
-                    }).join(", ")
-                    : "Select University"
-                }
-              >
-                {universities.map(({ id, name }) => (
-                  <MenuItem key={id} value={id}>
-                    <Checkbox checked={form.uniIds.includes(id)} />
-                    <ListItemText primary={name} />
-                  </MenuItem>
-                ))}
-              </Select>
-              <input
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  placeholder="Name"
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  required
+                />
+                <Select
+                  className="w-full border border-gray-300 p-2 rounded"
+                  multiple
+                  displayEmpty
+                  required
+                  value={form.uniIds}
+                  onChange={(e) => setForm({ ...form, uniIds: e.target.value })}
+                  renderValue={(selected) =>
+                    selected.length
+                      ? selected.map((id) => {
+                        const uni = universities.find((u) => u.id === id);
+                        return uni?.name || '';
+                      }).join(", ")
+                      : "Select University"
+                  }
+                >
+                  {universities.map(({ id, name }) => (
+                    <MenuItem key={id} value={id}>
+                      <Checkbox checked={form.uniIds.includes(id)} />
+                      <ListItemText primary={name} />
+                    </MenuItem>
+                  ))}
+                </Select>
+                <input
                   type="text"
                   placeholder="Location"
                   className="w-full border border-gray-300 p-2 rounded"
@@ -306,21 +333,41 @@ const HostelPage = (props) => {
                   onChange={(e) => setForm({ ...form, location: e.target.value })}
                   required
                 />
-               
-            </div>
-            <div className="flex justify-end mt-6 space-x-3">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-              >
-                Cancel
-              </button>
-              <button
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-              >
-                Save
-              </button>
-            </div>
+                <fieldset style={{ marginTop: '20px' }}>
+                  <legend style={{ fontWeight: 'bold', marginBottom: '10px' }}>Features</legend>
+                  <div style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '20px',
+                    padding: '10px 0'
+                  }}>
+                    {Object.keys(form.features).map((key) => (
+                      <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <input
+                          type="checkbox"
+                          name={key}
+                          checked={form.features[key]}
+                          onChange={handleFeatureChange}
+                        />
+                        {key.charAt(0).toUpperCase() + key.slice(1)}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              </div>
+              <div className="flex justify-end mt-6 space-x-3">
+                <button
+                  onClick={() => setModalOpen(false)}
+                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Save
+                </button>
+              </div>
             </form>
           </div>
         </div>

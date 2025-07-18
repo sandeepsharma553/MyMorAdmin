@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
+import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
 import { collection, addDoc, getDocs, updateDoc, doc, setDoc, deleteDoc, query, where, getDoc, Timestamp } from "firebase/firestore";
 import { db, storage, auth, firebaseConfig } from "../../firebase";
 import { initializeApp, deleteApp, FirebaseApp } from 'firebase/app';
@@ -18,6 +19,9 @@ export default function AdminEmployeePage(props) {
   const [list, setList] = useState([])
   const [universities, setUniversities] = useState([]);
   const [hostels, setHostels] = useState([]);
+  const [selectedHostel, setSelectedHostel] = useState("");
+  const [hostelFeatures, setHostelFeatures] = useState({});
+  const [allowedMenuKeys, setAllowedMenuKeys] = useState([]);
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
   const uid = useSelector((state) => state.auth.user.uid);
@@ -33,7 +37,8 @@ export default function AdminEmployeePage(props) {
     role: 'admin',
     type: 'admin',
     isActive: true,
-    domain: ''
+    domain: '',
+    permissions: [],
   }
   const [form, setForm] = useState(initialForm);
   const pageSize = 10;
@@ -48,6 +53,43 @@ export default function AdminEmployeePage(props) {
   const paginatedData = filteredData.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
+  );
+  const MENU_OPTIONS = [
+    { key: "dashboard", label: "Dashboard" },
+    { key: "announcement", label: "Announcement" },
+    { key: "student", label: "Student" },
+    { key: "diningmenu", label: "Dining Menu" },
+    { key: "cleaningschedule", label: "Cleaning Schedule" },
+    { key: "maintenance", label: "Maintenance" },
+    { key: "bookingroom", label: "Book a Room" },
+    { key: "academicgroup", label: "Academic Groups" },
+    { key: "reportincident", label: "Report Incident" },
+    { key: "feedback", label: "Feedback" },
+    { key: "resources", label: "Resources" },
+    { key: "event", label: "Event" },
+    { key: "deal", label: "Deals" },
+    { key: "faq", label: "FAQs" },
+    { key: "setting", label: "Setting" },
+  ];
+  const FEATURE_TO_MENU_KEY = {
+    events: "event",
+    deals: "deal",
+    announcement: "announcement",
+    hostelevent: "event",
+    diningmenu: "diningmenu",
+    cleaningschedule: "cleaningschedule",
+    maintenance: "maintenance",
+    bookingroom: "bookingroom",
+    academicgroup: "academicgroup",
+    reportincedent: "reportincident",
+    feedback: "feedback",
+    wellbeing: "wellbeing",
+    faqs: "faq",
+    resource: "resources",
+  };
+
+  const LABEL_BY_KEY = Object.fromEntries(
+    MENU_OPTIONS.map(({ key, label }) => [key, label])
   );
   useEffect(() => {
     getList()
@@ -78,12 +120,15 @@ export default function AdminEmployeePage(props) {
       id: d.id,
       name: d.data().name,
       universityId: d.data().universityId,
-      location: d.data().location
+      location: d.data().location,
+      features:d.data().features
     }));
     setUniversities(uniArr);
     setHostels(hostelArr);
+    console.log(hostelArr)
     setIsLoading(false)
   }
+  
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
 
@@ -254,19 +299,19 @@ export default function AdminEmployeePage(props) {
       );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to disable user');
-  
+
 
       await updateDoc(doc(db, 'employees', form.id), {
         status: 'disabled',
-        isActive:false
+        isActive: false
       });
-  
+
       if (form.hostelid) {
         await updateDoc(doc(db, 'hostel', form.hostelid), {
           adminUID: null
         });
       }
-  
+
       toast.success('Account disabled successfully!');
       getList();
     } catch (error) {
@@ -293,7 +338,7 @@ export default function AdminEmployeePage(props) {
       if (!response.ok) throw new Error(data.error || 'Failed to enable user');
       await updateDoc(doc(db, 'employees', form.id), {
         status: 'active',
-        isActive:true
+        isActive: true
       });
       if (form.hostelid) {
         await updateDoc(doc(db, 'hostel', form.hostelid), {
@@ -309,7 +354,30 @@ export default function AdminEmployeePage(props) {
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
-  
+  const handleHostelChange = (e) => {
+    const selectedId = e.target.value;
+    setSelectedHostel(selectedId);
+
+    const hostel = hostels.find((h) => h.id === selectedId);
+    const features = hostel?.features || {};
+
+    setHostelFeatures(features);
+
+    // const allowedKeys = Object.entries(features)
+    //   .filter(([_, enabled]) => enabled === true)
+    //   .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
+    //   .filter(Boolean);
+      const allowedKeys = [
+        'dashboard',
+        'setting',
+        ...Object.entries(features)
+          .filter(([_, enabled]) => enabled)
+          .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
+          .filter(Boolean)
+      ];
+    setAllowedMenuKeys(allowedKeys);
+    setForm((prev) => ({ ...prev, permissions: [] })); 
+  };
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
 
@@ -388,17 +456,39 @@ export default function AdminEmployeePage(props) {
                       {item?.imageUrl != "" || item?.imageUrl != undefined ? (<img src={item.imageUrl} width={80} height={80} />) : null}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button className="text-blue-600 hover:underline mr-3" onClick={() => {
-                        setEditing(item);
-                        setForm(prev => ({
-                          ...prev,
-                          ...item,
-                          id: item.id,
-                          permissions: item.permissions?.length > 0 ? item.permissions : [],
-                          image: null
-                        }));
-                        setModalOpen(true);
-                      }}>Edit</button>
+                    
+                      <button
+                        className="text-blue-600 hover:underline mr-3"
+                        onClick={() => {
+                          setEditing(item);
+                          const selectedHostelId = item.hostelid;
+                          const selectedHostel = hostels.find(h => h.id === selectedHostelId);
+                          const features = selectedHostel?.features || {};
+                          const allowedKeys = [
+                            'dashboard',
+                            'setting',
+                            ...Object.entries(features)
+                              .filter(([_, enabled]) => enabled)
+                              .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
+                              .filter(Boolean)
+                          ];
+                          setSelectedHostel(selectedHostelId);
+                          setHostelFeatures(features);
+                          setAllowedMenuKeys(allowedKeys);
+                          setForm(prev => ({
+                            ...prev,
+                            ...item,
+                            id: item.id,
+                            hostelid: selectedHostelId,
+                            permissions: item.permissions?.length > 0 ? item.permissions : [],
+                            image: null,
+                          }));
+                          setModalOpen(true);
+                        }}
+                      >
+                        Edit
+                      </button>
+
                       {item.isActive ? (
                         <button
                           className="text-red-600 hover:underline"
@@ -469,47 +559,7 @@ export default function AdminEmployeePage(props) {
                 )}
                 <input name="mobileNo" placeholder="Mobile No" type="number" min={0} value={form.mobileNo} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                 <textarea name="address" placeholder="Address" value={form.address} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required></textarea>
-                {/* <Select
-                  className="w-full border border-gray-300 p-2 rounded"
-                  multiple
-                  displayEmpty
-                  required
-                  value={form.uniIds}
-                  onChange={(e) => {
-                    const selectedIds = e.target.value;
-                    const firstUni = universities.find(u => u.id === selectedIds[0]);
-                    setForm({
-                      ...form,
-                      uniIds: selectedIds,
-                      domain: firstUni?.domain || ''
-                    });
-                  }}
-                  renderValue={(selected) =>
-                    selected.length
-                      ? selected.map((id) => {
-                        const uni = universities.find((u) => u.id === id);
-                        return uni?.name || '';
-                      }).join(", ")
-                      : "Select University"
-                  }
-                >
-                  {universities.map(({ id, name }) => (
-                    <MenuItem key={id} value={id}>
-                      <Checkbox checked={form.uniIds.includes(id)} />
-                      <ListItemText primary={name} />
-                    </MenuItem>
-                  ))}
-                </Select> */}
-                {/* <select name="hostelid"
-                  value={form.hostelid}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 p-2 rounded" required >
-                  <option value="">Select University</option>
 
-                  {universities.map((item, i) => (
-                    <option value={item.id}>{item.name}</option>
-                  ))}
-                </select> */}
                 <select name="hostelid" value={form.hostelid}
                   onChange={(e) => {
                     const selectedHostelId = e.target.value;
@@ -519,6 +569,7 @@ export default function AdminEmployeePage(props) {
                       hostelid: selectedHostelId,
                       hostel: selectedHostel?.name || "",
                     });
+                    handleHostelChange(e)
                   }}
                   className="w-full border border-gray-300 p-2 rounded" required >
                   <option value="">Select Hostel</option>
@@ -543,7 +594,29 @@ export default function AdminEmployeePage(props) {
                 {form.imageUrl && (
                   <img src={form.imageUrl} alt="Image Preview" width="150" />
                 )}
-
+                <div>
+                  <Select
+                    className="w-full border border-gray-300 p-2 rounded"
+                    multiple
+                    displayEmpty
+                    value={form.permissions}
+                    onChange={(e) => setForm({ ...form, permissions: e.target.value })}
+                    renderValue={(selected) =>
+                      selected.length
+                        ? selected.map((k) => LABEL_BY_KEY[k]).join(", ")
+                        : "Select Permissions"
+                    }
+                  >
+                    {MENU_OPTIONS.filter(({ key }) =>
+                      allowedMenuKeys.includes(key)
+                    ).map(({ key, label }) => (
+                      <MenuItem key={key} value={key}>
+                        <Checkbox checked={form.permissions.includes(key)} />
+                        <ListItemText primary={label} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </div>
                 <label className="flex items-center gap-3 cursor-pointer select-none">
                   <span className="text-sm font-medium">Status</span>
                   <input

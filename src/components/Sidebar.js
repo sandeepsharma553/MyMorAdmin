@@ -17,17 +17,17 @@ const SECTIONS = [
   { key: "employee", label: "Employee", Icon: UserPlus },
   { key: "student", label: "Student", Icon: UserPlus },
   { key: "announcement", label: "Announcement", Icon: Bell },
-  { key: "diningmenupage", label: "Dining Menu", Icon: Menu },
-  { key: "cleaningpage", label: "Cleaning Schedule", Icon: BrushCleaning },
-  { key: "maintenancepage", label: "Maintenance", Icon: Settings },
-  { key: "bookingpage", label: "Book a Room", Icon: BookOpen },
-  { key: "academicpage", label: "Academic Groups", Icon: Users },
-  { key: "reportpage", label: "Report Incident", Icon: MessageSquareWarning },
+  { key: "diningmenu", label: "Dining Menu", Icon: Menu },
+  { key: "cleaningschedule", label: "Cleaning Schedule", Icon: BrushCleaning },
+  { key: "maintenance", label: "Maintenance", Icon: Settings },
+  { key: "bookingroom", label: "Book a Room", Icon: BookOpen },
+  { key: "academicgroup", label: "Academic Groups", Icon: Users },
+  { key: "reportincident", label: "Report Incident", Icon: MessageSquareWarning },
   { key: "feedback", label: "Feedback", Icon: SettingsIcon },
   { key: "resources", label: "Resources", Icon: Hotel },
-  { key: "eventpage", label: "Event", Icon: Calendar },
-  { key: "dealpage", label: "Deals", Icon: Utensils },
-  { key: "faq", label: "FAQ", Icon: HelpCircle },
+  { key: "event", label: "Event", Icon: Calendar },
+  { key: "deal", label: "Deals", Icon: Utensils },
+  { key: "faq", label: "FAQs", Icon: HelpCircle },
   { key: "setting", label: "Setting", Icon: SettingsIcon },
 ];
 
@@ -70,7 +70,7 @@ function Sidebar({ onSectionClick, isLoading }) {
       <nav className="flex-1 min-h-0 overflow-y-auto px-2 custom-scroll">
         {SECTIONS
           .filter(({ key }) => {
-            if (employee?.role === 'admin') return true;
+            // if (employee?.role === 'admin') return true;
             return !perms || hasPermission(perms, key);
           })
           .map(({ key, label, Icon }) => (

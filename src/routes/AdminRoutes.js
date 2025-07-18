@@ -25,15 +25,15 @@ export default function AdminRoutes({ route }) {
     <Routes>
        {/* <Route path="dashboard" element={<HomePage />} /> */}
          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/diningmenupage" element={<DiningMenuPage />} />
-          <Route path="/cleaningpage" element={<CleaningSchedulePage />} />
-          <Route path="/maintenancepage" element={<MaintenancePage />} />
-          <Route path="/bookingpage" element={<BookingPage />} />
-          <Route path="/academicpage" element={<AcademicGroupPage />} />
+          <Route path="/diningmenu" element={<DiningMenuPage />} />
+          <Route path="/cleaningschedule" element={<CleaningSchedulePage />} />
+          <Route path="/maintenance" element={<MaintenancePage />} />
+          <Route path="/bookingroom" element={<BookingPage />} />
+          <Route path="/academicgroup" element={<AcademicGroupPage />} />
           <Route path="/announcement" element={<AnnouncementPage />} />
-          <Route path="/reportpage" element={<ReportIncidentPage />} />
-          <Route path="/eventpage" element={<EventPage />} />
-          <Route path="/dealpage" element={<DealPage />} />
+          <Route path="/reportincident" element={<ReportIncidentPage />} />
+          <Route path="/event" element={<EventPage />} />
+          <Route path="/deal" element={<DealPage />} />
           <Route path="/requestdelete" element={<AccountDeletionPage />} />
           <Route path="/employee" element={<EmployeePage />} />
           <Route path="/changepassword" element={<ChangePasswordPage />} />
