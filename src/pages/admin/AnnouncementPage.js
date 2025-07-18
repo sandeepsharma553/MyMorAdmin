@@ -26,7 +26,6 @@ export default function AnnouncementPage(props) {
     const uid = useSelector((state) => state.auth.user.uid)
     const user = useSelector((state) => state.auth.user)
     const emp = useSelector((state) => state.auth.employee)
-
     const [range, setRange] = useState([
         {
             startDate: new Date(),
