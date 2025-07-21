@@ -47,11 +47,13 @@ export default function AnnouncementPage(props) {
         likes: [],
         comments: [],
         bookmarked: false,
-        question: '',
-        options: ['', ''],
-        allowMulti: false,
         link: '',
-        hostelid: ''
+        hostelid: '',
+        pollData: {
+            question: '',
+            allowMulti: false,
+            options: ['', ''],
+        },
     }
     const [form, setForm] = useState(initialForm);
     const pageSize = 10;
@@ -83,7 +85,7 @@ export default function AnnouncementPage(props) {
         setIsLoading(false)
 
     }
-    const handleChange = (e) => {
+    const handleChange1 = (e) => {
         const { name, value, type, files, checked } = e.target;
         if (type === 'file') {
             setForm({ ...form, [name]: files[0] });
@@ -92,6 +94,47 @@ export default function AnnouncementPage(props) {
             setForm({ ...form, [name]: checked });
         } else {
             setForm({ ...form, [name]: value });
+        }
+    };
+    const handleChange = (e) => {
+        const { name, value, type, files, checked } = e.target;
+
+        if (type === 'file') {
+            setForm((prev) => ({
+                ...prev,
+                [name]: files[0],
+            }));
+            setFileName(files.length > 0 ? files[0].name : 'No file chosen');
+        } else if (type === 'checkbox') {
+            if (name === 'allowMulti') {
+                setForm((prev) => ({
+                    ...prev,
+                    pollData: {
+                        ...prev.pollData,
+                        allowMulti: checked,
+                    },
+                }));
+            } else {
+                setForm((prev) => ({
+                    ...prev,
+                    [name]: checked,
+                }));
+            }
+        } else {
+            if (name === 'question') {
+                setForm((prev) => ({
+                    ...prev,
+                    pollData: {
+                        ...prev.pollData,
+                        question: value,
+                    },
+                }));
+            } else {
+                setForm((prev) => ({
+                    ...prev,
+                    [name]: value,
+                }));
+            }
         }
     };
     const handleSubmit = async (e) => {
@@ -115,6 +158,17 @@ export default function AnnouncementPage(props) {
             }
             const userName = await fetchUser(uid);
             delete form.poster;
+            const pollOptions = {};
+            form.pollData.options.forEach((txt, i) => {
+                const id = `opt${i + 1}`;
+                pollOptions[id] = { text: txt };
+            });
+            console.log(form.pollData)
+            const cleanPollData = {
+                question: form.pollData.question.trim(),
+                allowMulti: form.pollData.allowMulti,
+                options: pollOptions
+            };
             if (editingData) {
                 const announcementRef = dbRef(database, `announcements/${form.id}`);
                 const snapshot = await get(announcementRef);
@@ -122,6 +176,7 @@ export default function AnnouncementPage(props) {
                     toast.warning('Annoucement not exist! Cannot update.');
                     return;
                 }
+
                 update(dbRef(database, `announcements/${form.id}`), {
                     ...form,
                     uid: uid,
@@ -135,7 +190,8 @@ export default function AnnouncementPage(props) {
                         endDate: Timestamp.fromDate(new Date(form.date.endDate))
                     },
                     hostelid: emp.hostelid,
-                    role: emp.role
+                    role: emp.role,
+                    pollData: cleanPollData
                 })
                 toast.success('Annoucement updated successfully');
             }
@@ -157,7 +213,8 @@ export default function AnnouncementPage(props) {
                         endDate: Timestamp.fromDate(new Date(form.date.endDate))
                     },
                     hostelid: emp.hostelid,
-                    role: emp.role
+                    role: emp.role,
+                    pollData: cleanPollData
                 })
                 toast.success('Annoucement created successfully');
             }
@@ -218,26 +275,38 @@ export default function AnnouncementPage(props) {
         return userMap[uid] || "";
     };
     const addOption = () => {
-        setForm(prev => ({
+        setForm((prev) => ({
             ...prev,
-            options: [...(prev.options || []), '']
+            pollData: {
+                ...prev.pollData,
+                options: [...prev.pollData.options, ''],
+            },
         }));
     };
     const updateOption = (txt, idx) => {
-        const updated = [...form.options];
+        const updated = [...form.pollData.options];
         updated[idx] = txt;
-        setForm(prev => ({
+        setForm((prev) => ({
             ...prev,
-            options: updated
+            pollData: {
+                ...prev.pollData,
+                options: updated,
+            },
         }));
     };
     const removeOption = (index) => {
-        if (form.options.length <= 2) {
-            toast.warning("At least 2 options required.");
+        if (form.pollData.options.length <= 2) {
+            toast.warning('At least 2 options required.');
             return;
         }
-        const updated = form.options.filter((_, i) => i !== index);
-        setForm(prev => ({ ...prev, options: updated }));
+        const updated = form.pollData.options.filter((_, i) => i !== index);
+        setForm((prev) => ({
+            ...prev,
+            pollData: {
+                ...prev.pollData,
+                options: updated,
+            },
+        }));
     };
     const handleRangeChange = (item) => {
         const selected = item.selection;
@@ -445,11 +514,11 @@ export default function AnnouncementPage(props) {
                                     type="text"
                                     name="question"
                                     placeholder="Ask question"
-                                    value={form.question}
+                                    value={form.pollData.question}
                                     onChange={handleChange}
                                     className="w-full border border-gray-300 p-2 rounded"
                                 />
-                                {form.options.map((opt, idx) => (
+                                {form.pollData.options.map((opt, idx) => (
                                     <div key={idx} className="flex items-center gap-2 mb-2">
                                         <input
                                             className="flex-1 border border-gray-300 p-2 rounded"
@@ -484,7 +553,7 @@ export default function AnnouncementPage(props) {
                                             type="checkbox"
                                             id="toggleMulti"
                                             name="allowMulti"
-                                            checked={form.allowMulti}
+                                            checked={form.pollData.allowMulti}
                                             onChange={handleChange}
                                             className="sr-only peer"
                                         />
