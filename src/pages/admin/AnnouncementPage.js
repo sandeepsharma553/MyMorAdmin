@@ -26,6 +26,7 @@ export default function AnnouncementPage(props) {
     const uid = useSelector((state) => state.auth.user.uid)
     const user = useSelector((state) => state.auth.user)
     const emp = useSelector((state) => state.auth.employee)
+    console.log(emp, 'emp')
     const [range, setRange] = useState([
         {
             startDate: new Date(),
@@ -124,7 +125,7 @@ export default function AnnouncementPage(props) {
                 update(dbRef(database, `announcements/${form.id}`), {
                     ...form,
                     uid: uid,
-                    user: userName,
+                    user: userName ? userName : emp.name,
                     date: Timestamp.fromDate(new Date(form.date)),
                     createdAt: Timestamp.now(),
                     ...(posterUrl && { posterUrl }),
@@ -144,7 +145,7 @@ export default function AnnouncementPage(props) {
                 set(newGroupRef, {
                     ...form,
                     uid: uid,
-                    user: userName,
+                    user: userName ? userName : emp.name,
                     likes: [],
                     comments: [],
                     date: Timestamp.fromDate(new Date(form.date)),
@@ -202,7 +203,7 @@ export default function AnnouncementPage(props) {
         return `${start} - ${end}`;
     };
     const fetchUser = async (uid) => {
-        const querySnapshot = await getDocs(collection(db, 'User'));
+        const querySnapshot = await getDocs(collection(db, 'employees'));
         const userMap = {};
         querySnapshot.forEach(doc => {
             const data = doc.data();
