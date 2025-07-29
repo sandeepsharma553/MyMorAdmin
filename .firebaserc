@@ -1,5 +1,20 @@
 {
   "projects": {
-    "default": "mymor-one"
-  }
+    "default": "mymor-one",
+    "dev": "mymor-development",
+    "prod": "mymor-one"
+  },
+  "targets": {
+    "mymor-development": {
+      "hosting": {
+        "dev": ["mymor-development"]
+      }
+    },
+    "mymor-one": {
+      "hosting": {
+        "prod": ["mymor-one"]
+      }
+    }
+  },
+  "etags": {}
 }
