@@ -26,7 +26,7 @@ export default function AnnouncementPage(props) {
     const uid = useSelector((state) => state.auth.user.uid)
     const user = useSelector((state) => state.auth.user)
     const emp = useSelector((state) => state.auth.employee)
-    console.log(emp, 'emp')
+
     const [range, setRange] = useState([
         {
             startDate: new Date(),
@@ -159,16 +159,27 @@ export default function AnnouncementPage(props) {
             const userName = await fetchUser(uid);
             delete form.poster;
             const pollOptions = {};
-            form.pollData.options.forEach((txt, i) => {
-                const id = `opt${i + 1}`;
-                pollOptions[id] = { text: txt };
-            });
-            console.log(form.pollData)
-            const cleanPollData = {
-                question: form.pollData.question.trim(),
-                allowMulti: form.pollData.allowMulti,
-                options: pollOptions
-            };
+            // form.pollData.options.forEach((txt, i) => {
+            //     const id = `opt${i + 1}`;
+            //     pollOptions[id] = { text: txt };
+            // });
+            let cleanPollData = form.pollData;
+            if (form.pollData.question != undefined) {
+                if (form.pollData.question != '') {
+                    Object.entries(form.pollData.options).forEach(([key, value]) => {
+                        pollOptions[key] = {
+                            text: value.text || "",
+                        };
+                    });
+                    cleanPollData = {
+                        question: form.pollData.question.trim(),
+                        allowMulti: form.pollData.allowMulti,
+                        options: pollOptions
+                    };
+                }
+
+            }
+
             if (editingData) {
                 const announcementRef = dbRef(database, `announcements/${form.id}`);
                 const snapshot = await get(announcementRef);
@@ -191,13 +202,16 @@ export default function AnnouncementPage(props) {
                     },
                     hostelid: emp.hostelid,
                     role: emp.role,
-                    pollData: cleanPollData
+                    pollData: cleanPollData,
+                    timestamp: Date.now(),
                 })
                 toast.success('Annoucement updated successfully');
             }
             else {
+            
                 delete form.id;
                 const newGroupRef = push(dbRef(database, 'announcements/'));
+
                 set(newGroupRef, {
                     ...form,
                     uid: uid,
@@ -214,7 +228,8 @@ export default function AnnouncementPage(props) {
                     },
                     hostelid: emp.hostelid,
                     role: emp.role,
-                    pollData: cleanPollData
+                    pollData: cleanPollData,
+                    timestamp: Date.now(),
                 })
                 toast.success('Annoucement created successfully');
             }
@@ -275,36 +290,76 @@ export default function AnnouncementPage(props) {
         return userMap[uid] || "";
     };
     const addOption = () => {
-        setForm((prev) => ({
+        setForm((prev) => {
+            const options = prev.pollData?.options || {};
+            const optionKeys = Object.keys(options);
+            const nextIndex = optionKeys.length + 1;
+            const newKey = `opt${nextIndex}`;
+
+            return {
+                ...prev,
+                pollData: {
+                    ...prev.pollData,
+                    options: {
+                        ...options,
+                        [newKey]: {
+                            text: "",
+                            votes: {}
+                        }
+                    },
+                },
+            };
+        });
+    };
+    // const updateOption = (txt, idx) => {
+    //     const updated = [...form.pollData.options];
+    //     updated[idx] = txt;
+    //     setForm((prev) => ({
+    //         ...prev,
+    //         pollData: {
+    //             ...prev.pollData,
+    //             options: updated,
+    //         },
+    //     }));
+    // };
+    // const removeOption = (index) => {
+    //     if (form.pollData.options.length <= 2) {
+    //         toast.warning('At least 2 options required.');
+    //         return;
+    //     }
+    //     const updated = form.pollData.options.filter((_, i) => i !== index);
+    //     setForm((prev) => ({
+    //         ...prev,
+    //         pollData: {
+    //             ...prev.pollData,
+    //             options: updated,
+    //         },
+    //     }));
+    // };
+    const updateOption = (key, newText) => {
+        setForm(prev => ({
             ...prev,
             pollData: {
                 ...prev.pollData,
-                options: [...prev.pollData.options, ''],
+                options: {
+                    ...prev.pollData.options,
+                    [key]: {
+                        ...prev.pollData.options[key],
+                        text: newText,
+                    },
+                },
             },
         }));
     };
-    const updateOption = (txt, idx) => {
-        const updated = [...form.pollData.options];
-        updated[idx] = txt;
-        setForm((prev) => ({
+    const removeOption = (key) => {
+        const updatedOptions = { ...form.pollData.options };
+        delete updatedOptions[key];
+
+        setForm(prev => ({
             ...prev,
             pollData: {
                 ...prev.pollData,
-                options: updated,
-            },
-        }));
-    };
-    const removeOption = (index) => {
-        if (form.pollData.options.length <= 2) {
-            toast.warning('At least 2 options required.');
-            return;
-        }
-        const updated = form.pollData.options.filter((_, i) => i !== index);
-        setForm((prev) => ({
-            ...prev,
-            pollData: {
-                ...prev.pollData,
-                options: updated,
+                options: updatedOptions,
             },
         }));
     };
@@ -396,8 +451,11 @@ export default function AnnouncementPage(props) {
                                                             startDate: startDate.toISOString(),
                                                             endDate: endDate.toISOString(),
                                                         },
-
-                                                        poster: null // poster cannot be pre-filled (file inputs are read-only for security)
+                                                        poster: null,
+                                                        pollData: {
+                                                            ...item.pollData,
+                                                            option: Array.isArray(item.pollData?.option) ? item.pollData.option : ['', '']
+                                                        }
                                                     }));
                                                     setRange([
                                                         {
@@ -408,6 +466,7 @@ export default function AnnouncementPage(props) {
                                                     ]);
 
                                                     setModalOpen(true);
+                                                    console.log(item)
 
                                                 }}>Edit</button>
                                                 <button className="text-red-600 hover:underline" onClick={() => {
@@ -518,31 +577,31 @@ export default function AnnouncementPage(props) {
                                     onChange={handleChange}
                                     className="w-full border border-gray-300 p-2 rounded"
                                 />
-                                {form.pollData.options.map((opt, idx) => (
-                                    <div key={idx} className="flex items-center gap-2 mb-2">
-                                        <input
-                                            className="flex-1 border border-gray-300 p-2 rounded"
-                                            placeholder={`Option ${idx + 1}`}
-                                            value={opt}
-                                            onChange={e => updateOption(e.target.value, idx)}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => removeOption(idx)}
-                                            className="text-red-600 text-sm hover:underline"
-                                        >
-                                            ❌
-                                        </button>
-                                    </div>
-                                ))}
+                                {form.pollData?.options &&
+                                    Object.entries(form.pollData.options).map(([key, opt], idx) => (
+                                        <div key={key} className="flex items-center gap-2 mb-2">
+                                            <input
+                                                className="flex-1 border border-gray-300 p-2 rounded"
+                                                placeholder={`opt ${idx + 1}`}
+                                                value={opt.text}
+                                                onChange={e => updateOption(key, e.target.value)} // update by key, not index
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => removeOption(key)}
+                                                className="text-red-600 text-sm hover:underline"
+                                            >
+                                                ❌
+                                            </button>
+                                        </div>
+                                    ))}
 
                                 <button type="button"
                                     className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                                     onClick={addOption}>
                                     + Add option
                                 </button>
-                                <input name="link" placeholder="News Link" value={form.link}
-                                    onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+
 
                                 <div className="flex items-center gap-4 mt-4 cursor-pointer select-none">
                                     <label htmlFor="toggleMulti" className="text-sm font-medium text-gray-700">
@@ -565,6 +624,8 @@ export default function AnnouncementPage(props) {
 
 
                                 </div>
+                                <input name="link" placeholder="News Link" value={form.link}
+                                    onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
                             </div>
                             <div className="flex justify-end mt-6 space-x-3">
                                 <button
