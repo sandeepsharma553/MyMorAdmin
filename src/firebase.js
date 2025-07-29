@@ -5,15 +5,15 @@ import { getAnalytics } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
 import { getDatabase } from 'firebase/database';
 import { getStorage } from "firebase/storage";
-// const firebaseConfig1 = {
-//     apiKey: "AIzaSyAFFDyHvLlcQLErywNMN8z7I7hVf97whYs",
-//     authDomain: "mymor-one.firebaseapp.com",
-//     databaseURL: "https://mymor-one-default-rtdb.firebaseio.com",
-//     projectId: "mymor-one",
-//     storageBucket: "mymor-one.firebasestorage.app",
-//     messagingSenderId: "368272892719",
-//     appId: "1:368272892719:web:5e8c5d8852e9eab8a777da",
-//     measurementId: "G-N86QYYE9XZ"
+// const firebaseConfig = {
+//     apiKey: "AIzaSyA9-R9ud3SsJgdCbutEkspJSWQ5GOuqIxo",
+//     authDomain: "mymor-development.firebaseapp.com",
+//     databaseURL: "https://mymor-development-default-rtdb.firebaseio.com",
+//     projectId: "mymor-development",
+//     storageBucket: "mymor-development.firebasestorage.app",
+//     messagingSenderId: "383612331144",
+//     appId: "1:383612331144:web:1f5840d0afb0e387ea6b3d",
+//     measurementId: "G-NR6LCL2CPR"
 // };
 // const firebaseConfig = {
 //     apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
@@ -50,7 +50,7 @@ const prodConfig = {
 };
 
 const firebaseConfig = process.env.REACT_APP_ENV === 'production' ? prodConfig : devConfig;
-
+console.log(process.env.REACT_APP_ENV)
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const analytics = getAnalytics(app);

@@ -232,6 +232,8 @@ export default function AdminEmployeePage(props) {
           username: form.name,
           email: form.email,
           hostelid: form.hostelid,
+          hostel:form.hostel,
+          livingtype:'hostel',
           createdby: user.uid,
           createddate: new Date(),
         });
