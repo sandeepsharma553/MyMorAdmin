@@ -171,7 +171,7 @@ export default function AdminEmployeePage(props) {
         await uploadBytes(storageRef, form.image);
         imageUrl = await getDownloadURL(storageRef);
       }
-      const password = `${form.name}321`;
+      const password = `${form.name.trim()}321`;
       const employeeData = {
         ...form,
         uid,

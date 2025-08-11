@@ -40,6 +40,7 @@ export default function DiningMenuPage(props) {
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   );
+  console.log(emp)
   useEffect(() => {
     const today = new Date();
     const currentdate = today.toISOString().split('T')[0];
@@ -149,23 +150,40 @@ export default function DiningMenuPage(props) {
       return;
     }
     try {
-      const menuRef = doc(db, 'menus', form.date);
-      const docSnap = await getDoc(menuRef);
+      const menusRef = collection(db, 'menus');
+      // const menuRef = doc(db, 'menus', form.date);
+      // const docSnap = await getDoc(menuRef);
       if (editingData) {
-        if (docSnap.exists()) {
-          await updateDoc(menuRef, form);
-          toast.success("Menu updated successfully!");
-        }
+        const menuRef = doc(menusRef, form.date);
+        await updateDoc(menuRef, form);
+        toast.success("Menu updated successfully!");
+        // if (docSnap.exists()) {
+        //   await updateDoc(menuRef, form);
+        //   toast.success("Menu updated successfully!");
+        // }
       }
       else {
-        if (docSnap.exists()) {
-          toast.warn('Menu for this date already exists!');
+        const q = query(
+          menusRef,
+          where("date", "==", form.date),
+          where("hostelid", "==", emp.hostelid)
+        );
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          toast.warn("Menu for this date and hostel already exists!");
           return;
-        } else {
-          await setDoc(menuRef, form);
-          toast.success("Menu created successfully!");
-
         }
+        const menuRef = doc(menusRef, form.date);
+        await setDoc(menuRef, form);
+        toast.success("Menu created successfully!");
+        // if (docSnap.exists()) {
+        //   toast.warn('Menu for this date already exists!');
+        //   return;
+        // } else {
+        //   await setDoc(menuRef, form);
+        //   toast.success("Menu created successfully!");
+
+        // }
       }
       setModalOpen(false);
       getList(form.date);
@@ -295,22 +313,35 @@ export default function DiningMenuPage(props) {
 
   const saveToFirebase = async () => {
     try {
+      const menusRef = collection(db, "menus");
+
+    for (const entry of data) {
+      const q = query(
+        menusRef,
+        where("date", "==", entry.date),
+        where("hostelid", "==", entry.hostelid)
+      );
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        toast.warn(`Menu for ${entry.date} and hostel ${entry.hostelid} already exists. Skipping...`);
+        continue; 
+      }
+      const docRef = doc(menusRef, entry.date);
+      await setDoc(docRef, entry);
+    }
+
       // for (const entry of data) {
       //   const docRef = doc(db, "menus", entry.date);
+      //   const docSnap = await getDoc(docRef);
+
+      //   if (docSnap.exists()) {
+      //     toast.warn(`Menu for ${entry.date} already exists. Skipping...`);
+      //     continue; // Skip this entry
+      //   }
+
       //   await setDoc(docRef, entry);
       // }
-
-      for (const entry of data) {
-        const docRef = doc(db, "menus", entry.date);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          toast.warn(`Menu for ${entry.date} already exists. Skipping...`);
-          continue; // Skip this entry
-        }
-
-        await setDoc(docRef, entry);
-      }
 
       toast.success("Data saved!");
       const today = new Date();

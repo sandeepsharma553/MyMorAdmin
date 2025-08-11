@@ -101,6 +101,42 @@ input[type='number'] {
   margin-left: 20px;
   list-style-type: disc;
 }
+.terms-container {
+  max-width: 900px;
+  margin: auto;
+  padding: 32px 24px;
+  font-family: Arial, sans-serif;
+  color: #333;
+  line-height: 1.7;
+}
+
+.terms-container h1 {
+  color: #2c3e50;
+  margin-bottom: 20px;
+}
+
+.terms-container h2 {
+  margin-top: 28px;
+  color: #2c3e50;
+}
+
+.terms-container h3 {
+  margin-top: 20px;
+  color: #34495e;
+}
+
+.terms-container ul {
+  padding-left: 20px;
+}
+
+.terms-container li {
+  margin-bottom: 6px;
+}
+
+.terms-container a {
+  color: #007BFF;
+  text-decoration: none;
+}
 @keyframes App-logo-spin {
   from {
     transform: rotate(0deg);
