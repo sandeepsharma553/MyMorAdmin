@@ -38,6 +38,7 @@ export default function MaintenancePage(props) {
     user: "",
     issue: "",
     location: "",
+    maintenancetype:"",
     date: "",
     status: "All",
   });
@@ -123,7 +124,7 @@ export default function MaintenancePage(props) {
     const resolved = rows.filter((i) => i.status === "Resolved").length;
     const closed = rows.filter((i) => i.status === "Closed").length;
     setStats({ total, pending, inProgress, resolved, closed });
-
+     console.log(rows)
     setIsLoading(false);
   };
  const getProblemCatList = async () => {
@@ -297,6 +298,7 @@ export default function MaintenancePage(props) {
     const userStr = (r.username || "").toLowerCase();
     const issueStr = (r.problemcategory || "").toLowerCase();
     const locStr = (r.roomno || "").toLowerCase();
+    const maintenancetypeStr = (r.maintenancetype || "").toLowerCase();
     const dateStr = (r.createdDate || "").toLowerCase();
     const statusOK = filters.status === "All" || (r.status || "").toLowerCase() === filters.status.toLowerCase();
 
@@ -305,6 +307,7 @@ export default function MaintenancePage(props) {
       (!filters.user || userStr.includes(filters.user.toLowerCase())) &&
       (!filters.issue || issueStr.includes(filters.issue.toLowerCase())) &&
       (!filters.location || locStr.includes(filters.location.toLowerCase())) &&
+      (!filters.maintenancetype || maintenancetypeStr.includes(filters.maintenancetype.toLowerCase())) &&
       (!filters.date || dateStr.includes(filters.date.toLowerCase())) &&
       statusOK
     );
@@ -324,6 +327,8 @@ export default function MaintenancePage(props) {
         return ((a.problemcategory || "").localeCompare(b.problemcategory || "")) * dir;
       case "location":
         return ((a.roomno || "").localeCompare(b.roomno || "")) * dir;
+      case "maintenancetype":
+        return ((a.maintenancetype || "").localeCompare(b.maintenancetype || "")) * dir;
       case "status":
         return ((a.status || "").localeCompare(b.status || "")) * dir;
       case "date": {
@@ -395,6 +400,7 @@ export default function MaintenancePage(props) {
                   { key: "user", label: "User" },
                   { key: "issue", label: "Issue Type" },
                   { key: "location", label: "Location" },
+                  { key: "maintenancetype", label: "Maintenance" },
                   { key: "date", label: "Submitted On" },
                   { key: "status", label: "Status" },
                   { key: "actions", label: "Actions", sortable: false },
@@ -457,11 +463,20 @@ export default function MaintenancePage(props) {
                 <th className="px-6 pb-3">
                   <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
+                    placeholder="type"
+                    defaultValue={filters.maintenancetype}
+                    onChange={(e) => setFilterDebounced("maintenancetype", e.target.value)}
+                  />
+                </th>
+                <th className="px-6 pb-3">
+                  <input
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
                     placeholder="YYYY-MM or date"
                     defaultValue={filters.date}
                     onChange={(e) => setFilterDebounced("date", e.target.value)}
                   />
                 </th>
+               
                 <th className="px-6 pb-3">
                   <select
                     className="w-full border border-gray-300 p-1 rounded text-sm bg-white"
@@ -512,6 +527,12 @@ export default function MaintenancePage(props) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.username}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.problemcategory}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">{item.roomno}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.maintenancetype}
+                      <br/>
+                    I agree to allow a staff member 
+                    to enter my room  <br/>
+                    to complete the requested maintenance work, <br/> even if I am not present at the time.
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.createdDate}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="mb-2">
