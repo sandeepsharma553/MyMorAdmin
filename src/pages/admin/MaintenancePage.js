@@ -156,7 +156,7 @@ export default function MaintenancePage(props) {
   const getItemList = async () => {
     setIsLoading(true);
     const itemQuery = query(
-      collection(db, "items"),
+      collection(db, "maintenanceitems"),
       where("hostelid", "==", emp.hostelid)
     );
     const querySnapshot = await getDocs(itemQuery);
