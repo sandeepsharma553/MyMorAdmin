@@ -4,7 +4,7 @@ import { db } from "../../firebase";
 import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-
+import { useNavigate } from "react-router-dom";
 const SettingPage = (props) => {
     const [eventModalOpen, setEventModalOpen] = useState(false);
     const [academicModalOpen, setAcademicModalOpen] = useState(false);
@@ -17,6 +17,7 @@ const SettingPage = (props) => {
     const [isLoading, setIsLoading] = useState(false)
     const uid = useSelector((state) => state.auth.user.uid);
     const emp = useSelector((state) => state.auth.employee);
+    const navigate = useNavigate();
     const initialForm = {
         id: 0,
         name: ''
@@ -206,6 +207,7 @@ const SettingPage = (props) => {
                     }}>
                     + Add Event Category
                 </button>
+
                 <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
                     onClick={() => {
                         setEditing(null);
@@ -214,6 +216,12 @@ const SettingPage = (props) => {
                     }}>
                     + Add Academic Category
                 </button>
+                <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+                 onClick={() => navigate("/maintenancesetting")}  >
+                    + Add Maintenance  Setting   </button>
+                <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+                 onClick={() => navigate("/reportsetting")}  >
+                    + Add Report  Setting   </button>
             </div>
             <div className="overflow-x-auto bg-white rounded shadow">
                 <div>

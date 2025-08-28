@@ -17,6 +17,8 @@ import SettingPage from "../pages/admin/SettingPage";
 import FeedbackPage from "../pages/admin/FeedbackPage";
 import StudentPage from "../pages/admin/StudentPage";
 import FaqPage from "../pages/admin/FaqPage";
+import MaintenanceCategoryPage from "../pages/admin/MaintenanceCategoryPage";
+import ReportSettingPage from "../pages/admin/ReportSettingPage";
 
 export default function AdminRoutes({ route }) {
 
@@ -42,6 +44,8 @@ export default function AdminRoutes({ route }) {
           <Route path="/feedback" element={<FeedbackPage />} />
           <Route path="/student" element={<StudentPage />} />
           <Route path="/faq" element={<FaqPage />} />
+          <Route path="/maintenancesetting" element={<MaintenanceCategoryPage />} />
+          <Route path="/reportsetting" element={<ReportSettingPage />} />
     </Routes>
   );
 }

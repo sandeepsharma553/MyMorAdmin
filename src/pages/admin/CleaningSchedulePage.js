@@ -1,127 +1,127 @@
-import React, { useState, useEffect } from "react";
-import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, setDoc, query, where, getDoc } from "firebase/firestore";
+import React, { useState, useEffect, useRef } from "react";
+import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, getDoc, query, where, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
-import { ClipLoader, FadeLoader } from "react-spinners";
+import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import * as XLSX from "xlsx";
 import cleaningscheduleFile from "../../assets/excel/cleaning_schedule.xlsx";
+
 export default function CleaningSchedulePage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [list, setList] = useState([])
-  const [fileName, setFileName] = useState('No file chosen');
+  const [list, setList] = useState([]);
+  const [fileName, setFileName] = useState("No file chosen");
   const [data, setData] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(false);
+
   const uid = useSelector((state) => state.auth.user.uid);
-  const emp = useSelector((state) => state.auth.employee)
-  const initialForm = {
-    id: 0,
-    roomtype: '',
-    time: '',
-    hall: '',
-    day: '',
-    date: ''
-  }
-  const [form, setForm] = useState(initialForm);
+  const emp = useSelector((state) => state.auth.employee);
+
+  // NEW: header filters + sorting
+  const [filters, setFilters] = useState({ roomtype: "", hall: "", day: "", time: "" });
+  const [sortConfig, setSortConfig] = useState({ key: "roomtype", direction: "asc" });
+  const debounceRef = useRef(null);
+  const setFilterDebounced = (field, value) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setFilters((p) => ({ ...p, [field]: value })), 250);
+  };
+  const onSort = (key) => {
+    setSortConfig((prev) =>
+      prev.key === key ? { key, direction: prev.direction === "asc" ? "desc" : "asc" } : { key, direction: "asc" }
+    );
+  };
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
-  const mockData = list
-  const totalPages = Math.ceil(mockData.length / pageSize);
-  const paginatedData = mockData.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
-  useEffect(() => {
-    getList()
-  }, [])
+
+  // Page selection
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const headerCheckboxRef = useRef(null);
+
+  const initialForm = { id: 0, roomtype: "", time: "", hall: "", day: "", date: "" };
+  const [form, setForm] = useState(initialForm);
+
+  useEffect(() => { getList(); }, []);
+  useEffect(() => { setCurrentPage(1); }, [filters, sortConfig]);
+
   const getDayFromDate = (dateString) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { weekday: 'long' });
+    return date.toLocaleDateString("en-US", { weekday: "long" });
   };
+
   const getList = async () => {
-    setIsLoading(true)
-    const q = query(
-      collection(db, 'cleaningschedule'),
-      where("hostelid", "==", emp.hostelid)
-    );
-    
+    setIsLoading(true);
+    const q = query(collection(db, "cleaningschedule"), where("hostelid", "==", emp.hostelid));
     const querySnapshot = await getDocs(q);
-    const documents = querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-    setList(documents)
-    setIsLoading(false)
-  }
+    const documents = querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    setList(documents);
+    setIsLoading(false);
+  };
+
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.roomtype) return;
-    if (editingData) {
-      try {
-        const docRef = doc(db, 'cleaningschedule', form.id);
-        const docSnap = await getDoc(docRef);
 
-        if (!docSnap.exists()) {
-          toast.warning('CleaningSchedule does not exist! Cannot update.');
-          return;
-        }
-        await updateDoc(doc(db, 'cleaningschedule', form.id), {
-          uid: uid,
+    try {
+      if (editingData) {
+        const docRef = doc(db, "cleaningschedule", form.id);
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) { toast.warning("CleaningSchedule does not exist! Cannot update."); return; }
+
+        await updateDoc(docRef, {
+          uid,
           roomtype: form.roomtype,
           hall: form.hall,
           day: form.day,
           time: form.time,
           date: form.date,
-          hostelid:emp.hostelid,
+          hostelid: emp.hostelid,
           updatedBy: uid,
           updatedDate: new Date(),
         });
-        toast.success('Successfully updated');
-        getList()
-      } catch (error) {
-        console.error('Error updating document: ', error);
-      }
-    } else {
-      try {
+        toast.success("Successfully updated");
+      } else {
         await addDoc(collection(db, "cleaningschedule"), {
-          uid: uid,
+          uid,
           roomtype: form.roomtype,
           hall: form.hall,
           day: form.day,
           time: form.time,
           date: form.date,
-          hostelid:emp.hostelid,
+          hostelid: emp.hostelid,
           createdBy: uid,
           createdDate: new Date(),
         });
         toast.success("Successfully saved");
-        getList()
-      } catch (error) {
-        console.error("Error saving data:", error);
       }
+      getList();
+    } catch (error) {
+      console.error("Error saving data:", error);
     }
 
-    // Reset
     setModalOpen(false);
     setEditing(null);
     setForm(initialForm);
   };
+
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, 'cleaningschedule', form.id));
-      toast.success('Successfully deleted!');
-      getList()
+      await deleteDoc(doc(db, "cleaningschedule", deleteData.id));
+      toast.success("Successfully deleted!");
+      getList();
     } catch (error) {
-      console.error('Error deleting document: ', error);
+      console.error("Error deleting document: ", error);
     }
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
+
   const readExcel = (file) => {
     setIsLoading(true);
     const reader = new FileReader();
@@ -130,32 +130,32 @@ export default function CleaningSchedulePage(props) {
       const workbook = XLSX.read(bstr, { type: "binary" });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
-
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
       const cleanedData = jsonData.map((row) => {
-        const date = typeof row.Date === 'number'
-          ? XLSX.SSF.format("yyyy-mm-dd", row.Date)
-          : new Date(row.Date).toISOString().split("T")[0];
+        const date =
+          typeof row.Date === "number"
+            ? XLSX.SSF.format("yyyy-mm-dd", row.Date)
+            : new Date(row.Date).toISOString().split("T")[0];
 
         return {
-          roomtype: row["Room Type"] || '',
-          hall: row["Hall"] || '',
-          day: row["Day"] || '',
-          time: row["Time"] || '',
+          roomtype: row["Room Type"] || "",
+          hall: row["Hall"] || "",
+          day: row["Day"] || "",
+          time: row["Time"] || "",
           date,
-          hostelid:emp.hostelid,
+          hostelid: emp.hostelid,
         };
       });
 
       setData(cleanedData);
       setIsLoading(false);
-      // toast.success("Excel file read successfully!");
     };
     reader.readAsBinaryString(file);
   };
 
   const saveToFirebase = async () => {
+    setIsLoading(true);
     try {
       for (const entry of data) {
         const q = query(
@@ -164,19 +164,12 @@ export default function CleaningSchedulePage(props) {
           where("date", "==", entry.date),
           where("hall", "==", entry.hall)
         );
-
         const querySnapshot = await getDocs(q);
-
         if (!querySnapshot.empty) {
           toast.warn(`Duplicate found for ${entry.roomtype} on ${entry.date} in ${entry.hall}. Skipping...`);
           continue;
         }
-
-        await addDoc(collection(db, "cleaningschedule"), {
-          ...entry,
-          createdBy: uid,
-          createdDate: new Date(),
-        });
+        await addDoc(collection(db, "cleaningschedule"), { ...entry, createdBy: uid, createdDate: new Date() });
       }
 
       toast.success("Cleaning schedule saved (duplicates skipped)!");
@@ -185,9 +178,11 @@ export default function CleaningSchedulePage(props) {
       setData([]);
     } catch (error) {
       console.error("Error saving data: ", error);
+    } finally {
+      setIsLoading(false);
     }
-
   };
+
   const handleDownload = async () => {
     const response = await fetch(cleaningscheduleFile);
     const blob = await response.blob();
@@ -198,105 +193,279 @@ export default function CleaningSchedulePage(props) {
     link.click();
     document.body.removeChild(link);
   };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`Delete ${selectedIds.size} cleaning schedule(s)?`)) return;
+
+    setIsLoading(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const chunkSize = 450;
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach((id) => batch.delete(doc(db, "cleaningschedule", id)));
+        await batch.commit();
+      }
+      toast.success("Selected schedules deleted");
+      setSelectedIds(new Set());
+      getList();
+    } catch (err) {
+      console.error(err);
+      toast.error("Bulk delete failed");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ---------- Derive filtered/sorted/paginated ----------
+  const filteredData = list.filter((r) => {
+    const rt = (r.roomtype || "").toLowerCase();
+    const hl = (r.hall || "").toLowerCase();
+    const dy = (r.day || "").toLowerCase();
+    const tm = (r.time || "").toLowerCase();
+    return (
+      (!filters.roomtype || rt.includes(filters.roomtype.toLowerCase())) &&
+      (!filters.hall || hl.includes(filters.hall.toLowerCase())) &&
+      (!filters.day || dy.includes(filters.day.toLowerCase())) &&
+      (!filters.time || tm.includes(filters.time.toLowerCase()))
+    );
+  });
+
+  const sortedData = [...filteredData].sort((a, b) => {
+    const dir = sortConfig.direction === "asc" ? 1 : -1;
+    const key = sortConfig.key;
+    const va = (a[key] || "").toString().toLowerCase();
+    const vb = (b[key] || "").toString().toLowerCase();
+    return va.localeCompare(vb) * dir;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
+  const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const pageIds = paginatedData.map((r) => r.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const somePageSelected = pageIds.some((id) => selectedIds.has(id)) && !allPageSelected;
+
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = somePageSelected;
+    }
+  }, [somePageSelected, allPageSelected]);
+
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
-
       <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
         <h1 className="text-2xl font-semibold">Cleaning Schedule</h1>
         <div className="flex items-center gap-4 flex-wrap">
-          <button className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition" onClick={handleDownload}>Download Excel File</button>
+          <button className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition" onClick={handleDownload}>
+            Download Excel File
+          </button>
+
           <div className="flex items-center gap-4 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
             <label className="cursor-pointer">
-              <input type="file" accept=".xlsx, .xls" className="hidden"
+              <input
+                type="file"
+                accept=".xlsx, .xls"
+                className="hidden"
                 onChange={(e) => {
-                  if (e.target.files.length > 0) {
-                    setFileName(e.target.files[0].name);
-                  } else {
-                    setFileName('No file chosen');
-                  }
+                  if (e.target.files.length > 0) setFileName(e.target.files[0].name);
+                  else setFileName("No file chosen");
                   const file = e.target.files[0];
                   if (file) readExcel(file);
                 }}
               />
               📁 Choose File
             </label>
-            <span className="text-sm text-gray-600 truncate max-w-[150px]">
-              {fileName}
-            </span>
+            <span className="text-sm text-gray-600 truncate max-w-[150px]">{fileName}</span>
           </div>
-          <button className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition"
-            disabled={!data.length}
-            onClick={saveToFirebase}>
+
+          <button
+            className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition"
+            disabled={!data.length || isLoading}
+            onClick={saveToFirebase}
+          >
             Upload Excel
           </button>
-          <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+
+          <button
+            className="px-4 py-2 bg-black text-white rounded hover:bg-black"
             onClick={() => {
               setEditing(null);
               setForm(initialForm);
               setModalOpen(true);
-            }}>
+            }}
+          >
             + Add
           </button>
         </div>
       </div>
-      <div className="overflow-x-auto bg-white rounded shadow">
-        <div>
-          {isLoading ? (
-            <div className="flex justify-center items-center h-64">
-              <FadeLoader color="#36d7b7" loading={isLoading} />
-            </div>
-          ) : (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Room Type</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Hall</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Day</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Time</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {paginatedData.length === 0 ? (
-                  <tr>
-                    <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
-                      No matching users found.
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedData.map((item) => (
-                    <tr key={item.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.roomtype}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.hall}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.day}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.time}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button className="text-blue-600 hover:underline mr-3" onClick={() => {
 
+      {selectedIds.size > 0 && (
+        <div className="mb-2 flex items-center gap-3">
+          <span className="text-sm text-gray-700">{selectedIds.size} selected</span>
+          <button onClick={handleBulkDelete} className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm">
+            Delete selected
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set(filteredData.map((r) => r.id)))}
+            className="px-3 py-1.5 bg-gray-200 rounded text-sm"
+          >
+            Select all ({filteredData.length})
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1.5 bg-gray-200 rounded text-sm">
+            Clear selection
+          </button>
+        </div>
+      )}
+
+      <div className="overflow-x-auto bg-white rounded shadow">
+        {isLoading ? (
+          <div className="flex justify-center items-center h-64">
+            <FadeLoader color="#36d7b7" loading={isLoading} />
+          </div>
+        ) : (
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              {/* Row 1: clickable sort headers */}
+              <tr>
+                {[
+                  { key: "roomtype", label: "Room Type" },
+                  { key: "hall", label: "Hall" },
+                  { key: "day", label: "Day" },
+                  { key: "time", label: "Time" },
+                  { key: "actions", label: "Actions", sortable: false },
+                  { key: "select", label: "", sortable: false },
+                ].map((col) => (
+                  <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
+                    {col.sortable === false ? (
+                      <span>{col.label}</span>
+                    ) : (
+                      <button type="button" className="flex items-center gap-1 hover:underline" onClick={() => onSort(col.key)} title="Sort">
+                        <span>{col.label}</span>
+                        {sortConfig.key === col.key && (
+                          <span className="text-gray-400">{sortConfig.direction === "asc" ? "▲" : "▼"}</span>
+                        )}
+                      </button>
+                    )}
+                  </th>
+                ))}
+              </tr>
+
+              {/* Row 2: filter inputs */}
+              <tr className="border-t border-gray-200">
+                <th className="px-6 pb-3">
+                  <input
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    placeholder="Filter room type"
+                    defaultValue={filters.roomtype}
+                    onChange={(e) => setFilterDebounced("roomtype", e.target.value)}
+                  />
+                </th>
+                <th className="px-6 pb-3">
+                  <input
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    placeholder="Filter hall"
+                    defaultValue={filters.hall}
+                    onChange={(e) => setFilterDebounced("hall", e.target.value)}
+                  />
+                </th>
+                <th className="px-6 pb-3">
+                  <input
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    placeholder="Filter day"
+                    defaultValue={filters.day}
+                    onChange={(e) => setFilterDebounced("day", e.target.value)}
+                  />
+                </th>
+                <th className="px-6 pb-3">
+                  <input
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    placeholder="Filter time"
+                    defaultValue={filters.time}
+                    onChange={(e) => setFilterDebounced("time", e.target.value)}
+                  />
+                </th>
+                <th className="px-6 pb-3" />
+                <th className="px-6 pb-3">
+                  <input
+                    ref={headerCheckboxRef}
+                    type="checkbox"
+                    aria-label="Select all on page"
+                    checked={allPageSelected}
+                    onChange={(e) => {
+                      setSelectedIds((prev) => {
+                        const next = new Set(prev);
+                        if (e.target.checked) pageIds.forEach((id) => next.add(id));
+                        else pageIds.forEach((id) => next.delete(id));
+                        return next;
+                      });
+                    }}
+                  />
+                </th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-gray-200">
+              {paginatedData.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
+                    No matching schedules found.
+                  </td>
+                </tr>
+              ) : (
+                paginatedData.map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.roomtype}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.hall}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.day}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.time}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <button
+                        className="text-blue-600 hover:underline mr-3"
+                        onClick={() => {
                           setEditing(item);
                           setForm(item);
                           setModalOpen(true);
-                        }}>Edit</button>
-                        <button className="text-red-600 hover:underline" onClick={() => {
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="text-red-600 hover:underline"
+                        onClick={() => {
                           setDelete(item);
-                          setForm(item);
                           setConfirmDeleteOpen(true);
-                        }}>Delete</button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(item.id)}
+                        onChange={(e) => {
+                          setSelectedIds((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(item.id);
+                            else next.delete(item.id);
+                            return next;
+                          });
+                        }}
+                      />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
+
       <div className="flex justify-between items-center mt-4">
-        <p className="text-sm text-gray-600">
-          Page {currentPage} of {totalPages}
-        </p>
+        <p className="text-sm text-gray-600">Page {currentPage} of {totalPages}</p>
         <div className="space-x-2">
           <button
             onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
@@ -314,10 +483,12 @@ export default function CleaningSchedulePage(props) {
           </button>
         </div>
       </div>
+
+      {/* Add/Edit modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-96  shadow-lg">
-            <h2 className="text-xl font-bold mb-4">Add Cleaning Schedule</h2>
+          <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
+            <h2 className="text-xl font-bold mb-4">{editingData ? "Edit Cleaning Schedule" : "Add Cleaning Schedule"}</h2>
             <form onSubmit={handleAdd} className="space-y-4">
               <div className="space-y-4">
                 <label className="block font-medium mb-1">Room Type</label>
@@ -336,20 +507,18 @@ export default function CleaningSchedulePage(props) {
                   onChange={(e) => setForm({ ...form, hall: e.target.value })}
                   required
                 />
-                <label className="block font-medium mb-1">Date:</label>
+                <label className="block font-medium mb-1">Date</label>
                 <input
                   type="date"
                   className="w-full border border-gray-300 p-2 rounded"
                   value={form.date}
                   onChange={(e) => {
                     const selectedDate = e.target.value;
-
                     const day = getDayFromDate(selectedDate);
-                    setForm(prev => ({ ...prev, date: selectedDate, day }));
+                    setForm((prev) => ({ ...prev, date: selectedDate, day }));
                   }}
                   required
                 />
-
                 <label className="block font-medium mb-1">Day</label>
                 <input
                   type="text"
@@ -368,41 +537,34 @@ export default function CleaningSchedulePage(props) {
                 />
               </div>
               <div className="flex justify-end mt-6 space-x-3">
-                <button
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-                >
+                <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
                   Cancel
                 </button>
-                <button
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  Save
-                </button>
+                <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Delete confirm */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
-            <h2 className="text-xl font-semibold mb-4 text-red-600">Delete Cleaning Schedule </h2>
-            <p className="mb-4">Are you sure you want to delete <strong>{deleteData?.name}</strong>?</p>
+            <h2 className="text-xl font-semibold mb-4 text-red-600">Delete Cleaning Schedule</h2>
+            <p className="mb-4">
+              Are you sure you want to delete
+              {" "}
+              <strong>
+                {deleteData?.roomtype} / {deleteData?.hall} ({deleteData?.day} {deleteData?.time})
+              </strong>
+              ?
+            </p>
             <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  setConfirmDeleteOpen(false);
-                  setDelete(null);
-                }}
-                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-              >
+              <button onClick={() => { setConfirmDeleteOpen(false); setDelete(null); }} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
                 Cancel
               </button>
-              <button
-                onClick={handleDelete}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-              >
+              <button onClick={handleDelete} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
                 Delete
               </button>
             </div>
@@ -411,7 +573,6 @@ export default function CleaningSchedulePage(props) {
       )}
 
       <ToastContainer />
-
     </main>
   );
 }
