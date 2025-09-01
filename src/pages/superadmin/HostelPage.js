@@ -5,6 +5,27 @@ import { useSelector } from "react-redux";
 import { ClipLoader, FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
+const DEFAULT_FEATURES = {
+  events: false,
+  deals: false,
+  announcement: false,
+  hostelevent: false,
+  diningmenu: false,
+  cleaningschedule: false,
+  tutorialschedule: false, 
+  maintenance: false,
+  bookingroom: false,
+  academicgroup: false,
+  reportincedent: false,
+  feedback: false,
+  wellbeing: false,
+  faqs: false,
+  resource: false,
+  poi: false,
+  community: false,
+   // chat: false,
+      // marketplace: false,
+};
 const HostelPage = (props) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
@@ -20,26 +41,7 @@ const HostelPage = (props) => {
     name: '',
     uniIds: [],
     location: '',
-    features: {
-      events: false,
-      deals: false,
-      announcement: false,
-      hostelevent: false,
-      diningmenu: false,
-      cleaningschedule: false,
-      maintenance: false,
-      bookingroom: false,
-      academicgroup: false,
-      reportincedent: false,
-      feedback: false,
-      wellbeing: false,
-      faqs: false,
-      resource: false,
-      poi: false,
-      community: false,
-      // chat: false,
-      // marketplace: false,
-    },
+    features: { ...DEFAULT_FEATURES },
   }
   const [form, setForm] = useState(initialForm);
   const pageSize = 10;
@@ -72,9 +74,15 @@ const HostelPage = (props) => {
 
       const hostelArr = hostelSnap.docs.map(d => {
         const { name, uniIds = [], location, features } = d.data();
-        const universityNames = (uniIds)
-          .map(id => uniMap[id] ?? "Unknown");
-        return { id: d.id, name, uniIds, universityNames, location, features };
+        const universityNames = (uniIds).map(id => uniMap[id] ?? "Unknown");
+        return {
+          id: d.id,
+          name,
+          uniIds,
+          universityNames,
+          location,
+          features: { ...DEFAULT_FEATURES, ...(features || {}) }, 
+        };
       });
 
       setList(hostelArr);
@@ -94,6 +102,7 @@ const HostelPage = (props) => {
       return;
     }
     try {
+      const featuresToSave = { ...DEFAULT_FEATURES, ...(form.features || {}) };
       if (editingData) {
         const docRef = doc(db, 'hostel', form.id);
         const docSnap = await getDoc(docRef);
@@ -101,12 +110,13 @@ const HostelPage = (props) => {
           toast.warning('hostel does not exist! Cannot update.');
           return;
         }
+      
         await updateDoc(doc(db, 'hostel', form.id), {
           uid: uid,
           name: form.name,
           uniIds: form.uniIds,
           location: form.location,
-          features: form.features,
+          features: featuresToSave,
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -124,7 +134,7 @@ const HostelPage = (props) => {
           uniIds: form.uniIds,
           location: form.location,
           adminUID: null,
-          features: form.features,
+          features: featuresToSave,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -230,24 +240,7 @@ const HostelPage = (props) => {
                           setEditing(item);
                           setForm({
                             ...item,
-                            features: item.features || {
-                              events: false,
-                              deals: false,
-                              announcement: false,
-                              hostelevent: false,
-                              diningmenu: false,
-                              cleaningschedule: false,
-                              maintenance: false,
-                              bookingroom: false,
-                              academicgroup: false,
-                              reportincedent: false,
-                              feedback: false,
-                              wellbeing: false,
-                              faqs: false,
-                              resource: false,
-                              poi: false,
-                              community: false,
-                            }
+                            features: { ...DEFAULT_FEATURES, ...(item.features || {}) },
                           });
                           setModalOpen(true);
                         }}>Edit</button>

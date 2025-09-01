@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import DashboardPage from "../pages/admin/DashboardPage";
 import DiningMenuPage from "../pages/admin/DiningMenuPage";
 import CleaningSchedulePage from "../pages/admin/CleaningSchedulePage";
+import TutorialSchedulePage from "../pages/admin/TutorialSchedulePage";
 import MaintenancePage from "../pages/admin/MaintenancePage";
 import BookingPage from "../pages/admin/BookingPage";
 import AcademicGroupPage from "../pages/admin/AcademicGroupPage";
@@ -29,6 +30,7 @@ export default function AdminRoutes({ route }) {
          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/diningmenu" element={<DiningMenuPage />} />
           <Route path="/cleaningschedule" element={<CleaningSchedulePage />} />
+          <Route path="/tutorialSchedule" element={<TutorialSchedulePage />} />
           <Route path="/maintenance" element={<MaintenancePage />} />
           <Route path="/bookingroom" element={<BookingPage />} />
           <Route path="/academicgroup" element={<AcademicGroupPage />} />

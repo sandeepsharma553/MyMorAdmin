@@ -19,6 +19,7 @@ const SECTIONS = [
   { key: "announcement", label: "Announcement", Icon: Bell },
   { key: "diningmenu", label: "Dining Menu", Icon: Menu },
   { key: "cleaningschedule", label: "Cleaning Schedule", Icon: BrushCleaning },
+  { key: "tutorialschedule", label: "Tutorial Schedule", Icon: BrushCleaning },
   { key: "maintenance", label: "Maintenance", Icon: Settings },
   { key: "bookingroom", label: "Book a Room", Icon: BookOpen },
   { key: "academicgroup", label: "Academic Groups", Icon: Users },
