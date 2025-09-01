@@ -34,7 +34,7 @@ export default function AnnouncementPage(props) {
   // Time filter
   const [timeFilter, setTimeFilter] = useState('current'); // 'past' | 'current' | 'future'
   useEffect(() => { setCurrentPage(1); }, [timeFilter]);
-
+  const [showPinnedOnly, setShowPinnedOnly] = useState(false);
   // NEW: header filters + sorting
   const [filters, setFilters] = useState({ title: '', desc: '', date: '' });
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
@@ -75,6 +75,8 @@ export default function AnnouncementPage(props) {
       allowMulti: false,
       options: ['', ''],
     },
+    isPinned: false,
+    pinnedAt: null,
   }
   const [form, setForm] = useState(initialForm);
 
@@ -86,7 +88,7 @@ export default function AnnouncementPage(props) {
       const data = snapshot.val();
       const documents = data
         ? Object.entries(data).map(([id, value]) => ({ id, ...value }))
-            .filter(item => item.hostelid === emp?.hostelid)
+          .filter(item => item.hostelid === emp?.hostelid)
         : [];
       setList(documents);
       setSelectedIds(new Set());
@@ -111,8 +113,8 @@ export default function AnnouncementPage(props) {
     const s = toJsDate(dateObj?.startDate);
     const e = toJsDate(dateObj?.endDate);
     if (!s || !e) return 'current';
-    const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
-    const endOfToday = new Date();   endOfToday.setHours(23,59,59,999);
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);
     if (e < startOfToday) return 'past';
     if (s > endOfToday) return 'future';
     return 'current';
@@ -141,13 +143,25 @@ export default function AnnouncementPage(props) {
 
   const headerFiltered = timeFiltered.filter(item => {
     const titleOK = !filters.title || (item.title || '').toLowerCase().includes(filters.title.toLowerCase());
-    const descOK  = !filters.desc  || (item.shortdesc || '').toLowerCase().includes(filters.desc.toLowerCase());
+    const descOK = !filters.desc || (item.shortdesc || '').toLowerCase().includes(filters.desc.toLowerCase());
     const dateStr = formatDateTime(item.date).toLowerCase();
-    const dateOK  = !filters.date || dateStr.includes(filters.date.toLowerCase());
+    const dateOK = !filters.date || dateStr.includes(filters.date.toLowerCase());
     return titleOK && descOK && dateOK;
   });
-
-  const sortedList = [...headerFiltered].sort((a, b) => {
+  const pinFiltered = showPinnedOnly
+    ? headerFiltered.filter(a => !!a.isPinned)
+    : headerFiltered;
+  const sortedList = [...pinFiltered].sort((a, b) => {
+    // 1) pinned first
+    const ap = a.isPinned ? 1 : 0;
+    const bp = b.isPinned ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    // 2) among pinned, newest pinnedAt first
+    if (ap === 1 && bp === 1) {
+      const aPA = typeof a.pinnedAt === 'number' ? a.pinnedAt : 0;
+      const bPA = typeof b.pinnedAt === 'number' ? b.pinnedAt : 0;
+      if (aPA !== bPA) return bPA - aPA;
+    }
     const dir = sortConfig.direction === 'asc' ? 1 : -1;
     switch (sortConfig.key) {
       case 'title':
@@ -241,6 +255,8 @@ export default function AnnouncementPage(props) {
           role: emp.role,
           pollData: cleanPollData,
           timestamp: Date.now(),
+          isPinned: !!form.isPinned,
+          pinnedAt: form.isPinned ? (form.pinnedAt || Date.now()) : null,
         })
         toast.success('Annoucement updated successfully');
       } else {
@@ -263,6 +279,8 @@ export default function AnnouncementPage(props) {
           role: emp.role,
           pollData: cleanPollData,
           timestamp: Date.now(),
+          isPinned: !!form.isPinned,
+          pinnedAt: form.isPinned ? (form.pinnedAt || Date.now()) : null,
         })
         toast.success('Annoucement created successfully');
       }
@@ -343,7 +361,18 @@ export default function AnnouncementPage(props) {
   };
 
   const formattedRange = `${format(range[0].startDate, 'MMM dd, yyyy')} - ${format(range[0].endDate, 'MMM dd, yyyy')}`;
-
+  const togglePin = async (item, makePinned) => {
+    try {
+      await update(dbRef(database, `announcements/${item.id}`), {
+        isPinned: makePinned,
+        pinnedAt: makePinned ? Date.now() : null, // store millis
+      });
+      toast.success(makePinned ? 'Pinned' : 'Unpinned');
+    } catch (e) {
+      console.error(e);
+      toast.error('Could not update pin');
+    }
+  };
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}
@@ -357,21 +386,28 @@ export default function AnnouncementPage(props) {
 
       {/* Time filter buttons */}
       <div className="flex items-center gap-2 mb-4">
-        {['past','current','future'].map(key => {
+        {['past', 'current', 'future'].map(key => {
           const label = key[0].toUpperCase() + key.slice(1);
           const active = timeFilter === key;
           return (
             <button
               key={key}
               onClick={() => setTimeFilter(key)}
-              className={`px-3 py-1.5 rounded-full text-sm border ${
-                active ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300'
-              }`}
+              className={`px-3 py-1.5 rounded-full text-sm border ${active ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300'
+                }`}
             >
               {label}
             </button>
           );
         })}
+        <label className="ml-2 text-sm flex items-center gap-2 border border-gray-300 rounded-full px-3 py-1 bg-white">
+          <input
+            type="checkbox"
+            checked={showPinnedOnly}
+            onChange={(e) => setShowPinnedOnly(e.target.checked)}
+          />
+          Show pinned only
+        </label>
       </div>
 
       {/* Bulk actions bar */}
@@ -427,6 +463,7 @@ export default function AnnouncementPage(props) {
                     { key: 'description', label: 'Description' },
                     { key: 'date', label: 'Date' },
                     { key: 'image', label: 'Image', sortable: false },
+                    { key: 'pin', label: 'Pin', sortable: false },
                     { key: 'actions', label: 'Actions', sortable: false },
                     { key: 'select', label: '', sortable: false },
                   ].map(col => (
@@ -480,6 +517,7 @@ export default function AnnouncementPage(props) {
                   </th>
                   <th className="px-6 pb-3" />
                   <th className="px-6 pb-3" />
+                  <th className="px-6 pb-3" />
                   <th className="px-6 pb-3">
                     <input
                       type="checkbox"
@@ -502,7 +540,7 @@ export default function AnnouncementPage(props) {
               <tbody className="divide-y divide-gray-200">
                 {paginatedData.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
+                    <td colSpan="7" className="px-6 py-4 text-center text-gray-500">
                       No announcements found.
                     </td>
                   </tr>
@@ -516,6 +554,17 @@ export default function AnnouncementPage(props) {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{formatDateTime(item.date)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         {item.posterUrl !== "" ? (<img src={item.posterUrl} width={80} height={80} alt="" />) : null}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          type="button"
+                          title={item.isPinned ? 'Unpin' : 'Pin'}
+                          onClick={() => togglePin(item, !item.isPinned)}
+                          className={`text-lg leading-none ${item.isPinned ? 'text-yellow-500' : 'text-gray-400'} hover:opacity-80`}
+                          aria-label={item.isPinned ? 'Unpin announcement' : 'Pin announcement'}
+                        >
+                          {item.isPinned ? '★' : '☆'}
+                        </button>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button className="text-blue-600 hover:underline mr-3" onClick={() => {
@@ -625,7 +674,7 @@ export default function AnnouncementPage(props) {
                 </div>
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">
-                    <input type="file" name="poster" accept="image/*" className="hidden" onChange={handleChange}/>
+                    <input type="file" name="poster" accept="image/*" className="hidden" onChange={handleChange} />
                     📁 Choose File
                   </label>
                   <span className="text-sm text-gray-600 truncate max-w-[150px]">{fileName}</span>
@@ -663,7 +712,7 @@ export default function AnnouncementPage(props) {
                 <div className="flex items-center gap-4 mt-4 cursor-pointer select-none">
                   <label htmlFor="toggleMulti" className="text-sm font-medium text-gray-700">Allow multiple answers</label>
                   <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="toggleMulti" name="allowMulti" checked={form.pollData.allowMulti} onChange={handleChange} className="sr-only peer"/>
+                    <input type="checkbox" id="toggleMulti" name="allowMulti" checked={form.pollData.allowMulti} onChange={handleChange} className="sr-only peer" />
                     <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-green-500 transition-colors duration-300"></div>
                     <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform duration-300 peer-checked:translate-x-5"></div>
                   </label>

@@ -10,6 +10,7 @@ import { ToastContainer, toast } from "react-toastify";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import dayjs from "dayjs";
 import MapLocationInput from "../../components/MapLocationInput";
+import EditorPro from "../../components/EditorPro"; // <<---- NEW
 import { MapPin } from "lucide-react";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -25,14 +26,14 @@ export default function EventPage(props) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [fileName, setFileName] = useState("No file chosen");
   const [category, setCategory] = useState([]);
   const [showMapModal, setShowMapModal] = useState(false);
+  const [showPinnedOnly, setShowPinnedOnly] = useState(false);
 
-  // Existing time filter
+  // time filter
   const [timeFilter, setTimeFilter] = useState("current"); // 'past' | 'current' | 'future'
 
-  // NEW: header sorting + filters
+  // header sorting + filters
   const [sortConfig, setSortConfig] = useState({ key: "start", direction: "asc" });
   const [filters, setFilters] = useState({ name: "", date: "", location: "" });
   const debounceRef = useRef(null);
@@ -54,7 +55,9 @@ export default function EventPage(props) {
     id: 0,
     eventName: "",
     shortDesc: "",
-    eventDescription: "",
+    // replaced textarea with HTML editor:
+    eventDescriptionHtml: "",
+
     category: "",
     tags: "",
     startDateTime: "",
@@ -65,8 +68,11 @@ export default function EventPage(props) {
     address: "",
     mapLocation: "",
     onlineLink: "",
-    poster: null,
-    posterUrl: "",
+
+    // MULTI-POSTER
+    posters: [],      // persisted: [{url, name}]
+    posterFiles: [],  // transient: [File, File, ...]
+
     promoVideo: "",
     theme: "",
     rsvp: false,
@@ -88,80 +94,125 @@ export default function EventPage(props) {
     sponsorship: "",
     interestedCount: 0,
     hostelid: "",
+    isPinned: false,
+    pinnedAt: null,
   };
   const [form, setForm] = useState(initialFormData);
 
   useEffect(() => {
     getList();
     getCategory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const getList = async () => {
     setIsLoading(true);
-    const eventsQuery = query(
-      collection(db, "events"),
-      where("hostelid", "==", emp.hostelid)
-    );
-    const querySnapshot = await getDocs(eventsQuery);
-    const documents = querySnapshot.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    }));
-    documents.sort((a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0));
-    setList(documents);
-    setIsLoading(false);
+    try {
+      const eventsQuery = query(
+        collection(db, "events"),
+        where("hostelid", "==", emp.hostelid)
+      );
+      const querySnapshot = await getDocs(eventsQuery);
+      const documents = querySnapshot.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+      documents.sort((a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0));
+      setList(documents);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load events");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getCategory = async () => {
-    const eventCategoryQuery = query(
-      collection(db, "eventcategory"),
-      where("hostelid", "==", emp.hostelid)
-    );
-    const querySnapshot = await getDocs(eventCategoryQuery);
-    const documents = querySnapshot.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    }));
-    setCategory(documents);
+    try {
+      const eventCategoryQuery = query(
+        collection(db, "eventcategory"),
+        where("hostelid", "==", emp.hostelid)
+      );
+      const querySnapshot = await getDocs(eventCategoryQuery);
+      const documents = querySnapshot.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+      setCategory(documents);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load categories");
+    }
   };
 
   const handleChange = (e) => {
-    const { name, value, type, checked, files } = e.target;
+    const { name, value, type, checked } = e.target;
     if (type === "checkbox") {
       setForm({ ...form, [name]: checked });
-    } else if (type === "file") {
-      setForm({ ...form, [name]: files[0] || null });
-      setFileName(files?.length ? files[0].name : "No file chosen");
     } else {
       setForm({ ...form, [name]: value });
     }
   };
 
+  const uniquePath = (folder, file) => {
+    const ext = file.name.includes(".") ? file.name.split(".").pop() : "jpg";
+    const base = file.name.replace(/\.[^/.]+$/, "");
+    const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const prefix = folder ? `${folder}/` : "";
+    return `${prefix}${base}_${stamp}.${ext}`;
+  };
+
+  const isBlankHtml = (html) => {
+    if (!html) return true;
+    // strip tags & &nbsp;
+    const text = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+    return text.length === 0;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      if (!editingData && !form.poster) {
-        toast.error("Please choose the poster file");
+      const hasAnyPoster = (form.posters?.length || 0) > 0 || (form.posterFiles?.length || 0) > 0;
+      if (!editingData && !hasAnyPoster) {
+        toast.error("Please add at least one poster");
         return;
       }
-      let posterUrl = form.posterUrl || "";
-      const isNewImage = form.poster instanceof File;
-      if (isNewImage) {
-        const sRef = storageRef(storage, `event_posters/${form.poster.name}`);
-        await uploadBytes(sRef, form.poster);
-        posterUrl = await getDownloadURL(sRef);
+      if (isBlankHtml(form.eventDescriptionHtml)) {
+        toast.error("Please add a description");
+        return;
       }
+
+      // upload new poster files
+      let uploadedPosters = [];
+      if (form.posterFiles?.length) {
+        const uploads = form.posterFiles.map(async (file) => {
+          const path = uniquePath(`event_posters/${emp.hostelid}/${form.eventName || "event"}`, file);
+          const sRef = storageRef(storage, path);
+          await uploadBytes(sRef, file);
+          const url = await getDownloadURL(sRef);
+          return { url, name: file.name };
+        });
+        uploadedPosters = await Promise.all(uploads);
+      }
+      const posters = [...(form.posters || []), ...uploadedPosters];
+
       const eventData = {
         ...form,
         prices: form.priceType === "Free" ? [] : form.prices,
         startDateTime: Timestamp.fromDate(new Date(form.startDateTime)),
         endDateTime: form.endDateTime ? Timestamp.fromDate(new Date(form.endDateTime)) : null,
-        ...(posterUrl && { posterUrl }),
+        posters,
         hostelid: emp.hostelid,
         uid,
+        isPinned: !!form.isPinned,
+        pinnedAt: form.isPinned
+          ? (form.pinnedAt || Timestamp.now())
+          : null,
       };
+
+      // clean non-persist fields
       delete eventData.id;
-      delete eventData.poster;
+      delete eventData.posterFiles;
 
       if (editingData) {
         const eventRef = doc(db, "events", editingData.id);
@@ -185,7 +236,6 @@ export default function EventPage(props) {
     setModalOpen(false);
     setEditing(null);
     setForm(initialFormData);
-    setFileName("No file chosen");
   };
 
   const handleDelete = async () => {
@@ -208,7 +258,6 @@ export default function EventPage(props) {
     return dayjs(ms).format("YYYY-MM-DD hh:mm A");
   };
 
-  // --- helpers for timestamps + classify ---
   function toMillis(val) {
     if (!val) return null;
     if (typeof val === "object" && "seconds" in val) return val.seconds * 1000;
@@ -229,87 +278,66 @@ export default function EventPage(props) {
     return "current";
   }
 
-  // ----- Apply time filter, then header filters, then sort -----
   const timeFiltered = list.filter(ev => classifyEvent(ev) === timeFilter);
-
-  const filtered = timeFiltered.filter(ev => {
+  const pinFiltered = showPinnedOnly
+    ? timeFiltered.filter(ev => !!ev.isPinned)
+    : timeFiltered;
+  const filtered = pinFiltered.filter(ev => {
     const nameOK = !filters.name || (ev.eventName || "").toLowerCase().includes(filters.name.toLowerCase());
-    const locOK  = !filters.location || (ev.locationName || "").toLowerCase().includes(filters.location.toLowerCase());
+    const locOK = !filters.location || (ev.locationName || "").toLowerCase().includes(filters.location.toLowerCase());
     const dateStr = [ev.startDateTime, ev.endDateTime].map(formatDateTime).join(" ");
     const dateOK = !filters.date || dateStr.toLowerCase().includes(filters.date.toLowerCase());
     return nameOK && locOK && dateOK;
   });
-
   const getSortVal = (ev, key) => {
     if (key === "name") return (ev.eventName || "").toLowerCase();
     if (key === "start") return toMillis(ev.startDateTime) ?? 0;
     if (key === "location") return (ev.locationName || "").toLowerCase();
     return "";
   };
+  // const sorted = [...filtered].sort((a, b) => {
+  //   const dir = sortConfig.direction === "asc" ? 1 : -1;
+  //   const va = getSortVal(a, sortConfig.key);
+  //   const vb = getSortVal(b, sortConfig.key);
+  //   if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+  //   return va.localeCompare(vb) * dir;
+  // });
   const sorted = [...filtered].sort((a, b) => {
+    // 1) Pinned first
+    const ap = a.isPinned ? 1 : 0;
+    const bp = b.isPinned ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    // 2) Newest pinned first (by pinnedAt)
+    if (ap === 1 && bp === 1) {
+      const aPA = toMillis(a.pinnedAt) ?? 0;
+      const bPA = toMillis(b.pinnedAt) ?? 0;
+      if (aPA !== bPA) return bPA - aPA;
+    }
+    // 3) Fall back to current sort column
     const dir = sortConfig.direction === "asc" ? 1 : -1;
     const va = getSortVal(a, sortConfig.key);
     const vb = getSortVal(b, sortConfig.key);
     if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
-    return va.localeCompare(vb) * dir;
+    return String(va).localeCompare(String(vb)) * dir;
   });
+  const togglePin = async (item, makePinned) => {
+    try {
+      const ref = doc(db, "events", item.id);
+      await updateDoc(ref, {
+        isPinned: makePinned,
+        pinnedAt: makePinned ? Timestamp.now() : null,
+      });
+      toast.success(makePinned ? "Pinned" : "Unpinned");
+      getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not update pin");
+    }
+  };
 
-  const addPriceOption = () => {
-    setForm(f => ({ ...f, prices: [...f.prices, { type: "", amount: "", validUntil: "" }] }));
-  };
-  const handlePriceChange = (index, field, value) => {
-    const updated = [...form.prices];
-    updated[index][field] = value;
-    setForm({ ...form, prices: updated });
-  };
-  const descRef = useRef(null);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  
-  const EMOJIS = [
-    "😀","😁","😂","🤣","😊","🙂","😉","😍","😘","😎",
-    "😇","🤩","🤗","🤔","🙃","😴","😅","🥳","😤","😭",
-    "👍","👎","👏","🙏","💪","🔥","✨","🎉","📣","📍"
-  ];
-  
-  // Wrap current selection with ** ** (Markdown bold)
-  const applyBoldToDescription = () => {
-    const ta = descRef.current;
-    if (!ta) return;
-    const { selectionStart: s = 0, selectionEnd: e = 0 } = ta;
-    const value = form.eventDescription || "";
-    const selected = value.slice(s, e) || "bold text";
-    const insert = `**${selected}**`;
-    const next = value.slice(0, s) + insert + value.slice(e);
-    setForm(prev => ({ ...prev, eventDescription: next }));
-  
-    // restore focus + selection inside inserted text
-    requestAnimationFrame(() => {
-      ta.focus();
-      const startPos = s + 2; // after opening **
-      const endPos = startPos + selected.length;
-      ta.setSelectionRange(startPos, endPos);
-    });
-  };
-  
-  const insertEmojiIntoDescription = (emoji) => {
-    const ta = descRef.current;
-    const value = form.eventDescription || "";
-    const s = ta?.selectionStart ?? value.length;
-    const e = ta?.selectionEnd ?? value.length;
-    const next = value.slice(0, s) + emoji + value.slice(e);
-    setForm(prev => ({ ...prev, eventDescription: next }));
-    setShowEmojiPicker(false);
-  
-    requestAnimationFrame(() => {
-      if (!ta) return;
-      const caret = s + emoji.length;
-      ta.focus();
-      ta.setSelectionRange(caret, caret);
-    });
-  };
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto">
-      {/* Top bar with Add + time filter */}
+    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
+      {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Event</h1>
         <button
@@ -324,7 +352,7 @@ export default function EventPage(props) {
         </button>
       </div>
 
-      {/* Past / Current / Future filter */}
+      {/* Past / Current / Future */}
       <div className="flex items-center gap-2 mb-3">
         {["past", "current", "future"].map((k) => {
           const active = timeFilter === k;
@@ -332,17 +360,25 @@ export default function EventPage(props) {
             <button
               key={k}
               onClick={() => setTimeFilter(k)}
-              className={`px-3 py-1.5 rounded-full text-sm border ${
-                active ? "bg-black text-white border-black" : "bg-white text-gray-700 border-gray-300"
-              }`}
+              className={`px-3 py-1.5 rounded-full text-sm border ${active ? "bg-black text-white border-black" : "bg-white text-gray-700 border-gray-300"
+                }`}
             >
               {k[0].toUpperCase() + k.slice(1)}
             </button>
           );
         })}
+        <label className="ml-2 text-sm flex items-center gap-2 border border-gray-300 rounded-full px-3 py-1 bg-white">
+          <input
+            type="checkbox"
+            checked={showPinnedOnly}
+            onChange={(e) => setShowPinnedOnly(e.target.checked)}
+          />
+          Show pinned only
+        </label>
         <span className="text-xs text-gray-500">
           Showing {sorted.length} of {list.length}
         </span>
+
       </div>
 
       <h2 className="text-xl font-semibold mb-2">
@@ -357,13 +393,13 @@ export default function EventPage(props) {
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
-              {/* Row 1: Sortable headers */}
               <tr>
                 {[
                   { key: "name", label: "Event" },
                   { key: "start", label: "Event Date" },
                   { key: "location", label: "Location" },
-                  { key: "image", label: "Image", sortable: false },
+                  { key: "image", label: "Poster(s)", sortable: false },
+                  { key: "pin", label: "Pin", sortable: false },
                   { key: "actions", label: "Actions", sortable: false },
                 ].map(col => (
                   <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
@@ -386,7 +422,7 @@ export default function EventPage(props) {
                 ))}
               </tr>
 
-              {/* Row 2: Inline filters */}
+              {/* Inline filters */}
               <tr className="border-t border-gray-200">
                 <th className="px-6 pb-3">
                   <input
@@ -433,9 +469,23 @@ export default function EventPage(props) {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.locationName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {item.posterUrl ? (
-                        <img src={item.posterUrl} alt="" width={80} height={80} className="rounded" />
+                      {item.posters?.[0]?.url ? (
+                        <img src={item.posters[0].url} alt="" width={80} height={80} className="rounded" />
                       ) : null}
+                      {item.posters?.length > 1 && (
+                        <div className="text-xs text-gray-500 mt-1">+{item.posters.length - 1} more</div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <button
+                        type="button"
+                        title={item.isPinned ? "Unpin" : "Pin"}
+                        onClick={() => togglePin(item, !item.isPinned)}
+                        className={`text-lg leading-none ${item.isPinned ? "text-yellow-500" : "text-gray-400"} hover:opacity-80`}
+                        aria-label={item.isPinned ? "Unpin event" : "Pin event"}
+                      >
+                        {item.isPinned ? "★" : "☆"}
+                      </button>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button
@@ -448,7 +498,10 @@ export default function EventPage(props) {
                             id: item.id,
                             startDateTime: item.startDateTime?.toDate?.().toISOString().slice(0, 16) || "",
                             endDateTime: item.endDateTime?.toDate?.().toISOString().slice(0, 16) || "",
-                            poster: null,
+                            posterFiles: [], // reset transient
+                            posters: Array.isArray(item.posters) ? item.posters : [],
+                            // Backward-compat: if old docs used eventDescription, load it
+                            eventDescriptionHtml: item.eventDescriptionHtml || item.eventDescription || "",
                           }));
                           setModalOpen(true);
                         }}
@@ -473,6 +526,7 @@ export default function EventPage(props) {
         )}
       </div>
 
+      {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -481,61 +535,14 @@ export default function EventPage(props) {
               <div className="space-y-4">
                 <input name="eventName" placeholder="Event Name" value={form.eventName} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                 <input name="shortDesc" placeholder="Short Description" value={form.shortDesc} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-                <textarea name="eventDescription" placeholder="Description" value={form.eventDescription} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required></textarea>
+
+
                 <label className="block font-medium">Description</label>
-                {/* <div className="border border-gray-300 rounded">
-               
-                  <div className="flex items-center gap-2 p-2 border-b bg-gray-50">
-                    <button
-                      type="button"
-                      onClick={applyBoldToDescription}
-                      className="px-2 py-1 text-sm font-semibold rounded border hover:bg-gray-100"
-                      title="Bold (**selection**)"
-                    >
-                      B
-                    </button>
-
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setShowEmojiPicker(v => !v)}
-                        className="px-2 py-1 text-lg rounded border hover:bg-gray-100"
-                        title="Insert emoji"
-                      >
-                        😊
-                      </button>
-
-                      {showEmojiPicker && (
-                        <div className="absolute z-10 mt-2 w-56 p-2 bg-white border rounded shadow grid grid-cols-8 gap-1">
-                          {EMOJIS.map(e => (
-                            <button
-                              key={e}
-                              type="button"
-                              className="text-xl rounded hover:bg-gray-100"
-                              onClick={() => insertEmojiIntoDescription(e)}
-                            >
-                              {e}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <span className="ml-auto text-xs text-gray-500">
-                      Supports **bold** + emoji
-                    </span>
-                  </div>
-                  <textarea
-                    ref={descRef}
-                    name="eventDescription"
-                    placeholder="Describe your event… Use **bold** and add emojis!"
-                    value={form.eventDescription}
-                    onChange={handleChange}
-                    className="w-full p-2 rounded-b focus:outline-none"
-                    style={{ minHeight: 120 }}
-                    required
-                  />
-                </div> */}
+                <EditorPro
+                  value={form.eventDescriptionHtml}
+                  onChange={(html) => setForm((f) => ({ ...f, eventDescriptionHtml: html }))}
+                  placeholder="Describe your event… format text, add links, images, emoji, etc."
+                />
 
                 <select name="category" value={form.category} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required>
                   <option value="">Select Category</option>
@@ -570,14 +577,80 @@ export default function EventPage(props) {
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                 </div>
 
-                <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
-                  <label className="cursor-pointer">
-                    <input type="file" name="poster" accept="image/*" className="hidden" onChange={handleChange} />
-                    📁 Choose File
-                  </label>
-                  <span className="text-sm text-gray-600 truncate max-w-[150px]">{fileName}</span>
+                {/* Multi posters */}
+                <div className="space-y-2">
+                  <label className="block font-medium">Posters (you can add multiple)</label>
+                  <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
+                    <label className="cursor-pointer">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (!files.length) return;
+                          setForm(prev => ({ ...prev, posterFiles: [...prev.posterFiles, ...files] }));
+                        }}
+                      />
+                      📁 Choose Posters
+                    </label>
+                    <span className="text-sm text-gray-600">
+                      {form.posterFiles.length ? `${form.posterFiles.length} selected` : "No files selected"}
+                    </span>
+                  </div>
+
+                  {!!form.posterFiles.length && (
+                    <div className="mt-2 grid grid-cols-3 md:grid-cols-4 gap-2">
+                      {form.posterFiles.map((f, i) => (
+                        <div key={`${f.name}-${i}`} className="relative">
+                          <img src={URL.createObjectURL(f)} alt={f.name} className="w-full h-24 object-cover rounded" />
+                          <button
+                            type="button"
+                            className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
+                            onClick={() =>
+                              setForm(prev => {
+                                const next = [...prev.posterFiles];
+                                next.splice(i, 1);
+                                return { ...prev, posterFiles: next };
+                              })
+                            }
+                            title="Remove"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!!form.posters.length && (
+                    <>
+                      <div className="text-sm text-gray-500 mt-3">Already saved</div>
+                      <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                        {form.posters.map((img, i) => (
+                          <div key={`${img.url}-${i}`} className="relative">
+                            <img src={img.url} alt={img.name || `poster-${i}`} className="w-full h-24 object-cover rounded" />
+                            <button
+                              type="button"
+                              className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
+                              onClick={() =>
+                                setForm(prev => {
+                                  const next = [...prev.posters];
+                                  next.splice(i, 1);
+                                  return { ...prev, posters: next };
+                                })
+                              }
+                              title="Remove from event"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
-                {form.posterUrl && <img src={form.posterUrl} alt="Poster Preview" width="150" />}
 
                 <label className="block mb-2"><input type="checkbox" name="rsvp" checked={form.rsvp} onChange={handleChange} /> RSVP Required?</label>
                 <input name="capacity" placeholder="Max Capacity" value={form.capacity} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
@@ -597,25 +670,41 @@ export default function EventPage(props) {
                     {form.prices.map((price, index) => (
                       <div key={index} className="flex gap-2 mb-2">
                         {form.priceType === "Paid" && (
-                          <select value={price.type} onChange={(e) => handlePriceChange(index, "type", e.target.value)} className="w-full border border-gray-300 p-2 rounded" required>
+                          <select value={price.type} onChange={(e) => {
+                            const updated = [...form.prices];
+                            updated[index].type = e.target.value;
+                            setForm({ ...form, prices: updated });
+                          }} className="w-full border border-gray-300 p-2 rounded" required>
                             <option value="">Select Type</option>
                             <option value="General">General</option>
                             <option value="VIP">VIP</option>
                           </select>
                         )}
                         {form.priceType === "MultiPriceTimer" && (
-                          <select value={price.type} onChange={(e) => handlePriceChange(index, "type", e.target.value)} className="w-full border border-gray-300 p-2 rounded" required>
+                          <select value={price.type} onChange={(e) => {
+                            const updated = [...form.prices];
+                            updated[index].type = e.target.value;
+                            setForm({ ...form, prices: updated });
+                          }} className="w-full border border-gray-300 p-2 rounded" required>
                             <option value="">Select Type</option>
                             <option value="First Day">First Day</option>
                             <option value="Second Day">Second Day</option>
                             <option value="Third Day">Third Day</option>
                           </select>
                         )}
-                        <input placeholder="Amount" type="number" value={price.amount} onChange={(e) => handlePriceChange(index, "amount", e.target.value)} className="border p-2 w-1/3" />
-                        <input type="datetime-local" value={price.validUntil || ""} onChange={(e) => handlePriceChange(index, "validUntil", e.target.value)} className="border p-2 w-1/3" />
+                        <input placeholder="Amount" type="number" value={price.amount} onChange={(e) => {
+                          const updated = [...form.prices];
+                          updated[index].amount = e.target.value;
+                          setForm({ ...form, prices: updated });
+                        }} className="border p-2 w-1/3" />
+                        <input type="datetime-local" value={price.validUntil || ""} onChange={(e) => {
+                          const updated = [...form.prices];
+                          updated[index].validUntil = e.target.value;
+                          setForm({ ...form, prices: updated });
+                        }} className="border p-2 w-1/3" />
                       </div>
                     ))}
-                    <button type="button" onClick={addPriceOption} className="bg-gray-300 px-3 py-1 rounded">
+                    <button type="button" onClick={() => setForm(f => ({ ...f, prices: [...f.prices, { type: "", amount: "", validUntil: "" }] }))} className="bg-gray-300 px-3 py-1 rounded">
                       + Add Price
                     </button>
                   </div>
@@ -653,6 +742,7 @@ export default function EventPage(props) {
         </div>
       )}
 
+      {/* Delete confirm */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
