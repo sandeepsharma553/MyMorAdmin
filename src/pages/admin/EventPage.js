@@ -203,6 +203,8 @@ export default function EventPage(props) {
         endDateTime: form.endDateTime ? Timestamp.fromDate(new Date(form.endDateTime)) : null,
         posters,
         hostelid: emp.hostelid,
+        hostel:emp.hostel,
+        imageUrl:emp.imageUrl,
         uid,
         isPinned: !!form.isPinned,
         pinnedAt: form.isPinned
