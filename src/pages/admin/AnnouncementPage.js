@@ -707,9 +707,7 @@ export default function AnnouncementPage(props) {
                     <button type="button" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={addOption}>
                       + Add option
                     </button>
-                  </div>
-                )}
-                <div className="flex items-center gap-4 mt-4 cursor-pointer select-none">
+                    <div className="flex items-center gap-4 mt-4 cursor-pointer select-none">
                   <label htmlFor="toggleMulti" className="text-sm font-medium text-gray-700">Allow multiple answers</label>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" id="toggleMulti" name="allowMulti" checked={form.pollData.allowMulti} onChange={handleChange} className="sr-only peer" />
@@ -717,6 +715,9 @@ export default function AnnouncementPage(props) {
                     <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform duration-300 peer-checked:translate-x-5"></div>
                   </label>
                 </div>
+                  </div>
+                )}
+               
                 <input name="link" placeholder="News Link" value={form.link} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
               </div>
               <div className="flex justify-end mt-6 space-x-3">
