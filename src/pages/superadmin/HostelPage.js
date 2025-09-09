@@ -482,11 +482,11 @@ const HostelPage = (props) => {
                             Enable & Unlock Employees
                           </button>
                         )} */}
-                        <button className="text-red-600 hover:underline" onClick={() => {
+                        {/* <button className="text-red-600 hover:underline" onClick={() => {
                           setDelete(item);
                           setForm(item);
                           setConfirmDeleteOpen(true);
-                        }}>Delete</button>
+                        }}>Delete</button> */}
                       </td>
                     </tr>
                   ))
