@@ -191,7 +191,8 @@ const MaintenanceCategoryPage = (props) => {
         toast.success("Successfully updated");
         getProblemCatList();
       } else {
-        const q = query(collection(db, "problemcategory"), where("name", "==", form.name));
+        const q = query(collection(db, "problemcategory"), where("name", "==", form.name),
+        where("hostelid", "==", emp.hostelid));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
           toast.warn("Duplicate found! Not adding.");
@@ -250,7 +251,8 @@ const MaintenanceCategoryPage = (props) => {
         toast.success("Successfully updated");
         getItemCatList();
       } else {
-        const q = query(collection(db, "itemcategory"), where("name", "==", form.name));
+        const q = query(collection(db, "itemcategory"), where("name", "==", form.name),
+        where("hostelid", "==", emp.hostelid));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
           toast.warn("Duplicate found! Not adding.");
@@ -308,7 +310,8 @@ const MaintenanceCategoryPage = (props) => {
         toast.success("Successfully updated");
         getItemList();
       } else {
-        const q = query(collection(db, "maintenanceitems"), where("name", "==", form.name));
+        const q = query(collection(db, "maintenanceitems"), where("name", "==", form.name),
+        where("hostelid", "==", emp.hostelid));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
           toast.warn("Duplicate found! Not adding.");
@@ -366,7 +369,8 @@ const MaintenanceCategoryPage = (props) => {
         toast.success("Successfully updated");
         getTypeList();
       } else {
-        const q = query(collection(db, "maintenancetype"), where("name", "==", form.name));
+        const q = query(collection(db, "maintenancetype"), where("name", "==", form.name),
+        where("hostelid", "==", emp.hostelid));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
           toast.warn("Duplicate found! Not adding.");

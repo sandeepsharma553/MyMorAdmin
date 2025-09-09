@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
   query, where, getDoc, writeBatch
@@ -25,6 +25,13 @@ export default function MaintenancePage(props) {
   const [problemCatlist, setProblemCatList] = useState([]);
   const [itemCatlist, setItemCatList] = useState([]);
   const [itemlist, setItemList] = useState([]);
+
+  // NEW: Assign modal state
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [assignTarget, setAssignTarget] = useState(null); // row being assigned
+  const [assignEmail, setAssignEmail] = useState("");
+  const [assignNote, setAssignNote] = useState("");
+
   // Data
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,11 +41,11 @@ export default function MaintenancePage(props) {
 
   // Filters & sorting
   const [filters, setFilters] = useState({
-    request: "", // matches id or uid
+    request: "",
     user: "",
-    issue: "",
+    issue: "All",
     location: "",
-    maintenancetype:"",
+    maintenancetype: "All",
     date: "",
     status: "All",
   });
@@ -62,8 +69,11 @@ export default function MaintenancePage(props) {
 
   // Auth
   const emp = useSelector((state) => state.auth.employee);
-  const uid = useSelector((state) => state.auth.user.uid);
+  const authUser = useSelector((state) => state.auth.user);
+  const uid = authUser?.uid;
+  const isAdmin = (emp?.role || "").toLowerCase().includes("admin");
 
+  // Stats
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -88,14 +98,39 @@ export default function MaintenancePage(props) {
   const contentRef = useRef(null);
   const handlePrint = useReactToPrint({ contentRef });
 
+  // Admin directory (for assign)
+  const [adminEmails, setAdminEmails] = useState([]);
+
   useEffect(() => {
     getList();
     getProblemCatList();
     getItemCatList();
     getItemList();
+    loadAdmins();
   }, []);
 
   useEffect(() => { setCurrentPage(1); }, [filters, sortConfig]);
+
+  const loadAdmins = async () => {
+    try {
+      // Assuming "users" collection has fields: email, role, hostelid
+      const qAdmins = query(
+        collection(db, "users"),
+        where("hostelid", "==", emp.hostelid)
+      );
+      const snap = await getDocs(qAdmins);
+      const emails = [];
+      snap.forEach(d => {
+        const u = d.data();
+        const role = (u.role || u.Role || "").toLowerCase();
+        if (role.includes("admin") && u.email) emails.push(u.email);
+      });
+      // Unique + sorted
+      setAdminEmails(Array.from(new Set(emails)).sort((a,b)=>a.localeCompare(b)));
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const getList = async () => {
     setIsLoading(true);
@@ -112,7 +147,14 @@ export default function MaintenancePage(props) {
     // Maintenance
     const maintenanceQuery = query(collection(db, "maintenance"), where("hostelid", "==", emp.hostelid));
     const maintenanceSnapshot = await getDocs(maintenanceQuery);
-    const rows = maintenanceSnapshot.docs.map((d) => ({ id: d.id, ...d.data(), username: userMap[d.data().uid] || "" }));
+    const rows = maintenanceSnapshot.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+      username: userMap[d.data().uid] || "",
+      // Ensure defaults for new fields
+      assignedToEmail: d.data().assignedToEmail || "",
+      adminNotes: Array.isArray(d.data().adminNotes) ? d.data().adminNotes : [],
+    }));
 
     setList(rows);
     setSelectedIds(new Set());
@@ -124,19 +166,18 @@ export default function MaintenancePage(props) {
     const resolved = rows.filter((i) => i.status === "Resolved").length;
     const closed = rows.filter((i) => i.status === "Closed").length;
     setStats({ total, pending, inProgress, resolved, closed });
-     console.log(rows)
+
     setIsLoading(false);
   };
- const getProblemCatList = async () => {
+
+  const getProblemCatList = async () => {
     setIsLoading(true);
     const maintenanceCategoryQuery = query(
       collection(db, "problemcategory"),
       where("hostelid", "==", emp.hostelid)
     );
-
     const querySnapshot = await getDocs(maintenanceCategoryQuery);
-    const documents = querySnapshot.docs.map((docu) => ({ id: docu.id, ...docu.data() }));
-    setProblemCatList(documents);
+    setProblemCatList(querySnapshot.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
     setIsLoading(false);
   };
 
@@ -146,10 +187,8 @@ export default function MaintenancePage(props) {
       collection(db, "itemcategory"),
       where("hostelid", "==", emp.hostelid)
     );
-
     const querySnapshot = await getDocs(itemCategoryQuery);
-    const documents = querySnapshot.docs.map((docu) => ({ id: docu.id, ...docu.data() }));
-    setItemCatList(documents);
+    setItemCatList(querySnapshot.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
     setIsLoading(false);
   };
 
@@ -160,10 +199,10 @@ export default function MaintenancePage(props) {
       where("hostelid", "==", emp.hostelid)
     );
     const querySnapshot = await getDocs(itemQuery);
-    const documents = querySnapshot.docs.map((docu) => ({ id: docu.id, ...docu.data() }));
-    setItemList(documents);
+    setItemList(querySnapshot.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
     setIsLoading(false);
   };
+
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.roomno) return;
@@ -221,6 +260,8 @@ export default function MaintenancePage(props) {
           createdBy: uid,
           createdDate: new Date().toISOString().split("T")[0],
           status: "Pending",
+          assignedToEmail: "",
+          adminNotes: [],
         });
         toast.success("Successfully saved");
         getList();
@@ -292,6 +333,20 @@ export default function MaintenancePage(props) {
     }
   };
 
+  // ===== Dropdown data =====
+  const maintenanceTypes = useMemo(
+    () =>
+      Array.from(new Set((list || []).map(r => (r.maintenancetype || "").trim()).filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b)),
+    [list]
+  );
+  const issueTypes = useMemo(
+    () =>
+      Array.from(new Set((list || []).map(r => (r.problemcategory || "").trim()).filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b)),
+    [list]
+  );
+
   // ---------- Derive filtered/sorted/paginated ----------
   const filteredList = list.filter((r) => {
     const reqStr = `${r.id || ""} ${r.uid || ""}`.toLowerCase();
@@ -300,14 +355,17 @@ export default function MaintenancePage(props) {
     const locStr = (r.roomno || "").toLowerCase();
     const maintenancetypeStr = (r.maintenancetype || "").toLowerCase();
     const dateStr = (r.createdDate || "").toLowerCase();
+
     const statusOK = filters.status === "All" || (r.status || "").toLowerCase() === filters.status.toLowerCase();
+    const mtOK = filters.maintenancetype === "All" || maintenancetypeStr === filters.maintenancetype.toLowerCase();
+    const issueOK = filters.issue === "All" || issueStr === filters.issue.toLowerCase();
 
     return (
       (!filters.request || reqStr.includes(filters.request.toLowerCase())) &&
       (!filters.user || userStr.includes(filters.user.toLowerCase())) &&
-      (!filters.issue || issueStr.includes(filters.issue.toLowerCase())) &&
+      issueOK &&
       (!filters.location || locStr.includes(filters.location.toLowerCase())) &&
-      (!filters.maintenancetype || maintenancetypeStr.includes(filters.maintenancetype.toLowerCase())) &&
+      mtOK &&
       (!filters.date || dateStr.includes(filters.date.toLowerCase())) &&
       statusOK
     );
@@ -349,6 +407,62 @@ export default function MaintenancePage(props) {
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
   const somePageSelected = pageIds.some((id) => selectedIds.has(id)) && !allPageSelected;
 
+  // ===== Assign helpers =====
+  const openAssign = (row) => {
+    setAssignTarget(row);
+    setAssignEmail(row.assignedToEmail || "");
+    setAssignNote("");
+    setAssignModalOpen(true);
+  };
+
+  const saveAssignment = async () => {
+    if (!assignTarget?.id) return;
+    if (!assignEmail.trim()) { toast.error("Please enter an email to assign."); return; }
+
+    try {
+      const requestRef = doc(db, "maintenance", assignTarget.id);
+      const noteEntry = assignNote.trim()
+        ? { by: authUser?.email || uid, at: new Date().toISOString(), text: assignNote.trim() }
+        : null;
+
+      // Build new notes array
+      const current = list.find(x => x.id === assignTarget.id);
+      const prevNotes = Array.isArray(current?.adminNotes) ? current.adminNotes : [];
+      const nextNotes = noteEntry ? [...prevNotes, noteEntry] : prevNotes;
+
+      await updateDoc(requestRef, {
+        assignedToEmail: assignEmail.trim(),
+        assignedBy: authUser?.email || uid,
+        assignedAt: new Date().toISOString(),
+        adminNotes: nextNotes,
+      });
+
+      toast.success("Assigned successfully");
+      setAssignModalOpen(false);
+      setAssignTarget(null);
+      await getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to assign");
+    }
+  };
+
+  const addQuickNote = async (row) => {
+    const text = prompt("Add admin note:");
+    if (!text || !text.trim()) return;
+    try {
+      const requestRef = doc(db, "maintenance", row.id);
+      const noteEntry = { by: authUser?.email || uid, at: new Date().toISOString(), text: text.trim() };
+      const prevNotes = Array.isArray(row.adminNotes) ? row.adminNotes : [];
+      await updateDoc(requestRef, { adminNotes: [...prevNotes, noteEntry] });
+      toast.success("Note added");
+      await getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to add note");
+    }
+  };
+
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       <div className="flex justify-between items-center mb-4">
@@ -362,12 +476,15 @@ export default function MaintenancePage(props) {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 text-center mb-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-center mb-2">
         <div className="bg-white rounded-xl shadow p-2"><div className="text-lg font-bold">{stats.total}</div><div className="text-gray-500 text-xs">Total</div></div>
         <div className="bg-white rounded-xl shadow p-2"><div className="text-lg font-bold">{stats.pending}</div><div className="text-gray-500 text-xs">Pending</div></div>
         <div className="bg-white rounded-xl shadow p-2"><div className="text-lg font-bold">{stats.inProgress}</div><div className="text-gray-500 text-xs">In Progress</div></div>
         <div className="bg-white rounded-xl shadow p-2"><div className="text-lg font-bold">{stats.resolved}</div><div className="text-gray-500 text-xs">Resolved</div></div>
         <div className="bg-white rounded-xl shadow p-2"><div className="text-lg font-bold">{stats.closed}</div><div className="text-gray-500 text-xs">Closed</div></div>
+        <div className="bg-white rounded-xl shadow p-2"><div className="text-lg font-bold">
+          {list.filter(x => x.assignedToEmail).length}
+        </div><div className="text-gray-500 text-xs">Assigned</div></div>
       </div>
 
       {/* Bulk actions */}
@@ -403,6 +520,7 @@ export default function MaintenancePage(props) {
                   { key: "maintenancetype", label: "Maintenance" },
                   { key: "date", label: "Submitted On" },
                   { key: "status", label: "Status" },
+                  { key: "assigned", label: "Assigned To" },
                   { key: "actions", label: "Actions", sortable: false },
                   { key: "select", label: "", sortable: false },
                 ].map((col) => (
@@ -429,60 +547,31 @@ export default function MaintenancePage(props) {
               {/* Row 2: filter inputs */}
               <tr className="border-t border-gray-200">
                 <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="id / uid"
-                    defaultValue={filters.request}
-                    onChange={(e) => setFilterDebounced("request", e.target.value)}
-                  />
+                  <input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="id / uid" defaultValue={filters.request} onChange={(e) => setFilterDebounced("request", e.target.value)} />
                 </th>
                 <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="user"
-                    defaultValue={filters.user}
-                    onChange={(e) => setFilterDebounced("user", e.target.value)}
-                  />
+                  <input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="user" defaultValue={filters.user} onChange={(e) => setFilterDebounced("user", e.target.value)} />
                 </th>
                 <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="issue type"
-                    defaultValue={filters.issue}
-                    onChange={(e) => setFilterDebounced("issue", e.target.value)}
-                  />
+                  <select className="w-full border border-gray-300 p-1 rounded text-sm bg-white" value={filters.issue} onChange={(e) => setFilters(p => ({ ...p, issue: e.target.value }))}>
+                    <option value="All">All</option>
+                    {issueTypes.map((t) => (<option key={t} value={t}>{t}</option>))}
+                  </select>
                 </th>
                 <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="room / location"
-                    defaultValue={filters.location}
-                    onChange={(e) => setFilterDebounced("location", e.target.value)}
-                  />
+                  <input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="room / location" defaultValue={filters.location} onChange={(e) => setFilterDebounced("location", e.target.value)} />
                 </th>
                 <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="type"
-                    defaultValue={filters.maintenancetype}
-                    onChange={(e) => setFilterDebounced("maintenancetype", e.target.value)}
-                  />
+                  <select className="w-full border border-gray-300 p-1 rounded text-sm bg-white" value={filters.maintenancetype} onChange={(e) => setFilters(p => ({ ...p, maintenancetype: e.target.value }))}>
+                    <option value="All">All</option>
+                    {maintenanceTypes.map((t) => (<option key={t} value={t}>{t}</option>))}
+                  </select>
                 </th>
                 <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="YYYY-MM or date"
-                    defaultValue={filters.date}
-                    onChange={(e) => setFilterDebounced("date", e.target.value)}
-                  />
+                  <input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="YYYY-MM or date" defaultValue={filters.date} onChange={(e) => setFilterDebounced("date", e.target.value)} />
                 </th>
-               
                 <th className="px-6 pb-3">
-                  <select
-                    className="w-full border border-gray-300 p-1 rounded text-sm bg-white"
-                    value={filters.status}
-                    onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}
-                  >
+                  <select className="w-full border border-gray-300 p-1 rounded text-sm bg-white" value={filters.status} onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}>
                     <option>All</option>
                     <option>Pending</option>
                     <option>In Progress</option>
@@ -490,6 +579,7 @@ export default function MaintenancePage(props) {
                     <option>Closed</option>
                   </select>
                 </th>
+                <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3">
                   <input
@@ -513,25 +603,22 @@ export default function MaintenancePage(props) {
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-6 py-10 text-center text-gray-500">
+                  <td colSpan="10" className="px-6 py-10 text-center text-gray-500">
                     No matching records found.
                   </td>
                 </tr>
               ) : (
                 paginatedData.map((item) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {/* show uid as your original did; swap to item.id if you prefer */}
-                      {item.uid}
-                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.uid}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.username}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.problemcategory}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">{item.roomno}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.maintenancetype}
-                      <br/>
-                    I agree to allow a staff member 
-                    to enter my room  <br/>
-                    to complete the requested maintenance work, <br/> even if I am not present at the time.
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.maintenancetype}
+                      <br />
+                      I agree to allow a staff member to enter my room <br />
+                      to complete the requested maintenance work, <br /> even if I am not present at the time.
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.createdDate}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -553,7 +640,6 @@ export default function MaintenancePage(props) {
                           {item.status}
                         </span>
                       </div>
-
                       {item.status !== "Resolved" && item.status !== "Closed" && (
                         <select
                           value={item.status}
@@ -568,11 +654,30 @@ export default function MaintenancePage(props) {
                         </select>
                       )}
                     </td>
+
+                    {/* Assigned to */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {item.assignedToEmail ? (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded bg-gray-100 border text-gray-700">{item.assignedToEmail}</span>
+                          {Array.isArray(item.adminNotes) && item.adminNotes.length > 0 && (
+                            <span className="text-xs text-gray-500">({item.adminNotes.length} note{item.adminNotes.length>1?"s":""})</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">Unassigned</span>
+                      )}
+                    </td>
+
+                    <td className="px-6 py-4 whitespace-nowrap text-sm space-x-3">
                       <button onClick={() => openView(item)} className="text-blue-600 underline hover:text-blue-800">View</button>
-                      <br />
                       <button onClick={() => openView(item)} className="text-blue-600 underline hover:text-blue-800">Print</button>
-                      <br />
+                      {isAdmin && (
+                        <>
+                          <button onClick={() => openAssign(item)} className="text-indigo-600 underline hover:text-indigo-800">Assign</button>
+                          {/* <button onClick={() => addQuickNote(item)} className="text-emerald-600 underline hover:text-emerald-800">Add Note</button> */}
+                        </>
+                      )}
                       <button
                         onClick={() => { setDelete(item); setConfirmDeleteOpen(true); }}
                         className="text-red-600 underline hover:text-red-800"
@@ -606,24 +711,16 @@ export default function MaintenancePage(props) {
       <div className="flex justify-between items-center mt-4">
         <p className="text-sm text-gray-600">Page {currentPage} of {totalPages}</p>
         <div className="space-x-2">
-          <button
-            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-            disabled={currentPage === 1}
-            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
-          >
+          <button onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))} disabled={currentPage === 1} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">
             Previous
           </button>
-          <button
-            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-            disabled={currentPage === totalPages}
-            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
-          >
+          <button onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">
             Next
           </button>
         </div>
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* Add/Edit Modal (unchanged) */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -632,39 +729,34 @@ export default function MaintenancePage(props) {
               <div className="space-y-4">
                 <label className="block font-medium mb-1">Room Number</label>
                 <input type="text" className="w-full border border-gray-300 p-2 rounded" value={form.roomno} onChange={(e) => setForm({ ...form, roomno: e.target.value })} required />
+
                 <label className="block font-medium mb-1">Problem Category</label>
                 <select className="w-full border border-gray-300 p-2 rounded" value={form.problemcategory} onChange={(e) => setForm({ ...form, problemcategory: e.target.value })} required>
                   <option value="">select</option>
-                  {problemCatlist.map((item) => (
-                    <option key={item.name} value={item.name}>
-                      {item.name}
-                    </option>
-                  ))}
+                  {problemCatlist.map((item) => (<option key={item.name} value={item.name}>{item.name}</option>))}
                 </select>
+
                 <label className="block font-medium mb-1">Item Category</label>
                 <select className="w-full border border-gray-300 p-2 rounded" value={form.itemcategory} onChange={(e) => setForm({ ...form, itemcategory: e.target.value })} required>
                   <option value="">select</option>
-                  {itemCatlist.map((item) => (
-                    <option key={item.name} value={item.name}>
-                      {item.name}
-                    </option>
-                  ))}
+                  {itemCatlist.map((item) => (<option key={item.name} value={item.name}>{item.name}</option>))}
                 </select>
+
                 <label className="block font-medium mb-1">Item</label>
                 <select className="w-full border border-gray-300 p-2 rounded" value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} required>
                   <option value="">select</option>
-                  {itemlist.map((item) => (
-                    <option key={item.name} value={item.name}>
-                      {item.name}
-                    </option>
-                  ))}
+                  {itemlist.map((item) => (<option key={item.name} value={item.name}>{item.name}</option>))}
                 </select>
+
                 <label className="block font-medium mb-1">Description</label>
                 <textarea className="w-full border border-gray-300 p-2 rounded" onChange={(e) => setForm({ ...form, description: e.target.value })} />
+
                 <label className="block font-medium mb-1">Cause (Optional)</label>
                 <textarea className="w-full border border-gray-300 p-2 rounded" onChange={(e) => setForm({ ...form, cause: e.target.value })} />
+
                 <label className="block font-medium mb-1">Comments</label>
                 <textarea className="w-full border border-gray-300 p-2 rounded" onChange={(e) => setForm({ ...form, comments: e.target.value })} />
+
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">
                     <input
@@ -683,7 +775,7 @@ export default function MaintenancePage(props) {
                 </div>
               </div>
               <div className="flex justify-end mt-6 space-x-3">
-                <button onClick={() => setModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
+                <button onClick={() => setModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400" type="button">Cancel</button>
                 <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
               </div>
             </form>
@@ -716,13 +808,30 @@ export default function MaintenancePage(props) {
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                 <span className="font-medium">User:</span><span>{viewData?.username}</span>
                 <span className="font-medium">Room No.:</span><span>{viewData?.roomno}</span>
-                <span className="font-medium">Problem Category:</span><span>{viewData?.problemcategory}</span>
+                <span className="font-medium">Issue Type:</span><span>{viewData?.problemcategory}</span>
                 <span className="font-medium">Item Category:</span><span>{viewData?.itemcategory}</span>
                 <span className="font-medium">Item:</span><span>{viewData?.item}</span>
                 <span className="font-medium">Description:</span><span className="col-span-1">{viewData?.description}</span>
                 <span className="font-medium">Cause:</span><span className="col-span-1">{viewData?.cause || "—"}</span>
                 <span className="font-medium">Comments:</span><span className="col-span-1">{viewData?.comments || "—"}</span>
+                <span className="font-medium">Assigned To:</span><span>{viewData?.assignedToEmail || "—"}</span>
               </div>
+
+              {/* Admin notes list */}
+              {Array.isArray(viewData?.adminNotes) && viewData.adminNotes.length > 0 && (
+                <div className="mt-3">
+                  <div className="font-medium mb-1">Admin Notes</div>
+                  <ul className="space-y-2 text-sm">
+                    {viewData.adminNotes.map((n, idx) => (
+                      <li key={idx} className="border rounded p-2 bg-gray-50">
+                        <div className="text-gray-700">{n.text}</div>
+                        <div className="text-[11px] text-gray-500 mt-1">by {n.by} • {new Date(n.at).toLocaleString()}</div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {viewData?.imageUrl && (
                 <img src={viewData.imageUrl} alt="uploaded" className="mt-4 w-[250px] h-[250px] object-cover rounded-lg border" />
               )}
@@ -735,7 +844,7 @@ export default function MaintenancePage(props) {
         </div>
       )}
 
-      {/* Print all modal */}
+      {/* Print all modal (unchanged) */}
       {printModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-6xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -765,6 +874,55 @@ export default function MaintenancePage(props) {
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setPrintModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Close</button>
               <button onClick={handlePrint} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Print</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign modal (ADMIN ONLY) */}
+      {assignModalOpen && isAdmin && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-md p-6 rounded-lg shadow-lg">
+            <h2 className="text-lg font-semibold mb-4">Assign Request</h2>
+            <div className="space-y-3">
+              <div className="text-sm text-gray-600">
+                <div><span className="font-medium">Request:</span> {assignTarget?.id}</div>
+                <div><span className="font-medium">User:</span> {assignTarget?.username}</div>
+              </div>
+
+              {/* Email picker: select from admins or type freely */}
+              <label className="block text-sm font-medium">Assign to (email)</label>
+              {adminEmails.length > 0 && (
+                <select
+                  className="w-full border border-gray-300 p-2 rounded bg-white"
+                  value={assignEmail}
+                  onChange={(e) => setAssignEmail(e.target.value)}
+                >
+                  <option value="">Select admin email</option>
+                  {adminEmails.map(em => (<option key={em} value={em}>{em}</option>))}
+                </select>
+              )}
+              <input
+                type="email"
+                placeholder="or type email…"
+                className="w-full border border-gray-300 p-2 rounded"
+                value={assignEmail}
+                onChange={(e) => setAssignEmail(e.target.value)}
+              />
+
+              <label className="block text-sm font-medium mt-2">Note (optional)</label>
+              <textarea
+                className="w-full border border-gray-300 p-2 rounded"
+                rows={3}
+                value={assignNote}
+                onChange={(e) => setAssignNote(e.target.value)}
+                placeholder="Add an admin note for this assignment"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 mt-5">
+              <button onClick={() => setAssignModalOpen(false)} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
+              <button onClick={saveAssignment} className="px-4 py-2 bg-indigo-600 text-white rounded">Save</button>
             </div>
           </div>
         </div>

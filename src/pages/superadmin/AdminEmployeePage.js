@@ -71,6 +71,8 @@ export default function AdminEmployeePage(props) {
     { key: "deal", label: "Deals" },
     { key: "faq", label: "FAQs" },
     { key: "setting", label: "Setting" },
+    { key: "employee", label: "Employee" },
+    { key: "student", label: "Student" },
   ];
   const FEATURE_TO_MENU_KEY = {
     events: "event",
@@ -79,7 +81,7 @@ export default function AdminEmployeePage(props) {
     hostelevent: "event",
     diningmenu: "diningmenu",
     cleaningschedule: "cleaningschedule",
-    tutorialschedule:'tutorialschedule',
+    tutorialschedule: 'tutorialschedule',
     maintenance: "maintenance",
     bookingroom: "bookingroom",
     academicgroup: "academicgroup",
@@ -88,6 +90,8 @@ export default function AdminEmployeePage(props) {
     wellbeing: "wellbeing",
     faqs: "faq",
     resource: "resources",
+    employee:"employee",
+    student:"student"
   };
 
   const LABEL_BY_KEY = Object.fromEntries(
@@ -123,14 +127,14 @@ export default function AdminEmployeePage(props) {
       name: d.data().name,
       universityId: d.data().universityId,
       location: d.data().location,
-      features:d.data().features
+      features: d.data().features,
+      active: d.data().active
     }));
     setUniversities(uniArr);
     setHostels(hostelArr);
-    console.log(hostelArr)
     setIsLoading(false)
   }
-  
+
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
 
@@ -227,15 +231,27 @@ export default function AdminEmployeePage(props) {
         await updateDoc(doc(db, "hostel", form.hostelid), {
           adminUID: user.uid
         });
-        await addDoc(collection(db, "users", user.uid), {
+        // await addDoc(collection(db, "users", user.uid), {
+        //   uid: user.uid,
+        //   firstname: form.name,
+        //   lastname: '',
+        //   username: form.name,
+        //   email: form.email,
+        //   hostelid: form.hostelid,
+        //   hostel: form.hostel,
+        //   livingtype: 'hostel',
+        //   createdby: user.uid,
+        //   createddate: new Date(),
+        // });
+        await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           firstname: form.name,
           lastname: '',
           username: form.name,
           email: form.email,
           hostelid: form.hostelid,
-          hostel:form.hostel,
-          livingtype:'hostel',
+          hostel: form.hostel,
+          livingtype: 'hostel',
           createdby: user.uid,
           createddate: new Date(),
         });
@@ -328,7 +344,6 @@ export default function AdminEmployeePage(props) {
   const handleEnable = async () => {
     if (deleteData) return;
     try {
-      alert(form.id)
       const uid = form.id;
       const response = await fetch(
         'https://us-central1-mymor-one.cloudfunctions.net/enableUserByUid',
@@ -371,17 +386,18 @@ export default function AdminEmployeePage(props) {
     //   .filter(([_, enabled]) => enabled === true)
     //   .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
     //   .filter(Boolean);
-      const allowedKeys = [
-        'dashboard',
-        'setting',
-        ...Object.entries(features)
-          .filter(([_, enabled]) => enabled)
-          .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
-          .filter(Boolean)
-      ];
+    const allowedKeys = [
+      'dashboard',
+      'setting',
+      ...Object.entries(features)
+        .filter(([_, enabled]) => enabled)
+        .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
+        .filter(Boolean)
+    ];
     setAllowedMenuKeys(allowedKeys);
-    setForm((prev) => ({ ...prev, permissions: [] })); 
+    setForm((prev) => ({ ...prev, permissions: [] }));
   };
+  const isHostelInactive = (hid) => hostels.find(h => h.id === hid)?.active === false;
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
 
@@ -460,7 +476,68 @@ export default function AdminEmployeePage(props) {
                       {item?.imageUrl != "" || item?.imageUrl != undefined ? (<img src={item.imageUrl} width={80} height={80} />) : null}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    
+                      <button
+                        disabled={isHostelInactive(item.hostelid)}
+                        className={`text-blue-600 hover:underline mr-3 ${isHostelInactive(item.hostelid) ? "opacity-40 cursor-not-allowed" : ""}`}
+                        onClick={() => {
+                          setEditing(item);
+                          const selectedHostelId = item.hostelid;
+                          const selectedHostel = hostels.find(h => h.id === selectedHostelId);
+                          const features = selectedHostel?.features || {};
+                          const allowedKeys = [
+                            'dashboard',
+                            'setting',
+                            ...Object.entries(features)
+                              .filter(([_, enabled]) => enabled)
+                              .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
+                              .filter(Boolean)
+                          ];
+                          setSelectedHostel(selectedHostelId);
+                          setHostelFeatures(features);
+                          setAllowedMenuKeys(allowedKeys);
+                          setForm(prev => ({
+                            ...prev,
+                            ...item,
+                            id: item.id,
+                            hostelid: selectedHostelId,
+                            permissions: item.permissions?.length > 0 ? item.permissions : [],
+                            image: null,
+                          }));
+                          setModalOpen(true);
+                        }}
+                      >
+                        Edit
+                      </button>
+
+                      {item.isActive ? (
+                        <button
+                          disabled={isHostelInactive(item.hostelid)}
+                          className={`text-red-600 hover:underline ${isHostelInactive(item.hostelid) ? "opacity-40 cursor-not-allowed" : ""}`}
+                          onClick={() => {
+                            setDelete(item);
+                            setForm(item);
+                            setConfirmDeleteOpen(true);
+                          }}
+                        >
+                          Disable
+                        </button>
+                      ) : (
+                        <button
+                          disabled={isHostelInactive(item.hostelid)}
+                          className={`text-green-600 hover:underline ${isHostelInactive(item.hostelid) ? "opacity-40 cursor-not-allowed" : ""}`}
+                          onClick={() => {
+                            setDelete(item);
+                            setForm(item);
+                            handleEnable();
+                          }}
+                        >
+                          Activate
+                        </button>
+                      )}
+                    </td>
+
+                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm">
+
                       <button
                         className="text-blue-600 hover:underline mr-3"
                         onClick={() => {
@@ -516,7 +593,7 @@ export default function AdminEmployeePage(props) {
                           Activate
                         </button>
                       )}
-                    </td>
+                    </td> */}
                   </tr>
                 ))
               )}
@@ -564,7 +641,7 @@ export default function AdminEmployeePage(props) {
                 <input name="mobileNo" placeholder="Mobile No" type="number" min={0} value={form.mobileNo} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                 <textarea name="address" placeholder="Address" value={form.address} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required></textarea>
 
-                <select name="hostelid" value={form.hostelid}
+                {/* <select name="hostelid" value={form.hostelid}
                   onChange={(e) => {
                     const selectedHostelId = e.target.value;
                     const selectedHostel = hostels.find(h => h.id === selectedHostelId);
@@ -580,7 +657,31 @@ export default function AdminEmployeePage(props) {
                   {hostels.map((item, i) => (
                     <option value={item.id}>{item.name} - {item.location}</option>
                   ))}
+                </select> */}
+                <select
+                  name="hostelid"
+                  value={form.hostelid}
+                  onChange={(e) => {
+                    const selectedHostelId = e.target.value;
+                    const selectedHostel = hostels.find(h => h.id === selectedHostelId);
+                    setForm({
+                      ...form,
+                      hostelid: selectedHostelId,
+                      hostel: selectedHostel?.name || "",
+                    });
+                    handleHostelChange(e);
+                  }}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                >
+                  <option value="">Select Hostel</option>
+                  {hostels.map((h) => (
+                    <option key={h.id} value={h.id} disabled={!h.active}>
+                      {h.name} - {h.location}{!h.active ? " (Disabled)" : ""}
+                    </option>
+                  ))}
                 </select>
+
                 <input name="domain" placeholder="Domain" value={form.domain}
                   onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">

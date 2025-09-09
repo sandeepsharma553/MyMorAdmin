@@ -115,7 +115,11 @@ export default function AcademicGroupPage(props) {
         if (data) {
           const arr = await Promise.all(
             Object.entries(data)
-              .filter(([_, v]) => v.hostelid === emp.hostelid)
+              // keep by hostel + creator
+              .filter(([_, v]) =>
+                v.hostelid === emp.hostelid 
+               && v.creatorId === emp.id
+              )
               .map(async ([gid, v]) => {
                 const members = v.members || {};
                 const requests = v.joinRequests || {};
@@ -140,6 +144,7 @@ export default function AcademicGroupPage(props) {
       setIsLoading(false);
     }
   };
+  console.log(list)
 
   // CRUD Handlers (unchanged except minor housekeeping)
   const handleChange = (e) => {

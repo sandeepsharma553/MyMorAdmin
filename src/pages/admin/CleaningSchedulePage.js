@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, getDoc, query, where, writeBatch } from "firebase/firestore";
+import {
+  collection, addDoc, getDocs, updateDoc, doc, deleteDoc, getDoc,
+  query, where, writeBatch
+} from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
@@ -9,19 +12,45 @@ import cleaningscheduleFile from "../../assets/excel/cleaning_schedule.xlsx";
 
 export default function CleaningSchedulePage(props) {
   const { navbarHeight } = props;
+
+  // ---------- Modal & CRUD state ----------
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [list, setList] = useState([]);
+
+  // ---------- Data ----------
+  const [list, setList] = useState([]);         // week-scoped list from Firestore
   const [fileName, setFileName] = useState("No file chosen");
-  const [data, setData] = useState([]);
+  const [data, setData] = useState([]);         // parsed from Excel
   const [isLoading, setIsLoading] = useState(false);
 
   const uid = useSelector((state) => state.auth.user.uid);
   const emp = useSelector((state) => state.auth.employee);
 
-  // NEW: header filters + sorting
+  // ---------- Week controls (anchor = today; no date input in UI) ----------
+  const [weekMode, setWeekMode] = useState("current"); // 'past' | 'current' | 'future'
+  const anchorDate = new Date().toISOString().split("T")[0]; // today (string yyyy-mm-dd)
+
+  const addDays = (d, days) => {
+    const nd = new Date(d);
+    nd.setDate(nd.getDate() + days);
+    return nd;
+  };
+  const fmt = (x) => x.toISOString().split("T")[0];
+
+  const getWeekRange = (dateStr, mode = "current") => {
+    const base = new Date(dateStr);
+    const offsetDays = mode === "past" ? -7 : mode === "future" ? 7 : 0;
+    const anchor = addDays(base, offsetDays);
+    const day = anchor.getDay(); // 0=Sun
+    const diffToMonday = anchor.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(anchor.setDate(diffToMonday));
+    const sunday = addDays(monday, 6);
+    return { start: fmt(monday), end: fmt(sunday), label: `${fmt(monday)} → ${fmt(sunday)}` };
+  };
+
+  // ---------- Filters + sorting ----------
   const [filters, setFilters] = useState({ roomtype: "", hall: "", day: "", time: "" });
   const [sortConfig, setSortConfig] = useState({ key: "roomtype", direction: "asc" });
   const debounceRef = useRef(null);
@@ -35,34 +64,67 @@ export default function CleaningSchedulePage(props) {
     );
   };
 
-  // Pagination
+  // ---------- Pagination ----------
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  // Page selection
+  // ---------- Row selection ----------
   const [selectedIds, setSelectedIds] = useState(new Set());
   const headerCheckboxRef = useRef(null);
 
-  const initialForm = { id: 0, roomtype: "", time: "", hall: "", day: "", date: "" };
+  const initialForm = { id: 0, roomtype: "", time: "", hall: "", day: "", date: "", empname:"" };
   const [form, setForm] = useState(initialForm);
 
-  useEffect(() => { getList(); }, []);
+  const getDayFromDate = (dateString) => {
+    const d = new Date(dateString);
+    return d.toLocaleDateString("en-US", { weekday: "long" });
+  };
+
+  // ---------- Load week-scoped list ----------
+  const getList = async (mode) => {
+    if (!emp?.hostelid) return;
+    setIsLoading(true);
+    try {
+      const { start, end } = getWeekRange(anchorDate, mode);
+      const qy = query(
+        collection(db, "cleaningschedule"),
+        where("hostelid", "==", emp.hostelid),
+      );
+      const qs = await getDocs(qy);
+      const documents = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // sort by date then time for stable display
+      documents.sort((a, b) => {
+        const dcmp = (a.date || "").localeCompare(b.date || "");
+        if (dcmp !== 0) return dcmp;
+        return (a.time || "").localeCompare(b.time || "");
+      });
+      setList(documents);
+      setSelectedIds(new Set()); // clear selection when week changes
+      setCurrentPage(1);         // reset pagination on week change
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load cleaning schedules");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // initial load (current week)
+  useEffect(() => {
+    getList("current");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emp?.hostelid]);
+
+  // reload on week mode change
+  useEffect(() => {
+    getList(weekMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekMode]);
+
+  // reset pagination when filters/sort change
   useEffect(() => { setCurrentPage(1); }, [filters, sortConfig]);
 
-  const getDayFromDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { weekday: "long" });
-  };
-
-  const getList = async () => {
-    setIsLoading(true);
-    const q = query(collection(db, "cleaningschedule"), where("hostelid", "==", emp.hostelid));
-    const querySnapshot = await getDocs(q);
-    const documents = querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-    setList(documents);
-    setIsLoading(false);
-  };
-
+  // ---------- Add / Update ----------
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.roomtype) return;
@@ -71,8 +133,10 @@ export default function CleaningSchedulePage(props) {
       if (editingData) {
         const docRef = doc(db, "cleaningschedule", form.id);
         const docSnap = await getDoc(docRef);
-        if (!docSnap.exists()) { toast.warning("CleaningSchedule does not exist! Cannot update."); return; }
-
+        if (!docSnap.exists()) {
+          toast.warning("CleaningSchedule does not exist! Cannot update.");
+          return;
+        }
         await updateDoc(docRef, {
           uid,
           roomtype: form.roomtype,
@@ -80,6 +144,7 @@ export default function CleaningSchedulePage(props) {
           day: form.day,
           time: form.time,
           date: form.date,
+          empname:form.empname,
           hostelid: emp.hostelid,
           updatedBy: uid,
           updatedDate: new Date(),
@@ -93,13 +158,15 @@ export default function CleaningSchedulePage(props) {
           day: form.day,
           time: form.time,
           date: form.date,
+          empname:form.empname,
           hostelid: emp.hostelid,
           createdBy: uid,
           createdDate: new Date(),
         });
         toast.success("Successfully saved");
       }
-      getList();
+      // refresh current view
+      getList(weekMode);
     } catch (error) {
       console.error("Error saving data:", error);
     }
@@ -109,12 +176,13 @@ export default function CleaningSchedulePage(props) {
     setForm(initialForm);
   };
 
+  // ---------- Delete ----------
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
       await deleteDoc(doc(db, "cleaningschedule", deleteData.id));
       toast.success("Successfully deleted!");
-      getList();
+      getList(weekMode);
     } catch (error) {
       console.error("Error deleting document: ", error);
     }
@@ -122,6 +190,7 @@ export default function CleaningSchedulePage(props) {
     setDelete(null);
   };
 
+  // ---------- Excel ingest ----------
   const readExcel = (file) => {
     setIsLoading(true);
     const reader = new FileReader();
@@ -144,6 +213,7 @@ export default function CleaningSchedulePage(props) {
           day: row["Day"] || "",
           time: row["Time"] || "",
           date,
+          empname:"",
           hostelid: emp.hostelid,
         };
       });
@@ -158,22 +228,24 @@ export default function CleaningSchedulePage(props) {
     setIsLoading(true);
     try {
       for (const entry of data) {
-        const q = query(
+        const qy = query(
           collection(db, "cleaningschedule"),
           where("roomtype", "==", entry.roomtype),
           where("date", "==", entry.date),
-          where("hall", "==", entry.hall)
+          where("hall", "==", entry.hall),
+          where("hostelid", "==", emp.hostelid)
         );
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          toast.warn(`Duplicate found for ${entry.roomtype} on ${entry.date} in ${entry.hall}. Skipping...`);
+        const qs = await getDocs(qy);
+        if (!qs.empty) {
+          toast.warn(`Duplicate: ${entry.roomtype} on ${entry.date} in ${entry.hall}. Skipping...`);
           continue;
         }
         await addDoc(collection(db, "cleaningschedule"), { ...entry, createdBy: uid, createdDate: new Date() });
       }
 
       toast.success("Cleaning schedule saved (duplicates skipped)!");
-      getList();
+      // Reload the currently viewed week
+      getList(weekMode);
       setFileName("No file chosen");
       setData([]);
     } catch (error) {
@@ -194,6 +266,7 @@ export default function CleaningSchedulePage(props) {
     document.body.removeChild(link);
   };
 
+  // ---------- Bulk delete ----------
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
     if (!window.confirm(`Delete ${selectedIds.size} cleaning schedule(s)?`)) return;
@@ -210,7 +283,7 @@ export default function CleaningSchedulePage(props) {
       }
       toast.success("Selected schedules deleted");
       setSelectedIds(new Set());
-      getList();
+      getList(weekMode);
     } catch (err) {
       console.error(err);
       toast.error("Bulk delete failed");
@@ -219,7 +292,7 @@ export default function CleaningSchedulePage(props) {
     }
   };
 
-  // ---------- Derive filtered/sorted/paginated ----------
+  // ---------- Derive filtered/sorted/paginated from week list ----------
   const filteredData = list.filter((r) => {
     const rt = (r.roomtype || "").toLowerCase();
     const hl = (r.hall || "").toLowerCase();
@@ -254,16 +327,41 @@ export default function CleaningSchedulePage(props) {
     }
   }, [somePageSelected, allPageSelected]);
 
+  const { label: weekLabel } = getWeekRange(anchorDate, weekMode);
+
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto">
+    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
+      {/* Top bar */}
       <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
-        <h1 className="text-2xl font-semibold">Cleaning Schedule</h1>
-        <div className="flex items-center gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold">Cleaning Schedule</h1>
+          <div className="text-xs text-gray-500 mt-1">Week: {weekLabel}</div>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Week toggle only (no date input) */}
+          <div className="flex items-center gap-2">
+            {["past", "current", "future"].map((k) => {
+              const active = weekMode === k;
+              return (
+                <button
+                  key={k}
+                  onClick={() => setWeekMode(k)}
+                  className={`px-3 py-1.5 rounded-full text-sm border ${
+                    active ? "bg-black text-white border-black" : "bg-white text-gray-700 border-gray-300"
+                  }`}
+                >
+                  {k[0].toUpperCase() + k.slice(1)}
+                </button>
+              );
+            })}
+          </div>
+
           <button className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition" onClick={handleDownload}>
             Download Excel File
           </button>
 
-          <div className="flex items-center gap-4 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
+          <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
             <label className="cursor-pointer">
               <input
                 type="file"
@@ -302,6 +400,7 @@ export default function CleaningSchedulePage(props) {
         </div>
       </div>
 
+      {/* Bulk actions */}
       {selectedIds.size > 0 && (
         <div className="mb-2 flex items-center gap-3">
           <span className="text-sm text-gray-700">{selectedIds.size} selected</span>
@@ -309,10 +408,10 @@ export default function CleaningSchedulePage(props) {
             Delete selected
           </button>
           <button
-            onClick={() => setSelectedIds(new Set(filteredData.map((r) => r.id)))}
+            onClick={() => setSelectedIds(new Set(sortedData.map((r) => r.id)))}
             className="px-3 py-1.5 bg-gray-200 rounded text-sm"
           >
-            Select all ({filteredData.length})
+            Select all ({sortedData.length})
           </button>
           <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1.5 bg-gray-200 rounded text-sm">
             Clear selection
@@ -320,6 +419,7 @@ export default function CleaningSchedulePage(props) {
         </div>
       )}
 
+      {/* Table */}
       <div className="overflow-x-auto bg-white rounded shadow">
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
@@ -464,6 +564,7 @@ export default function CleaningSchedulePage(props) {
         )}
       </div>
 
+      {/* Pagination */}
       <div className="flex justify-between items-center mt-4">
         <p className="text-sm text-gray-600">Page {currentPage} of {totalPages}</p>
         <div className="space-x-2">
@@ -535,6 +636,14 @@ export default function CleaningSchedulePage(props) {
                   onChange={(e) => setForm({ ...form, time: e.target.value })}
                   required
                 />
+                <label className="block font-medium mb-1">Name</label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={form.empname}
+                  onChange={(e) => setForm({ ...form, empname: e.target.value })}
+                  required
+                />
               </div>
               <div className="flex justify-end mt-6 space-x-3">
                 <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
@@ -553,12 +662,8 @@ export default function CleaningSchedulePage(props) {
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
             <h2 className="text-xl font-semibold mb-4 text-red-600">Delete Cleaning Schedule</h2>
             <p className="mb-4">
-              Are you sure you want to delete
-              {" "}
-              <strong>
-                {deleteData?.roomtype} / {deleteData?.hall} ({deleteData?.day} {deleteData?.time})
-              </strong>
-              ?
+              Are you sure you want to delete{" "}
+              <strong>{deleteData?.roomtype} / {deleteData?.hall} ({deleteData?.day} {deleteData?.time})</strong>?
             </p>
             <div className="flex justify-end space-x-3">
               <button onClick={() => { setConfirmDeleteOpen(false); setDelete(null); }} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">

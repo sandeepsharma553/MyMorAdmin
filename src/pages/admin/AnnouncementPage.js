@@ -15,18 +15,20 @@ import { format } from 'date-fns';
 
 export default function AnnouncementPage(props) {
   const { navbarHeight } = props;
-  const [modalOpen, setModalOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [list, setList] = useState([])
-  const [isLoading, setIsLoading] = useState(false)
+  const [list, setList] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [fileName, setFileName] = useState('No file chosen');
-  const uid = useSelector((state) => state.auth.user.uid)
-  const user = useSelector((state) => state.auth.user)
-  const emp = useSelector((state) => state.auth.employee)
-  const [visiblePoll, setVisiblePoll] = useState(false)
+
+  const uid = useSelector((state) => state.auth.user.uid);
+  const user = useSelector((state) => state.auth.user);
+  const emp = useSelector((state) => state.auth.employee);
+
+  const [visiblePoll, setVisiblePoll] = useState(false);
 
   // Selection
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -34,8 +36,10 @@ export default function AnnouncementPage(props) {
   // Time filter
   const [timeFilter, setTimeFilter] = useState('current'); // 'past' | 'current' | 'future'
   useEffect(() => { setCurrentPage(1); }, [timeFilter]);
+
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
-  // NEW: header filters + sorting
+
+  // Header filters + sorting
   const [filters, setFilters] = useState({ title: '', desc: '', date: '' });
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
   const debounceRef = useRef(null);
@@ -73,11 +77,16 @@ export default function AnnouncementPage(props) {
     pollData: {
       question: '',
       allowMulti: false,
-      options: ['', ''],
+      options: { opt1: { text: '' }, opt2: { text: '' } },
+      allowaddoption: false,
     },
     isPinned: false,
     pinnedAt: null,
-  }
+
+    // NEW multi-image fields
+    posterUrls: [],   // persisted in DB
+    postersFiles: [], // local File[] for this session
+  };
   const [form, setForm] = useState(initialForm);
 
   // ===== Realtime load =====
@@ -87,7 +96,13 @@ export default function AnnouncementPage(props) {
     const cb = (snapshot) => {
       const data = snapshot.val();
       const documents = data
-        ? Object.entries(data).map(([id, value]) => ({ id, ...value }))
+        ? Object.entries(data).map(([id, value]) => {
+          // Back-compat: fold legacy posterUrl into posterUrls[]
+          const posterUrls = Array.isArray(value.posterUrls)
+            ? value.posterUrls
+            : (value.posterUrl ? [value.posterUrl] : []);
+          return { id, ...value, posterUrls };
+        })
           .filter(item => item.hostelid === emp?.hostelid)
         : [];
       setList(documents);
@@ -96,7 +111,7 @@ export default function AnnouncementPage(props) {
     };
     onValue(groupRef, cb, () => setIsLoading(false));
     return () => { off(groupRef); };
-  }, [emp?.hostelid, database]);
+  }, [emp?.hostelid]);
 
   // ===== Helpers: dates =====
   const toJsDate = (d) => {
@@ -148,9 +163,9 @@ export default function AnnouncementPage(props) {
     const dateOK = !filters.date || dateStr.includes(filters.date.toLowerCase());
     return titleOK && descOK && dateOK;
   });
-  const pinFiltered = showPinnedOnly
-    ? headerFiltered.filter(a => !!a.isPinned)
-    : headerFiltered;
+
+  const pinFiltered = showPinnedOnly ? headerFiltered.filter(a => !!a.isPinned) : headerFiltered;
+
   const sortedList = [...pinFiltered].sort((a, b) => {
     // 1) pinned first
     const ap = a.isPinned ? 1 : 0;
@@ -188,112 +203,137 @@ export default function AnnouncementPage(props) {
   const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.has(id));
   const somePageSelected = pageIds.some(id => selectedIds.has(id));
 
+  // ===== Upload helper (multi) =====
+  const uploadAllPosters = async (files) => {
+    if (!files || !files.length) return [];
+    const urls = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const path = `announcements_posters/${Date.now()}_${i}_${f.name}`;
+      const storRef = storageRef(storage, path);
+      await uploadBytes(storRef, f);
+      const url = await getDownloadURL(storRef);
+      urls.push(url);
+    }
+    return urls;
+  };
+
   // ===== Handlers =====
   const handleChange = (e) => {
     const { name, value, type, files, checked } = e.target;
+
     if (type === 'file') {
-      setForm((prev) => ({ ...prev, [name]: files[0] }));
-      setFileName(files.length > 0 ? files[0].name : 'No file chosen');
-    } else if (type === 'checkbox') {
+      if (name === 'postersFiles') {
+        const arr = Array.from(files || []);
+        setForm(prev => ({ ...prev, postersFiles: arr }));
+        setFileName(arr.length ? `${arr.length} file(s) selected` : 'No file chosen');
+      }
+      return;
+    }
+
+    if (type === 'checkbox') {
       if (name === 'allowMulti') {
-        setForm((prev) => ({ ...prev, pollData: { ...prev.pollData, allowMulti: checked } }));
+        setForm(prev => ({ ...prev, pollData: { ...prev.pollData, allowMulti: checked } }));
+      } else if (name === 'allowaddoption') {
+        setForm(prev => ({ ...prev, pollData: { ...prev.pollData, allowaddoption: checked } }));
       } else {
-        setForm((prev) => ({ ...prev, [name]: checked }));
+        setForm(prev => ({ ...prev, [name]: checked }));
       }
+      return;
+    }
+
+    // text inputs
+    if (name === 'question') {
+      setForm(prev => ({ ...prev, pollData: { ...prev.pollData, question: value } }));
     } else {
-      if (name === 'question') {
-        setForm((prev) => ({ ...prev, pollData: { ...prev.pollData, question: value } }));
-      } else {
-        setForm((prev) => ({ ...prev, [name]: value }));
-      }
+      setForm(prev => ({ ...prev, [name]: value }));
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    let posterUrl = '';
     try {
-      if (form.id == 0) {
-        if (!form.poster) { toast.error("Please choose the file"); return; }
+      // Require at least one image for new announcement
+      if (!editingData && (!form.postersFiles?.length && !form.posterUrls?.length)) {
+        toast.error("Please choose at least one image");
+        return;
       }
-      let posterUrl = form.posterUrl || '';
-      const isNewImage = form.poster instanceof File;
-      if (isNewImage) {
-        const storRef = storageRef(storage, `announcements_posters/${form.poster.name}`);
-        await uploadBytes(storRef, form.poster);
-        posterUrl = await getDownloadURL(storRef);
-      }
-      const userName = await fetchUser(uid);
-      delete form.poster;
 
-      const pollOptions = {};
-      let cleanPollData = form.pollData;
-      if (form.pollData.question != undefined && form.pollData.question != '') {
-        Object.entries(form.pollData.options || {}).forEach(([key, value]) => {
-          pollOptions[key] = { text: value.text || "" };
+      setIsLoading(true);
+
+      // Upload newly selected files
+      const newUrls = await uploadAllPosters(form.postersFiles || []);
+      const mergedPosterUrls = [...(form.posterUrls || []), ...newUrls];
+
+      // Build clean poll
+      let cleanPollData = null;
+      if (form.pollData?.question?.trim()) {
+        const pollOptions = {};
+        Object.entries(form.pollData.options || {}).forEach(([k, v]) => {
+          const text = (v?.text || '').trim();
+          if (text) pollOptions[k] = { text };
         });
-        cleanPollData = { question: form.pollData.question.trim(), allowMulti: form.pollData.allowMulti, options: pollOptions };
+        if (Object.keys(pollOptions).length >= 2) {
+          cleanPollData = {
+            question: form.pollData.question.trim(),
+            allowMulti: !!form.pollData.allowMulti,
+            allowaddoption: !!form.pollData.allowaddoption,
+            options: pollOptions,
+          };
+        }
       }
+
+      const userName = await fetchUser(uid);
+
+      const payload = {
+        ...form,
+        uid,
+        user: userName ? userName : emp.name,
+        likes: form.likes || [],
+        comments: form.comments || [],
+        createdAt: Timestamp.now(),
+        photoURL: user.photoURL,
+        date: {
+          startDate: Timestamp.fromDate(new Date(form.date.startDate)),
+          endDate: Timestamp.fromDate(new Date(form.date.endDate)),
+        },
+        hostelid: emp.hostelid,
+        role: emp.role,
+        pollData: cleanPollData,
+        timestamp: Date.now(),
+        isPinned: !!form.isPinned,
+        pinnedAt: form.isPinned ? (form.pinnedAt || Date.now()) : null,
+        posterUrls: mergedPosterUrls, // persist array
+      };
 
       if (editingData) {
         const announcementRef = dbRef(database, `announcements/${form.id}`);
         const snapshot = await get(announcementRef);
-        if (!snapshot.exists()) { toast.warning('Annoucement not exist! Cannot update.'); return; }
-
-        update(dbRef(database, `announcements/${form.id}`), {
-          ...form,
-          uid,
-          user: userName ? userName : emp.name,
-          createdAt: Timestamp.now(),
-          ...(posterUrl && { posterUrl }),
-          photoURL: user.photoURL,
-          date: {
-            startDate: Timestamp.fromDate(new Date(form.date.startDate)),
-            endDate: Timestamp.fromDate(new Date(form.date.endDate))
-          },
-          hostelid: emp.hostelid,
-          role: emp.role,
-          pollData: cleanPollData,
-          timestamp: Date.now(),
-          isPinned: !!form.isPinned,
-          pinnedAt: form.isPinned ? (form.pinnedAt || Date.now()) : null,
-        })
-        toast.success('Annoucement updated successfully');
+        if (!snapshot.exists()) {
+          toast.warning('Announcement does not exist! Cannot update.');
+          setIsLoading(false);
+          return;
+        }
+        const { postersFiles, id, ...toPersist } = payload;
+        await update(announcementRef, toPersist);
+        toast.success('Announcement updated successfully');
       } else {
-        delete form.id;
         const newGroupRef = push(dbRef(database, 'announcements/'));
-        set(newGroupRef, {
-          ...form,
-          uid,
-          user: userName ? userName : emp.name,
-          likes: [],
-          comments: [],
-          createdAt: Timestamp.now(),
-          ...(posterUrl && { posterUrl }),
-          photoURL: user.photoURL,
-          date: {
-            startDate: Timestamp.fromDate(new Date(form.date.startDate)),
-            endDate: Timestamp.fromDate(new Date(form.date.endDate))
-          },
-          hostelid: emp.hostelid,
-          role: emp.role,
-          pollData: cleanPollData,
-          timestamp: Date.now(),
-          isPinned: !!form.isPinned,
-          pinnedAt: form.isPinned ? (form.pinnedAt || Date.now()) : null,
-        })
-        toast.success('Annoucement created successfully');
+        const { postersFiles, id, ...toPersist } = payload;
+        await set(newGroupRef, toPersist);
+        toast.success('Announcement created successfully');
       }
+
     } catch (error) {
       console.error("Error saving data:", error);
+      toast.error('Failed to save announcement');
+    } finally {
+      setIsLoading(false);
+      setModalOpen(false);
+      setEditing(null);
+      setForm(initialForm);
+      setFileName('No file chosen');
     }
-    // refresh
-    setModalOpen(false);
-    setEditing(null);
-    setForm(initialForm);
-    setFileName('No file chosen');
-    const cleanOptions = form.options?.map(opt => opt.trim()).filter(Boolean) || [];
-    if (form.question && cleanOptions.length >= 2) { form.options = cleanOptions; }
   };
 
   const handleDelete = async () => {
@@ -313,14 +353,13 @@ export default function AnnouncementPage(props) {
   const addOption = () => {
     setForm((prev) => {
       const options = prev.pollData?.options || {};
-      const optionKeys = Object.keys(options);
-      const nextIndex = optionKeys.length + 1;
-      const newKey = `opt${nextIndex}`;
+      const idx = Object.keys(options).length + 1;
+      const key = `opt${idx}`;
       return {
         ...prev,
         pollData: {
           ...prev.pollData,
-          options: { ...options, [newKey]: { text: "", votes: {} } },
+          options: { ...options, [key]: { text: "", votes: {} } },
         },
       };
     });
@@ -335,10 +374,13 @@ export default function AnnouncementPage(props) {
       },
     }));
   };
+
   const removeOption = (key) => {
-    const updatedOptions = { ...form.pollData.options };
-    delete updatedOptions[key];
-    setForm(prev => ({ ...prev, pollData: { ...prev.pollData, options: updatedOptions } }));
+    setForm(prev => {
+      const updated = { ...(prev.pollData?.options || {}) };
+      delete updated[key];
+      return { ...prev, pollData: { ...prev.pollData, options: updated } };
+    });
   };
 
   const handleRangeChange = (item) => {
@@ -361,11 +403,12 @@ export default function AnnouncementPage(props) {
   };
 
   const formattedRange = `${format(range[0].startDate, 'MMM dd, yyyy')} - ${format(range[0].endDate, 'MMM dd, yyyy')}`;
+
   const togglePin = async (item, makePinned) => {
     try {
       await update(dbRef(database, `announcements/${item.id}`), {
         isPinned: makePinned,
-        pinnedAt: makePinned ? Date.now() : null, // store millis
+        pinnedAt: makePinned ? Date.now() : null,
       });
       toast.success(makePinned ? 'Pinned' : 'Unpinned');
     } catch (e) {
@@ -373,13 +416,20 @@ export default function AnnouncementPage(props) {
       toast.error('Could not update pin');
     }
   };
+  console.log(paginatedData)
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}
       <div className="flex justify-between items-center mb-3">
         <h1 className="text-2xl font-semibold">Announcement</h1>
-        <button className="px-4 py-2 bg-black text-white rounded hover:bg-black"
-          onClick={() => { setEditing(null); setForm(initialForm); setModalOpen(true); }}>
+        <button
+          className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+          onClick={() => {
+            setEditing(null);
+            setForm(initialForm);
+            setModalOpen(true);
+          }}
+        >
           + Add
         </button>
       </div>
@@ -393,8 +443,7 @@ export default function AnnouncementPage(props) {
             <button
               key={key}
               onClick={() => setTimeFilter(key)}
-              className={`px-3 py-1.5 rounded-full text-sm border ${active ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300'
-                }`}
+              className={`px-3 py-1.5 rounded-full text-sm border ${active ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300'}`}
             >
               {label}
             </button>
@@ -419,9 +468,9 @@ export default function AnnouncementPage(props) {
               if (!window.confirm(`Delete ${selectedIds.size} announcement(s)?`)) return;
               try {
                 setIsLoading(true);
-                const updates = {};
-                selectedIds.forEach(id => { updates[`announcements/${id}`] = null; });
-                await update(dbRef(database), updates);
+                const updatesObj = {};
+                selectedIds.forEach(id => { updatesObj[`announcements/${id}`] = null; });
+                await update(dbRef(database), updatesObj);
                 toast.success('Selected announcements deleted');
                 setSelectedIds(new Set());
               } catch (err) {
@@ -441,7 +490,10 @@ export default function AnnouncementPage(props) {
           >
             Select all ({headerFiltered.length})
           </button>
-          <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1.5 bg-gray-200 rounded text-sm">
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="px-3 py-1.5 bg-gray-200 rounded text-sm"
+          >
             Clear selection
           </button>
         </div>
@@ -462,7 +514,7 @@ export default function AnnouncementPage(props) {
                     { key: 'title', label: 'Title' },
                     { key: 'description', label: 'Description' },
                     { key: 'date', label: 'Date' },
-                    { key: 'image', label: 'Image', sortable: false },
+                    { key: 'image', label: 'Images', sortable: false },
                     { key: 'pin', label: 'Pin', sortable: false },
                     { key: 'actions', label: 'Actions', sortable: false },
                     { key: 'select', label: '', sortable: false },
@@ -552,8 +604,14 @@ export default function AnnouncementPage(props) {
                         <div className="flex-shrink">{item.shortdesc}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{formatDateTime(item.date)}</td>
+
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {item.posterUrl !== "" ? (<img src={item.posterUrl} width={80} height={80} alt="" />) : null}
+                        {item.posterUrls?.[0] ? (
+                          <img src={item.posterUrls[0]} alt="" width={80} height={80} className="rounded" />
+                        ) : null}
+                        {item.posterUrls?.length > 1 && (
+                          <div className="text-xs text-gray-500 mt-1">+{item.posterUrls.length - 1} more</div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
@@ -567,26 +625,39 @@ export default function AnnouncementPage(props) {
                         </button>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button className="text-blue-600 hover:underline mr-3" onClick={() => {
-                          setEditing(item);
-                          const startDate = item.date?.startDate?.seconds
-                            ? new Date(item.date.startDate.seconds * 1000)
-                            : new Date(item.date.startDate);
-                          const endDate = item.date?.endDate?.seconds
-                            ? new Date(item.date.endDate.seconds * 1000)
-                            : new Date(item.date.endDate);
-                          setForm(prev => ({
-                            ...prev,
-                            ...item,
-                            id: item.id,
-                            date: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
-                            poster: null,
-                            pollData: { ...item.pollData, option: Array.isArray(item.pollData?.option) ? item.pollData.option : ['', ''] }
-                          }));
-                          setRange([{ startDate, endDate, key: 'selection' }]);
-                          setModalOpen(true);
-                        }}>Edit</button>
-                        <button className="text-red-600 hover:underline" onClick={() => { setDelete(item); setForm(item); setConfirmDeleteOpen(true); }}>
+                        <button
+                          className="text-blue-600 hover:underline mr-3"
+                          onClick={() => {
+                            setEditing(item);
+                            const startDate = item.date?.startDate?.seconds
+                              ? new Date(item.date.startDate.seconds * 1000)
+                              : new Date(item.date.startDate);
+                            const endDate = item.date?.endDate?.seconds
+                              ? new Date(item.date.endDate.seconds * 1000)
+                              : new Date(item.date.endDate);
+
+                            setForm(prev => ({
+                              ...prev,
+                              ...item,
+                              id: item.id,
+                              date: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+                              postersFiles: [],                 // clear local selection
+                              posterUrls: item.posterUrls || [],// keep existing array
+                              pollData: {
+                                ...item.pollData,
+                                options: item.pollData?.options || { opt1: { text: '' }, opt2: { text: '' } },
+                              },
+                            }));
+                            setRange([{ startDate, endDate, key: 'selection' }]);
+                            setModalOpen(true);
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="text-red-600 hover:underline"
+                          onClick={() => { setDelete(item); setForm(item); setConfirmDeleteOpen(true); }}
+                        >
                           Delete
                         </button>
                       </td>
@@ -635,17 +706,35 @@ export default function AnnouncementPage(props) {
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold mb-4">Add</h2>
+            <h2 className="text-xl font-bold mb-4">{editingData ? 'Edit Announcement' : 'Add Announcement'}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-4">
-                <input name="title" placeholder="Title" value={form.title}
-                  onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-                <input name="shortdesc" placeholder="Short Description" value={form.shortdesc}
-                  onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-
-                <textarea name="description" placeholder="Description" value={form.description} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required></textarea>
+                <input
+                  name="title"
+                  placeholder="Title"
+                  value={form.title}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
+                <input
+                  name="shortdesc"
+                  placeholder="Short Description"
+                  value={form.shortdesc}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
+                <textarea
+                  name="description"
+                  placeholder="Description"
+                  value={form.description}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
                 <label>Date Range</label>
-                <div>
+                <div className="relative">
                   <input
                     type="text"
                     readOnly
@@ -672,15 +761,83 @@ export default function AnnouncementPage(props) {
                     </div>
                   )}
                 </div>
+                <label className="block font-medium">Posters (you can add multiple)</label>
+                {/* Multi-file picker */}
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">
-                    <input type="file" name="poster" accept="image/*" className="hidden" onChange={handleChange} />
-                    📁 Choose File
+                    <input
+                      type="file"
+                      name="postersFiles"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleChange}
+                    />
+                    📁 Choose File(s)
                   </label>
-                  <span className="text-sm text-gray-600 truncate max-w-[150px]">{fileName}</span>
+                  <span className="text-sm text-gray-600 truncate max-w-[220px]">{fileName}</span>
                 </div>
-                {form.posterUrl && (<img src={form.posterUrl} alt="Poster Preview" width="150" />)}
-                <button type="button" onClick={() => setVisiblePoll(true)}>Create Poll</button>
+
+                {/* Existing images (persisted) */}
+                {form.posterUrls?.length > 0 && (
+                  <div className="mt-2 grid grid-cols-4 gap-2">
+                    {form.posterUrls.map((url, idx) => (
+                      <div key={idx} className="relative">
+                        <img src={url} alt={`Poster ${idx + 1}`} className="w-full h-20 object-cover rounded border" />
+                        <button
+                          type="button"
+                          title="Remove image"
+                          onClick={() => {
+                            setForm(prev => ({
+                              ...prev,
+                              posterUrls: prev.posterUrls.filter((_, i) => i !== idx),
+                            }));
+                          }}
+                          className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 text-xs"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Newly selected (local) previews */}
+                {form.postersFiles?.length > 0 && (
+                  <div className="mt-2 grid grid-cols-4 gap-2">
+                    {form.postersFiles.map((f, idx) => {
+                      const blobUrl = URL.createObjectURL(f);
+                      return (
+                        <div key={idx} className="relative">
+                          <img src={blobUrl} alt={`Selected ${idx + 1}`} className="w-full h-20 object-cover rounded border" />
+                          <button
+                            type="button"
+                            title="Remove file"
+                            onClick={() => {
+                              setForm(prev => {
+                                const next = [...prev.postersFiles];
+                                next.splice(idx, 1);
+                                return { ...prev, postersFiles: next };
+                              });
+                            }}
+                            className="absolute -top-2 -right-2 bg-gray-700 text-white rounded-full w-6 h-6 text-xs"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  onClick={() => setVisiblePoll(v => !v)}
+                >
+                  {visiblePoll ? 'Hide Poll' : 'Create Poll'}
+                </button>
+
                 {visiblePoll && (
                   <div>
                     <label>Question</label>
@@ -692,6 +849,7 @@ export default function AnnouncementPage(props) {
                       onChange={handleChange}
                       className="w-full border border-gray-300 p-2 rounded"
                     />
+
                     {form.pollData?.options &&
                       Object.entries(form.pollData.options).map(([key, opt], idx) => (
                         <div key={key} className="flex items-center gap-2 mb-2">
@@ -701,28 +859,82 @@ export default function AnnouncementPage(props) {
                             value={opt.text}
                             onChange={e => updateOption(key, e.target.value)}
                           />
-                          <button type="button" onClick={() => removeOption(key)} className="text-red-600 text-sm hover:underline">❌</button>
+                          <button
+                            type="button"
+                            onClick={() => removeOption(key)}
+                            className="text-red-600 text-sm hover:underline"
+                          >
+                            ❌
+                          </button>
                         </div>
                       ))}
-                    <button type="button" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={addOption}>
+
+                    <button
+                      type="button"
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                      onClick={addOption}
+                    >
                       + Add option
                     </button>
+
                     <div className="flex items-center gap-4 mt-4 cursor-pointer select-none">
-                  <label htmlFor="toggleMulti" className="text-sm font-medium text-gray-700">Allow multiple answers</label>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="toggleMulti" name="allowMulti" checked={form.pollData.allowMulti} onChange={handleChange} className="sr-only peer" />
-                    <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-green-500 transition-colors duration-300"></div>
-                    <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform duration-300 peer-checked:translate-x-5"></div>
-                  </label>
-                </div>
+                      <label htmlFor="toggleMulti" className="text-sm font-medium text-gray-700">
+                        Allow multiple answers
+                      </label>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          id="toggleMulti"
+                          name="allowMulti"
+                          checked={form.pollData.allowMulti}
+                          onChange={handleChange}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-green-500 transition-colors duration-300"></div>
+                        <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform duration-300 peer-checked:translate-x-5"></div>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center gap-4 mt-4 cursor-pointer select-none">
+                      <label htmlFor="toggleAdd" className="text-sm font-medium text-gray-700">
+                        Allow user to add option
+                      </label>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          id="toggleAdd"
+                          name="allowaddoption"
+                          checked={form.pollData.allowaddoption}
+                          onChange={handleChange}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-green-500 transition-colors duration-300"></div>
+                        <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform duration-300 peer-checked:translate-x-5"></div>
+                      </label>
+                    </div>
                   </div>
                 )}
-               
-                <input name="link" placeholder="News Link" value={form.link} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+
+                <input
+                  name="link"
+                  placeholder="News Link"
+                  value={form.link}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                />
               </div>
+
               <div className="flex justify-end mt-6 space-x-3">
-                <button onClick={() => setModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400" type="button">Cancel</button>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
+                <button
+                  onClick={() => setModalOpen(false)}
+                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                  Save
+                </button>
               </div>
             </form>
           </div>
@@ -733,10 +945,22 @@ export default function AnnouncementPage(props) {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
             <h2 className="text-xl font-semibold mb-4 text-red-600">Delete Announcement</h2>
-            <p className="mb-4">Are you sure you want to delete <strong>{deleteData?.title}</strong>?</p>
+            <p className="mb-4">
+              Are you sure you want to delete <strong>{deleteData?.title}</strong>?
+            </p>
             <div className="flex justify-end space-x-3">
-              <button onClick={() => { setConfirmDeleteOpen(false); setDelete(null); }} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
-              <button onClick={handleDelete} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Delete</button>
+              <button
+                onClick={() => { setConfirmDeleteOpen(false); setDelete(null); }}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>

@@ -690,7 +690,7 @@ export default function BookingPage(props) {
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">Leave a day closed to disable bookings that day. Wrap windows like 22:00 → 02:00 are supported for same-day bookings (choose one segment).</p>
+                  <p className="text-xs text-gray-500 mt-1">Leave a day closed to disable bookings that day.</p>
                 </div>
               </div>
 

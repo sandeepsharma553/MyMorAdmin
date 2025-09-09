@@ -141,7 +141,8 @@ const ReportSettingPage = (props) => {
         toast.success("Successfully updated");
         getReportList();
       } else {
-        const q = query(collection(db, "reportitems"), where("name", "==", form.name));
+        const q = query(collection(db, "reportitems"), where("name", "==", form.name),
+        where("hostelid", "==", emp.hostelid));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
           toast.warn("Duplicate found! Not adding.");

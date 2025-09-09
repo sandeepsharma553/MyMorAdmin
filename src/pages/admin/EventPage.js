@@ -10,7 +10,7 @@ import { ToastContainer, toast } from "react-toastify";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import dayjs from "dayjs";
 import MapLocationInput from "../../components/MapLocationInput";
-import EditorPro from "../../components/EditorPro"; // <<---- NEW
+import EditorPro from "../../components/EditorPro";
 import { MapPin } from "lucide-react";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -20,13 +20,19 @@ import Button from "@mui/material/Button";
 
 export default function EventPage(props) {
   const { navbarHeight } = props;
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // categories (for select + filter)
   const [category, setCategory] = useState([]);
+  const [categoryFilter, setCategoryFilter] = useState("All"); // <<–– NEW
+
   const [showMapModal, setShowMapModal] = useState(false);
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
 
@@ -55,9 +61,7 @@ export default function EventPage(props) {
     id: 0,
     eventName: "",
     shortDesc: "",
-    // replaced textarea with HTML editor:
     eventDescriptionHtml: "",
-
     category: "",
     tags: "",
     startDateTime: "",
@@ -68,15 +72,13 @@ export default function EventPage(props) {
     address: "",
     mapLocation: "",
     onlineLink: "",
-
-    // MULTI-POSTER
-    posters: [],      // persisted: [{url, name}]
-    posterFiles: [],  // transient: [File, File, ...]
-
+    posters: [],
+    posterFiles: [],
     promoVideo: "",
     theme: "",
     rsvp: false,
     capacity: "",
+    maxPurchaseTickets: "",
     rsvpDeadline: "",
     priceType: "",
     prices: [],
@@ -164,29 +166,55 @@ export default function EventPage(props) {
 
   const isBlankHtml = (html) => {
     if (!html) return true;
-    // strip tags & &nbsp;
     const text = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
     return text.length === 0;
   };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
+  
     try {
-      const hasAnyPoster = (form.posters?.length || 0) > 0 || (form.posterFiles?.length || 0) > 0;
+      // ----- Basic validations -----
+      const hasAnyPoster =
+        (form.posters?.length || 0) > 0 || (form.posterFiles?.length || 0) > 0;
+  
       if (!editingData && !hasAnyPoster) {
         toast.error("Please add at least one poster");
         return;
       }
+  
       if (isBlankHtml(form.eventDescriptionHtml)) {
         toast.error("Please add a description");
         return;
       }
-
-      // upload new poster files
+  
+      // Start/End datetime sanity
+      const startMs = new Date(form.startDateTime).getTime();
+      const endMs = new Date(form.endDateTime).getTime();
+      if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) {
+        toast.error("End date/time must be after start date/time.");
+        return;
+      }
+  
+      // Max purchase tickets vs capacity
+      const capNum = parseInt(form.capacity, 10);
+      const maxPerNum = parseInt(form.maxPurchaseTickets, 10);
+      if (!Number.isNaN(maxPerNum) && maxPerNum < 1) {
+        toast.error("Max purchase tickets must be at least 1.");
+        return;
+      }
+      if (!Number.isNaN(capNum) && !Number.isNaN(maxPerNum) && maxPerNum > capNum) {
+        toast.error("Max purchase tickets cannot be greater than Max Capacity.");
+        return;
+      }
+  
+      // ----- Upload newly added poster files -----
       let uploadedPosters = [];
       if (form.posterFiles?.length) {
         const uploads = form.posterFiles.map(async (file) => {
-          const path = uniquePath(`event_posters/${emp.hostelid}/${form.eventName || "event"}`, file);
+          const path = uniquePath(
+            `event_posters/${emp.hostelid}/${form.eventName || "event"}`,
+            file
+          );
           const sRef = storageRef(storage, path);
           await uploadBytes(sRef, file);
           const url = await getDownloadURL(sRef);
@@ -195,27 +223,32 @@ export default function EventPage(props) {
         uploadedPosters = await Promise.all(uploads);
       }
       const posters = [...(form.posters || []), ...uploadedPosters];
-
+  
+      // ----- Build payload for Firestore -----
       const eventData = {
         ...form,
+        // normalize fields
         prices: form.priceType === "Free" ? [] : form.prices,
         startDateTime: Timestamp.fromDate(new Date(form.startDateTime)),
-        endDateTime: form.endDateTime ? Timestamp.fromDate(new Date(form.endDateTime)) : null,
+        endDateTime: form.endDateTime
+          ? Timestamp.fromDate(new Date(form.endDateTime))
+          : null,
         posters,
         hostelid: emp.hostelid,
-        hostel:emp.hostel,
-        imageUrl:emp.imageUrl,
+        hostel: emp.hostel,
+        imageUrl: emp.imageUrl,
         uid,
         isPinned: !!form.isPinned,
-        pinnedAt: form.isPinned
-          ? (form.pinnedAt || Timestamp.now())
-          : null,
+        pinnedAt: form.isPinned ? form.pinnedAt || Timestamp.now() : null,
+        // store numeric or null
+        maxPurchaseTickets: Number.isNaN(maxPerNum) ? null : maxPerNum,
       };
-
-      // clean non-persist fields
+  
+      // remove non-persist fields
       delete eventData.id;
       delete eventData.posterFiles;
-
+  
+      // ----- Create or Update -----
       if (editingData) {
         const eventRef = doc(db, "events", editingData.id);
         const snap = await getDoc(eventRef);
@@ -229,16 +262,86 @@ export default function EventPage(props) {
         await addDoc(collection(db, "events"), eventData);
         toast.success("Event created successfully");
       }
+  
+      // Refresh + close
+      await getList();
+      setModalOpen(false);
+      setEditing(null);
+      setForm(initialFormData);
     } catch (error) {
       console.error("Error saving data:", error);
       toast.error("Save failed");
     }
-
-    await getList();
-    setModalOpen(false);
-    setEditing(null);
-    setForm(initialFormData);
   };
+  
+
+  // const handleSubmit = async (e) => {
+  //   e.preventDefault();
+  //   try {
+  //     const hasAnyPoster = (form.posters?.length || 0) > 0 || (form.posterFiles?.length || 0) > 0;
+  //     if (!editingData && !hasAnyPoster) {
+  //       toast.error("Please add at least one poster");
+  //       return;
+  //     }
+  //     if (isBlankHtml(form.eventDescriptionHtml)) {
+  //       toast.error("Please add a description");
+  //       return;
+  //     }
+
+  //     // upload new poster files
+  //     let uploadedPosters = [];
+  //     if (form.posterFiles?.length) {
+  //       const uploads = form.posterFiles.map(async (file) => {
+  //         const path = uniquePath(`event_posters/${emp.hostelid}/${form.eventName || "event"}`, file);
+  //         const sRef = storageRef(storage, path);
+  //         await uploadBytes(sRef, file);
+  //         const url = await getDownloadURL(sRef);
+  //         return { url, name: file.name };
+  //       });
+  //       uploadedPosters = await Promise.all(uploads);
+  //     }
+  //     const posters = [...(form.posters || []), ...uploadedPosters];
+
+  //     const eventData = {
+  //       ...form,
+  //       prices: form.priceType === "Free" ? [] : form.prices,
+  //       startDateTime: Timestamp.fromDate(new Date(form.startDateTime)),
+  //       endDateTime: form.endDateTime ? Timestamp.fromDate(new Date(form.endDateTime)) : null,
+  //       posters,
+  //       hostelid: emp.hostelid,
+  //       hostel: emp.hostel,
+  //       imageUrl: emp.imageUrl,
+  //       uid,
+  //       isPinned: !!form.isPinned,
+  //       pinnedAt: form.isPinned ? (form.pinnedAt || Timestamp.now()) : null,
+  //     };
+
+  //     delete eventData.id;
+  //     delete eventData.posterFiles;
+
+  //     if (editingData) {
+  //       const eventRef = doc(db, "events", editingData.id);
+  //       const snap = await getDoc(eventRef);
+  //       if (!snap.exists()) {
+  //         toast.warning("Event does not exist! Cannot update.");
+  //         return;
+  //       }
+  //       await updateDoc(eventRef, eventData);
+  //       toast.success("Event updated successfully");
+  //     } else {
+  //       await addDoc(collection(db, "events"), eventData);
+  //       toast.success("Event created successfully");
+  //     }
+  //   } catch (error) {
+  //     console.error("Error saving data:", error);
+  //     toast.error("Save failed");
+  //   }
+
+  //   await getList();
+  //   setModalOpen(false);
+  //   setEditing(null);
+  //   setForm(initialFormData);
+  // };
 
   const handleDelete = async () => {
     if (!deleteData?.id) return;
@@ -267,6 +370,7 @@ export default function EventPage(props) {
     const ms = new Date(val).getTime();
     return Number.isNaN(ms) ? null : ms;
   }
+
   function classifyEvent(item) {
     const now = Date.now();
     const start = toMillis(item.startDateTime);
@@ -280,10 +384,16 @@ export default function EventPage(props) {
     return "current";
   }
 
+  // ---------- filtering & sorting ----------
   const timeFiltered = list.filter(ev => classifyEvent(ev) === timeFilter);
-  const pinFiltered = showPinnedOnly
-    ? timeFiltered.filter(ev => !!ev.isPinned)
-    : timeFiltered;
+
+  // category dropdown filter
+  const catFiltered = categoryFilter === "All"
+    ? timeFiltered
+    : timeFiltered.filter(ev => (ev.category || "") === categoryFilter);
+
+  const pinFiltered = showPinnedOnly ? catFiltered.filter(ev => !!ev.isPinned) : catFiltered;
+
   const filtered = pinFiltered.filter(ev => {
     const nameOK = !filters.name || (ev.eventName || "").toLowerCase().includes(filters.name.toLowerCase());
     const locOK = !filters.location || (ev.locationName || "").toLowerCase().includes(filters.location.toLowerCase());
@@ -291,37 +401,34 @@ export default function EventPage(props) {
     const dateOK = !filters.date || dateStr.toLowerCase().includes(filters.date.toLowerCase());
     return nameOK && locOK && dateOK;
   });
+
   const getSortVal = (ev, key) => {
     if (key === "name") return (ev.eventName || "").toLowerCase();
     if (key === "start") return toMillis(ev.startDateTime) ?? 0;
     if (key === "location") return (ev.locationName || "").toLowerCase();
+    if (key === "category") return (ev.category || "").toLowerCase(); // <<–– NEW
     return "";
   };
-  // const sorted = [...filtered].sort((a, b) => {
-  //   const dir = sortConfig.direction === "asc" ? 1 : -1;
-  //   const va = getSortVal(a, sortConfig.key);
-  //   const vb = getSortVal(b, sortConfig.key);
-  //   if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
-  //   return va.localeCompare(vb) * dir;
-  // });
+
   const sorted = [...filtered].sort((a, b) => {
     // 1) Pinned first
     const ap = a.isPinned ? 1 : 0;
     const bp = b.isPinned ? 1 : 0;
     if (ap !== bp) return bp - ap;
-    // 2) Newest pinned first (by pinnedAt)
+    // 2) Newest pinned first
     if (ap === 1 && bp === 1) {
       const aPA = toMillis(a.pinnedAt) ?? 0;
       const bPA = toMillis(b.pinnedAt) ?? 0;
       if (aPA !== bPA) return bPA - aPA;
     }
-    // 3) Fall back to current sort column
+    // 3) Sort column
     const dir = sortConfig.direction === "asc" ? 1 : -1;
     const va = getSortVal(a, sortConfig.key);
     const vb = getSortVal(b, sortConfig.key);
     if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
     return String(va).localeCompare(String(vb)) * dir;
   });
+
   const togglePin = async (item, makePinned) => {
     try {
       const ref = doc(db, "events", item.id);
@@ -336,6 +443,9 @@ export default function EventPage(props) {
       toast.error("Could not update pin");
     }
   };
+
+  // build category options
+  const categoryOptions = ["All", ...Array.from(new Set((category || []).map(c => c.name).filter(Boolean)))];
 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
@@ -354,22 +464,22 @@ export default function EventPage(props) {
         </button>
       </div>
 
-      {/* Past / Current / Future */}
-      <div className="flex items-center gap-2 mb-3">
+      {/* Past / Current / Future + filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
         {["past", "current", "future"].map((k) => {
           const active = timeFilter === k;
           return (
             <button
               key={k}
               onClick={() => setTimeFilter(k)}
-              className={`px-3 py-1.5 rounded-full text-sm border ${active ? "bg-black text-white border-black" : "bg-white text-gray-700 border-gray-300"
-                }`}
+              className={`px-3 py-1.5 rounded-full text-sm border ${active ? "bg-black text-white border-black" : "bg-white text-gray-700 border-gray-300"}`}
             >
               {k[0].toUpperCase() + k.slice(1)}
             </button>
           );
         })}
-        <label className="ml-2 text-sm flex items-center gap-2 border border-gray-300 rounded-full px-3 py-1 bg-white">
+
+        <label className="ml-1 text-sm flex items-center gap-2 border border-gray-300 rounded-full px-3 py-1 bg-white">
           <input
             type="checkbox"
             checked={showPinnedOnly}
@@ -377,10 +487,10 @@ export default function EventPage(props) {
           />
           Show pinned only
         </label>
+
         <span className="text-xs text-gray-500">
           Showing {sorted.length} of {list.length}
         </span>
-
       </div>
 
       <h2 className="text-xl font-semibold mb-2">
@@ -398,6 +508,7 @@ export default function EventPage(props) {
               <tr>
                 {[
                   { key: "name", label: "Event" },
+                  { key: "category", label: "Category" }, // <<–– NEW column
                   { key: "start", label: "Event Date" },
                   { key: "location", label: "Location" },
                   { key: "image", label: "Poster(s)", sortable: false },
@@ -424,7 +535,7 @@ export default function EventPage(props) {
                 ))}
               </tr>
 
-              {/* Inline filters */}
+              {/* Inline filters (text-based) */}
               <tr className="border-t border-gray-200">
                 <th className="px-6 pb-3">
                   <input
@@ -433,6 +544,24 @@ export default function EventPage(props) {
                     defaultValue={filters.name}
                     onChange={(e) => setFilterDebounced("name", e.target.value)}
                   />
+                </th>
+                <th className="px-6 pb-3">
+                  <select
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    title="Filter by category"
+                  >
+                    {categoryOptions.map(opt => (
+                      <option key={opt} value={opt}>
+                        {opt === "All" ? "All" : opt}
+                      </option>
+                    ))}
+                  </select>
+                </th>
+
+                <th className="px-6 pb-3">
+                  {/* Intentionally empty because category is filtered via dropdown above */}
                 </th>
                 <th className="px-6 pb-3">
                   <input
@@ -452,13 +581,14 @@ export default function EventPage(props) {
                 </th>
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-200">
               {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-10 text-center text-gray-500">
+                  <td colSpan="7" className="px-6 py-10 text-center text-gray-500">
                     No events to show for this filter.
                   </td>
                 </tr>
@@ -466,6 +596,7 @@ export default function EventPage(props) {
                 sorted.map((item) => (
                   <tr key={item.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.eventName}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.category || "—"}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {formatDateTime(item.startDateTime)} — {formatDateTime(item.endDateTime)}
                     </td>
@@ -500,9 +631,8 @@ export default function EventPage(props) {
                             id: item.id,
                             startDateTime: item.startDateTime?.toDate?.().toISOString().slice(0, 16) || "",
                             endDateTime: item.endDateTime?.toDate?.().toISOString().slice(0, 16) || "",
-                            posterFiles: [], // reset transient
+                            posterFiles: [],
                             posters: Array.isArray(item.posters) ? item.posters : [],
-                            // Backward-compat: if old docs used eventDescription, load it
                             eventDescriptionHtml: item.eventDescriptionHtml || item.eventDescription || "",
                           }));
                           setModalOpen(true);
@@ -538,12 +668,11 @@ export default function EventPage(props) {
                 <input name="eventName" placeholder="Event Name" value={form.eventName} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                 <input name="shortDesc" placeholder="Short Description" value={form.shortDesc} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
 
-
                 <label className="block font-medium">Description</label>
                 <EditorPro
                   value={form.eventDescriptionHtml}
                   onChange={(html) => setForm((f) => ({ ...f, eventDescriptionHtml: html }))}
-                  placeholder="Describe your event… format text, add links, images, emoji, etc."
+                  placeholder="Describe your event…"
                 />
 
                 <select name="category" value={form.category} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required>
@@ -579,7 +708,7 @@ export default function EventPage(props) {
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                 </div>
 
-                {/* Multi posters */}
+                {/* Posters (multi) */}
                 <div className="space-y-2">
                   <label className="block font-medium">Posters (you can add multiple)</label>
                   <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
@@ -656,6 +785,18 @@ export default function EventPage(props) {
 
                 <label className="block mb-2"><input type="checkbox" name="rsvp" checked={form.rsvp} onChange={handleChange} /> RSVP Required?</label>
                 <input name="capacity" placeholder="Max Capacity" value={form.capacity} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                <input
+                  type="number"
+                  name="maxPurchaseTickets"
+                  min="1"
+                  placeholder="Max Purchase Tickets (per booking/user)"
+                  value={form.maxPurchaseTickets}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                />
+                <p className="text-xs text-gray-500 -mt-1">
+                  Limit how many tickets one booking (or user) can purchase. Leave blank for no limit.
+                </p>
                 <input type="datetime-local" name="rsvpDeadline" value={form.rsvpDeadline} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
 
                 <select name="priceType" value={form.priceType} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required>

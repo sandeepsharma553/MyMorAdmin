@@ -12,7 +12,7 @@ const DEFAULT_FEATURES = {
   hostelevent: false,
   diningmenu: false,
   cleaningschedule: false,
-  tutorialschedule: false, 
+  tutorialschedule: false,
   maintenance: false,
   bookingroom: false,
   academicgroup: false,
@@ -23,8 +23,10 @@ const DEFAULT_FEATURES = {
   resource: false,
   poi: false,
   community: false,
-   // chat: false,
-      // marketplace: false,
+  employee:false,
+  student:false
+  // chat: false,
+  // marketplace: false,
 };
 const HostelPage = (props) => {
   const [modalOpen, setModalOpen] = useState(false);
@@ -35,6 +37,8 @@ const HostelPage = (props) => {
   const [universities, setUniversities] = useState([]);
   const [isLoading, setIsLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1);
+  const [confirmToggleOpen, setConfirmToggleOpen] = useState(false);
+  const [toggleItem, setToggleItem] = useState(null);
   const uid = useSelector((state) => state.auth.user.uid);
   const initialForm = {
     id: 0,
@@ -42,6 +46,8 @@ const HostelPage = (props) => {
     uniIds: [],
     location: '',
     features: { ...DEFAULT_FEATURES },
+    active: true,
+    disabledReason: ''
   }
   const [form, setForm] = useState(initialForm);
   const pageSize = 10;
@@ -73,7 +79,8 @@ const HostelPage = (props) => {
       }, {});
 
       const hostelArr = hostelSnap.docs.map(d => {
-        const { name, uniIds = [], location, features } = d.data();
+        // const { name, uniIds = [], location, features } = d.data();
+        const { name, uniIds = [], location, features, active = true, disabledReason, disabledAt } = d.data();
         const universityNames = (uniIds).map(id => uniMap[id] ?? "Unknown");
         return {
           id: d.id,
@@ -81,7 +88,9 @@ const HostelPage = (props) => {
           uniIds,
           universityNames,
           location,
-          features: { ...DEFAULT_FEATURES, ...(features || {}) }, 
+          features: { ...DEFAULT_FEATURES, ...(features || {}) },
+          active: d.data().active !== false,
+          disabledReason, disabledAt
         };
       });
 
@@ -93,63 +102,174 @@ const HostelPage = (props) => {
       setIsLoading(false);
     }
   }
-
   const handleAdd = async (e) => {
     e.preventDefault();
-    if (!form.name) return;
-    if (!form.uniIds) {
-      toast.warning("Please select a university");
+    const rawName = form.name?.trim();
+    if (!rawName) {
+      toast.warn("Please enter a hostel name");
       return;
     }
+    if (!Array.isArray(form.uniIds) || form.uniIds.length === 0) {
+      toast.warn("Please select at least one university");
+      return;
+    }
+
     try {
       const featuresToSave = { ...DEFAULT_FEATURES, ...(form.features || {}) };
+
       if (editingData) {
-        const docRef = doc(db, 'hostel', form.id);
+        // EDIT: as-is (no duplicate filtering)
+        const docRef = doc(db, "hostel", form.id);
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) {
-          toast.warning('hostel does not exist! Cannot update.');
+          toast.warn("Hostel does not exist! Cannot update.");
           return;
         }
-      
-        await updateDoc(doc(db, 'hostel', form.id), {
-          uid: uid,
-          name: form.name,
-          uniIds: form.uniIds,
+        await updateDoc(docRef, {
+          uid,
+          name: rawName,
+          uniIds: [...new Set(form.uniIds)], // also de-dupe within selection
           location: form.location,
           features: featuresToSave,
           updatedBy: uid,
           updatedDate: new Date(),
         });
-        toast.success('Successfully updated');
+        toast.success("Successfully updated");
       } else {
-        const q = query(collection(db, 'hostel'), where('name', '==', form.name));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          toast.warn('Duplicate found! Not adding.');
+        // ADD: skip any uniIds already linked to this name in any doc
+        const selectedUniIds = [...new Set(form.uniIds)]; // remove duplicates in the form itself
+
+        // fetch existing hostels with SAME name
+        const q = query(collection(db, "hostel"), where("name", "==", rawName));
+        const qs = await getDocs(q);
+
+        // collect all already-linked uniIds for this name (across docs)
+        const occupied = new Set();
+        qs.docs.forEach((d) => {
+          const data = d.data();
+          if (Array.isArray(data.uniIds)) {
+            data.uniIds.forEach((u) => occupied.add(u));
+          }
+        });
+
+        // filter out the ones already present
+        const toAddUniIds = selectedUniIds.filter((u) => !occupied.has(u));
+        const skippedUniIds = selectedUniIds.filter((u) => occupied.has(u));
+
+        if (toAddUniIds.length === 0) {
+          toast.warn("All selected universities are already linked to this hostel name.");
           return;
         }
+
         await addDoc(collection(db, "hostel"), {
-          uid: uid,
-          name: form.name,
-          uniIds: form.uniIds,
+          uid,
+          name: rawName,
+          uniIds: toAddUniIds,
           location: form.location,
           adminUID: null,
           features: featuresToSave,
           createdBy: uid,
           createdDate: new Date(),
+          active: true,
+          disabledReason: null,
+          disabledAt: null,
         });
+
+        // optional: show which ones were skipped
+        if (skippedUniIds.length) {
+          const idToName = (id) => universities.find((u) => u.id === id)?.name || id;
+          toast.info(
+            `Skipped (already linked): ${skippedUniIds.map(idToName).join(", ")}`
+          );
+        }
+
         toast.success("Successfully saved");
       }
+    } catch (err) {
+      console.error(err);
+      toast.error("Something went wrong.");
     }
-    catch (e) {
-      console.log('error', e)
-    }
-    // Reset
+
+    // reset
     setModalOpen(false);
     setEditing(null);
     setForm(initialForm);
-    getList()
+    getList();
   };
+
+  // const handleAdd = async (e) => {
+  //   e.preventDefault();
+  //   if (!form.name) return;
+  //   if (!form.uniIds) {
+  //     toast.warning("Please select a university");
+  //     return;
+  //   }
+  //   try {
+  //     const featuresToSave = { ...DEFAULT_FEATURES, ...(form.features || {}) };
+  //     if (editingData) {
+  //       const docRef = doc(db, 'hostel', form.id);
+  //       const docSnap = await getDoc(docRef);
+  //       if (!docSnap.exists()) {
+  //         toast.warning('hostel does not exist! Cannot update.');
+  //         return;
+  //       }
+
+  //       await updateDoc(doc(db, 'hostel', form.id), {
+  //         uid: uid,
+  //         name: form.name,
+  //         uniIds: form.uniIds,
+  //         location: form.location,
+  //         features: featuresToSave,
+  //         updatedBy: uid,
+  //         updatedDate: new Date(),
+  //       });
+  //       toast.success('Successfully updated');
+  //     } else {
+  //       // const q = query(collection(db, 'hostel'), where('name', '==', form.name));
+  //       // const querySnapshot = await getDocs(q);
+  //       // if (!querySnapshot.empty) {
+  //       //   toast.warn('Duplicate found! Not adding.');
+  //       //   return;
+  //       // }
+  //       const q = query(
+  //         collection(db, "hostel"),
+  //         where("name", "==", form.name.trim())
+  //       );
+  //       const querySnapshot = await getDocs(q);
+
+  //       const duplicate = querySnapshot.docs.some((d) => {
+  //         const data = d.data();
+  //         const existingUniIds = Array.isArray(data.uniIds) ? data.uniIds.sort() : [];
+  //         const newUniIds = [...form.uniIds].sort();
+  //         return JSON.stringify(existingUniIds) === JSON.stringify(newUniIds);
+  //       });
+
+  //       if (duplicate) {
+  //         toast.warn("Duplicate found with same name and university IDs. Not adding.");
+  //         return;
+  //       }
+  //       await addDoc(collection(db, "hostel"), {
+  //         uid: uid,
+  //         name: form.name,
+  //         uniIds: form.uniIds,
+  //         location: form.location,
+  //         adminUID: null,
+  //         features: featuresToSave,
+  //         createdBy: uid,
+  //         createdDate: new Date(),
+  //       });
+  //       toast.success("Successfully saved");
+  //     }
+  //   }
+  //   catch (e) {
+  //     console.log('error', e)
+  //   }
+  //   // Reset
+  //   setModalOpen(false);
+  //   setEditing(null);
+  //   setForm(initialForm);
+  //   getList()
+  // };
   const handleFeatureChange = (e) => {
     const { name, checked } = e.target;
     setForm(prev => ({
@@ -185,6 +305,95 @@ const HostelPage = (props) => {
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
+  // const toggleActive = async (item) => {
+  //   // if (item.active) {
+  //   //   // Disable karne jaa raha hai → alert pehle
+  //   //   if (!window.confirm(`Are you sure you want to disable hostel "${item.name}"?`)) {
+  //   //     return;
+  //   //   }
+  //   // } else {
+  //   //   // Enable karne ke liye bhi confirm chaho to yahan likh sakte ho
+  //   //   if (!window.confirm(`Do you want to re-enable hostel "${item.name}"?`)) {
+  //   //     return;
+  //   //   }
+  //   // }
+
+  //   try {
+  //     const docRef = doc(db, "hostel", item.id);
+  //     await updateDoc(docRef, {
+  //       active: !item.active,
+  //       disabledReason: !item.active ? null : "Temporarily disabled by admin",
+  //       disabledAt: !item.active ? null : new Date(),
+  //       updatedBy: uid,
+  //       updatedDate: new Date(),
+  //     });
+  //     toast.success(`Hostel ${!item.active ? "enabled" : "disabled"}.`);
+  //     getList();
+  //   } catch (e) {
+  //     console.error(e);
+  //     toast.error("Failed to toggle status");
+  //   }
+  // };
+
+  const handleDisableHostel = async (item) => {
+    if (!item?.id) return;
+    const reason = "Temporarily disabled by admin";
+    try {
+      setIsLoading(true);
+      const response = await fetch(
+        "https://us-central1-mymor-one.cloudfunctions.net/disableHostelAndLockEmployees",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hostelid: item.id, reason, excludeUids: [uid] }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to disable hostel");
+
+      // toast.success(
+      //   `Hostel disabled. FS: ${data.firestoreUpdatedEmployees ?? 0}, Auth: ${data.authDisabledUsers ?? 0}`
+      // );
+      toast.success(`Hostel ${!item.active ? "enabled" : "disabled"}.`);
+      await getList();
+    } catch (e) {
+      console.error(e);
+      toast.error(e.message || "Failed to disable & lock employees");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEnableHostel = async (item) => {
+    if (!item?.id) return;
+    const reason = "Operations resumed";
+    try {
+      setIsLoading(true);
+      const response = await fetch(
+        "https://us-central1-mymor-one.cloudfunctions.net/enableHostelAndEmployees",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hostelid: item.id, reason, excludeUids: [uid] }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to enable hostel");
+
+      // toast.success(
+      //   `Hostel enabled. FS: ${data.firestoreUpdatedEmployees ?? 0}, Auth: ${data.authEnabledUsers ?? 0}`
+      // );
+      toast.success(`Hostel ${!item.active ? "enabled" : "disabled"}.`);
+      await getList();
+    } catch (e) {
+      console.error(e);
+      toast.error(e.message || "Failed to enable & unlock employees");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
@@ -213,6 +422,7 @@ const HostelPage = (props) => {
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Hostel</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">University</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Location</th>
+                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
                 </tr>
               </thead>
@@ -236,6 +446,13 @@ const HostelPage = (props) => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.location}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {item.active ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-800">Active</span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-1 rounded bg-red-100 text-red-700">Disabled</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button className="text-blue-600 hover:underline mr-3" onClick={() => {
                           setEditing(item);
                           setForm({
@@ -244,6 +461,27 @@ const HostelPage = (props) => {
                           });
                           setModalOpen(true);
                         }}>Edit</button>
+                        <button
+                          className={item.active ? "text-red-600 hover:underline mr-3" : "text-green-600 hover:underline mr-3"}
+                          onClick={() => { setToggleItem(item); setConfirmToggleOpen(true); }}
+                        >
+                          {item.active ? "Disable" : "Enable"}
+                        </button>
+                        {/* {item.active ? (
+                          <button
+                            className="text-red-600 hover:underline"
+                            onClick={() => handleDisableHostel(item)}
+                          >
+                            Disable & Lock Employees
+                          </button>
+                        ) : (
+                          <button
+                            className="text-green-600 hover:underline"
+                            onClick={() => handleEnableHostel(item)}
+                          >
+                            Enable & Unlock Employees
+                          </button>
+                        )} */}
                         <button className="text-red-600 hover:underline" onClick={() => {
                           setDelete(item);
                           setForm(item);
@@ -385,6 +623,53 @@ const HostelPage = (props) => {
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmToggleOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
+            <h2 className="text-xl font-semibold mb-4">
+              {toggleItem?.active ? "Disable Hostel" : "Enable Hostel"}
+            </h2>
+            <p className="mb-4">
+              Are you sure you want to {toggleItem?.active ? "disable" : "enable"}{" "}
+              <strong>{toggleItem?.name}</strong>?
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setConfirmToggleOpen(false);
+                  setToggleItem(null);
+                }}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={isLoading}
+                onClick={async () => {
+                  try {
+                    if (toggleItem?.active) {
+                      // currently active → disable
+                      await handleDisableHostel(toggleItem);
+                    } else {
+                      // currently disabled → enable
+                      await handleEnableHostel(toggleItem);
+                    }
+                  } finally {
+                    setConfirmToggleOpen(false);
+                    setToggleItem(null);
+                  }
+                }}
+                className={`px-4 py-2 text-white rounded ${toggleItem?.active
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-green-600 hover:bg-green-700"
+                  }`}
+              >
+                {toggleItem?.active ? "Disable" : "Enable"}
               </button>
             </div>
           </div>
