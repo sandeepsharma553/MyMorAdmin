@@ -97,12 +97,12 @@ export default function AnnouncementPage(props) {
       const data = snapshot.val();
       const documents = data
         ? Object.entries(data).map(([id, value]) => {
-          // Back-compat: fold legacy posterUrl into posterUrls[]
-          const posterUrls = Array.isArray(value.posterUrls)
-            ? value.posterUrls
-            : (value.posterUrl ? [value.posterUrl] : []);
-          return { id, ...value, posterUrls };
-        })
+            // Back-compat: fold legacy posterUrl into posterUrls[]
+            const posterUrls = Array.isArray(value.posterUrls)
+              ? value.posterUrls
+              : (value.posterUrl ? [value.posterUrl] : []);
+            return { id, ...value, posterUrls };
+          })
           .filter(item => item.hostelid === emp?.hostelid)
         : [];
       setList(documents);
@@ -218,6 +218,43 @@ export default function AnnouncementPage(props) {
     return urls;
   };
 
+  // ====== POLL PATCH that PRESERVES votes ======
+  const buildPollPatchPreserveVotes = (id, dbPoll, formPoll) => {
+    const updates = {};
+    const base = `announcements/${id}/pollData`;
+
+    // If no poll in form, don't touch existing poll
+    if (!formPoll || !formPoll.question?.trim()) return updates;
+
+    // Question & toggles
+    updates[`${base}/question`] = formPoll.question.trim();
+    updates[`${base}/allowMulti`] = !!formPoll.allowMulti;
+    updates[`${base}/allowaddoption`] = !!formPoll.allowaddoption;
+
+    const newOpts = formPoll.options || {};
+    const oldOpts = (dbPoll && dbPoll.options) || {};
+
+    // Create/update texts, keep votes; ensure votes:{} for new options
+    Object.entries(newOpts).forEach(([key, val]) => {
+      const txt = (val?.text || '').trim();
+      if (!txt) return;
+      updates[`${base}/options/${key}/text`] = txt;
+      if (!oldOpts[key]) {
+        // brand-new option -> ensure votes object exists
+        updates[`${base}/options/${key}/votes`] = {};
+      }
+    });
+
+    // Remove deleted options entirely
+    Object.keys(oldOpts).forEach((key) => {
+      if (!(key in newOpts)) {
+        updates[`${base}/options/${key}`] = null;
+      }
+    });
+
+    return updates;
+  };
+
   // ===== Handlers =====
   const handleChange = (e) => {
     const { name, value, type, files, checked } = e.target;
@@ -265,13 +302,13 @@ export default function AnnouncementPage(props) {
       const newUrls = await uploadAllPosters(form.postersFiles || []);
       const mergedPosterUrls = [...(form.posterUrls || []), ...newUrls];
 
-      // Build clean poll
+      // Build clean poll (for CREATE only we will write full object including votes:{})
       let cleanPollData = null;
       if (form.pollData?.question?.trim()) {
         const pollOptions = {};
         Object.entries(form.pollData.options || {}).forEach(([k, v]) => {
           const text = (v?.text || '').trim();
-          if (text) pollOptions[k] = { text };
+          if (text) pollOptions[k] = { text, votes: {} };
         });
         if (Object.keys(pollOptions).length >= 2) {
           cleanPollData = {
@@ -299,6 +336,7 @@ export default function AnnouncementPage(props) {
         },
         hostelid: emp.hostelid,
         role: emp.role,
+        // note: we'll treat poll differently in EDIT; for CREATE we still include it
         pollData: cleanPollData,
         timestamp: Date.now(),
         isPinned: !!form.isPinned,
@@ -307,19 +345,41 @@ export default function AnnouncementPage(props) {
       };
 
       if (editingData) {
-        const announcementRef = dbRef(database, `announcements/${form.id}`);
+        // ======== EDIT (preserve votes) =========
+        const refPath = `announcements/${form.id}`;
+        const announcementRef = dbRef(database, refPath);
         const snapshot = await get(announcementRef);
         if (!snapshot.exists()) {
           toast.warning('Announcement does not exist! Cannot update.');
           setIsLoading(false);
           return;
         }
-        const { postersFiles, id, ...toPersist } = payload;
-        await update(announcementRef, toPersist);
+        const existing = snapshot.val() || {};
+
+        // 1) Build base updates for non-poll fields
+        const { postersFiles, id, pollData: _ignored, ...rest } = payload;
+        const baseUpdates = {};
+        Object.entries(rest).forEach(([k, v]) => {
+          // Avoid writing undefined (keeps DB tidy)
+          if (v === undefined) return;
+          baseUpdates[`${refPath}/${k}`] = v;
+        });
+
+        // 2) Build poll patch that preserves votes
+        const pollPatch = buildPollPatchPreserveVotes(form.id, existing.pollData, form.pollData);
+
+        // 3) Atomic multi-path update
+        await update(dbRef(database), { ...baseUpdates, ...pollPatch });
+
         toast.success('Announcement updated successfully');
       } else {
+        // ======== CREATE =========
         const newGroupRef = push(dbRef(database, 'announcements/'));
         const { postersFiles, id, ...toPersist } = payload;
+
+        // If no poll provided, drop the key instead of writing null
+        if (!toPersist.pollData) delete toPersist.pollData;
+
         await set(newGroupRef, toPersist);
         toast.success('Announcement created successfully');
       }
@@ -416,7 +476,7 @@ export default function AnnouncementPage(props) {
       toast.error('Could not update pin');
     }
   };
-  console.log(paginatedData)
+
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar with Add button */}
@@ -644,8 +704,8 @@ export default function AnnouncementPage(props) {
                               postersFiles: [],                 // clear local selection
                               posterUrls: item.posterUrls || [],// keep existing array
                               pollData: {
-                                ...item.pollData,
-                                options: item.pollData?.options || { opt1: { text: '' }, opt2: { text: '' } },
+                                ...(item.pollData || { question: '', allowMulti: false, allowaddoption: false, options: { opt1: { text: '' }, opt2: { text: '' } } }),
+                                options: (item.pollData?.options) || { opt1: { text: '' }, opt2: { text: '' } },
                               },
                             }));
                             setRange([{ startDate, endDate, key: 'selection' }]);
@@ -835,7 +895,7 @@ export default function AnnouncementPage(props) {
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                   onClick={() => setVisiblePoll(v => !v)}
                 >
-                  {visiblePoll ? 'Hide Poll' : 'Create Poll'}
+                  {visiblePoll ? 'Hide Poll' : 'Create/Edit Poll'}
                 </button>
 
                 {visiblePoll && (
@@ -847,16 +907,15 @@ export default function AnnouncementPage(props) {
                       placeholder="Ask question"
                       value={form.pollData.question}
                       onChange={handleChange}
-                      className="w-full border border-gray-300 p-2 rounded"
+                      className="w-full border border-gray-300 mb-2 p-2 rounded"
                     />
-
                     {form.pollData?.options &&
                       Object.entries(form.pollData.options).map(([key, opt], idx) => (
                         <div key={key} className="flex items-center gap-2 mb-2">
                           <input
                             className="flex-1 border border-gray-300 p-2 rounded"
                             placeholder={`opt ${idx + 1}`}
-                            value={opt.text}
+                            value={opt.text || ''}
                             onChange={e => updateOption(key, e.target.value)}
                           />
                           <button
@@ -886,7 +945,7 @@ export default function AnnouncementPage(props) {
                           type="checkbox"
                           id="toggleMulti"
                           name="allowMulti"
-                          checked={form.pollData.allowMulti}
+                          checked={!!form.pollData.allowMulti}
                           onChange={handleChange}
                           className="sr-only peer"
                         />
@@ -904,7 +963,7 @@ export default function AnnouncementPage(props) {
                           type="checkbox"
                           id="toggleAdd"
                           name="allowaddoption"
-                          checked={form.pollData.allowaddoption}
+                          checked={!!form.pollData.allowaddoption}
                           onChange={handleChange}
                           className="sr-only peer"
                         />

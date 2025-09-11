@@ -40,32 +40,31 @@ export default function ChangePasswordPage() {
 
     setLoading(true);
     try {
-
+      
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPassword);
+      const docRef = doc(db, "employees", user.uid);
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) {
+        // toast.warning("Employee record does not exist – cannot update.");
+        return;
+      }
+      const employeeData = {
+        password: newPassword
+      }
+      await updateDoc(docRef, employeeData);
       const credential = EmailAuthProvider.credential(
         user.email,
         currentPassword
       );
-      await reauthenticateWithCredential(user, credential);
-      await updatePassword(user, newPassword);
-     
-      const docRef = doc(db, "employees", user.uid);
-      const docSnap = await getDoc(docRef);
-      if (!docSnap.exists()) {
-       // toast.warning("Employee record does not exist – cannot update.");
-        return;
-      }
-      const employeeData = {
-        password: currentPassword
-      }
-      await updateDoc(docRef, employeeData);
       toast.success("Password updated successfully ✨");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      setTimeout(()=>{
+      setTimeout(() => {
         handleLogout()
-      },1000) 
-      
+      }, 1000)
+
 
     } catch (err) {
       console.error(err);
