@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc
+  collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, getDoc
 } from "firebase/firestore";
 import { db, storage } from "../../firebase";
 import { FadeLoader } from "react-spinners";
@@ -28,10 +28,9 @@ export default function ResourcesPage(props) {
     emails: [{ email: "", rename: "" }],
     contacts: [{ contact: "", rename: "" }],
     links: [{ url: "", rename: "" }],
-    images: [],
+    images: [],                 // array of: string URL | { url, name } | { file, name }
     hostelid: emp.hostelid,
-    uid: uid,
-    // pin fields
+    uid,
     isPinned: false,
     pinnedOrder: 0,
   };
@@ -39,20 +38,56 @@ export default function ResourcesPage(props) {
   const [form, setForm] = useState([initialForm]);
   const pageSize = 10;
 
-  // ---- Multi-file helpers ----
+  // ===== Helpers for displaying/saving documents =====
+  const isStringUrl = (v) => typeof v === "string";
+  const isDocObj   = (v) => v && typeof v === "object";
+  const inferFileNameFromUrl = (u) => {
+    try { const url = new URL(u); return decodeURIComponent(url.pathname.split("/").pop() || "file"); }
+    catch { return "file"; }
+  };
+  const getDocHref = (item) => {
+    if (isStringUrl(item)) return item;
+    if (isDocObj(item) && item.url) return item.url;
+    if (isDocObj(item) && item.file) return URL.createObjectURL(item.file);
+    return "";
+  };
+  const getDocDisplayName = (item) => {
+    if (isDocObj(item) && item.name) return item.name;
+    if (isStringUrl(item)) return inferFileNameFromUrl(item);
+    if (isDocObj(item) && item.url) return inferFileNameFromUrl(item.url);
+    if (isDocObj(item) && item.file?.name) return item.file.name;
+    return "file";
+  };
+  const isImageLike = (item) => {
+    const href = getDocHref(item);
+    const byUrl = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(href);
+    const mime  = isDocObj(item) && item.file?.type ? item.file.type : "";
+    return byUrl || mime.startsWith("image/");
+  };
+  const fileTypeBadge = (nameOrType = "") => {
+    const s = (nameOrType || "").toLowerCase();
+    if (s.includes("pdf") || s.endsWith(".pdf")) return "📄 PDF";
+    if (s.includes("presentation") || s.endsWith(".ppt") || s.endsWith(".pptx")) return "📽 PPT";
+    if (s.includes("spreadsheet") || s.endsWith(".xls") || s.endsWith(".xlsx") || s.includes("excel")) return "📊 XLS";
+    if (s.includes("word") || s.endsWith(".doc") || s.endsWith(".docx")) return "📝 DOC";
+    if (s.endsWith(".csv")) return "🧾 CSV";
+    if (s.endsWith(".txt") || s.includes("text/plain")) return "🧾 TXT";
+    return "📎 FILE";
+  };
+
+  // ---- file inputs per row ----
   const imageInputsRef = useRef({});
 
-  const handleAddImages = (rowIdx, pickedFiles) => {
-    if (!pickedFiles?.length) return;
+  const handleAddImages = (rowIdx, pickedItems) => {
+    if (!pickedItems?.length) return;
     setForm(prev => {
       const next = prev.map((row, i) => {
         if (i !== rowIdx) return row;
-        return { ...row, images: [...(row.images || []), ...pickedFiles] };
+        return { ...row, images: [...(row.images || []), ...pickedItems] };
       });
       return next;
     });
   };
-
   const handleRemoveImage = (rowIdx, imgIdx) => {
     setForm(prev => {
       const rows = [...prev];
@@ -61,21 +96,7 @@ export default function ResourcesPage(props) {
     });
   };
 
-  const getDisplayName = (f) => {
-    if (typeof f === "string") {
-      try {
-        const u = new URL(f);
-        const pathname = u.pathname || "";
-        return decodeURIComponent(pathname.split("/").pop() || "file");
-      } catch {
-        return "file";
-      }
-    }
-    return f?.name || "file";
-  };
-  // -----------------------------
-
-  // Flatten resources (per row), attach ids & defaults
+  // Flatten table rows (with ids)
   const resources = list.flatMap(docu =>
     (docu.resources || []).map((r, idx) => ({
       ...r,
@@ -103,29 +124,21 @@ export default function ResourcesPage(props) {
   });
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const safePage = Math.min(Math.max(currentPage, 1), totalPages);
+  const safePage   = Math.min(Math.max(currentPage, 1), totalPages);
   const paginatedData = sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
 
-  useEffect(() => {
-    getList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { getList(); }, []);
 
   const getList = async () => {
     setIsLoading(true);
     try {
-      // Pull all resources docs, then filter rows by hostelid
       const resourcesQuery = query(collection(db, "resources"));
       const querySnapshot = await getDocs(resourcesQuery);
-      const documents = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const documents = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       const filteredDocs = documents
         .map(group => {
-          const filteredResources = (group.resources || [])
-            .filter(resource => resource.hostelid === emp.hostelid);
+          const filteredResources = (group.resources || []).filter(r => r.hostelid === emp.hostelid);
           return { ...group, resources: filteredResources };
         })
         .filter(group => (group.resources || []).length > 0);
@@ -139,13 +152,8 @@ export default function ResourcesPage(props) {
     }
   };
 
-  const addRow = () => {
-    setForm(prev => [...prev, { ...initialForm }]);
-  };
-
-  const removeRow = (i) => {
-    setForm(prev => prev.filter((_, idx) => idx !== i));
-  };
+  const addRow = () => setForm(prev => [...prev, { ...initialForm }]);
+  const removeRow = (i) => setForm(prev => prev.filter((_, idx) => idx !== i));
 
   const handleTitleChange = (rowIdx, value) => {
     setForm(prev => {
@@ -170,14 +178,13 @@ export default function ResourcesPage(props) {
   const addFieldItem = (rowIdx, key) => {
     setForm(prev => {
       const rows = [...prev];
-      if (key === "emails") rows[rowIdx][key].push({ email: "", rename: "" });
+      if (key === "emails")   rows[rowIdx][key].push({ email: "", rename: "" });
       else if (key === "contacts") rows[rowIdx][key].push({ contact: "", rename: "" });
-      else if (key === "links") rows[rowIdx][key].push({ url: "", rename: "" });
+      else if (key === "links")    rows[rowIdx][key].push({ url: "", rename: "" });
       else rows[rowIdx][key].push("");
       return rows;
     });
   };
-
   const removeFieldItem = (rowIdx, key, itemIdx) => {
     setForm(prev => {
       const rows = [...prev];
@@ -192,15 +199,29 @@ export default function ResourcesPage(props) {
       const cleanedRows = await Promise.all(
         form.map(async (row) => {
           const images = await Promise.all(
-            (row.images || []).map(async (img) => {
-              if (typeof img === "string") return img; // keep existing URLs
-              const imgRef = ref(storage, `resource_images/${Date.now()}-${img.name}`);
-              await uploadBytes(imgRef, img);
-              return await getDownloadURL(imgRef);
+            (row.images || []).map(async (it) => {
+              // Already saved object with url/name
+              if (isDocObj(it) && it.url) {
+                return { url: it.url, name: it.name || inferFileNameFromUrl(it.url) };
+              }
+              // Legacy string URL
+              if (isStringUrl(it)) {
+                return { url: it, name: inferFileNameFromUrl(it) };
+              }
+              // Newly added file { file, name }
+              if (isDocObj(it) && it.file) {
+                const path = `resource_images/${Date.now()}-${it.file.name}`;
+                const sRef = ref(storage, path);
+                await uploadBytes(sRef, it.file);
+                const url = await getDownloadURL(sRef);
+                return { url, name: it.name || it.file.name };
+              }
+              return null;
             })
           );
-          const { docId, rowId, ...rest } = row; // strip internal fields
-          return { ...rest, images, hostelid: emp.hostelid };
+
+          const { docId, rowId, ...rest } = row;
+          return { ...rest, images: images.filter(Boolean), hostelid: emp.hostelid };
         })
       );
 
@@ -216,9 +237,7 @@ export default function ResourcesPage(props) {
 
         toast.success("Resource updated successfully");
       } else {
-        await addDoc(collection(db, "resources"), {
-          resources: cleanedRows,
-        });
+        await addDoc(collection(db, "resources"), { resources: cleanedRows });
         toast.success("Resource added successfully");
       }
 
@@ -258,34 +277,6 @@ export default function ResourcesPage(props) {
     setDelete(null);
   };
 
-  // ---- File display helpers ----
-  const isStringUrl = (v) => typeof v === "string";
-  const isImageLike = (v) =>
-    isStringUrl(v)
-      ? /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(v)
-      : (v?.type || "").startsWith("image/");
-  const getFileName = (v) => {
-    if (isStringUrl(v)) {
-      try {
-        const u = new URL(v);
-        return decodeURIComponent(u.pathname.split("/").pop() || "file");
-      } catch {
-        return "file";
-      }
-    }
-    return v?.name || "file";
-  };
-  const fileTypeBadge = (nameOrType = "") => {
-    const s = (nameOrType || "").toLowerCase();
-    if (s.includes("pdf") || s.endsWith(".pdf")) return "📄 PDF";
-    if (s.includes("presentation") || s.endsWith(".ppt") || s.endsWith(".pptx")) return "📽 PPT";
-    if (s.includes("spreadsheet") || s.endsWith(".xls") || s.endsWith(".xlsx") || s.includes("excel")) return "📊 XLS";
-    if (s.includes("word") || s.endsWith(".doc") || s.endsWith(".docx")) return "📝 DOC";
-    if (s.endsWith(".csv")) return "🧾 CSV";
-    if (s.endsWith(".txt") || s.includes("text/plain")) return "🧾 TXT";
-    return "📎 FILE";
-  };
-
   // ---- Pin helpers ----
   const updateResourcePart = async (row, patch) => {
     const index = Number(row.rowId.split("-").pop());
@@ -299,7 +290,6 @@ export default function ResourcesPage(props) {
     arr[index] = { ...(arr[index] || {}), ...patch };
     await updateDoc(refDoc, { resources: arr });
   };
-
   const togglePin = async (row) => {
     try {
       const makePinned = !row.isPinned;
@@ -321,7 +311,6 @@ export default function ResourcesPage(props) {
       toast.error("Pin update failed");
     }
   };
-
   const setPinnedOrder = async (row, value) => {
     const n = Number(value);
     if (!Number.isFinite(n) || n < 0) return;
@@ -333,16 +322,11 @@ export default function ResourcesPage(props) {
       toast.error("Order update failed");
     }
   };
+  const nudgeOrder = async (row, delta) => setPinnedOrder(row, Number(row.pinnedOrder || 0) + delta);
 
-  const nudgeOrder = async (row, delta) => {
-    const n = Number(row.pinnedOrder || 0) + delta;
-    if (n < 0) return;
-    await setPinnedOrder(row, n);
-  };
-  // ---------------------
-
+  // ===== UI =====
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto">
+    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <h1 className="text-2xl font-semibold">Resources</h1>
         <div className="flex items-center gap-2">
@@ -379,7 +363,6 @@ export default function ResourcesPage(props) {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Contact</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Link</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Documents</th>
-                {/* NEW: Pin column */}
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Pin</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
               </tr>
@@ -402,9 +385,7 @@ export default function ResourcesPage(props) {
                         <ul className="list-disc list-inside space-y-1">
                           {x.emails.map((emailObj, idx) => (
                             <li key={idx}>
-                              {emailObj.rename
-                                ? <span title={emailObj.email}>{emailObj.rename}</span>
-                                : emailObj.email}
+                              {emailObj.rename ? <span title={emailObj.email}>{emailObj.rename}</span> : emailObj.email}
                             </li>
                           ))}
                         </ul>
@@ -416,9 +397,7 @@ export default function ResourcesPage(props) {
                         <ul className="list-disc list-inside space-y-1">
                           {x.contacts.map((contactObj, idx) => (
                             <li key={idx}>
-                              {contactObj.rename
-                                ? <span title={contactObj.contact}>{contactObj.rename}</span>
-                                : contactObj.contact}
+                              {contactObj.rename ? <span title={contactObj.contact}>{contactObj.rename}</span> : contactObj.contact}
                             </li>
                           ))}
                         </ul>
@@ -445,14 +424,14 @@ export default function ResourcesPage(props) {
                       ) : "—"}
                     </td>
 
-                    {/* Documents (all file types) */}
+                    {/* Documents */}
                     <td className="px-4 py-3 align-top">
                       {Array.isArray(x.images) && x.images.length > 0 ? (
                         <ul className="space-y-1">
                           {x.images.slice(0, 3).map((item, i) => {
-                            const name = getFileName(item);
+                            const href = getDocHref(item);
+                            const name = getDocDisplayName(item);
                             const isImg = isImageLike(item);
-                            const href = typeof item === "string" ? item : URL.createObjectURL(item);
                             return (
                               <li key={i} className="flex items-center gap-2 min-w-0">
                                 {isImg ? (
@@ -485,7 +464,7 @@ export default function ResourcesPage(props) {
                       ) : "—"}
                     </td>
 
-                    {/* NEW: Pin controls */}
+                    {/* Pin */}
                     <td className="px-4 py-3 align-top">
                       <div className="flex items-center gap-2">
                         <button
@@ -563,19 +542,19 @@ export default function ResourcesPage(props) {
 
       <div className="flex justify-between items-center mt-4">
         <p className="text-sm text-gray-600">
-          Page {currentPage} of {totalPages}
+          Page {safePage} of {totalPages}
         </p>
         <div className="space-x-2">
           <button
             onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-            disabled={currentPage === 1}
+            disabled={safePage === 1}
             className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
           >
             Previous
           </button>
           <button
             onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-            disabled={currentPage === totalPages}
+            disabled={safePage === totalPages}
             className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
           >
             Next
@@ -583,6 +562,7 @@ export default function ResourcesPage(props) {
         </div>
       </div>
 
+      {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -637,11 +617,7 @@ export default function ResourcesPage(props) {
                         )}
                       </div>
                     ))}
-                    <button
-                      type="button"
-                      className="text-blue-600 text-sm"
-                      onClick={() => addFieldItem(rowIdx, "emails")}
-                    >
+                    <button type="button" className="text-blue-600 text-sm" onClick={() => addFieldItem(rowIdx, "emails")}>
                       + Add Email
                     </button>
                   </div>
@@ -671,11 +647,7 @@ export default function ResourcesPage(props) {
                         )}
                       </div>
                     ))}
-                    <button
-                      type="button"
-                      className="text-blue-600 text-sm"
-                      onClick={() => addFieldItem(rowIdx, "contacts")}
-                    >
+                    <button type="button" className="text-blue-600 text-sm" onClick={() => addFieldItem(rowIdx, "contacts")}>
                       + Add Contact
                     </button>
                   </div>
@@ -703,20 +675,15 @@ export default function ResourcesPage(props) {
                         )}
                       </div>
                     ))}
-                    <button
-                      type="button"
-                      className="text-blue-600 text-sm"
-                      onClick={() => addFieldItem(rowIdx, "links")}
-                    >
+                    <button type="button" className="text-blue-600 text-sm" onClick={() => addFieldItem(rowIdx, "links")}>
                       + Add Link
                     </button>
                   </div>
 
-                  {/* Documents (multi-file) */}
+                  {/* Documents */}
                   <div>
                     <label className="block font-medium">Documents:</label>
 
-                    {/* Hidden input per row */}
                     <input
                       type="file"
                       accept={[
@@ -735,11 +702,9 @@ export default function ResourcesPage(props) {
                       className="hidden"
                       ref={(el) => { imageInputsRef.current[rowIdx] = el; }}
                       onChange={(e) => {
-                        const picked = Array.from(e.target.files || []);
+                        const picked = Array.from(e.target.files || []).map(f => ({ file: f, name: f.name }));
                         handleAddImages(rowIdx, picked);
-                        if (imageInputsRef.current[rowIdx]) {
-                          imageInputsRef.current[rowIdx].value = "";
-                        }
+                        if (imageInputsRef.current[rowIdx]) imageInputsRef.current[rowIdx].value = "";
                       }}
                     />
 
@@ -752,45 +717,54 @@ export default function ResourcesPage(props) {
                         + Add file(s)
                       </button>
                       {row.images?.length > 0 && (
-                        <span className="text-sm text-gray-600">
-                          {row.images.length} selected
-                        </span>
+                        <span className="text-sm text-gray-600">{row.images.length} selected</span>
                       )}
                     </div>
 
                     {Array.isArray(row.images) && row.images.length > 0 && (
-                      <ul className="mt-2 text-sm text-gray-700 space-y-1">
+                      <ul className="mt-2 text-sm text-gray-700 space-y-2">
                         {row.images.map((item, i) => {
-                          const name = getFileName(item);
-                          const isImg = isImageLike(item);
-                          const href = isStringUrl(item) ? item : URL.createObjectURL(item);
+                          const href = getDocHref(item);
+                          const name = getDocDisplayName(item);
+                          const img  = isImageLike(item);
                           return (
-                            <li key={i} className="flex items-start gap-2">
-                              {isImg ? (
-                                <img
-                                  src={href}
-                                  alt={name}
-                                  className="w-12 h-12 object-cover rounded border"
-                                />
+                            <li key={i} className="flex items-start gap-3">
+                              {img ? (
+                                <img src={href} alt={name} className="w-12 h-12 object-cover rounded border" />
                               ) : (
                                 <div className="w-12 h-12 flex items-center justify-center rounded border text-xs">
-                                  {fileTypeBadge(isStringUrl(item) ? name : item?.type)}
+                                  {fileTypeBadge(name)}
                                 </div>
                               )}
-                              <div className="min-w-0 flex-1">
-                                <a
-                                  href={href}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:underline break-all"
-                                  title={name}
-                                >
-                                  {name}
-                                </a>
-                                <div className="text-xs text-gray-500">
-                                  {!isStringUrl(item) && item?.size ? `${(item.size / 1024).toFixed(1)} KB` : null}
+
+                              <div className="flex-1 min-w-0">
+                                <label className="block text-xs text-gray-500 mb-1">Name</label>
+                                <input
+                                  className="w-full border rounded px-2 py-1"
+                                  value={name}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setForm(prev => {
+                                      const rows = [...prev];
+                                      const items = [...(rows[rowIdx].images || [])];
+                                      const curr = items[i];
+                                      if (isStringUrl(curr)) {
+                                        items[i] = { url: curr, name: val };
+                                      } else if (isDocObj(curr)) {
+                                        items[i] = { ...curr, name: val };
+                                      }
+                                      rows[rowIdx].images = items;
+                                      return rows;
+                                    });
+                                  }}
+                                />
+                                <div className="text-xs text-gray-500 mt-1 break-all">
+                                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                                    {href}
+                                  </a>
                                 </div>
                               </div>
+
                               <button
                                 type="button"
                                 className="text-red-600 text-xs hover:underline"
@@ -805,7 +779,7 @@ export default function ResourcesPage(props) {
                     )}
                   </div>
 
-                  {/* Optional: pin defaults while creating/editing */}
+                  {/* Pin defaults while creating/editing */}
                   <div className="flex items-center gap-3 pt-2">
                     <label className="flex items-center gap-2">
                       <input
@@ -865,6 +839,7 @@ export default function ResourcesPage(props) {
         </div>
       )}
 
+      {/* Delete confirm */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
@@ -874,10 +849,7 @@ export default function ResourcesPage(props) {
             </p>
             <div className="flex justify-end space-x-3">
               <button
-                onClick={() => {
-                  setConfirmDeleteOpen(false);
-                  setDelete(null);
-                }}
+                onClick={() => { setConfirmDeleteOpen(false); setDelete(null); }}
                 className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
               >
                 Cancel

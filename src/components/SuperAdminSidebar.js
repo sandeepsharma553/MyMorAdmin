@@ -13,6 +13,9 @@ const SECTIONS = [
     { key: "employee", label: "Hostel Employee", Icon: UserPlus },
     { key: "university", label: "University", Icon: GraduationCap },
     { key: "hostel", label: "Hostel", Icon: Hotel },
+    { key: "event", label: "Event", Icon: Calendar },
+    { key: "eventbooking", label: "Event Booking", Icon: Calendar },
+    { key: "setting", label: "Setting", Icon: SettingsIcon },
 ];
 
 function SuperAdminSidebar({ onSectionClick, isLoading }) {

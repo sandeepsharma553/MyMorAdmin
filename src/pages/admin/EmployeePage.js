@@ -18,6 +18,7 @@ export default function EmployeePage(props) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
+   const [rolelist, setRoletList] = useState([]);
   const [fileName, setFileName] = useState('No file chosen');
   const uid = useSelector((state) => state.auth.user.uid);
   const emp = useSelector((state) => state.auth.employee);
@@ -73,6 +74,7 @@ export default function EmployeePage(props) {
   );
   useEffect(() => {
     getList()
+    getRoleList()
   }, [])
   const getList = async () => {
     setIsLoading(true)
@@ -90,6 +92,18 @@ export default function EmployeePage(props) {
     console.log(documents)
     setIsLoading(false)
   }
+  const getRoleList = async () => {
+    setIsLoading(true);
+    const maintenanceCategoryQuery = query(
+      collection(db, "role"),
+      where("hostelid", "==", emp.hostelid)
+    );
+
+    const querySnapshot = await getDocs(maintenanceCategoryQuery);
+    const documents = querySnapshot.docs.map((docu) => ({ id: docu.id, ...docu.data() }));
+    setRoletList(documents);
+    setIsLoading(false);
+  };
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
 
@@ -363,10 +377,12 @@ export default function EmployeePage(props) {
 
                 <select name="role" value={form.role} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required >
                   <option value="">Select Role</option>
-                  <option value="HR">HR</option>
-                  <option value="Manager">Manager</option>
-                  <option value="Staff">Staff</option>
-
+                  
+                  {rolelist.map((item) => (
+                    <option key={item.id} value={item.name}>
+                      {item.name}
+                    </option>
+                  ))}
                 </select>
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">

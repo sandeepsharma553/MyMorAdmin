@@ -9,6 +9,7 @@ import AcademicGroupPage from "../pages/admin/AcademicGroupPage";
 import AnnouncementPage from "../pages/admin/AnnouncementPage";
 import ReportIncidentPage from "../pages/admin/ReportIncidentPage";
 import EventPage from "../pages/admin/EventPage";
+import EventBookingPage from "../pages/admin/EventBookingPage";
 import DealPage from "../pages/admin/DealPage";
 import AccountDeletionPage from "../pages/admin/AccountDeletionPage";
 import EmployeePage from "../pages/admin/EmployeePage";
@@ -37,6 +38,7 @@ export default function AdminRoutes({ route }) {
           <Route path="/announcement" element={<AnnouncementPage />} />
           <Route path="/reportincident" element={<ReportIncidentPage />} />
           <Route path="/event" element={<EventPage />} />
+          <Route path="/eventbooking" element={<EventBookingPage />} />
           <Route path="/deal" element={<DealPage />} />
           <Route path="/requestdelete" element={<AccountDeletionPage />} />
           <Route path="/employee" element={<EmployeePage />} />

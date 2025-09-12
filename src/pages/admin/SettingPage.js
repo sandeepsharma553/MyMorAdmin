@@ -7,12 +7,20 @@ import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 
-// ⬇️ Lazy-load inline pages (UPDATE PATHS)
 const MaintenanceCategoryPage = lazy(() =>
-  import("./MaintenanceCategoryPage") // e.g. "../../pages/MaintenanceCategoryPage"
+  import("./MaintenanceCategoryPage") 
 );
 const ReportSettingPage = lazy(() =>
-  import("./ReportSettingPage") // e.g. "../../pages/ReportSettingPage"
+  import("./ReportSettingPage") 
+);
+const FeedbackSettingPage = lazy(() =>
+  import("./FeedbackSettingPage") 
+);
+const EmployeeSettingPage = lazy(() =>
+  import("./EmployeeSettingPage") 
+);
+const EventSettingPage = lazy(() =>
+  import("./EventSettingPage") 
 );
 
 // ---------- Small UI helpers ----------
@@ -160,6 +168,9 @@ const SettingPage = () => {
     { key: "academics", label: "Academic Categories" },
     { key: "maintenance", label: "Maintenance Settings" },
     { key: "reports", label: "Report Settings" },
+    { key: "feedback", label: "Feebback Setting" },
+    { key: "employee", label: "Employee Setting" },
+    { key: "event", label: "Event Setting" },
   ];
   const [activeKey, setActiveKey] = useState("events");
 
@@ -416,6 +427,39 @@ const SettingPage = () => {
           }>
             <div className="bg-white rounded shadow p-4">
               <ReportSettingPage hostelid={hostelId} uid={uid} embedded />
+            </div>
+          </Suspense>
+        )}
+        {activeKey === "feedback" && (
+          <Suspense fallback={
+            <div className="flex justify-center items-center h-64">
+              <FadeLoader color="#36d7b7" />
+            </div>
+          }>
+            <div className="bg-white rounded shadow p-4">
+              <FeedbackSettingPage hostelid={hostelId} uid={uid} embedded />
+            </div>
+          </Suspense>
+        )}
+        {activeKey === "employee" && (
+          <Suspense fallback={
+            <div className="flex justify-center items-center h-64">
+              <FadeLoader color="#36d7b7" />
+            </div>
+          }>
+            <div className="bg-white rounded shadow p-4">
+              <EmployeeSettingPage hostelid={hostelId} uid={uid} embedded />
+            </div>
+          </Suspense>
+        )}
+        {activeKey === "event" && (
+          <Suspense fallback={
+            <div className="flex justify-center items-center h-64">
+              <FadeLoader color="#36d7b7" />
+            </div>
+          }>
+            <div className="bg-white rounded shadow p-4">
+              <EventSettingPage hostelid={hostelId} uid={uid} embedded />
             </div>
           </Suspense>
         )}

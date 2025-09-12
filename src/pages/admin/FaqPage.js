@@ -5,6 +5,7 @@ import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useSelector } from "react-redux";
+import EditorPro from "../../components/EditorPro";
 
 export default function FaqPage(props) {
     const { navbarHeight } = props;
@@ -200,8 +201,12 @@ export default function FaqPage(props) {
                                 <input name="question" placeholder="Question" value={form.question}
                                     onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
 
-                                <textarea name="answer" placeholder="Answer" value={form.answer} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required></textarea>
-
+                                {/* <textarea name="answer" placeholder="Answer" value={form.answer} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required></textarea> */}
+                                <EditorPro
+                                    value={form.answer}
+                                    onChange={(html) => setForm((f) => ({ ...f, answer: html }))}
+                                    placeholder="Answer"
+                                />
                             </div>
                             <div className="flex justify-end mt-6 space-x-3">
                                 <button

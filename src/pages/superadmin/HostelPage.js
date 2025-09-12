@@ -7,6 +7,7 @@ import { ToastContainer, toast } from "react-toastify";
 import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
 const DEFAULT_FEATURES = {
   events: false,
+  eventbooking:false,
   deals: false,
   announcement: false,
   hostelevent: false,

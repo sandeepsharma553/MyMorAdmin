@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
-  query, where, getDoc
-} from "firebase/firestore";
+  query, where, getDoc, setDoc, serverTimestamp
+} from "firebase/firestore"; // ✅ setDoc, serverTimestamp added
 import { db, storage } from "../../firebase";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
@@ -30,7 +30,7 @@ export default function ReportIncidentPage(props) {
   const uid = useSelector((state) => state.auth.user.uid);
   const emp = useSelector((state) => state.auth.employee);
 
-  // NEW: filters & sorting
+  // Filters & sorting
   const [filters, setFilters] = useState({
     report: "",
     user: "",
@@ -80,6 +80,16 @@ export default function ReportIncidentPage(props) {
     getList();
   }, []);
 
+  // ✅ NEW: Page open par reportincident badge reset
+  useEffect(() => {
+    const doReset = async () => {
+      if (!uid) return;
+      const refDoc = doc(db, "adminMenuState", uid, "menus", "reportincident");
+      await setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
+    };
+    doReset();
+  }, [uid]);
+
   const getList = async () => {
     setIsLoading(true);
 
@@ -96,7 +106,7 @@ export default function ReportIncidentPage(props) {
       userMap[data.uid] = username;
     });
 
-    // incidents
+    // incidents  (collection: repotincident)
     const repotincidentQuery = query(
       collection(db, "repotincident"),
       where("hostelid", "==", emp.hostelid)
@@ -146,7 +156,8 @@ export default function ReportIncidentPage(props) {
           ...(imageUrl && { imageUrl }), // keep old image if not replaced
           hostelid: emp.hostelid,
           updatedBy: uid,
-          updatedDate: new Date(),
+          updatedDate: new Date(),          // human-readable
+          updatedAt: serverTimestamp(),     // ✅ machine (badge)
           status: form.status || "Pending",
         });
         toast.success("Successfully updated");
@@ -160,7 +171,8 @@ export default function ReportIncidentPage(props) {
           imageUrl,
           hostelid: emp.hostelid,
           createdBy: uid,
-          createdDate: new Date(),
+          createdDate: new Date(),          // human-readable
+          createdAt: serverTimestamp(),     // ✅ machine (badge)
           status: "Pending",
         });
         toast.success("Successfully saved");
@@ -181,7 +193,7 @@ export default function ReportIncidentPage(props) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "repotincident", deleteData.id)); // fixed
+      await deleteDoc(doc(db, "repotincident", deleteData.id)); // ✅ collection fixed
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -288,7 +300,7 @@ export default function ReportIncidentPage(props) {
               {/* Row 1: clickable sort headers */}
               <tr>
                 {[
-                  { key: "report", label: "Report ID" },
+                  // { key: "report", label: "Report ID" },
                   { key: "user", label: "Submitted by" },
                   { key: "type", label: "Incident Type" },
                   { key: "date", label: "Date Submitted" },
@@ -317,14 +329,14 @@ export default function ReportIncidentPage(props) {
 
               {/* Row 2: filter controls */}
               <tr className="border-t border-gray-200">
-                <th className="px-6 pb-3">
+                {/* <th className="px-6 pb-3">
                   <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
                     placeholder="id / uid"
                     defaultValue={filters.report}
                     onChange={(e) => setFilterDebounced("report", e.target.value)}
                   />
-                </th>
+                </th> */}
                 <th className="px-6 pb-3">
                   <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
@@ -376,8 +388,7 @@ export default function ReportIncidentPage(props) {
               ) : (
                 paginatedData.map((item) => (
                   <tr key={item.id}>
-                    {/* NOTE: You currently show uid as the ID. Swap to item.id if preferred. */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.uid}</td>
+                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.uid}</td> */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.username}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.incidenttype}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -387,12 +398,11 @@ export default function ReportIncidentPage(props) {
                       <div className="mb-2">
                         <span
                           className={`px-3 py-1 rounded-full text-white text-xs font-semibold
-                            ${
-                              item.status === "Pending" ? "bg-yellow-500"
+                            ${item.status === "Pending" ? "bg-yellow-500"
                               : item.status === "In Progress" ? "bg-blue-500"
-                              : item.status === "Resolved" ? "bg-green-500"
-                              : item.status === "Closed" ? "bg-gray-500"
-                              : "bg-red-500"
+                                : item.status === "Resolved" ? "bg-green-500"
+                                  : item.status === "Closed" ? "bg-gray-500"
+                                    : "bg-red-500"
                             }`}
                         >
                           {item.status || "Pending"}

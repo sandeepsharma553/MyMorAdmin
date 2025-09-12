@@ -111,7 +111,7 @@ export default function EventPage({ navbarHeight }) {
   const getList = async () => {
     setIsLoading(true);
     try {
-      const qEvents = query(collection(db, "events"), where("hostelid", "==", emp.hostelid));
+      const qEvents = query(collection(db, "publicevents"));
       const snap = await getDocs(qEvents);
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       docs.sort((a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0));
@@ -127,7 +127,7 @@ export default function EventPage({ navbarHeight }) {
   const getPaymentList = async () => {
     setIsLoading(true);
     try {
-      const qPay = query(collection(db, "eventpaymenttype"), where("hostelid", "==", emp.hostelid));
+      const qPay = query(collection(db, "punliceventpaymenttype"));
       const snap = await getDocs(qPay);
       setPaymentList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } finally {
@@ -137,7 +137,7 @@ export default function EventPage({ navbarHeight }) {
 
   const getCategory = async () => {
     try {
-      const qCat = query(collection(db, "eventcategory"), where("hostelid", "==", emp.hostelid));
+      const qCat = query(collection(db, "publiceventcategory"));
       const snap = await getDocs(qCat);
       setCategory(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (e) {
@@ -186,7 +186,7 @@ export default function EventPage({ navbarHeight }) {
       let uploaded = [];
       if (form.posterFiles?.length) {
         const uploads = form.posterFiles.map(async (file) => {
-          const path = uniquePath(`event_posters/${emp.hostelid}/${form.eventName || "event"}`, file);
+          const path = uniquePath(`public_event_posters/${emp.hostelid}/${form.eventName || "publicevents"}`, file);
           const sRef = storageRef(storage, path);
           await uploadBytes(sRef, file);
           const url = await getDownloadURL(sRef);
@@ -202,8 +202,6 @@ export default function EventPage({ navbarHeight }) {
         startDateTime: Timestamp.fromDate(new Date(form.startDateTime)),
         endDateTime: form.endDateTime ? Timestamp.fromDate(new Date(form.endDateTime)) : null,
         posters,
-        hostelid: emp.hostelid,
-        hostel: emp.hostel,
         imageUrl: emp.imageUrl,
         uid,
         isPinned: !!form.isPinned,
@@ -215,13 +213,13 @@ export default function EventPage({ navbarHeight }) {
       delete eventData.posterFiles;
 
       if (editingData) {
-        const ref = doc(db, "events", editingData.id);
+        const ref = doc(db, "publicevents", editingData.id);
         const snap = await getDoc(ref);
         if (!snap.exists()) return toast.warning("Event does not exist! Cannot update.");
         await updateDoc(ref, eventData);
         toast.success("Event updated successfully");
       } else {
-        await addDoc(collection(db, "events"), eventData);
+        await addDoc(collection(db, "publicevents"), eventData);
         toast.success("Event created successfully");
       }
       await getList();
@@ -237,7 +235,7 @@ export default function EventPage({ navbarHeight }) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "events", deleteData.id));
+      await deleteDoc(doc(db, "publicevents", deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (e) {
@@ -292,7 +290,7 @@ export default function EventPage({ navbarHeight }) {
     const batch = writeBatch(db);
     pinned.forEach((ev, i) => {
       const order = i + 1;
-      if (ev.pinnedOrder !== order) batch.update(doc(db, "events", ev.id), { pinnedOrder: order });
+      if (ev.pinnedOrder !== order) batch.update(doc(db, "publicevents", ev.id), { pinnedOrder: order });
     });
     await batch.commit();
     await getList();
@@ -306,8 +304,8 @@ export default function EventPage({ navbarHeight }) {
     const a = pinned[idx];
     const b = pinned[swapIdx];
     const batch = writeBatch(db);
-    batch.update(doc(db, "events", a.id), { pinnedOrder: b.pinnedOrder });
-    batch.update(doc(db, "events", b.id), { pinnedOrder: a.pinnedOrder });
+    batch.update(doc(db, "publicevents", a.id), { pinnedOrder: b.pinnedOrder });
+    batch.update(doc(db, "publicevents", b.id), { pinnedOrder: a.pinnedOrder });
     await batch.commit();
     await getList();
   };
@@ -320,14 +318,14 @@ export default function EventPage({ navbarHeight }) {
     const sequence = [...pinned];
     sequence.splice(newOrder - 1, 0, { ...item });
     const batch = writeBatch(db);
-    sequence.forEach((ev, i) => batch.update(doc(db, "events", ev.id), { pinnedOrder: i + 1 }));
+    sequence.forEach((ev, i) => batch.update(doc(db, "publicevents", ev.id), { pinnedOrder: i + 1 }));
     await batch.commit();
     await getList();
   };
 
   const togglePin = async (item, makePinned) => {
     try {
-      const ref = doc(db, "events", item.id);
+      const ref = doc(db, "publicevents", item.id);
       if (makePinned) {
         const currentPinned = getPinnedSorted();
         const nextOrder = (currentPinned[currentPinned.length - 1]?.pinnedOrder || 0) + 1;

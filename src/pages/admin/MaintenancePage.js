@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
-  query, where, getDoc, writeBatch
+  collection, addDoc, getDocs, updateDoc, doc, deleteDoc, setDoc,
+  query, where, getDoc, writeBatch, serverTimestamp
 } from "firebase/firestore";
 import { db, storage } from "../../firebase";
 import { useSelector } from "react-redux";
@@ -31,13 +31,31 @@ export default function MaintenancePage(props) {
   const [assignTarget, setAssignTarget] = useState(null); // row being assigned
   const [assignEmail, setAssignEmail] = useState("");
   const [assignNote, setAssignNote] = useState("");
-
+  const [noteModalOpen, setNoteModalOpen] = useState(false);
+  const [noteTarget, setNoteTarget] = useState(null);
+  const [noteText, setNoteText] = useState("");
   // Data
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // Selection
   const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // Auth
+  const emp = useSelector((state) => state.auth.employee);
+  const authUser = useSelector((state) => state.auth.user);
+  const uid = authUser?.uid;
+  const myEmail = (authUser?.email || "").toLowerCase();
+  const isAdmin = (emp?.role || "").toLowerCase().includes("admin");
+
+  // Stats
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    inProgress: 0,
+    resolved: 0,
+    closed: 0,
+  });
 
   // Filters & sorting
   const [filters, setFilters] = useState({
@@ -48,6 +66,7 @@ export default function MaintenancePage(props) {
     maintenancetype: "All",
     date: "",
     status: "All",
+    mineOnly: false,    // NEW: show only assignments to me
   });
   const [sortConfig, setSortConfig] = useState({ key: "date", direction: "desc" });
   const debounceRef = useRef(null);
@@ -67,21 +86,6 @@ export default function MaintenancePage(props) {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  // Auth
-  const emp = useSelector((state) => state.auth.employee);
-  const authUser = useSelector((state) => state.auth.user);
-  const uid = authUser?.uid;
-  const isAdmin = (emp?.role || "").toLowerCase().includes("admin");
-
-  // Stats
-  const [stats, setStats] = useState({
-    total: 0,
-    pending: 0,
-    inProgress: 0,
-    resolved: 0,
-    closed: 0,
-  });
-
   const initialForm = {
     id: 0,
     roomno: "",
@@ -95,12 +99,14 @@ export default function MaintenancePage(props) {
   };
   const [form, setForm] = useState(initialForm);
 
+  // Print
   const contentRef = useRef(null);
   const handlePrint = useReactToPrint({ contentRef });
 
   // Admin directory (for assign)
   const [adminEmails, setAdminEmails] = useState([]);
 
+  // ---------- Effects ----------
   useEffect(() => {
     getList();
     getProblemCatList();
@@ -111,11 +117,39 @@ export default function MaintenancePage(props) {
 
   useEffect(() => { setCurrentPage(1); }, [filters, sortConfig]);
 
+  useEffect(() => {
+    if (!emp?.hostelid || !authUser?.uid) return;
+    const doReset = async () => {
+      const refd = doc(db, "adminMenuState", authUser.uid, "menus", "maintenance");
+      await setDoc(refd, { lastOpened: serverTimestamp() }, { merge: true });
+    };
+    doReset();
+  }, [emp?.hostelid, authUser?.uid]);
+
+  // ---------- Helpers ----------
+  // Who can modify a row (admin or the assignee)
+  const canModify = (row) => {
+    const assignedEmail = (row?.assignedToEmail || "").toLowerCase();
+    return isAdmin || (assignedEmail && assignedEmail === myEmail);
+  };
+
+  // Look up employee UID by email (optional but recommended for security rules)
+  const getEmployeeUidByEmail = async (email) => {
+    if (!email) return null;
+    const qEmp = query(collection(db, "employees"), where("email", "==", email));
+    const snap = await getDocs(qEmp);
+    let euid = null;
+    snap.forEach(d => {
+      const u = d.data();
+      euid = u.uid || u.userId || null; // adjust if your employees schema is different
+    });
+    return euid;
+  };
+
   const loadAdmins = async () => {
     try {
-      // Assuming "users" collection has fields: email, role, hostelid
       const qAdmins = query(
-        collection(db, "users"),
+        collection(db, "employees"),
         where("hostelid", "==", emp.hostelid)
       );
       const snap = await getDocs(qAdmins);
@@ -123,10 +157,11 @@ export default function MaintenancePage(props) {
       snap.forEach(d => {
         const u = d.data();
         const role = (u.role || u.Role || "").toLowerCase();
-        if (role.includes("admin") && u.email) emails.push(u.email);
+        // If you want only staff (non-admin) to appear in assign list, keep below:
+        if (role !== "admin" && u.email) emails.push(u.email);
+        // If you want admins as well, use: if (u.email) emails.push(u.email);
       });
-      // Unique + sorted
-      setAdminEmails(Array.from(new Set(emails)).sort((a,b)=>a.localeCompare(b)));
+      setAdminEmails(Array.from(new Set(emails)).sort((a, b) => a.localeCompare(b)));
     } catch (e) {
       console.error(e);
     }
@@ -151,8 +186,8 @@ export default function MaintenancePage(props) {
       id: d.id,
       ...d.data(),
       username: userMap[d.data().uid] || "",
-      // Ensure defaults for new fields
       assignedToEmail: d.data().assignedToEmail || "",
+      assignedToUid: d.data().assignedToUid || null,
       adminNotes: Array.isArray(d.data().adminNotes) ? d.data().adminNotes : [],
     }));
 
@@ -203,6 +238,7 @@ export default function MaintenancePage(props) {
     setIsLoading(false);
   };
 
+  // ---------- Create / Update ----------
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.roomno) return;
@@ -217,14 +253,14 @@ export default function MaintenancePage(props) {
 
     if (editingData) {
       try {
-        const docRef = doc(db, "maintenance", form.id);
-        const docSnap = await getDoc(docRef);
+        const docRefm = doc(db, "maintenance", form.id);
+        const docSnap = await getDoc(docRefm);
         if (!docSnap.exists()) {
           toast.warning("Maintenance does not exist! Cannot update.");
           setIsLoading(false);
           return;
         }
-        await updateDoc(docRef, {
+        await updateDoc(docRefm, {
           uid,
           roomno: form.roomno,
           problemcategory: form.problemcategory,
@@ -237,6 +273,7 @@ export default function MaintenancePage(props) {
           hostelid: emp.hostelid,
           updatedBy: uid,
           updatedDate: new Date().toISOString().split("T")[0],
+          updatedAt: serverTimestamp(),
           status: "Pending",
         });
         toast.success("Successfully updated");
@@ -259,8 +296,10 @@ export default function MaintenancePage(props) {
           hostelid: emp.hostelid,
           createdBy: uid,
           createdDate: new Date().toISOString().split("T")[0],
+          createdAt: serverTimestamp(),
           status: "Pending",
           assignedToEmail: "",
+          assignedToUid: null,
           adminNotes: [],
         });
         toast.success("Successfully saved");
@@ -277,6 +316,7 @@ export default function MaintenancePage(props) {
     setFileName("No file chosen");
   };
 
+  // ---------- Delete ----------
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
@@ -316,13 +356,23 @@ export default function MaintenancePage(props) {
     }
   };
 
+  // ---------- View / Print ----------
   const openView = (row) => {
     setViewData(row);
     setViewModalOpen(true);
   };
 
+  // ---------- Status & Notes ----------
   const updateStatus = async (id, newStatus) => {
     try {
+      const row = list.find(r => r.id === id);
+      if (!row) return;
+
+      if (!canModify(row)) {
+        toast.error("You don't have permission to update this.");
+        return;
+      }
+
       const requestRef = doc(db, "maintenance", id);
       await updateDoc(requestRef, { status: newStatus });
       toast.success("Status updated!");
@@ -330,6 +380,74 @@ export default function MaintenancePage(props) {
     } catch (error) {
       console.error("Error updating status:", error);
       toast.error("Failed to update status.");
+    }
+  };
+
+  const addNote = async (row, text) => {
+    const msg = (text ?? "").trim() || prompt("Add note:");
+    if (!msg) return;
+    try {
+      if (!canModify(row)) {
+        toast.error("You don't have permission to add a note here.");
+        return;
+      }
+      const requestRef = doc(db, "maintenance", row.id);
+      const entry = {
+        by: authUser?.email || uid,
+        byUid: uid || null,
+        at: new Date().toISOString(),
+        text: msg
+      };
+      const prevNotes = Array.isArray(row.adminNotes) ? row.adminNotes : [];
+      await updateDoc(requestRef, { adminNotes: [...prevNotes, entry] });
+      toast.success("Note added");
+      await getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to add note");
+    }
+  };
+
+  // ---------- Assign ----------
+  const openAssign = (row) => {
+    setAssignTarget(row);
+    setAssignEmail(row.assignedToEmail || "");
+    setAssignNote("");
+    setAssignModalOpen(true);
+  };
+
+  const saveAssignment = async () => {
+    if (!assignTarget?.id) return;
+    if (!assignEmail.trim()) { toast.error("Please enter an email to assign."); return; }
+
+    try {
+      const requestRef = doc(db, "maintenance", assignTarget.id);
+      const noteEntry = assignNote.trim()
+        ? { by: authUser?.email || uid, at: new Date().toISOString(), text: assignNote.trim() }
+        : null;
+
+      const current = list.find(x => x.id === assignTarget.id);
+      const prevNotes = Array.isArray(current?.adminNotes) ? current.adminNotes : [];
+      const nextNotes = noteEntry ? [...prevNotes, noteEntry] : prevNotes;
+
+      // Optional UID mapping for clean rules
+      const assignedToUid = await getEmployeeUidByEmail(assignEmail.trim());
+
+      await updateDoc(requestRef, {
+        assignedToEmail: assignEmail.trim(),
+        assignedToUid: assignedToUid || null,
+        assignedBy: authUser?.email || uid,
+        assignedAt: new Date().toISOString(),
+        adminNotes: nextNotes,
+      });
+
+      toast.success("Assigned successfully");
+      setAssignModalOpen(false);
+      setAssignTarget(null);
+      await getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to assign");
     }
   };
 
@@ -359,6 +477,8 @@ export default function MaintenancePage(props) {
     const statusOK = filters.status === "All" || (r.status || "").toLowerCase() === filters.status.toLowerCase();
     const mtOK = filters.maintenancetype === "All" || maintenancetypeStr === filters.maintenancetype.toLowerCase();
     const issueOK = filters.issue === "All" || issueStr === filters.issue.toLowerCase();
+    const mineOK = !filters.mineOnly ||
+      (r.assignedToEmail && r.assignedToEmail.toLowerCase() === myEmail);
 
     return (
       (!filters.request || reqStr.includes(filters.request.toLowerCase())) &&
@@ -367,7 +487,8 @@ export default function MaintenancePage(props) {
       (!filters.location || locStr.includes(filters.location.toLowerCase())) &&
       mtOK &&
       (!filters.date || dateStr.includes(filters.date.toLowerCase())) &&
-      statusOK
+      statusOK &&
+      mineOK
     );
   });
 
@@ -407,55 +528,35 @@ export default function MaintenancePage(props) {
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
   const somePageSelected = pageIds.some((id) => selectedIds.has(id)) && !allPageSelected;
 
-  // ===== Assign helpers =====
-  const openAssign = (row) => {
-    setAssignTarget(row);
-    setAssignEmail(row.assignedToEmail || "");
-    setAssignNote("");
-    setAssignModalOpen(true);
+  const openNoteModal = (row) => {
+    setNoteTarget(row);
+    setNoteText("");
+    setNoteModalOpen(true);
   };
 
-  const saveAssignment = async () => {
-    if (!assignTarget?.id) return;
-    if (!assignEmail.trim()) { toast.error("Please enter an email to assign."); return; }
+  const submitNote = async () => {
+    const row = noteTarget;
+    const msg = (noteText || "").trim();
+    if (!row || !msg) { toast.error("Write something before saving."); return; }
 
     try {
-      const requestRef = doc(db, "maintenance", assignTarget.id);
-      const noteEntry = assignNote.trim()
-        ? { by: authUser?.email || uid, at: new Date().toISOString(), text: assignNote.trim() }
-        : null;
-
-      // Build new notes array
-      const current = list.find(x => x.id === assignTarget.id);
-      const prevNotes = Array.isArray(current?.adminNotes) ? current.adminNotes : [];
-      const nextNotes = noteEntry ? [...prevNotes, noteEntry] : prevNotes;
-
-      await updateDoc(requestRef, {
-        assignedToEmail: assignEmail.trim(),
-        assignedBy: authUser?.email || uid,
-        assignedAt: new Date().toISOString(),
-        adminNotes: nextNotes,
-      });
-
-      toast.success("Assigned successfully");
-      setAssignModalOpen(false);
-      setAssignTarget(null);
-      await getList();
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to assign");
-    }
-  };
-
-  const addQuickNote = async (row) => {
-    const text = prompt("Add admin note:");
-    if (!text || !text.trim()) return;
-    try {
+      if (!canModify(row)) {
+        toast.error("You don't have permission to add a note here.");
+        return;
+      }
       const requestRef = doc(db, "maintenance", row.id);
-      const noteEntry = { by: authUser?.email || uid, at: new Date().toISOString(), text: text.trim() };
+      const entry = {
+        by: authUser?.email || uid,
+        byUid: uid || null,
+        at: new Date().toISOString(),
+        text: msg
+      };
       const prevNotes = Array.isArray(row.adminNotes) ? row.adminNotes : [];
-      await updateDoc(requestRef, { adminNotes: [...prevNotes, noteEntry] });
+      await updateDoc(requestRef, { adminNotes: [...prevNotes, entry] });
       toast.success("Note added");
+      setNoteModalOpen(false);
+      setNoteTarget(null);
+      setNoteText("");
       await getList();
     } catch (e) {
       console.error(e);
@@ -464,7 +565,7 @@ export default function MaintenancePage(props) {
   };
 
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto">
+    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Maintenance</h1>
         <button
@@ -513,7 +614,6 @@ export default function MaintenancePage(props) {
               {/* Row 1: clickable sort headers */}
               <tr>
                 {[
-                  { key: "request", label: "Request ID" },
                   { key: "user", label: "User" },
                   { key: "issue", label: "Issue Type" },
                   { key: "location", label: "Location" },
@@ -525,7 +625,7 @@ export default function MaintenancePage(props) {
                   { key: "select", label: "", sortable: false },
                 ].map((col) => (
                   <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
-                    {col.sortable === false ? (
+                    {col.sortable === false || col.key === "mineonly" ? (
                       <span>{col.label}</span>
                     ) : (
                       <button
@@ -546,9 +646,6 @@ export default function MaintenancePage(props) {
 
               {/* Row 2: filter inputs */}
               <tr className="border-t border-gray-200">
-                <th className="px-6 pb-3">
-                  <input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="id / uid" defaultValue={filters.request} onChange={(e) => setFilterDebounced("request", e.target.value)} />
-                </th>
                 <th className="px-6 pb-3">
                   <input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="user" defaultValue={filters.user} onChange={(e) => setFilterDebounced("user", e.target.value)} />
                 </th>
@@ -579,7 +676,19 @@ export default function MaintenancePage(props) {
                     <option>Closed</option>
                   </select>
                 </th>
-                <th className="px-6 pb-3" />
+                <th className="px-6 pb-3">
+                  <div className="mb-2">
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={filters.mineOnly}
+                        onChange={(e) => setFilters(p => ({ ...p, mineOnly: e.target.checked }))}
+                      />
+                      <span>Show only requests assigned to me</span>
+                    </label>
+                  </div>
+                </th>
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3">
                   <input
@@ -610,37 +719,37 @@ export default function MaintenancePage(props) {
               ) : (
                 paginatedData.map((item) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.uid}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.username}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.problemcategory}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">{item.roomno}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.roomno}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item.maintenancetype}
                       <br />
-                      I agree to allow a staff member to enter my room <br />
-                      to complete the requested maintenance work, <br /> even if I am not present at the time.
+                      I agree to allow a staff member <br /> to enter my room to complete <br />
+                      the requested maintenance work, <br /> even if I am not present at the time.
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.createdDate}</td>
+
+                    {/* Status */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="mb-2">
                         <span
                           className={`px-3 py-1 rounded-full text-white text-xs font-semibold
-                            ${
-                              item.status === "Pending"
-                                ? "bg-yellow-500"
-                                : item.status === "In Progress"
+                            ${item.status === "Pending"
+                              ? "bg-yellow-500"
+                              : item.status === "In Progress"
                                 ? "bg-blue-500"
                                 : item.status === "Resolved"
-                                ? "bg-green-500"
-                                : item.status === "Closed"
-                                ? "bg-gray-500"
-                                : "bg-red-500"
+                                  ? "bg-green-500"
+                                  : item.status === "Closed"
+                                    ? "bg-gray-500"
+                                    : "bg-red-500"
                             }`}
                         >
                           {item.status}
                         </span>
                       </div>
-                      {item.status !== "Resolved" && item.status !== "Closed" && (
+                      {item.status !== "Resolved" && item.status !== "Closed" && canModify(item) && (
                         <select
                           value={item.status}
                           onChange={(e) => updateStatus(item.id, e.target.value)}
@@ -654,14 +763,17 @@ export default function MaintenancePage(props) {
                         </select>
                       )}
                     </td>
-
-                    {/* Assigned to */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item.assignedToEmail ? (
                         <span className="inline-flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-gray-100 border text-gray-700">{item.assignedToEmail}</span>
+                          <span className="px-2 py-0.5 rounded bg-gray-100 border text-gray-700">
+                            {item.assignedToEmail}
+                          </span>
+                          {item.assignedToEmail.toLowerCase() === myEmail && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">me</span>
+                          )}
                           {Array.isArray(item.adminNotes) && item.adminNotes.length > 0 && (
-                            <span className="text-xs text-gray-500">({item.adminNotes.length} note{item.adminNotes.length>1?"s":""})</span>
+                            <span className="text-xs text-gray-500">({item.adminNotes.length} note{item.adminNotes.length > 1 ? "s" : ""})</span>
                           )}
                         </span>
                       ) : (
@@ -669,14 +781,23 @@ export default function MaintenancePage(props) {
                       )}
                     </td>
 
+                    {/* Mine column cell (empty, purely header toggle) */}
+                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" /> */}
+
+                    {/* Actions */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm space-x-3">
                       <button onClick={() => openView(item)} className="text-blue-600 underline hover:text-blue-800">View</button>
                       <button onClick={() => openView(item)} className="text-blue-600 underline hover:text-blue-800">Print</button>
-                      {isAdmin && (
-                        <>
-                          <button onClick={() => openAssign(item)} className="text-indigo-600 underline hover:text-indigo-800">Assign</button>
-                          {/* <button onClick={() => addQuickNote(item)} className="text-emerald-600 underline hover:text-emerald-800">Add Note</button> */}
-                        </>
+                      {isAdmin && item.status !== "Closed" && (
+                        <button onClick={() => openAssign(item)} className="text-indigo-600 underline hover:text-indigo-800">Assign</button>
+                      )}
+                      {!isAdmin && canModify(item) && (
+                        <button
+                          onClick={() => openNoteModal(item)}
+                          className="text-emerald-600 underline hover:text-emerald-800"
+                        >
+                          Add Note
+                        </button>
                       )}
                       <button
                         onClick={() => { setDelete(item); setConfirmDeleteOpen(true); }}
@@ -685,6 +806,8 @@ export default function MaintenancePage(props) {
                         Delete
                       </button>
                     </td>
+
+                    {/* Row select */}
                     <td className="px-6 py-4">
                       <input
                         type="checkbox"
@@ -720,11 +843,11 @@ export default function MaintenancePage(props) {
         </div>
       </div>
 
-      {/* Add/Edit Modal (unchanged) */}
+      {/* Add/Edit Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold mb-4">Add</h2>
+            <h2 className="text-xl font-bold mb-4">{editingData ? "Edit" : "Add"}</h2>
             <form onSubmit={handleAdd} className="space-y-4">
               <div className="space-y-4">
                 <label className="block font-medium mb-1">Room Number</label>
@@ -817,10 +940,10 @@ export default function MaintenancePage(props) {
                 <span className="font-medium">Assigned To:</span><span>{viewData?.assignedToEmail || "—"}</span>
               </div>
 
-              {/* Admin notes list */}
+              {/* Admin/Assignee notes list */}
               {Array.isArray(viewData?.adminNotes) && viewData.adminNotes.length > 0 && (
                 <div className="mt-3">
-                  <div className="font-medium mb-1">Admin Notes</div>
+                  <div className="font-medium mb-1">Notes</div>
                   <ul className="space-y-2 text-sm">
                     {viewData.adminNotes.map((n, idx) => (
                       <li key={idx} className="border rounded p-2 bg-gray-50">
@@ -831,6 +954,32 @@ export default function MaintenancePage(props) {
                   </ul>
                 </div>
               )}
+
+              {/* Inline composer for editors */}
+              {/* {canModify(viewData) && (
+                <div className="mt-2 flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Write a note… (press Enter)"
+                    className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const text = e.currentTarget.value;
+                        e.currentTarget.value = "";
+                        addNote(viewData, text);
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const input = e => e; 
+                    }}
+                    className="px-3 py-1 bg-emerald-600 text-white rounded text-sm"
+                  >
+                    Add
+                  </button>
+                </div>
+              )} */}
 
               {viewData?.imageUrl && (
                 <img src={viewData.imageUrl} alt="uploaded" className="mt-4 w-[250px] h-[250px] object-cover rounded-lg border" />
@@ -844,7 +993,7 @@ export default function MaintenancePage(props) {
         </div>
       )}
 
-      {/* Print all modal (unchanged) */}
+      {/* Print all modal */}
       {printModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-6xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -890,7 +1039,7 @@ export default function MaintenancePage(props) {
                 <div><span className="font-medium">User:</span> {assignTarget?.username}</div>
               </div>
 
-              {/* Email picker: select from admins or type freely */}
+              {/* Email picker: select from employees or type freely */}
               <label className="block text-sm font-medium">Assign to (email)</label>
               {adminEmails.length > 0 && (
                 <select
@@ -898,7 +1047,7 @@ export default function MaintenancePage(props) {
                   value={assignEmail}
                   onChange={(e) => setAssignEmail(e.target.value)}
                 >
-                  <option value="">Select admin email</option>
+                  <option value="">Select email</option>
                   {adminEmails.map(em => (<option key={em} value={em}>{em}</option>))}
                 </select>
               )}
@@ -922,12 +1071,42 @@ export default function MaintenancePage(props) {
 
             <div className="flex justify-end gap-3 mt-5">
               <button onClick={() => setAssignModalOpen(false)} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
-              <button onClick={saveAssignment} className="px-4 py-2 bg-indigo-600 text-white rounded">Save</button>
+              <button onClick={saveAssignment} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
             </div>
           </div>
         </div>
       )}
-
+      {noteModalOpen && noteTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-md p-6 rounded-lg shadow-lg">
+            <h2 className="text-lg font-semibold mb-2">Add Note</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Request <span className="font-mono bg-gray-50 border px-1 rounded">{noteTarget.id}</span> • User: {noteTarget.username}
+            </p>
+            <textarea
+              className="w-full border border-gray-300 rounded p-2 min-h-[120px]"
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Type your note here…"
+            />
+            <div className="flex justify-end gap-3 mt-4">
+              <button
+                onClick={() => { setNoteModalOpen(false); setNoteTarget(null); setNoteText(""); }}
+                className="px-4 py-2 bg-gray-100 border rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitNote}
+                className="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-60"
+                disabled={!noteText.trim()}
+              >
+                Save Note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <ToastContainer />
     </main>
   );

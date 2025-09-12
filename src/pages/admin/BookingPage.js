@@ -13,16 +13,16 @@ import 'react-date-range/dist/theme/default.css';
 import { enUS } from 'date-fns/locale';
 import { format, parse, isValid } from 'date-fns';
 
-const DAY_KEYS  = ['sun','mon','tue','wed','thu','fri','sat'];
-const DAY_LABEL = { sun:'Sunday', mon:'Monday', tue:'Tuesday', wed:'Wednesday', thu:'Thursday', fri:'Friday', sat:'Saturday' };
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const DAY_LABEL = { sun: 'Sunday', mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday' };
 
 const defaultWeeklyHours = () =>
-  DAY_KEYS.reduce((acc,k)=>{ acc[k]={ open:false, start:'', end:'' }; return acc; }, {});
+  DAY_KEYS.reduce((acc, k) => { acc[k] = { open: false, start: '', end: '' }; return acc; }, {});
 
 const hmToMinutes = (hm) => {
   if (!hm || !/^\d{2}:\d{2}$/.test(hm)) return null;
-  const [h,m] = hm.split(':').map(Number);
-  return h*60+m;
+  const [h, m] = hm.split(':').map(Number);
+  return h * 60 + m;
 };
 
 export default function BookingPage(props) {
@@ -34,7 +34,7 @@ export default function BookingPage(props) {
   const [listOpen, setListModelOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmRejectOpen, setConfirmRejectOpen] = useState(false);
-
+  const [roomTypeInput, setRoomTypeInput] = useState('');
   // Data
   const [list, setList] = useState([]);
   const [bookingTypeList, setBookingTypeList] = useState([]);
@@ -51,15 +51,17 @@ export default function BookingPage(props) {
   // Table & filters
   const [currentPage, setCurrentPage] = useState(1);
   const [roomFilter, setRoomFilter] = useState("All");
+  const [roomTypeFilter, setRoomTypeFilter] = useState("All"); // NEW: filter by type
   const [rooms, setRooms] = useState([]);
+  const [allTypes, setAllTypes] = useState([]); // derived from booking types
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
-  const [filters, setFilters] = useState({ username:'', email:'', status:'All', time:'', date:'' });
+  const [filters, setFilters] = useState({ username: '', email: '', status: 'All', time: '', date: '' });
   const debounceRef = useRef();
   const setFilterDebounced = (field, value) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => setFilters(prev => ({ ...prev, [field]: value })), 250);
   };
-  const onSort = (key) => setSortConfig(prev => (prev.key===key ? { key, direction: prev.direction==='asc'?'desc':'asc' } : { key, direction:'asc' }));
+  const onSort = (key) => setSortConfig(prev => (prev.key === key ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' }));
 
   // Date picker for list
   const [range, setRange] = useState([{ startDate: new Date(new Date().setMonth(new Date().getMonth() - 2)), endDate: new Date(), key: 'selection' }]);
@@ -70,11 +72,16 @@ export default function BookingPage(props) {
   // Edit Room Type form
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
-  const initialForm = { id:0, roomname:'', description:'', location:'', maxDurationMins:120, startTime:'', endTime:'', weeklyHours: defaultWeeklyHours() };
+  const initialForm = {
+    id: 0, roomname: '', description: '', location: '',
+    maxDurationMins: 120, startTime: '', endTime: '',
+    weeklyHours: defaultWeeklyHours(),
+    roomtypes: []
+  };
   const [form, setForm] = useState(initialForm);
 
   // New Booking form
-  const initialBookingForm = { roomname:'', date:'', startTime:'', endTime:'', note:'' };
+  const initialBookingForm = { roomname: '', date: '', startTime: '', endTime: '', note: '' };
   const [bookingForm, setBookingForm] = useState(initialBookingForm);
 
   // Helpers
@@ -84,9 +91,9 @@ export default function BookingPage(props) {
     const d = new Date(tsOrDate);
     return isNaN(d) ? null : d;
   };
-  const toLocalDateOnly = (date) => { const d=new Date(date); d.setHours(0,0,0,0); return d; };
-  const sameDay = (d) => { const y=d.getFullYear(), m=d.getMonth()+1, day=d.getDate(); const pad=(n)=>String(n).padStart(2,'0'); return `${pad(m)}/${pad(day)}/${y}`; };
-  const fmtTime = (d) => (d ? d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '');
+  const toLocalDateOnly = (date) => { const d = new Date(date); d.setHours(0, 0, 0, 0); return d; };
+  const sameDay = (d) => { const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate(); const pad = (n) => String(n).padStart(2, '0'); return `${pad(m)}/${pad(day)}/${y}`; };
+  const fmtTime = (d) => (d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
   const parseBookingDate = (raw) => {
     if (!raw) return null;
     if (/\d{4}-\d{2}-\d{2}/.test(raw)) return new Date(raw);
@@ -94,9 +101,22 @@ export default function BookingPage(props) {
     return isValid(parsed) ? parsed : null;
   };
 
+  // ---- Tag helpers for roomtypes ----
+  const sanitizeType = (s) => s.trim().replace(/\s+/g, ' ');
+  const addTypesFromString = (src) => {
+    const parts = src.split(',').map(sanitizeType).filter(Boolean);
+    setForm(prev => {
+      const set = new Set([...(prev.roomtypes || []), ...parts]);
+      return { ...prev, roomtypes: Array.from(set) };
+    });
+  };
+  const removeType = (t) => {
+    setForm(prev => ({ ...prev, roomtypes: (prev.roomtypes || []).filter(x => x !== t) }));
+  };
+
   // Loading
-  useEffect(() => { getList(); /* eslint-disable-next-line */ }, [roomFilter, range]);
-  useEffect(() => { setCurrentPage(1); }, [filters, sortConfig, roomFilter, range]);
+  useEffect(() => { getList(); /* eslint-disable-next-line */ }, [roomFilter, range, roomTypeFilter]);
+  useEffect(() => { setCurrentPage(1); }, [filters, sortConfig, roomFilter, range, roomTypeFilter]);
 
   const getList = async () => {
     setIsLoading(true);
@@ -105,10 +125,10 @@ export default function BookingPage(props) {
       const usersQuery = query(collection(db, 'users'), where('hostelid', '==', emp.hostelid));
       const userSnap = await getDocs(usersQuery);
       const userMap = {};
-      userSnap.forEach(d => { const u=d.data(); userMap[u.uid] = { username: u.username || u.UserName || u.USERNAME || "Unknown", email: u.email || "No email" }; });
+      userSnap.forEach(d => { const u = d.data(); userMap[u.uid] = { username: u.username || u.UserName || u.USERNAME || "Unknown", email: u.email || "No email" }; });
 
       // Bookings
-      const bookingSnap = await getDocs(collection(db, 'bookingroom'));
+      const bookingSnap = await getDocs(collection(db, 'bookingroom'), where('hostelid', '==', emp.hostelid));
       const allBookings = bookingSnap.docs.map(d => {
         const raw = d.data();
         const s = toJsDate(raw.startdate);
@@ -124,25 +144,38 @@ export default function BookingPage(props) {
       });
 
       // Room types
-      const bookingTypeSnap = await getDocs(query(collection(db, 'bookingroomtype'), where('hostelid','==', emp.hostelid)));
-      const BookingType = bookingTypeSnap.docs.map(d => ({ id:d.id, ...d.data() }));
-      const uniqueRooms = Array.from(new Set(BookingType.map(b => b.roomname))).filter(Boolean);
+      const bookingTypeSnap = await getDocs(query(collection(db, 'bookingroomtype'), where('hostelid', '==', emp.hostelid)));
+      const BookingType = bookingTypeSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // Filter bookings by room + date range
-      const roomFiltered = roomFilter==="All" ? allBookings : allBookings.filter(b => b.roomname === roomFilter);
+      const uniqueRooms = Array.from(new Set(BookingType.map(b => b.roomname))).filter(Boolean);
+      const allTypesLocal = Array.from(new Set(BookingType.flatMap(rt => rt.roomtypes || [])));
+
+      // Filter bookings by room + type + date range
       const startDate = toLocalDateOnly(range[0].startDate);
-      const endDate   = toLocalDateOnly(range[0].endDate);
+      const endDate = toLocalDateOnly(range[0].endDate);
+
+      // Determine which rooms are allowed by selected type
+      const roomsForType = new Set(
+        roomTypeFilter === 'All'
+          ? BookingType.map(x => x.roomname)
+          : BookingType.filter(x => (x.roomtypes || []).includes(roomTypeFilter)).map(x => x.roomname)
+      );
+
+      const roomFiltered0 = allBookings.filter(b => roomsForType.has(b.roomname));
+      const roomFiltered = roomFilter === "All" ? roomFiltered0 : roomFiltered0.filter(b => b.roomname === roomFilter);
+
       const dateFiltered = roomFiltered.filter(b => {
         const s = toJsDate(b.startdate), e = toJsDate(b.enddate);
-        if (s && e) { const s0=toLocalDateOnly(s), e0=toLocalDateOnly(e); return s0 <= endDate && e0 >= startDate; }
+        if (s && e) { const s0 = toLocalDateOnly(s), e0 = toLocalDateOnly(e); return s0 <= endDate && e0 >= startDate; }
         if (b.date) {
-          const bd = /\d{4}-\d{2}-\d{2}/.test(b.date) ? new Date(b.date) : parse(b.date,'dd/MM/yyyy', new Date());
-          if (!isValid(bd)) return false; bd.setHours(0,0,0,0); return bd>=startDate && bd<=endDate;
+          const bd = /\d{4}-\d{2}-\d{2}/.test(b.date) ? new Date(b.date) : parse(b.date, 'dd/MM/yyyy', new Date());
+          if (!isValid(bd)) return false; bd.setHours(0, 0, 0, 0); return bd >= startDate && bd <= endDate;
         }
         return false;
       });
 
       setRooms(["All", ...uniqueRooms]);
+      setAllTypes(["All", ...allTypesLocal]);
       setBookingTypeList(BookingType);
       setList(dateFiltered);
 
@@ -156,6 +189,17 @@ export default function BookingPage(props) {
       setIsLoading(false);
     }
   };
+  const addType = () => {
+    const t = sanitizeType(roomTypeInput);
+    if (!t) return;
+    setForm(prev => {
+      const set = new Set(prev.roomtypes || []);
+      set.add(t);
+      return { ...prev, roomtypes: Array.from(set) };
+    });
+    setRoomTypeInput('');
+  };
+
 
   // Room Type: Add / Update
   const handleAdd = async (e) => {
@@ -166,9 +210,9 @@ export default function BookingPage(props) {
     for (const k of DAY_KEYS) {
       const day = form.weeklyHours[k];
       if (day?.open) {
-        const s=hmToMinutes(day.start), ed=hmToMinutes(day.end);
-        if (s==null || ed==null) { toast.warning(`${DAY_LABEL[k]}: start/end must be HH:mm`); return; }
-        if (s===ed) { toast.warning(`${DAY_LABEL[k]}: start and end cannot be same`); return; }
+        const s = hmToMinutes(day.start), ed = hmToMinutes(day.end);
+        if (s == null || ed == null) { toast.warning(`${DAY_LABEL[k]}: start/end must be HH:mm`); return; }
+        if (s === ed) { toast.warning(`${DAY_LABEL[k]}: start and end cannot be same`); return; }
       }
     }
 
@@ -186,6 +230,7 @@ export default function BookingPage(props) {
           startTime: form.startTime || '',
           endTime: form.endTime || '',
           weeklyHours: form.weeklyHours || defaultWeeklyHours(),
+          roomtypes: Array.isArray(form.roomtypes) ? form.roomtypes : [], // NEW
           hostelid: emp.hostelid,
           updatedBy: uid,
           updatedDate: new Date(),
@@ -201,6 +246,7 @@ export default function BookingPage(props) {
           startTime: form.startTime || '',
           endTime: form.endTime || '',
           weeklyHours: form.weeklyHours || defaultWeeklyHours(),
+          roomtypes: Array.isArray(form.roomtypes) ? form.roomtypes : [], // NEW
           hostelid: emp.hostelid,
           createdBy: uid,
           createdDate: new Date(),
@@ -292,27 +338,27 @@ export default function BookingPage(props) {
     if (!roomname || !date || !startTime || !endTime) { toast.warning("Please fill all required fields."); return; }
 
     const start = new Date(`${date}T${startTime}`);
-    const end   = new Date(`${date}T${endTime}`);
+    const end = new Date(`${date}T${endTime}`);
     if (!isValid(start) || !isValid(end) || end <= start) { toast.warning("Invalid start/end time (same-day)."); return; }
 
     const rt = bookingTypeList.find(b => b.roomname === roomname);
     const allowed = Number(rt?.maxDurationMins) || 120;
-    const diffMins = Math.round((end.getTime()-start.getTime())/60000);
+    const diffMins = Math.round((end.getTime() - start.getTime()) / 60000);
     if (diffMins > allowed) { toast.warning(`Max duration is ${allowed} minutes for ${roomname}.`); return; }
 
     const dow = DAY_KEYS[new Date(date).getDay()];
     const wh = rt?.weeklyHours;
     const winStartStr = wh?.[dow]?.start || rt?.startTime || '';
-    const winEndStr   = wh?.[dow]?.end   || rt?.endTime   || '';
-    const dayOpen     = (wh && wh[dow]) ? !!wh[dow].open : true;
+    const winEndStr = wh?.[dow]?.end || rt?.endTime || '';
+    const dayOpen = (wh && wh[dow]) ? !!wh[dow].open : true;
     if (!dayOpen) { toast.error(`${DAY_LABEL[dow]} is closed for ${roomname}.`); return; }
 
     const winStart = hmToMinutes(winStartStr);
-    const winEnd   = hmToMinutes(winEndStr);
-    const sM = start.getHours()*60 + start.getMinutes();
-    const eM = end.getHours()*60 + end.getMinutes();
+    const winEnd = hmToMinutes(winEndStr);
+    const sM = start.getHours() * 60 + start.getMinutes();
+    const eM = end.getHours() * 60 + end.getMinutes();
     const withinWindow = (() => {
-      if (winStart==null || winEnd==null) return true;
+      if (winStart == null || winEnd == null) return true;
       if (winStart <= winEnd) return sM >= winStart && eM <= winEnd;
       const seg1 = (sM >= winStart && eM <= 1440);
       const seg2 = (sM >= 0 && eM <= winEnd);
@@ -330,7 +376,7 @@ export default function BookingPage(props) {
       const overlap = snap.docs.some(d => {
         const r = d.data();
         const s = toJsDate(r.startdate);
-        const e2= toJsDate(r.enddate);
+        const e2 = toJsDate(r.enddate);
         if (!s || !e2) return false;
         return s < end && e2 > start;
       });
@@ -376,7 +422,7 @@ export default function BookingPage(props) {
     const selected = ranges.selection;
     setRange([selected]);
     if (selected.startDate && selected.endDate) {
-      const formatted = `${format(selected.startDate,'MM/dd/yyyy')} - ${format(selected.endDate,'MM/dd/yyyy')}`;
+      const formatted = `${format(selected.startDate, 'MM/dd/yyyy')} - ${format(selected.endDate, 'MM/dd/yyyy')}`;
       setFormattedRange(formatted);
       setShowPicker(false);
     }
@@ -385,32 +431,32 @@ export default function BookingPage(props) {
   // Client-side filter/sort/paginate
   const filteredData = list.filter(row => {
     const uOK = !filters.username || (row.username || '').toLowerCase().includes(filters.username.toLowerCase());
-    const eOK = !filters.email    || (row.email    || '').toLowerCase().includes(filters.email.toLowerCase());
-    const sOK = filters.status==='All' || (row.status || '').toLowerCase() === filters.status.toLowerCase();
+    const eOK = !filters.email || (row.email || '').toLowerCase().includes(filters.email.toLowerCase());
+    const sOK = filters.status === 'All' || (row.status || '').toLowerCase() === filters.status.toLowerCase();
     const tOK = !filters.time || (row.displayTime || row.time || '').toLowerCase().includes(filters.time.toLowerCase());
     const dOK = !filters.date || (row.displayDate || row.date || '').toLowerCase().includes(filters.date.toLowerCase());
     return uOK && eOK && sOK && tOK && dOK;
   });
 
-  const sortedData = [...filteredData].sort((a,b) => {
-    const dir = sortConfig.direction==='asc' ? 1 : -1;
+  const sortedData = [...filteredData].sort((a, b) => {
+    const dir = sortConfig.direction === 'asc' ? 1 : -1;
     const key = sortConfig.key;
-    if (key==='date') {
+    if (key === 'date') {
       const da = toJsDate(a.startdate) || parseBookingDate(a.date);
       const dbb = toJsDate(b.startdate) || parseBookingDate(b.date);
-      if (!da && !dbb) return 0; if (!da) return -1*dir; if (!dbb) return 1*dir; return (da-dbb)*dir;
+      if (!da && !dbb) return 0; if (!da) return -1 * dir; if (!dbb) return 1 * dir; return (da - dbb) * dir;
     }
-    if (key==='time') {
+    if (key === 'time') {
       const ta = (a.displayTime || a.time || ''), tb = (b.displayTime || b.time || '');
-      return ta.localeCompare(tb)*dir;
+      return ta.localeCompare(tb) * dir;
     }
-    const sa=(a[key]||'').toString().toLowerCase(), sb=(b[key]||'').toString().toLowerCase();
-    return sa.localeCompare(sb)*dir;
+    const sa = (a[key] || '').toString().toLowerCase(), sb = (b[key] || '').toString().toLowerCase();
+    return sa.localeCompare(sb) * dir;
   });
 
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
-  const paginatedData = sortedData.slice((currentPage-1)*pageSize, currentPage*pageSize);
+  const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // For bookings table select-all on page
   const bookingPageIds = paginatedData.map(r => r.id);
@@ -422,13 +468,13 @@ export default function BookingPage(props) {
     if (!wh) return '';
     return DAY_KEYS.map(k => {
       const d = wh[k];
-      if (!d?.open) return `${DAY_LABEL[k].slice(0,3)} Closed`;
-      return `${DAY_LABEL[k].slice(0,3)} ${d.start || '--:--'}–${d.end || '--:--'}`;
+      if (!d?.open) return `${DAY_LABEL[k].slice(0, 3)} Closed`;
+      return `${DAY_LABEL[k].slice(0, 3)} ${d.start || '--:--'}–${d.end || '--:--'}`;
     }).join(' • ');
   };
 
   return (
-    <main className="flex-1 p-1 bg-gray-100 overflow-auto">
+    <main className="flex-1 p-1 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       {/* Top bar */}
       <div className="flex flex-wrap gap-2 justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Booking</h1>
@@ -443,16 +489,21 @@ export default function BookingPage(props) {
       </div>
 
       <h2 className="text-lg font-semibold">Room Type</h2>
-      <div className="flex items-center space-x-4">
-        <select className="border px-3 py-2 rounded text-sm" value={roomFilter} onChange={(e)=>setRoomFilter(e.target.value)}>
-          {["All", ...rooms.filter((v,i,a)=>a.indexOf(v)===i)].map(room => (<option key={room} value={room}>{room}</option>))}
+      <div className="flex items-center gap-4 flex-wrap">
+        <select className="border px-3 py-2 rounded text-sm" value={roomFilter} onChange={(e) => setRoomFilter(e.target.value)}>
+          {["All", ...rooms.filter((v, i, a) => a.indexOf(v) === i)].map(room => (<option key={room} value={room}>{room}</option>))}
+        </select>
+
+        {/* NEW: Type filter */}
+        <select className="border px-3 py-2 rounded text-sm" value={roomTypeFilter} onChange={(e) => setRoomTypeFilter(e.target.value)}>
+          {allTypes.map(t => (<option key={t} value={t}>{t}</option>))}
         </select>
 
         <div className="relative">
-          <input type="text" readOnly value={formattedRange} onClick={()=>setShowPicker(!showPicker)} className="w-full border border-gray-300 p-2 rounded" placeholder="Select date range"/>
+          <input type="text" readOnly value={formattedRange} onClick={() => setShowPicker(!showPicker)} className="w-full border border-gray-300 p-2 rounded" placeholder="Select date range" />
           {showPicker && (
-            <div ref={pickerRef} style={{ position:'absolute', top:50, zIndex:1000, boxShadow:'0px 2px 10px rgba(0,0,0,0.2)' }}>
-              <DateRange editableDateInputs onChange={handleRangeChange} moveRangeOnFirstSelection={false} ranges={range} locale={enUS}/>
+            <div ref={pickerRef} style={{ position: 'absolute', top: 50, zIndex: 1000, boxShadow: '0px 2px 10px rgba(0,0,0,0.2)' }}>
+              <DateRange editableDateInputs onChange={handleRangeChange} moveRangeOnFirstSelection={false} ranges={range} locale={enUS} />
             </div>
           )}
         </div>
@@ -495,8 +546,6 @@ export default function BookingPage(props) {
             <thead className="bg-gray-50">
               {/* Row 1: clickable sort headers */}
               <tr>
-                {/* NEW: select-all on page */}
-               
                 {[
                   { key: 'username', label: 'Username' },
                   { key: 'email', label: 'Email' },
@@ -506,17 +555,17 @@ export default function BookingPage(props) {
                   { key: 'actions', label: 'Actions', sortable: false },
                 ].map(col => (
                   <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
-                    {col.sortable===false ? <span>{col.label}</span> : (
-                      <button type="button" className="flex items-center gap-1 hover:underline" onClick={()=>onSort(col.key)} title="Sort">
+                    {col.sortable === false ? <span>{col.label}</span> : (
+                      <button type="button" className="flex items-center gap-1 hover:underline" onClick={() => onSort(col.key)} title="Sort">
                         <span>{col.label}</span>
-                        {sortConfig.key===col.key && (
-                          <span className="text-gray-400">{sortConfig.direction==='asc' ? '▲' : '▼'}</span>
+                        {sortConfig.key === col.key && (
+                          <span className="text-gray-400">{sortConfig.direction === 'asc' ? '▲' : '▼'}</span>
                         )}
                       </button>
                     )}
                   </th>
                 ))}
-                 <th className="px-6 py-3">
+                <th className="px-6 py-3">
                   <input
                     type="checkbox"
                     aria-label="Select all on page"
@@ -536,13 +585,12 @@ export default function BookingPage(props) {
 
               {/* Row 2: inline filters */}
               <tr className="border-t border-gray-200">
-               
-                <th className="px-6 pb-3"><input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="Search username" defaultValue={filters.username} onChange={(e)=>setFilterDebounced('username', e.target.value)} /></th>
-                <th className="px-6 pb-3"><input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="Search email" defaultValue={filters.email} onChange={(e)=>setFilterDebounced('email', e.target.value)} /></th>
-                <th className="px-6 pb-3"><input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="Filter date (e.g. 2025-08)" defaultValue={filters.date} onChange={(e)=>setFilterDebounced('date', e.target.value)} /></th>
-                <th className="px-6 pb-3"><input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="Filter time (e.g. 13:30)" defaultValue={filters.time} onChange={(e)=>setFilterDebounced('time', e.target.value)} /></th>
+                <th className="px-6 pb-3"><input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="Search username" defaultValue={filters.username} onChange={(e) => setFilterDebounced('username', e.target.value)} /></th>
+                <th className="px-6 pb-3"><input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="Search email" defaultValue={filters.email} onChange={(e) => setFilterDebounced('email', e.target.value)} /></th>
+                <th className="px-6 pb-3"><input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="Filter date (e.g. 2025-08)" defaultValue={filters.date} onChange={(e) => setFilterDebounced('date', e.target.value)} /></th>
+                <th className="px-6 pb-3"><input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="Filter time (e.g. 13:30)" defaultValue={filters.time} onChange={(e) => setFilterDebounced('time', e.target.value)} /></th>
                 <th className="px-6 pb-3">
-                  <select className="w-full border border-gray-300 p-1 rounded text-sm" value={filters.status} onChange={(e)=>setFilters(prev=>({ ...prev, status:e.target.value }))}>
+                  <select className="w-full border border-gray-300 p-1 rounded text-sm" value={filters.status} onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}>
                     <option>All</option><option>Pending</option><option>Approved</option><option>Rejected</option><option>Booked</option>
                   </select>
                 </th>
@@ -557,23 +605,19 @@ export default function BookingPage(props) {
               ) : (
                 paginatedData.map((item, i) => (
                   <tr key={i}>
-                    {/* Row checkbox */}
-                  
-
                     <td className="px-6 py-4 text-sm text-gray-800">{item.username}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{item.email}</td>
                     <td className="px-6 py-4 text-sm text-gray-500">{item.displayDate}</td>
                     <td className="px-6 py-4 text-sm text-gray-500">{item.displayTime}</td>
                     <td className="px-6 py-4 text-sm text-gray-500">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        item.status==='Rejected' ? 'bg-red-200 text-red-800'
-                        : (item.status==='Approved' || item.status==='Booked') ? 'bg-green-200 text-green-800'
-                        : 'bg-yellow-200 text-yellow-800'
-                      }`}>{item.status}</span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${item.status === 'Rejected' ? 'bg-red-200 text-red-800'
+                          : (item.status === 'Approved' || item.status === 'Booked') ? 'bg-green-200 text-green-800'
+                            : 'bg-yellow-200 text-yellow-800'
+                        }`}>{item.status}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.status!=='Rejected' && (
-                        <button className="text-blue-600 hover:underline mr-3" onClick={()=>{ setEditing(item); setConfirmRejectOpen(true); }}>Reject</button>
+                      {item.status !== 'Rejected' && (
+                        <button className="text-blue-600 hover:underline mr-3" onClick={() => { setEditing(item); setConfirmRejectOpen(true); }}>Reject</button>
                       )}
                     </td>
                     <td className="px-6 py-4">
@@ -601,8 +645,8 @@ export default function BookingPage(props) {
       <div className="flex justify-between items-center mt-4">
         <p className="text-sm text-gray-600">Page {currentPage} of {totalPages}</p>
         <div className="space-x-2">
-          <button onClick={()=>setCurrentPage(p=>Math.max(p-1,1))} disabled={currentPage===1} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Previous</button>
-          <button onClick={()=>setCurrentPage(p=>Math.min(p+1,totalPages))} disabled={currentPage===totalPages} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Next</button>
+          <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Previous</button>
+          <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Next</button>
         </div>
       </div>
 
@@ -613,39 +657,85 @@ export default function BookingPage(props) {
             <h2 className="text-xl font-bold mb-4">{editingData ? 'Edit Room Type' : 'Add Room Type'}</h2>
             <form onSubmit={handleAdd} className="space-y-6">
               <div className="space-y-4">
-                <label className="block font-medium mb-1">Room Name</label>
-                <input type="text" className="w-full border border-gray-300 p-2 rounded" value={form.roomname} onChange={(e)=>setForm({ ...form, roomname:e.target.value })} required />
+                <label className="block font-medium mb-1">Title</label>
+                <input type="text" className="w-full border border-gray-300 p-2 rounded" value={form.roomname} onChange={(e) => setForm({ ...form, roomname: e.target.value })} required />
+
+                {/* ROOM TYPES TAG UI */}
+                <label className="block font-medium mb-1">Room Types</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 border border-gray-300 p-2 rounded"
+
+                    value={roomTypeInput}
+                    onChange={(e) => setRoomTypeInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addType(); } }}
+                  />
+                  <button
+                    type="button"
+                    className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    onClick={addType}
+                  >
+                    Add
+                  </button>
+                </div>
+
+                {/* chips list */}
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {(form.roomtypes || []).length === 0 ? (
+                    <span className="text-xs text-gray-400">No types added</span>
+                  ) : (
+                    (form.roomtypes || []).map((t) => (
+                      <span
+                        key={t}
+                        className="inline-flex items-center gap-2 bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-xs"
+                      >
+                        {t}
+                        <button
+                          type="button"
+                          className="text-red-600 hover:text-red-800"
+                          onClick={() => removeType(t)}
+                          aria-label={`Remove ${t}`}
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+
 
                 <label className="block font-medium mb-1">Description</label>
-                <textarea className="w-full border border-gray-300 p-2 rounded" value={form.description} onChange={(e)=>setForm({ ...form, description:e.target.value })} required />
+                <textarea className="w-full border border-gray-300 p-2 rounded" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
 
                 <label className="block font-medium mb-1">Location</label>
-                <input type="text" className="w-full border border-gray-300 p-2 rounded" value={form.location} onChange={(e)=>setForm({ ...form, location:e.target.value })} required />
+                <input type="text" className="w-full border border-gray-300 p-2 rounded" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} required />
 
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1">
                     <label className="block font-medium mb-1">Max Duration (mins)</label>
-                    <input type="number" min={15} step={15} className="w-full border border-gray-300 p-2 rounded" value={form.maxDurationMins} onChange={(e)=>setForm({ ...form, maxDurationMins:Number(e.target.value) })}/>
+                    <input type="number" min={15} step={15} className="w-full border border-gray-300 p-2 rounded" value={form.maxDurationMins} onChange={(e) => setForm({ ...form, maxDurationMins: Number(e.target.value) })} />
                     <p className="text-xs text-gray-500 mt-1">Keep ≤ 120 for 2-hour max.</p>
                   </div>
                   <div>
                     <label className="block font-medium mb-1">Fill Start</label>
-                    <input type="time" className="w-full border border-gray-300 p-2 rounded" value={form.startTime} onChange={(e)=>setForm({ ...form, startTime:e.target.value })}/>
+                    <input type="time" className="w-full border border-gray-300 p-2 rounded" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
                   </div>
                   <div>
                     <label className="block font-medium mb-1">Fill End</label>
-                    <input type="time" className="w-full border border-gray-300 p-2 rounded" value={form.endTime} onChange={(e)=>setForm({ ...form, endTime:e.target.value })}/>
+                    <input type="time" className="w-full border border-gray-300 p-2 rounded" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
                   </div>
                 </div>
 
                 <div className="mt-2">
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-medium">Weekly Hours</span>
-                    <button type="button" className="text-xs underline" onClick={()=>{
+                    <button type="button" className="text-xs underline" onClick={() => {
                       const wh = defaultWeeklyHours();
-                      DAY_KEYS.forEach(k=>{ wh[k]={ open:true, start:form.startTime, end:form.endTime }; });
-                      setForm(prev=>({ ...prev, weeklyHours: wh }));
-                    }}>Fill {form.startTime}–{form.endTime}</button>
+                      DAY_KEYS.forEach(k => { wh[k] = { open: true, start: form.startTime, end: form.endTime }; });
+                      setForm(prev => ({ ...prev, weeklyHours: wh }));
+                    }}>Fill {form.startTime || '--:--'}–{form.endTime || '--:--'}</button>
                   </div>
 
                   <div className="space-y-2">
@@ -656,9 +746,9 @@ export default function BookingPage(props) {
                           <input
                             type="checkbox"
                             checked={!!form.weeklyHours[k]?.open}
-                            onChange={(e)=>{
-                              const wh = { ...form.weeklyHours, [k]: { ...(form.weeklyHours[k]||{}), open:e.target.checked } };
-                              setForm(prev=>({ ...prev, weeklyHours: wh }));
+                            onChange={(e) => {
+                              const wh = { ...form.weeklyHours, [k]: { ...(form.weeklyHours[k] || {}), open: e.target.checked } };
+                              setForm(prev => ({ ...prev, weeklyHours: wh }));
                             }}
                           />
                           <span className="text-sm">{form.weeklyHours[k]?.open ? 'Open' : 'Closed'}</span>
@@ -669,9 +759,9 @@ export default function BookingPage(props) {
                             className="w-full border border-gray-300 p-2 rounded"
                             disabled={!form.weeklyHours[k]?.open}
                             value={form.weeklyHours[k]?.start || ''}
-                            onChange={(e)=>{
-                              const wh = { ...form.weeklyHours, [k]: { ...(form.weeklyHours[k]||{ open:true }), start:e.target.value } };
-                              setForm(prev=>({ ...prev, weeklyHours: wh }));
+                            onChange={(e) => {
+                              const wh = { ...form.weeklyHours, [k]: { ...(form.weeklyHours[k] || { open: true }), start: e.target.value } };
+                              setForm(prev => ({ ...prev, weeklyHours: wh }));
                             }}
                           />
                         </div>
@@ -681,9 +771,9 @@ export default function BookingPage(props) {
                             className="w-full border border-gray-300 p-2 rounded"
                             disabled={!form.weeklyHours[k]?.open}
                             value={form.weeklyHours[k]?.end || ''}
-                            onChange={(e)=>{
-                              const wh = { ...form.weeklyHours, [k]: { ...(form.weeklyHours[k]||{ open:true }), end:e.target.value } };
-                              setForm(prev=>({ ...prev, weeklyHours: wh }));
+                            onChange={(e) => {
+                              const wh = { ...form.weeklyHours, [k]: { ...(form.weeklyHours[k] || { open: true }), end: e.target.value } };
+                              setForm(prev => ({ ...prev, weeklyHours: wh }));
                             }}
                           />
                         </div>
@@ -695,7 +785,7 @@ export default function BookingPage(props) {
               </div>
 
               <div className="flex justify-end mt-2 space-x-3">
-                <button type="button" onClick={()=>setModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
+                <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
                 <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
               </div>
             </form>
@@ -711,7 +801,7 @@ export default function BookingPage(props) {
             <form onSubmit={handleAddBooking} className="space-y-4">
               <div className="space-y-4">
                 <label className="block font-medium mb-1">Room</label>
-                <select className="w-full border border-gray-300 p-2 rounded" value={bookingForm.roomname} onChange={(e)=>setBookingForm({ ...bookingForm, roomname:e.target.value })} required>
+                <select className="w-full border border-gray-300 p-2 rounded" value={bookingForm.roomname} onChange={(e) => setBookingForm({ ...bookingForm, roomname: e.target.value })} required>
                   <option value="" disabled>Select room</option>
                   {bookingTypeList.map(rt => (
                     <option key={rt.id} value={rt.roomname}>{rt.roomname}</option>
@@ -719,27 +809,27 @@ export default function BookingPage(props) {
                 </select>
 
                 <label className="block font-medium mb-1">Date</label>
-                <input type="date" className="w-full border border-gray-300 p-2 rounded" value={bookingForm.date} onChange={(e)=>setBookingForm({ ...bookingForm, date:e.target.value })} required />
+                <input type="date" className="w-full border border-gray-300 p-2 rounded" value={bookingForm.date} onChange={(e) => setBookingForm({ ...bookingForm, date: e.target.value })} required />
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block font-medium mb-1">Start Time</label>
-                    <input type="time" className="w-full border border-gray-300 p-2 rounded" value={bookingForm.startTime} onChange={(e)=>setBookingForm({ ...bookingForm, startTime:e.target.value })} required />
+                    <input type="time" className="w-full border border-gray-300 p-2 rounded" value={bookingForm.startTime} onChange={(e) => setBookingForm({ ...bookingForm, startTime: e.target.value })} required />
                   </div>
                   <div>
                     <label className="block font-medium mb-1">End Time</label>
-                    <input type="time" className="w-full border border-gray-300 p-2 rounded" value={bookingForm.endTime} onChange={(e)=>setBookingForm({ ...bookingForm, endTime:e.target.value })} required />
+                    <input type="time" className="w-full border border-gray-300 p-2 rounded" value={bookingForm.endTime} onChange={(e) => setBookingForm({ ...bookingForm, endTime: e.target.value })} required />
                   </div>
                 </div>
 
                 <label className="block font-medium mb-1">Note (optional)</label>
-                <textarea className="w-full border border-gray-300 p-2 rounded" value={bookingForm.note} onChange={(e)=>setBookingForm({ ...bookingForm, note:e.target.value })} placeholder="Purpose or notes" />
+                <textarea className="w-full border border-gray-300 p-2 rounded" value={bookingForm.note} onChange={(e) => setBookingForm({ ...bookingForm, note: e.target.value })} placeholder="Purpose or notes" />
 
                 <p className="text-xs text-gray-500">Bookings must fit inside that day’s allowed hours and the max duration.</p>
               </div>
 
               <div className="flex justify-end mt-6 space-x-3">
-                <button type="button" onClick={()=>setBookingModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
+                <button type="button" onClick={() => setBookingModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
                 <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Booking</button>
               </div>
             </form>
@@ -753,7 +843,7 @@ export default function BookingPage(props) {
           <div className="bg-white p-6 rounded-lg w-[95%] max-w-6xl shadow-lg max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold">Manage Room Types</h2>
-              <button className="text-gray-600 hover:text-gray-800" onClick={()=>setListModelOpen(false)}>✕</button>
+              <button className="text-gray-600 hover:text-gray-800" onClick={() => setListModelOpen(false)}>✕</button>
             </div>
 
             {/* Bulk actions for Room Types */}
@@ -790,10 +880,10 @@ export default function BookingPage(props) {
                       <input
                         type="checkbox"
                         aria-label="Select all room types"
-                        checked={bookingTypeList.length>0 && bookingTypeList.every(x => selectedTypeIds.has(x.id))}
+                        checked={bookingTypeList.length > 0 && bookingTypeList.every(x => selectedTypeIds.has(x.id))}
                         ref={el => {
                           if (!el) return;
-                          const all = bookingTypeList.length>0 && bookingTypeList.every(x => selectedTypeIds.has(x.id));
+                          const all = bookingTypeList.length > 0 && bookingTypeList.every(x => selectedTypeIds.has(x.id));
                           const some = bookingTypeList.some(x => selectedTypeIds.has(x.id));
                           el.indeterminate = some && !all;
                         }}
@@ -807,6 +897,7 @@ export default function BookingPage(props) {
                       />
                     </th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Room Name</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Types</th> {/* NEW */}
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Description</th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Location</th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Max (mins)</th>
@@ -832,6 +923,11 @@ export default function BookingPage(props) {
                         />
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-800">{roomData.roomname}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {(roomData.roomtypes && roomData.roomtypes.length > 0)
+                          ? roomData.roomtypes.join(', ')
+                          : <span className="text-gray-400">—</span>}
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{roomData.description}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{roomData.location}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{roomData.maxDurationMins ?? 120}</td>
@@ -847,7 +943,8 @@ export default function BookingPage(props) {
                               maxDurationMins: roomData.maxDurationMins ?? 120,
                               startTime: roomData.startTime || '',
                               endTime: roomData.endTime || '',
-                              weeklyHours: roomData.weeklyHours || defaultWeeklyHours()
+                              weeklyHours: roomData.weeklyHours || defaultWeeklyHours(),
+                              roomtypes: Array.isArray(roomData.roomtypes) ? roomData.roomtypes : []
                             });
                             setModalOpen(true);
                             setListModelOpen(false);
@@ -872,7 +969,7 @@ export default function BookingPage(props) {
                   <h2 className="text-xl font-semibold mb-4 text-red-600">Delete Booking Type</h2>
                   <p className="mb-4">Delete <strong>{deleteData?.roomname}</strong>?</p>
                   <div className="flex justify-end space-x-3">
-                    <button onClick={()=>{ setConfirmDeleteOpen(false); setDelete(null); }} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
+                    <button onClick={() => { setConfirmDeleteOpen(false); setDelete(null); }} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
                     <button onClick={handleDelete} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Delete</button>
                   </div>
                 </div>
@@ -889,7 +986,7 @@ export default function BookingPage(props) {
             <h2 className="text-xl font-semibold mb-4 text-red-600">Booking Reject</h2>
             <p className="mb-4">Are you sure you want to reject this booking <strong>{editingData?.roomname}</strong>?</p>
             <div className="flex justify-end space-x-3">
-              <button onClick={()=>{ setConfirmRejectOpen(false); setEditing(false); }} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
+              <button onClick={() => { setConfirmRejectOpen(false); setEditing(false); }} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
               <button onClick={handleReject} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Reject</button>
             </div>
           </div>

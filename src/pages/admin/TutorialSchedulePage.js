@@ -585,11 +585,11 @@ export default function TutorialSchedulePage(props) {
 
       {/* Add/Edit modal */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-20">
+          <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-bold mb-4">{editingData ? "Edit Tutorial Schedule" : "Add Tutorial Schedule"}</h2>
             <form onSubmit={handleAdd} className="space-y-4">
-              <div className="space-y-4">
+              <div className="space-y-2">
                 <label className="block font-medium mb-1">Room Type</label>
                 <input
                   type="text"

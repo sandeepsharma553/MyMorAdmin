@@ -68,6 +68,7 @@ export default function AdminEmployeePage(props) {
     { key: "feedback", label: "Feedback" },
     { key: "resources", label: "Resources" },
     { key: "event", label: "Event" },
+    { key: "eventbooking", label: "Event Booking" },
     { key: "deal", label: "Deals" },
     { key: "faq", label: "FAQs" },
     { key: "setting", label: "Setting" },
@@ -76,6 +77,7 @@ export default function AdminEmployeePage(props) {
   ];
   const FEATURE_TO_MENU_KEY = {
     events: "event",
+    eventbooking: "eventbooking",
     deals: "deal",
     announcement: "announcement",
     hostelevent: "event",

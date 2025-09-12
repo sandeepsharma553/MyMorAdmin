@@ -30,16 +30,13 @@ export default function AnnouncementPage(props) {
 
   const [visiblePoll, setVisiblePoll] = useState(false);
 
-  // Selection
   const [selectedIds, setSelectedIds] = useState(new Set());
 
-  // Time filter
   const [timeFilter, setTimeFilter] = useState('current'); // 'past' | 'current' | 'future'
   useEffect(() => { setCurrentPage(1); }, [timeFilter]);
 
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
 
-  // Header filters + sorting
   const [filters, setFilters] = useState({ title: '', desc: '', date: '' });
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
   const debounceRef = useRef(null);
@@ -82,10 +79,10 @@ export default function AnnouncementPage(props) {
     },
     isPinned: false,
     pinnedAt: null,
+    pinnedOrder: 0,                 // <<— NEW
 
-    // NEW multi-image fields
-    posterUrls: [],   // persisted in DB
-    postersFiles: [], // local File[] for this session
+    posterUrls: [],
+    postersFiles: [],
   };
   const [form, setForm] = useState(initialForm);
 
@@ -97,11 +94,17 @@ export default function AnnouncementPage(props) {
       const data = snapshot.val();
       const documents = data
         ? Object.entries(data).map(([id, value]) => {
-            // Back-compat: fold legacy posterUrl into posterUrls[]
             const posterUrls = Array.isArray(value.posterUrls)
               ? value.posterUrls
               : (value.posterUrl ? [value.posterUrl] : []);
-            return { id, ...value, posterUrls };
+            return {
+              id,
+              ...value,
+              posterUrls,
+              isPinned: !!value.isPinned,
+              pinnedOrder: Number.isFinite(value?.pinnedOrder) ? Number(value.pinnedOrder) : 0,
+              pinnedAt: typeof value?.pinnedAt === 'number' ? value.pinnedAt : null,
+            };
           })
           .filter(item => item.hostelid === emp?.hostelid)
         : [];
@@ -113,7 +116,7 @@ export default function AnnouncementPage(props) {
     return () => { off(groupRef); };
   }, [emp?.hostelid]);
 
-  // ===== Helpers: dates =====
+  // ===== Helpers =====
   const toJsDate = (d) => {
     if (!d) return null;
     if (d instanceof Date) return d;
@@ -123,7 +126,6 @@ export default function AnnouncementPage(props) {
     return null;
   };
 
-  // Returns 'past' | 'current' | 'future'
   const classifyByDate = (dateObj) => {
     const s = toJsDate(dateObj?.startDate);
     const e = toJsDate(dateObj?.endDate);
@@ -153,7 +155,7 @@ export default function AnnouncementPage(props) {
     return userMap[uid] || "";
   };
 
-  // ===== Derived list: time filter -> header filters -> sort -> paginate =====
+  // ===== Derived list =====
   const timeFiltered = list.filter(item => classifyByDate(item.date) === timeFilter);
 
   const headerFiltered = timeFiltered.filter(item => {
@@ -167,16 +169,24 @@ export default function AnnouncementPage(props) {
   const pinFiltered = showPinnedOnly ? headerFiltered.filter(a => !!a.isPinned) : headerFiltered;
 
   const sortedList = [...pinFiltered].sort((a, b) => {
-    // 1) pinned first
+    // 1) Pinned first
     const ap = a.isPinned ? 1 : 0;
     const bp = b.isPinned ? 1 : 0;
     if (ap !== bp) return bp - ap;
-    // 2) among pinned, newest pinnedAt first
+
+    // 2) Among pinned: pinnedOrder asc (lower shows higher)
     if (ap === 1 && bp === 1) {
+      const ao = Number.isFinite(a.pinnedOrder) ? a.pinnedOrder : 999999;
+      const bo = Number.isFinite(b.pinnedOrder) ? b.pinnedOrder : 999999;
+      if (ao !== bo) return ao - bo;
+
+      // 3) Then newest pinnedAt first
       const aPA = typeof a.pinnedAt === 'number' ? a.pinnedAt : 0;
       const bPA = typeof b.pinnedAt === 'number' ? b.pinnedAt : 0;
       if (aPA !== bPA) return bPA - aPA;
     }
+
+    // 4) Then your chosen sort
     const dir = sortConfig.direction === 'asc' ? 1 : -1;
     switch (sortConfig.key) {
       case 'title':
@@ -218,15 +228,12 @@ export default function AnnouncementPage(props) {
     return urls;
   };
 
-  // ====== POLL PATCH that PRESERVES votes ======
+  // ===== POLL PATCH (preserve votes) =====
   const buildPollPatchPreserveVotes = (id, dbPoll, formPoll) => {
     const updates = {};
     const base = `announcements/${id}/pollData`;
-
-    // If no poll in form, don't touch existing poll
     if (!formPoll || !formPoll.question?.trim()) return updates;
 
-    // Question & toggles
     updates[`${base}/question`] = formPoll.question.trim();
     updates[`${base}/allowMulti`] = !!formPoll.allowMulti;
     updates[`${base}/allowaddoption`] = !!formPoll.allowaddoption;
@@ -234,18 +241,15 @@ export default function AnnouncementPage(props) {
     const newOpts = formPoll.options || {};
     const oldOpts = (dbPoll && dbPoll.options) || {};
 
-    // Create/update texts, keep votes; ensure votes:{} for new options
     Object.entries(newOpts).forEach(([key, val]) => {
       const txt = (val?.text || '').trim();
       if (!txt) return;
       updates[`${base}/options/${key}/text`] = txt;
       if (!oldOpts[key]) {
-        // brand-new option -> ensure votes object exists
         updates[`${base}/options/${key}/votes`] = {};
       }
     });
 
-    // Remove deleted options entirely
     Object.keys(oldOpts).forEach((key) => {
       if (!(key in newOpts)) {
         updates[`${base}/options/${key}`] = null;
@@ -253,6 +257,46 @@ export default function AnnouncementPage(props) {
     });
 
     return updates;
+  };
+
+  // ===== Pin helpers (order) =====
+  const maxPinnedOrder = () =>
+    Math.max(0, ...list.filter(x => x.isPinned).map(x => Number(x.pinnedOrder) || 0));
+
+  const togglePin = async (item, makePinned) => {
+    try {
+      const patch = {
+        isPinned: makePinned,
+        pinnedAt: makePinned ? Date.now() : null,
+        pinnedOrder: makePinned ? maxPinnedOrder() + 1 : 0,
+      };
+      await update(dbRef(database, `announcements/${item.id}`), patch);
+      toast.success(makePinned ? 'Pinned' : 'Unpinned');
+    } catch (e) {
+      console.error(e);
+      toast.error('Could not update pin');
+    }
+  };
+
+  const setPinnedOrder = async (item, value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return;
+    try {
+      await update(dbRef(database, `announcements/${item.id}`), {
+        isPinned: true,
+        pinnedOrder: n,
+      });
+      toast.success('Order updated');
+    } catch (e) {
+      console.error(e);
+      toast.error('Order update failed');
+    }
+  };
+
+  const nudgeOrder = async (item, delta) => {
+    const n = Number(item.pinnedOrder || 0) + delta;
+    if (n < 0) return;
+    await setPinnedOrder(item, n);
   };
 
   // ===== Handlers =====
@@ -273,15 +317,18 @@ export default function AnnouncementPage(props) {
         setForm(prev => ({ ...prev, pollData: { ...prev.pollData, allowMulti: checked } }));
       } else if (name === 'allowaddoption') {
         setForm(prev => ({ ...prev, pollData: { ...prev.pollData, allowaddoption: checked } }));
+      } else if (name === 'isPinned') {
+        setForm(prev => ({ ...prev, isPinned: checked }));
       } else {
         setForm(prev => ({ ...prev, [name]: checked }));
       }
       return;
     }
 
-    // text inputs
     if (name === 'question') {
       setForm(prev => ({ ...prev, pollData: { ...prev.pollData, question: value } }));
+    } else if (name === 'pinnedOrder') {
+      setForm(prev => ({ ...prev, pinnedOrder: Number(value) || 0 }));
     } else {
       setForm(prev => ({ ...prev, [name]: value }));
     }
@@ -290,19 +337,15 @@ export default function AnnouncementPage(props) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      // Require at least one image for new announcement
       if (!editingData && (!form.postersFiles?.length && !form.posterUrls?.length)) {
         toast.error("Please choose at least one image");
         return;
       }
 
       setIsLoading(true);
-
-      // Upload newly selected files
       const newUrls = await uploadAllPosters(form.postersFiles || []);
       const mergedPosterUrls = [...(form.posterUrls || []), ...newUrls];
 
-      // Build clean poll (for CREATE only we will write full object including votes:{})
       let cleanPollData = null;
       if (form.pollData?.question?.trim()) {
         const pollOptions = {};
@@ -322,6 +365,9 @@ export default function AnnouncementPage(props) {
 
       const userName = await fetchUser(uid);
 
+      // compute order if pinning on create
+      const nextOrderOnCreate = form.isPinned ? maxPinnedOrder() + 1 : 0;
+
       const payload = {
         ...form,
         uid,
@@ -336,16 +382,16 @@ export default function AnnouncementPage(props) {
         },
         hostelid: emp.hostelid,
         role: emp.role,
-        // note: we'll treat poll differently in EDIT; for CREATE we still include it
         pollData: cleanPollData,
         timestamp: Date.now(),
         isPinned: !!form.isPinned,
         pinnedAt: form.isPinned ? (form.pinnedAt || Date.now()) : null,
-        posterUrls: mergedPosterUrls, // persist array
+        pinnedOrder: form.isPinned ? (form.pinnedOrder || nextOrderOnCreate) : 0,
+        posterUrls: mergedPosterUrls,
       };
 
       if (editingData) {
-        // ======== EDIT (preserve votes) =========
+        // EDIT (preserve votes)
         const refPath = `announcements/${form.id}`;
         const announcementRef = dbRef(database, refPath);
         const snapshot = await get(announcementRef);
@@ -356,31 +402,24 @@ export default function AnnouncementPage(props) {
         }
         const existing = snapshot.val() || {};
 
-        // 1) Build base updates for non-poll fields
         const { postersFiles, id, pollData: _ignored, ...rest } = payload;
         const baseUpdates = {};
         Object.entries(rest).forEach(([k, v]) => {
-          // Avoid writing undefined (keeps DB tidy)
           if (v === undefined) return;
           baseUpdates[`${refPath}/${k}`] = v;
         });
 
-        // 2) Build poll patch that preserves votes
         const pollPatch = buildPollPatchPreserveVotes(form.id, existing.pollData, form.pollData);
 
-        // 3) Atomic multi-path update
         await update(dbRef(database), { ...baseUpdates, ...pollPatch });
 
         toast.success('Announcement updated successfully');
       } else {
-        // ======== CREATE =========
-        const newGroupRef = push(dbRef(database, 'announcements/'));
+        // CREATE
+        const newRef = push(dbRef(database, 'announcements/'));
         const { postersFiles, id, ...toPersist } = payload;
-
-        // If no poll provided, drop the key instead of writing null
         if (!toPersist.pollData) delete toPersist.pollData;
-
-        await set(newGroupRef, toPersist);
+        await set(newRef, toPersist);
         toast.success('Announcement created successfully');
       }
 
@@ -464,22 +503,8 @@ export default function AnnouncementPage(props) {
 
   const formattedRange = `${format(range[0].startDate, 'MMM dd, yyyy')} - ${format(range[0].endDate, 'MMM dd, yyyy')}`;
 
-  const togglePin = async (item, makePinned) => {
-    try {
-      await update(dbRef(database, `announcements/${item.id}`), {
-        isPinned: makePinned,
-        pinnedAt: makePinned ? Date.now() : null,
-      });
-      toast.success(makePinned ? 'Pinned' : 'Unpinned');
-    } catch (e) {
-      console.error(e);
-      toast.error('Could not update pin');
-    }
-  };
-
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
-      {/* Top bar with Add button */}
       <div className="flex justify-between items-center mb-3">
         <h1 className="text-2xl font-semibold">Announcement</h1>
         <button
@@ -494,7 +519,6 @@ export default function AnnouncementPage(props) {
         </button>
       </div>
 
-      {/* Time filter buttons */}
       <div className="flex items-center gap-2 mb-4">
         {['past', 'current', 'future'].map(key => {
           const label = key[0].toUpperCase() + key.slice(1);
@@ -519,7 +543,6 @@ export default function AnnouncementPage(props) {
         </label>
       </div>
 
-      {/* Bulk actions bar */}
       {selectedIds.size > 0 && (
         <div className="mb-2 flex items-center gap-3">
           <span className="text-sm text-gray-700">{selectedIds.size} selected</span>
@@ -568,7 +591,6 @@ export default function AnnouncementPage(props) {
           ) : (
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
-                {/* Row 1: clickable sort headers */}
                 <tr>
                   {[
                     { key: 'title', label: 'Title' },
@@ -601,7 +623,6 @@ export default function AnnouncementPage(props) {
                   ))}
                 </tr>
 
-                {/* Row 2: inline filter controls */}
                 <tr className="border-t border-gray-200">
                   <th className="px-6 pb-3">
                     <input
@@ -673,17 +694,50 @@ export default function AnnouncementPage(props) {
                           <div className="text-xs text-gray-500 mt-1">+{item.posterUrls.length - 1} more</div>
                         )}
                       </td>
+
+                      {/* Pin + order */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button
-                          type="button"
-                          title={item.isPinned ? 'Unpin' : 'Pin'}
-                          onClick={() => togglePin(item, !item.isPinned)}
-                          className={`text-lg leading-none ${item.isPinned ? 'text-yellow-500' : 'text-gray-400'} hover:opacity-80`}
-                          aria-label={item.isPinned ? 'Unpin announcement' : 'Pin announcement'}
-                        >
-                          {item.isPinned ? '★' : '☆'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            title={item.isPinned ? 'Unpin' : 'Pin'}
+                            onClick={() => togglePin(item, !item.isPinned)}
+                            className={`text-lg leading-none ${item.isPinned ? 'text-yellow-500' : 'text-gray-400'} hover:opacity-80`}
+                            aria-label={item.isPinned ? 'Unpin announcement' : 'Pin announcement'}
+                          >
+                            {item.isPinned ? '★' : '☆'}
+                          </button>
+
+                          {item.isPinned && (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                value={Number(item.pinnedOrder || 0)}
+                                onChange={(e) => setPinnedOrder(item, e.target.value)}
+                                className="w-16 border border-gray-300 rounded px-2 py-0.5 text-sm"
+                                title="Pinned order (lower = higher)"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => nudgeOrder(item, -1)}
+                                className="text-xs border rounded px-2 py-0.5"
+                                title="Move up"
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => nudgeOrder(item, 1)}
+                                className="text-xs border rounded px-2 py-0.5"
+                                title="Move down"
+                              >
+                                ↓
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </td>
+
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           className="text-blue-600 hover:underline mr-3"
@@ -701,12 +755,13 @@ export default function AnnouncementPage(props) {
                               ...item,
                               id: item.id,
                               date: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
-                              postersFiles: [],                 // clear local selection
-                              posterUrls: item.posterUrls || [],// keep existing array
+                              postersFiles: [],
+                              posterUrls: item.posterUrls || [],
                               pollData: {
                                 ...(item.pollData || { question: '', allowMulti: false, allowaddoption: false, options: { opt1: { text: '' }, opt2: { text: '' } } }),
                                 options: (item.pollData?.options) || { opt1: { text: '' }, opt2: { text: '' } },
                               },
+                              pinnedOrder: Number.isFinite(item.pinnedOrder) ? Number(item.pinnedOrder) : 0,
                             }));
                             setRange([{ startDate, endDate, key: 'selection' }]);
                             setModalOpen(true);
@@ -721,6 +776,7 @@ export default function AnnouncementPage(props) {
                           Delete
                         </button>
                       </td>
+
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <input
                           type="checkbox"
@@ -793,6 +849,32 @@ export default function AnnouncementPage(props) {
                   className="w-full border border-gray-300 p-2 rounded"
                   required
                 />
+
+                {/* Pin controls in form (optional) */}
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      name="isPinned"
+                      checked={!!form.isPinned}
+                      onChange={handleChange}
+                    />
+                    <span>Pin</span>
+                  </label>
+                  {form.isPinned && (
+                    <>
+                      <span className="text-sm text-gray-500">Order</span>
+                      <input
+                        type="number"
+                        name="pinnedOrder"
+                        value={Number(form.pinnedOrder || 0)}
+                        onChange={handleChange}
+                        className="w-24 border border-gray-300 rounded px-2 py-1 text-sm"
+                      />
+                    </>
+                  )}
+                </div>
+
                 <label>Date Range</label>
                 <div className="relative">
                   <input
@@ -821,8 +903,8 @@ export default function AnnouncementPage(props) {
                     </div>
                   )}
                 </div>
+
                 <label className="block font-medium">Posters (you can add multiple)</label>
-                {/* Multi-file picker */}
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">
                     <input
@@ -838,7 +920,6 @@ export default function AnnouncementPage(props) {
                   <span className="text-sm text-gray-600 truncate max-w-[220px]">{fileName}</span>
                 </div>
 
-                {/* Existing images (persisted) */}
                 {form.posterUrls?.length > 0 && (
                   <div className="mt-2 grid grid-cols-4 gap-2">
                     {form.posterUrls.map((url, idx) => (
@@ -862,7 +943,6 @@ export default function AnnouncementPage(props) {
                   </div>
                 )}
 
-                {/* Newly selected (local) previews */}
                 {form.postersFiles?.length > 0 && (
                   <div className="mt-2 grid grid-cols-4 gap-2">
                     {form.postersFiles.map((f, idx) => {
@@ -967,7 +1047,7 @@ export default function AnnouncementPage(props) {
                           onChange={handleChange}
                           className="sr-only peer"
                         />
-                        <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-green-500 transition-colors duration-300"></div>
+                        <div className="w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors duration-300"></div>
                         <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform duration-300 peer-checked:translate-x-5"></div>
                       </label>
                     </div>
