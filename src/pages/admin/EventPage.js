@@ -248,30 +248,60 @@ export default function EventPage({ navbarHeight }) {
     setDelete(null);
   };
 
-  const formatDateTime = (ts) => {
-    const ms = toMillis(ts);
+  const formatDateTime = (ts, fallbackDate) => {
+    const ms = toMillis(ts) ?? toMillis(fallbackDate);
     if (!ms) return "—";
     return dayjs(ms).format("YYYY-MM-DD hh:mm A");
   };
-
   function toMillis(val) {
     if (!val) return null;
-    if (typeof val === "object" && "seconds" in val) return val.seconds * 1000;
+    // Firestore Timestamp object {seconds, nanoseconds}
+    if (typeof val === "object" && val.seconds != null) return val.seconds * 1000;
+    // Firestore Timestamp instance
     if (val?.toDate) return val.toDate().getTime();
+    // ISO/string/Date
     const ms = new Date(val).getTime();
     return Number.isNaN(ms) ? null : ms;
+  }
+  function getEventWindowMillis(item) {
+    // 1) time-precision fields
+    const s1 = toMillis(item.startDateTime);
+    const e1 = toMillis(item.endDateTime);
+
+    if (s1 || e1) {
+      return {
+        start: s1 ?? e1,                // if only end given, treat start=end to still classify
+        end: e1 ?? s1,                // if only start given, treat end=start
+        source: "dateTime"
+      };
+    }
+
+    // 2) date-only range
+    const sd = toMillis(item?.date?.startDate);
+    const ed = toMillis(item?.date?.endDate);
+
+    if (sd || ed) {
+      // interpret as whole days in local time: [00:00:00.000, 23:59:59.999]
+      const start = sd ? new Date(sd) : (ed ? new Date(ed) : null);
+      const end = ed ? new Date(ed) : (sd ? new Date(sd) : null);
+      if (start && end) {
+        const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0).getTime();
+        const dayEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999).getTime();
+        return { start: dayStart, end: dayEnd, source: "dateOnly" };
+      }
+    }
+
+    // fallback: no dates → treat as current so it shows up
+    return { start: null, end: null, source: "none" };
   }
 
   function classifyEvent(item) {
     const now = Date.now();
-    const start = toMillis(item.startDateTime);
-    const end = toMillis(item.endDateTime);
-    if (!start && !end) return "current";
-    if (start && now < start) return "future";
-    if (end && now > end) return "past";
-    if (start && end && start <= now && now <= end) return "current";
-    if (!end && start && now >= start) return "current";
-    if (!start && end && now <= end) return "current";
+    const { start, end } = getEventWindowMillis(item);
+
+    if (start == null && end == null) return "current";
+    if (start != null && now < start) return "future";
+    if (end != null && now > end) return "past";
     return "current";
   }
 
@@ -401,7 +431,73 @@ export default function EventPage({ navbarHeight }) {
       setShowPicker(false);
     }
   };
+  const toDate = (ts) => (ts?.seconds ? new Date(ts.seconds * 1000) : new Date(ts));
+  const two = (n) => String(n).padStart(2, '0');
+  const timeStr = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const formatRangeParts = (startTs, endTs) => {
+    const s = toDate(startTs);
+    const e = toDate(endTs);
+    if (isNaN(s) || isNaN(e)) return { time: '', date: '' };
+    const sameYear = s.getFullYear() === e.getFullYear();
+    const sameMonth = sameYear && s.getMonth() === e.getMonth();
+    const sDay = two(s.getDate()), eDay = two(e.getDate());
+    const m = (d) => d.toLocaleString('en-US', { month: 'short' }).toLowerCase();
 
+    let datePart;
+    if (sameMonth) datePart = `${sDay}-${eDay} ${m(s)}`;
+    else if (sameYear) datePart = `${sDay} ${m(s)}-${eDay} ${m(e)}`;
+    else datePart = `${sDay} ${m(s)} ${s.getFullYear()}-${eDay} ${m(e)} ${e.getFullYear()}`;
+
+    return { time: `${timeStr(s)} to ${timeStr(e)}`, date: datePart };
+  };
+
+  function toMilli(v) {
+    if (!v) return null;
+    if (typeof v === "object" && v.seconds != null) return v.seconds * 1000;
+    if (v?.toDate) return v.toDate().getTime();
+    const ms = new Date(v).getTime();
+    return Number.isNaN(ms) ? null : ms;
+  }
+
+  // ----- compact lines -----
+  const SHOW_ALL_DAY_FOR_DATE_ONLY = true;
+
+  function getTimeLine(item) {
+    const s = toMilli(item.startDateTime);
+    const e = toMilli(item.endDateTime);
+    if (s || e) {
+      const st = s ? dayjs(s).format("hh:mm A") : "";
+      const et = e ? dayjs(e).format("hh:mm A") : "";
+      return st && et ? `${st} to ${et}` : (st || et || "");
+    }
+    // date-only event
+    return SHOW_ALL_DAY_FOR_DATE_ONLY ? "All day" : "";
+  }
+
+  function getDateLine(item) {
+    // prefer exact datetimes' dates; fallback to date range
+    let s = toMilli(item.startDateTime) ?? toMilli(item?.date?.startDate);
+    let e = toMilli(item.endDateTime) ?? toMilli(item?.date?.endDate);
+
+    if (!s && !e) return "—";
+    if (!s) s = e;
+    if (!e) e = s;
+
+    const sd = dayjs(s), ed = dayjs(e);
+    const sameMonth = sd.month() === ed.month() && sd.year() === ed.year();
+    const sameYear = sd.year() === ed.year();
+
+    const monLower = (d) => d.format("MMM").toLowerCase();
+    const needYear = !sameYear || sd.year() !== dayjs().year();
+
+    if (sameMonth) {
+      return `${sd.format("D")}–${ed.format("D")} ${monLower(sd)}${needYear ? " " + sd.format("YYYY") : ""}`;
+    }
+    if (sameYear) {
+      return `${sd.format("D")} ${monLower(sd)}–${ed.format("D")} ${monLower(ed)}${needYear ? " " + sd.format("YYYY") : ""}`;
+    }
+    return `${sd.format("D MMM YYYY")}–${ed.format("D MMM YYYY")}`.replace(/MMM/g, m => m.toLowerCase());
+  }
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       <div className="flex justify-between items-center mb-4">
@@ -505,7 +601,6 @@ export default function EventPage({ navbarHeight }) {
                     ))}
                   </select>
                 </th>
-                <th className="px-6 pb-3" />
                 <th className="px-6 pb-3">
                   <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
@@ -524,6 +619,7 @@ export default function EventPage({ navbarHeight }) {
                 </th>
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
               </tr>
             </thead>
 
@@ -538,7 +634,14 @@ export default function EventPage({ navbarHeight }) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.eventName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.category || "—"}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {formatDateTime(item.startDateTime)} — {formatDateTime(item.endDateTime)}
+                      {/* {formatDateTime(item.startDateTime)} <br/> {formatDateTime(item.endDateTime)} */}
+                      {/* {formatRangeParts(item.startDateTime, item.endDateTime)} */}
+                      {/* <div className="font-semibold"> */}
+                      {getTimeLine(item)} <br />
+                      {/* </div> */}
+                      {/* <div className="text-xs text-gray-500"> */}
+                      {getDateLine(item)}
+                      {/* </div> */}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.locationName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">

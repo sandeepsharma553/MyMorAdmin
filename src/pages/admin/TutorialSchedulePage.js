@@ -28,30 +28,11 @@ export default function TutorialSchedulePage(props) {
   const uid = useSelector((state) => state.auth.user.uid);
   const emp = useSelector((state) => state.auth.employee);
 
-  // ---------- Week controls (anchor = today; no date input in UI) ----------
-  const [weekMode, setWeekMode] = useState("current"); // 'past' | 'current' | 'future'
-  const anchorDate = new Date().toISOString().split("T")[0]; // yyyy-mm-dd
-
-  const addDays = (d, days) => {
-    const nd = new Date(d);
-    nd.setDate(nd.getDate() + days);
-    return nd;
-  };
-  const fmt = (x) => x.toISOString().split("T")[0];
-
-  const getWeekRange = (dateStr, mode = "current") => {
-    const base = new Date(dateStr);
-    const offsetDays = mode === "past" ? -7 : mode === "future" ? 7 : 0;
-    const anchor = addDays(base, offsetDays);
-    const day = anchor.getDay(); // 0=Sun
-    const diffToMonday = anchor.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(anchor.setDate(diffToMonday));
-    const sunday = addDays(monday, 6);
-    return { start: fmt(monday), end: fmt(sunday), label: `${fmt(monday)} → ${fmt(sunday)}` };
-  };
+  // ---------- View controls (match Events: 'past' | 'current' | 'future') ----------
+  const [weekMode, setWeekMode] = useState("current");
 
   // ---------- Filters + sorting ----------
-  const [filters, setFilters] = useState({ roomtype: "", hall: "", day: "", time: "" });
+  const [filters, setFilters] = useState({ roomtype: "", hall: "", day: "", time: "", empname: "" });
   const [sortConfig, setSortConfig] = useState({ key: "roomtype", direction: "asc" });
   const debounceRef = useRef(null);
   const setFilterDebounced = (field, value) => {
@@ -85,8 +66,6 @@ export default function TutorialSchedulePage(props) {
     if (!emp?.hostelid) return;
     setIsLoading(true);
     try {
-      // Note: Week mode UI shown, but backend query is hostel-wide (same as your Cleaning page).
-      // If you want actual week filtering, add where("date", ">=", start) / where("date","<=", end)
       const qy = query(collection(db, "tutorialschedule"), where("hostelid", "==", emp.hostelid));
       const snapshot = await getDocs(qy);
       const documents = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -110,8 +89,8 @@ export default function TutorialSchedulePage(props) {
   // initial load
   useEffect(() => { getList(); /* eslint-disable-next-line */ }, [emp?.hostelid]);
 
-  // keep pagination sane on filter/sort change
-  useEffect(() => { setCurrentPage(1); }, [filters, sortConfig]);
+  // keep pagination sane on filter/sort/mode change
+  useEffect(() => { setCurrentPage(1); }, [filters, sortConfig, weekMode]);
 
   // ---------- Add / Update ----------
   const handleAdd = async (e) => {
@@ -280,20 +259,72 @@ export default function TutorialSchedulePage(props) {
     }
   };
 
+  // ---------- Time classification (date + time-aware) ----------
+  const todayYMD = new Date().toISOString().slice(0, 10);
+
+  const parseHM = (s = "") => {
+    // Supports "HH:MM", "H:MM am/pm", or range "HH:MM-HH:MM"
+    if (!s) return null;
+    const [startRaw, endRaw] = String(s).split("-").map((x) => x.trim());
+
+    const toMinutes = (piece) => {
+      if (!piece) return null;
+      const m = piece.match(/^(\d{1,2}):(\d{2})(?:\s*(am|pm))?$/i);
+      if (!m) return null;
+      let [, hh, mm, ap] = m;
+      let h = Number(hh);
+      const mins = Number(mm);
+      if (ap) {
+        ap = ap.toLowerCase();
+        if (ap === "pm" && h !== 12) h += 12;
+        if (ap === "am" && h === 12) h = 0;
+      }
+      if (h < 0 || h > 23 || mins < 0 || mins > 59) return null;
+      return h * 60 + mins;
+    };
+
+    return { start: toMinutes(startRaw), end: toMinutes(endRaw) };
+  };
+
+  const classifySchedule = (row) => {
+    const d = (row?.date || "").slice(0, 10); // "YYYY-MM-DD"
+    if (!d) return "current";
+    if (d < todayYMD) return "past";
+    if (d > todayYMD) return "future";
+
+    // Same day (today): refine with time if present
+    const t = parseHM(row?.time);
+    if (!t || (t.start == null && t.end == null)) return "current";
+
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+
+    if (t.start != null && nowMins < t.start) return "future";
+    if (t.end != null && nowMins > t.end) return "past";
+    return "current";
+  };
+
   // ---------- Derive filtered/sorted/paginated ----------
-  const filteredData = list.filter((r) => {
+  // 1) Apply time bucket first (like Events/Cleaning)
+  const timeFiltered = list.filter((r) => classifySchedule(r) === weekMode);
+
+  // 2) Column filters (including empname)
+  const filteredData = timeFiltered.filter((r) => {
     const rt = (r.roomtype || "").toLowerCase();
     const hl = (r.hall || "").toLowerCase();
     const dy = (r.day || "").toLowerCase();
     const tm = (r.time || "").toLowerCase();
+    const en = (r.empname || "").toLowerCase();
     return (
       (!filters.roomtype || rt.includes(filters.roomtype.toLowerCase())) &&
       (!filters.hall || hl.includes(filters.hall.toLowerCase())) &&
       (!filters.day || dy.includes(filters.day.toLowerCase())) &&
-      (!filters.time || tm.includes(filters.time.toLowerCase()))
+      (!filters.time || tm.includes(filters.time.toLowerCase())) &&
+      (!filters.empname || en.includes(filters.empname.toLowerCase()))
     );
   });
 
+  // 3) Sort
   const sortedData = [...filteredData].sort((a, b) => {
     const dir = sortConfig.direction === "asc" ? 1 : -1;
     const key = sortConfig.key;
@@ -302,6 +333,7 @@ export default function TutorialSchedulePage(props) {
     return va.localeCompare(vb) * dir;
   });
 
+  // 4) Pagination
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
   const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -315,7 +347,7 @@ export default function TutorialSchedulePage(props) {
     }
   }, [somePageSelected, allPageSelected]);
 
-  const { label: weekLabel } = getWeekRange(anchorDate, weekMode);
+  const viewLabel = weekMode === "past" ? "Past" : weekMode === "future" ? "Future" : "Current (today)";
 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
@@ -323,11 +355,11 @@ export default function TutorialSchedulePage(props) {
       <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-semibold">Tutorial Schedule</h1>
-          <div className="text-xs text-gray-500 mt-1">Week: {weekLabel}</div>
+          <div className="text-xs text-gray-500 mt-1">View: {viewLabel}</div>
         </div>
 
         <div className="flex items-center gap-4 flex-wrap">
-          {/* Week toggle only (no date input) */}
+          {/* Past / Current / Future toggle */}
           <div className="flex items-center gap-2">
             {["past", "current", "future"].map((k) => {
               const active = weekMode === k;
@@ -443,7 +475,7 @@ export default function TutorialSchedulePage(props) {
               </tr>
 
               {/* Row 2: filter inputs */}
-              <tr className="border-t border-gray-2 00">
+              <tr className="border-t border-gray-200">
                 <th className="px-6 pb-3">
                   <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
@@ -471,16 +503,16 @@ export default function TutorialSchedulePage(props) {
                 <th className="px-6 pb-3">
                   <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="Filter time"
+                    placeholder='Filter time (e.g. "09:00")'
                     defaultValue={filters.time}
                     onChange={(e) => setFilterDebounced("time", e.target.value)}
                   />
                 </th>
                 <th className="px-6 pb-3">
-                  {/* Name filter (optional; reuse roomtype filter style) */}
                   <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
                     placeholder="Filter name"
+                    defaultValue={filters.empname}
                     onChange={(e) => setFilterDebounced("empname", e.target.value)}
                   />
                 </th>
@@ -632,6 +664,7 @@ export default function TutorialSchedulePage(props) {
                   className="w-full border border-gray-300 p-2 rounded"
                   value={form.time}
                   onChange={(e) => setForm({ ...form, time: e.target.value })}
+                  placeholder='e.g. "09:00-10:00" or "9:00 am-10:30 am"'
                   required
                 />
                 <label className="block font-medium mb-1">Name</label>

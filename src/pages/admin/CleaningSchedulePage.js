@@ -20,7 +20,7 @@ export default function CleaningSchedulePage(props) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   // ---------- Data ----------
-  const [list, setList] = useState([]);         // week-scoped list from Firestore
+  const [list, setList] = useState([]);         // full list from Firestore
   const [fileName, setFileName] = useState("No file chosen");
   const [data, setData] = useState([]);         // parsed from Excel
   const [isLoading, setIsLoading] = useState(false);
@@ -28,27 +28,8 @@ export default function CleaningSchedulePage(props) {
   const uid = useSelector((state) => state.auth.user.uid);
   const emp = useSelector((state) => state.auth.employee);
 
-  // ---------- Week controls (anchor = today; no date input in UI) ----------
-  const [weekMode, setWeekMode] = useState("current"); // 'past' | 'current' | 'future'
-  const anchorDate = new Date().toISOString().split("T")[0]; // today (string yyyy-mm-dd)
-
-  const addDays = (d, days) => {
-    const nd = new Date(d);
-    nd.setDate(nd.getDate() + days);
-    return nd;
-  };
-  const fmt = (x) => x.toISOString().split("T")[0];
-
-  const getWeekRange = (dateStr, mode = "current") => {
-    const base = new Date(dateStr);
-    const offsetDays = mode === "past" ? -7 : mode === "future" ? 7 : 0;
-    const anchor = addDays(base, offsetDays);
-    const day = anchor.getDay(); // 0=Sun
-    const diffToMonday = anchor.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(anchor.setDate(diffToMonday));
-    const sunday = addDays(monday, 6);
-    return { start: fmt(monday), end: fmt(sunday), label: `${fmt(monday)} → ${fmt(sunday)}` };
-  };
+  // ---------- View mode (match Events: 'past' | 'current' | 'future') ----------
+  const [weekMode, setWeekMode] = useState("current");
 
   // ---------- Filters + sorting ----------
   const [filters, setFilters] = useState({ roomtype: "", hall: "", day: "", time: "" });
@@ -80,12 +61,11 @@ export default function CleaningSchedulePage(props) {
     return d.toLocaleDateString("en-US", { weekday: "long" });
   };
 
-  // ---------- Load week-scoped list ----------
-  const getList = async (mode) => {
+  // ---------- Load list ----------
+  const getList = async () => {
     if (!emp?.hostelid) return;
     setIsLoading(true);
     try {
-      const { start, end } = getWeekRange(anchorDate, mode);
       const qy = query(
         collection(db, "cleaningschedule"),
         where("hostelid", "==", emp.hostelid),
@@ -99,8 +79,8 @@ export default function CleaningSchedulePage(props) {
         return (a.time || "").localeCompare(b.time || "");
       });
       setList(documents);
-      setSelectedIds(new Set()); // clear selection when week changes
-      setCurrentPage(1);         // reset pagination on week change
+      setSelectedIds(new Set()); // clear selection when data reloads
+      setCurrentPage(1);         // reset pagination
     } catch (err) {
       console.error(err);
       toast.error("Failed to load cleaning schedules");
@@ -109,20 +89,14 @@ export default function CleaningSchedulePage(props) {
     }
   };
 
-  // initial load (current week)
+  // initial load
   useEffect(() => {
-    getList("current");
+    getList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emp?.hostelid]);
 
-  // reload on week mode change
-  useEffect(() => {
-    getList(weekMode);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekMode]);
-
-  // reset pagination when filters/sort change
-  useEffect(() => { setCurrentPage(1); }, [filters, sortConfig]);
+  // reset pagination when filters/sort/mode change
+  useEffect(() => { setCurrentPage(1); }, [filters, sortConfig, weekMode]);
 
   // ---------- Add / Update ----------
   const handleAdd = async (e) => {
@@ -144,7 +118,7 @@ export default function CleaningSchedulePage(props) {
           day: form.day,
           time: form.time,
           date: form.date,
-          empname:form.empname,
+          empname: form.empname,
           hostelid: emp.hostelid,
           updatedBy: uid,
           updatedDate: new Date(),
@@ -158,15 +132,15 @@ export default function CleaningSchedulePage(props) {
           day: form.day,
           time: form.time,
           date: form.date,
-          empname:form.empname,
+          empname: form.empname,
           hostelid: emp.hostelid,
           createdBy: uid,
           createdDate: new Date(),
         });
         toast.success("Successfully saved");
       }
-      // refresh current view
-      getList(weekMode);
+      // refresh view
+      getList();
     } catch (error) {
       console.error("Error saving data:", error);
     }
@@ -182,7 +156,7 @@ export default function CleaningSchedulePage(props) {
     try {
       await deleteDoc(doc(db, "cleaningschedule", deleteData.id));
       toast.success("Successfully deleted!");
-      getList(weekMode);
+      getList();
     } catch (error) {
       console.error("Error deleting document: ", error);
     }
@@ -213,7 +187,7 @@ export default function CleaningSchedulePage(props) {
           day: row["Day"] || "",
           time: row["Time"] || "",
           date,
-          empname:"",
+          empname: "",
           hostelid: emp.hostelid,
         };
       });
@@ -244,10 +218,9 @@ export default function CleaningSchedulePage(props) {
       }
 
       toast.success("Cleaning schedule saved (duplicates skipped)!");
-      // Reload the currently viewed week
-      getList(weekMode);
       setFileName("No file chosen");
       setData([]);
+      getList();
     } catch (error) {
       console.error("Error saving data: ", error);
     } finally {
@@ -283,7 +256,7 @@ export default function CleaningSchedulePage(props) {
       }
       toast.success("Selected schedules deleted");
       setSelectedIds(new Set());
-      getList(weekMode);
+      getList();
     } catch (err) {
       console.error(err);
       toast.error("Bulk delete failed");
@@ -292,8 +265,57 @@ export default function CleaningSchedulePage(props) {
     }
   };
 
-  // ---------- Derive filtered/sorted/paginated from week list ----------
-  const filteredData = list.filter((r) => {
+  // ---------- Time classification (date + time-aware) ----------
+  const todayYMD = new Date().toISOString().slice(0, 10);
+
+  const parseHM = (s = "") => {
+    // Supports "HH:MM", "H:MM am/pm", or range "HH:MM-HH:MM"
+    if (!s) return null;
+    const [startRaw, endRaw] = String(s).split("-").map((x) => x.trim());
+
+    const toMinutes = (piece) => {
+      if (!piece) return null;
+      const m = piece.match(/^(\d{1,2}):(\d{2})(?:\s*(am|pm))?$/i);
+      if (!m) return null;
+      let [, hh, mm, ap] = m;
+      let h = Number(hh);
+      const mins = Number(mm);
+      if (ap) {
+        ap = ap.toLowerCase();
+        if (ap === "pm" && h !== 12) h += 12;
+        if (ap === "am" && h === 12) h = 0;
+      }
+      if (h < 0 || h > 23 || mins < 0 || mins > 59) return null;
+      return h * 60 + mins;
+    };
+
+    return { start: toMinutes(startRaw), end: toMinutes(endRaw) };
+  };
+
+  const classifySchedule = (row) => {
+    const d = (row?.date || "").slice(0, 10); // "YYYY-MM-DD"
+    if (!d) return "current";
+    if (d < todayYMD) return "past";
+    if (d > todayYMD) return "future";
+
+    // Same day (today): refine with time if present
+    const t = parseHM(row?.time);
+    if (!t || (t.start == null && t.end == null)) return "current";
+
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+
+    if (t.start != null && nowMins < t.start) return "future";
+    if (t.end != null && nowMins > t.end) return "past";
+    return "current";
+  };
+
+  // ---------- Derive filtered/sorted/paginated ----------
+  // 1) time bucket first (like Events)
+  const timeFiltered = list.filter((r) => classifySchedule(r) === weekMode);
+
+  // 2) column filters
+  const filteredData = timeFiltered.filter((r) => {
     const rt = (r.roomtype || "").toLowerCase();
     const hl = (r.hall || "").toLowerCase();
     const dy = (r.day || "").toLowerCase();
@@ -306,6 +328,7 @@ export default function CleaningSchedulePage(props) {
     );
   });
 
+  // 3) sort
   const sortedData = [...filteredData].sort((a, b) => {
     const dir = sortConfig.direction === "asc" ? 1 : -1;
     const key = sortConfig.key;
@@ -314,6 +337,7 @@ export default function CleaningSchedulePage(props) {
     return va.localeCompare(vb) * dir;
   });
 
+  // 4) pagination
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
   const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -327,7 +351,7 @@ export default function CleaningSchedulePage(props) {
     }
   }, [somePageSelected, allPageSelected]);
 
-  const { label: weekLabel } = getWeekRange(anchorDate, weekMode);
+  const weekLabel = weekMode === "past" ? "Past" : weekMode === "future" ? "Future" : "Current (today)";
 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
@@ -335,11 +359,11 @@ export default function CleaningSchedulePage(props) {
       <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-semibold">Cleaning Schedule</h1>
-          <div className="text-xs text-gray-500 mt-1">Week: {weekLabel}</div>
+          <div className="text-xs text-gray-500 mt-1">View: {weekLabel}</div>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Week toggle only (no date input) */}
+          {/* Mode toggle: Past / Current / Future */}
           <div className="flex items-center gap-2">
             {["past", "current", "future"].map((k) => {
               const active = weekMode === k;
@@ -634,6 +658,7 @@ export default function CleaningSchedulePage(props) {
                   className="w-full border border-gray-300 p-2 rounded"
                   value={form.time}
                   onChange={(e) => setForm({ ...form, time: e.target.value })}
+                  placeholder='e.g. "09:00-10:00" or "9:00 am-10:30 am"'
                   required
                 />
                 <label className="block font-medium mb-1">Name</label>

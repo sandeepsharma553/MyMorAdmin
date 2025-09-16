@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
   query, where, getDoc
@@ -7,7 +7,7 @@ import { db } from "../../firebase";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
+import { MenuItem, Select, Checkbox, ListItemText } from "@mui/material";
 import LocationPicker from "./LocationPicker";
 
 const DEFAULT_FEATURES = {
@@ -30,12 +30,11 @@ const DEFAULT_FEATURES = {
   poi: false,
   community: false,
   employee: false,
-  student: false
+  student: false,
 };
 
 const pageSize = 10;
 
-// ⬇️ include structured location fields
 const initialForm = {
   id: "",
   name: "",
@@ -66,8 +65,14 @@ const HostelPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [confirmToggleOpen, setConfirmToggleOpen] = useState(false);
   const [toggleItem, setToggleItem] = useState(null);
-
   const [form, setForm] = useState(initialForm);
+
+  // keep a mounted flag to avoid state updates on unmounted
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
   const paginatedData = useMemo(
@@ -79,34 +84,41 @@ const HostelPage = () => {
     getList();
   }, []);
 
+  // If list shrinks, keep currentPage in bounds
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
   const resetForm = () => {
     setForm(initialForm);
     setEditing(null);
+    setUniversities([]); // clear the dropdown until a country is picked
   };
 
   const getList = async () => {
     setIsLoading(true);
     try {
       const [uniSnap, hostelSnap] = await Promise.all([
-        getDocs(collection(db, 'university')),
-        getDocs(collection(db, 'hostel')),
+        getDocs(collection(db, "university")),
+        getDocs(collection(db, "hostel")),
       ]);
 
-      const uniArr = uniSnap.docs.map(d => ({ id: d.id, name: d.data().name }));
-      const uniMap = uniArr.reduce((acc, cur) => (acc[cur.id] = cur.name, acc), {});
+      const uniArr = uniSnap.docs.map((d) => ({ id: d.id, name: d.data().name }));
+      const uniMap = uniArr.reduce((acc, cur) => ((acc[cur.id] = cur.name), acc), {});
 
-      const hostelArr = hostelSnap.docs.map(d => {
+      const hostelArr = hostelSnap.docs.map((d) => {
         const data = d.data();
         const {
           name, uniIds = [], location, features,
           active = true, disabledReason, disabledAt,
-          // bring in saved structured fields if present
           countryCode = "", countryName = "",
           stateCode = "", stateName = "",
           cityName = "", lat = null, lng = null,
         } = data;
 
-        const universityNames = uniIds.map(id => uniMap[id] ?? "Unknown");
+        const universityNames = uniIds.map((id) => uniMap[id] ?? "Unknown");
 
         return {
           id: d.id,
@@ -121,18 +133,44 @@ const HostelPage = () => {
         };
       });
 
-      setList(hostelArr);
-      setUniversities(uniArr);
+      if (mountedRef.current) setList(hostelArr);
     } catch (err) {
-      console.error('getList error:', err);
+      console.error("getList error:", err);
       toast.error("Failed to load hostels");
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
   };
 
+  // Fetch universities by country (and only touch state if mounted)
+  const fetchUniversitiesByCountry = async (countryName) => {
+    if (!countryName) {
+      setUniversities([]);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const qy = query(collection(db, "university"), where("countryName", "==", countryName));
+      const uniSnap = await getDocs(qy);
+      const uniArr = uniSnap.docs.map((d) => ({ id: d.id, name: d.data().name }));
+      if (mountedRef.current) setUniversities(uniArr); // [] if none
+    } catch (err) {
+      console.error("fetchUniversitiesByCountry error:", err);
+      toast.error("Failed to load universities");
+      if (mountedRef.current) setUniversities([]);
+    } finally {
+      if (mountedRef.current) setIsLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (modalOpen && form.countryName) {
+      fetchUniversitiesByCountry(form.countryName);
+    }
+  }, [modalOpen]);
+
   const handleAdd = async (e) => {
     e.preventDefault();
+
     const rawName = form.name?.trim();
     if (!rawName) return toast.warn("Please enter a hostel name");
     if (!Array.isArray(form.uniIds) || form.uniIds.length === 0) {
@@ -141,14 +179,14 @@ const HostelPage = () => {
 
     const featuresToSave = { ...DEFAULT_FEATURES, ...(form.features || {}) };
 
-    // ⬇️ payload includes structured location
     const payload = {
       uid,
       name: rawName,
+      // unique uniIds
       uniIds: [...new Set(form.uniIds)],
       location: form.location?.trim() || "",
       features: featuresToSave,
-      active: true,
+      active: !!form.active, // respect the current form
       disabledReason: null,
       disabledAt: null,
 
@@ -176,18 +214,18 @@ const HostelPage = () => {
         });
         toast.success("Successfully updated");
       } else {
-        // add new; prevent double-linking of same name→uniIds across docs
+        // Avoid creating another doc with the same name linked to overlapping uniIds
         const qy = query(collection(db, "hostel"), where("name", "==", rawName));
         const qs = await getDocs(qy);
 
         const occupied = new Set();
-        qs.docs.forEach(d => {
+        qs.docs.forEach((d) => {
           const data = d.data();
-          if (Array.isArray(data.uniIds)) data.uniIds.forEach(u => occupied.add(u));
+          if (Array.isArray(data.uniIds)) data.uniIds.forEach((u) => occupied.add(u));
         });
 
-        const toAddUniIds = payload.uniIds.filter(u => !occupied.has(u));
-        const skippedUniIds = payload.uniIds.filter(u => occupied.has(u));
+        const toAddUniIds = payload.uniIds.filter((u) => !occupied.has(u));
+        const skippedUniIds = payload.uniIds.filter((u) => occupied.has(u));
         if (toAddUniIds.length === 0) {
           toast.warn("All selected universities are already linked to this hostel name.");
           return;
@@ -219,16 +257,16 @@ const HostelPage = () => {
 
   const handleFeatureChange = (e) => {
     const { name, checked } = e.target;
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
-      features: { ...prev.features, [name]: checked }
+      features: { ...prev.features, [name]: checked },
     }));
   };
 
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      const hostelRef = doc(db, "hostel", deleteData.id); // ✅ fixed
+      const hostelRef = doc(db, "hostel", deleteData.id);
       const hostelSnap = await getDoc(hostelRef);
       if (!hostelSnap.exists()) {
         toast.warn("Hostel not found!");
@@ -240,10 +278,10 @@ const HostelPage = () => {
         return;
       }
       await deleteDoc(hostelRef);
-      toast.success('Successfully deleted!');
+      toast.success("Successfully deleted!");
       await getList();
     } catch (error) {
-      console.error('Error deleting document: ', error);
+      console.error("Error deleting document: ", error);
       toast.error("Failed to delete");
     }
     setConfirmDeleteOpen(false);
@@ -265,7 +303,7 @@ const HostelPage = () => {
       );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to disable hostel");
-      toast.success(`Hostel ${!item.active ? "enabled" : "disabled"}.`);
+      toast.success(`Hostel disabled.`);
       await getList();
     } catch (e) {
       console.error(e);
@@ -290,7 +328,7 @@ const HostelPage = () => {
       );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to enable hostel");
-      toast.success(`Hostel ${!item.active ? "enabled" : "disabled"}.`);
+      toast.success(`Hostel enabled.`);
       await getList();
     } catch (e) {
       console.error(e);
@@ -309,7 +347,6 @@ const HostelPage = () => {
       location: item.location || "",
       features: { ...DEFAULT_FEATURES, ...(item.features || {}) },
       active: item.active !== false,
-
       countryCode: item.countryCode || "",
       countryName: item.countryName || "",
       stateCode: item.stateCode || "",
@@ -323,7 +360,15 @@ const HostelPage = () => {
 
   const formatLocation = (row) => {
     const parts = [row.cityName, row.stateName, row.countryName].filter(Boolean);
-    return parts.length ? parts.join(", ") : (row.location || "—");
+    return parts.length ? parts.join(", ") : row.location || "—";
+  };
+
+  const renderSelectedUniversities = (selected) => {
+    if (!selected?.length) return "Select University";
+    const names = selected
+      .map((id) => universities.find((u) => u.id === id)?.name || "")
+      .filter(Boolean);
+    return names.length ? names.join(", ") : `${selected.length} selected`;
   };
 
   return (
@@ -377,7 +422,8 @@ const HostelPage = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       <div className="flex flex-col">
                         <span>{formatLocation(item)}</span>
-                        {/* {typeof item.lat === "number" && typeof item.lng === "number" ? (
+                        {/* Show coords if needed:
+                        {typeof item.lat === "number" && typeof item.lng === "number" ? (
                           <span className="text-gray-500 text-xs">
                             {item.lat.toFixed(4)}, {item.lng.toFixed(4)}
                           </span>
@@ -452,28 +498,9 @@ const HostelPage = () => {
                 required
               />
 
-              <Select
-                className="w-full border border-gray-300 p-2 rounded"
-                multiple
-                displayEmpty
-                required
-                value={form.uniIds}
-                onChange={(e) => setForm({ ...form, uniIds: e.target.value })}
-                renderValue={(selected) =>
-                  selected.length
-                    ? selected.map((id) => universities.find((u) => u.id === id)?.name || '').join(", ")
-                    : "Select University"
-                }
-              >
-                {universities.map(({ id, name }) => (
-                  <MenuItem key={id} value={id}>
-                    <Checkbox checked={form.uniIds.includes(id)} />
-                    <ListItemText primary={name} />
-                  </MenuItem>
-                ))}
-              </Select>
+              {/* Location Picker drives universities list */}
               <LocationPicker
-                key={form.id || 'new'}
+                key={form.id || "new"}
                 value={{
                   countryCode: form.countryCode || "",
                   stateCode: form.stateCode || "",
@@ -481,16 +508,15 @@ const HostelPage = () => {
                 }}
                 onChange={(loc) => {
                   const next = {
-                    countryCode: loc.country?.code || "",
-                    countryName: loc.country?.name || "",
-                    stateCode: loc.state?.code || "",
-                    stateName: loc.state?.name || "",
-                    cityName: loc.city?.name || "",
-                    lat: loc.coords?.lat ?? null,
-                    lng: loc.coords?.lng ?? null,
+                    countryCode: loc?.country?.code || "",
+                    countryName: loc?.country?.name || "",
+                    stateCode: loc?.state?.code || "",
+                    stateName: loc?.state?.name || "",
+                    cityName: loc?.city?.name || "",
+                    lat: loc?.coords?.lat ?? null,
+                    lng: loc?.coords?.lng ?? null,
                   };
-
-                  setForm(prev => {
+                  setForm((prev) => {
                     const same =
                       prev.countryCode === next.countryCode &&
                       prev.countryName === next.countryName &&
@@ -500,31 +526,59 @@ const HostelPage = () => {
                       prev.lat === next.lat &&
                       prev.lng === next.lng;
 
-                    return same ? prev : { ...prev, ...next };
+                    return same ? prev : { ...prev, ...next, uniIds: [] }; 
                   });
+                  fetchUniversitiesByCountry(loc?.country?.name || "");
                 }}
               />
+
+              {/* Optional display text (kept editable) */}
               <input
                 type="text"
                 placeholder="Location (optional display text)"
                 className="w-full border border-gray-300 p-2 rounded"
                 value={
-                  form.cityName
+                  form.location ||
+                  (form.cityName
                     ? `${form.cityName}${form.stateName ? ", " + form.stateName : ""}${form.countryName ? ", " + form.countryName : ""}`
-                    : form.location
+                    : "")
                 }
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
               />
 
-              <fieldset style={{ marginTop: '20px' }}>
-                <legend style={{ fontWeight: 'bold', marginBottom: '10px' }}>Features</legend>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', padding: '10px 0' }}>
+              {/* University multi-select, depends on picked country */}
+              <Select
+                className="w-full"
+                multiple
+                displayEmpty
+                required
+                value={form.uniIds}
+                onChange={(e) => setForm({ ...form, uniIds: e.target.value })}
+                renderValue={renderSelectedUniversities}
+              >
+                {universities.map(({ id, name }) => (
+                  <MenuItem key={id} value={id}>
+                    <Checkbox checked={form.uniIds.includes(id)} />
+                    <ListItemText primary={name} />
+                  </MenuItem>
+                ))}
+                {universities.length === 0 && (
+                  <MenuItem disabled>
+                    <ListItemText primary="No universities for the selected country" />
+                  </MenuItem>
+                )}
+              </Select>
+
+              {/* Features */}
+              <fieldset style={{ marginTop: "20px" }}>
+                <legend style={{ fontWeight: "bold", marginBottom: "10px" }}>Features</legend>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "20px", padding: "10px 0" }}>
                   {Object.keys(form.features).map((key) => (
-                    <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <label key={key} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                       <input
                         type="checkbox"
                         name={key}
-                        checked={form.features[key]}
+                        checked={!!form.features[key]}
                         onChange={handleFeatureChange}
                       />
                       {key.charAt(0).toUpperCase() + key.slice(1)}
@@ -554,7 +608,9 @@ const HostelPage = () => {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
             <h2 className="text-xl font-semibold mb-4 text-red-600">Delete Hostel</h2>
-            <p className="mb-4">Are you sure you want to delete <strong>{deleteData?.name}</strong>?</p>
+            <p className="mb-4">
+              Are you sure you want to delete <strong>{deleteData?.name}</strong>?
+            </p>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => { setConfirmDeleteOpen(false); setDelete(null); }}
@@ -605,7 +661,8 @@ const HostelPage = () => {
                     setToggleItem(null);
                   }
                 }}
-                className={`px-4 py-2 text-white rounded ${toggleItem?.active ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}`}
+                className={`px-4 py-2 text-white rounded ${toggleItem?.active ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"
+                  }`}
               >
                 {toggleItem?.active ? "Disable" : "Enable"}
               </button>
