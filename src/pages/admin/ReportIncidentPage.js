@@ -354,11 +354,18 @@ export default function ReportIncidentPage(props) {
                   />
                 </th>
                 <th className="px-6 pb-3">
-                  <input
+                  {/* <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
                     placeholder="YYYY-MM or date"
                     defaultValue={filters.date}
                     onChange={(e) => setFilterDebounced("date", e.target.value)}
+                  /> */}
+                  <input
+                    type="date"
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    value={filters.date}
+                    onChange={(e) => setFilters((p) => ({ ...p, date: e.target.value }))}
+                    max={new Date().toISOString().split("T")[0]} // prevent future dates if you want
                   />
                 </th>
                 <th className="px-6 pb-3">

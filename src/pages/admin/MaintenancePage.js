@@ -9,6 +9,11 @@ import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useReactToPrint } from "react-to-print";
+import { DateRange } from "react-date-range";
+import { enUS } from "date-fns/locale";
+import { format } from "date-fns";
+import "react-date-range/dist/styles.css";
+import "react-date-range/dist/theme/default.css";
 
 export default function MaintenancePage(props) {
   const { navbarHeight } = props;
@@ -26,14 +31,15 @@ export default function MaintenancePage(props) {
   const [itemCatlist, setItemCatList] = useState([]);
   const [itemlist, setItemList] = useState([]);
 
-  // NEW: Assign modal state
+  // Assign / Notes
   const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [assignTarget, setAssignTarget] = useState(null); // row being assigned
+  const [assignTarget, setAssignTarget] = useState(null);
   const [assignEmail, setAssignEmail] = useState("");
   const [assignNote, setAssignNote] = useState("");
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [noteTarget, setNoteTarget] = useState(null);
   const [noteText, setNoteText] = useState("");
+
   // Data
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -50,11 +56,7 @@ export default function MaintenancePage(props) {
 
   // Stats
   const [stats, setStats] = useState({
-    total: 0,
-    pending: 0,
-    inProgress: 0,
-    resolved: 0,
-    closed: 0,
+    total: 0, pending: 0, inProgress: 0, resolved: 0, closed: 0,
   });
 
   // Filters & sorting
@@ -66,7 +68,7 @@ export default function MaintenancePage(props) {
     maintenancetype: "All",
     date: "",
     status: "All",
-    mineOnly: false,    // NEW: show only assignments to me
+    mineOnly: false, // admin UI only; non-admin implicit
   });
   const [sortConfig, setSortConfig] = useState({ key: "date", direction: "desc" });
   const debounceRef = useRef(null);
@@ -96,15 +98,20 @@ export default function MaintenancePage(props) {
     cause: "",
     comments: "",
     image: null,
+    isagree: false,
   };
   const [form, setForm] = useState(initialForm);
 
   // Print
   const contentRef = useRef(null);
   const handlePrint = useReactToPrint({ contentRef });
-
   // Admin directory (for assign)
   const [adminEmails, setAdminEmails] = useState([]);
+
+  // === Header date filter (for list) ===
+  const [listDateRange, setListDateRange] = useState(null); // { startDate: Date, endDate: Date }
+  const [showListPicker, setShowListPicker] = useState(false);
+  const listPickerRef = useRef(null);
 
   // ---------- Effects ----------
   useEffect(() => {
@@ -113,9 +120,10 @@ export default function MaintenancePage(props) {
     getItemCatList();
     getItemList();
     loadAdmins();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => { setCurrentPage(1); }, [filters, sortConfig]);
+  useEffect(() => { setCurrentPage(1); }, [filters, sortConfig, listDateRange]);
 
   useEffect(() => {
     if (!emp?.hostelid || !authUser?.uid) return;
@@ -126,14 +134,31 @@ export default function MaintenancePage(props) {
     doReset();
   }, [emp?.hostelid, authUser?.uid]);
 
+  // Close header calendar on outside click
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!showListPicker) return;
+      if (listPickerRef.current && !listPickerRef.current.contains(e.target)) {
+        setShowListPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showListPicker]);
+
+  // On mount, reflect implicit mine-only for non-admins in UI state (optional)
+  useEffect(() => {
+    if (!isAdmin) {
+      setFilters(p => ({ ...p, mineOnly: true }));
+    }
+  }, [isAdmin]);
+
   // ---------- Helpers ----------
-  // Who can modify a row (admin or the assignee)
   const canModify = (row) => {
     const assignedEmail = (row?.assignedToEmail || "").toLowerCase();
     return isAdmin || (assignedEmail && assignedEmail === myEmail);
   };
 
-  // Look up employee UID by email (optional but recommended for security rules)
   const getEmployeeUidByEmail = async (email) => {
     if (!email) return null;
     const qEmp = query(collection(db, "employees"), where("email", "==", email));
@@ -141,25 +166,21 @@ export default function MaintenancePage(props) {
     let euid = null;
     snap.forEach(d => {
       const u = d.data();
-      euid = u.uid || u.userId || null; // adjust if your employees schema is different
+      euid = u.uid || u.userId || null;
     });
     return euid;
   };
 
   const loadAdmins = async () => {
     try {
-      const qAdmins = query(
-        collection(db, "employees"),
-        where("hostelid", "==", emp.hostelid)
-      );
+      if (!emp?.hostelid) return;
+      const qAdmins = query(collection(db, "employees"), where("hostelid", "==", emp.hostelid));
       const snap = await getDocs(qAdmins);
       const emails = [];
       snap.forEach(d => {
         const u = d.data();
         const role = (u.role || u.Role || "").toLowerCase();
-        // If you want only staff (non-admin) to appear in assign list, keep below:
         if (role !== "admin" && u.email) emails.push(u.email);
-        // If you want admins as well, use: if (u.email) emails.push(u.email);
       });
       setAdminEmails(Array.from(new Set(emails)).sort((a, b) => a.localeCompare(b)));
     } catch (e) {
@@ -168,9 +189,10 @@ export default function MaintenancePage(props) {
   };
 
   const getList = async () => {
+    if (!emp?.hostelid) return;
     setIsLoading(true);
 
-    // Users map
+    // Users
     const usersQuery = query(collection(db, "users"), where("hostelid", "==", emp.hostelid));
     const usersSnap = await getDocs(usersQuery);
     const userMap = {};
@@ -182,7 +204,7 @@ export default function MaintenancePage(props) {
     // Maintenance
     const maintenanceQuery = query(collection(db, "maintenance"), where("hostelid", "==", emp.hostelid));
     const maintenanceSnapshot = await getDocs(maintenanceQuery);
-    const rows = maintenanceSnapshot.docs.map((d) => ({
+    let rows = maintenanceSnapshot.docs.map((d) => ({
       id: d.id,
       ...d.data(),
       username: userMap[d.data().uid] || "",
@@ -191,10 +213,19 @@ export default function MaintenancePage(props) {
       adminNotes: Array.isArray(d.data().adminNotes) ? d.data().adminNotes : [],
     }));
 
+    // 🔒 Visibility: non-admins see only their assigned items (by email or uid)
+    if (!isAdmin) {
+      const me = (myEmail || "").trim().toLowerCase();
+      rows = rows.filter(r =>
+        (r.assignedToEmail && (r.assignedToEmail || "").toLowerCase() === me) ||
+        (r.assignedToUid && r.assignedToUid === uid)
+      );
+    }
+
     setList(rows);
     setSelectedIds(new Set());
 
-    // Stats
+    // Stats computed on the visible set
     const total = rows.length;
     const pending = rows.filter((i) => i.status === "Pending").length;
     const inProgress = rows.filter((i) => i.status === "In Progress").length;
@@ -206,36 +237,51 @@ export default function MaintenancePage(props) {
   };
 
   const getProblemCatList = async () => {
+    if (!emp?.hostelid) return;
     setIsLoading(true);
-    const maintenanceCategoryQuery = query(
-      collection(db, "problemcategory"),
-      where("hostelid", "==", emp.hostelid)
-    );
-    const querySnapshot = await getDocs(maintenanceCategoryQuery);
-    setProblemCatList(querySnapshot.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
+    const q1 = query(collection(db, "problemcategory"), where("hostelid", "==", emp.hostelid));
+    const s1 = await getDocs(q1);
+    setProblemCatList(s1.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
     setIsLoading(false);
   };
 
   const getItemCatList = async () => {
+    if (!emp?.hostelid) return;
     setIsLoading(true);
-    const itemCategoryQuery = query(
-      collection(db, "itemcategory"),
-      where("hostelid", "==", emp.hostelid)
-    );
-    const querySnapshot = await getDocs(itemCategoryQuery);
-    setItemCatList(querySnapshot.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
+    const q2 = query(collection(db, "itemcategory"), where("hostelid", "==", emp.hostelid));
+    const s2 = await getDocs(q2);
+    setItemCatList(s2.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
     setIsLoading(false);
   };
 
   const getItemList = async () => {
+    if (!emp?.hostelid) return;
     setIsLoading(true);
-    const itemQuery = query(
-      collection(db, "maintenanceitems"),
-      where("hostelid", "==", emp.hostelid)
-    );
-    const querySnapshot = await getDocs(itemQuery);
-    setItemList(querySnapshot.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
+    const q3 = query(collection(db, "maintenanceitems"), where("hostelid", "==", emp.hostelid));
+    const s3 = await getDocs(q3);
+    setItemList(s3.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
     setIsLoading(false);
+  };
+
+  // Safe date parse
+  const parseDateSafe = (v) => {
+    if (!v) return null;
+    if (v instanceof Date) return v;
+    if (typeof v === "number") return new Date(v);
+    if (typeof v === "string") {
+      const d = new Date(v);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    if (v?.seconds) return new Date(v.seconds * 1000);
+    return null;
+  };
+
+  const inRangeInclusive = (date, start, end) => {
+    if (!date || !start || !end) return true;
+    const t = new Date(date); t.setHours(12, 0, 0, 0); // avoid TZ edge
+    const s = new Date(start); s.setHours(0, 0, 0, 0);
+    const e = new Date(end); e.setHours(23, 59, 59, 999);
+    return t >= s && t <= e;
   };
 
   // ---------- Create / Update ----------
@@ -331,11 +377,9 @@ export default function MaintenancePage(props) {
     setDelete(null);
   };
 
-  // Bulk delete
   const deleteSelected = async () => {
     if (selectedIds.size === 0) return;
     if (!window.confirm(`Delete ${selectedIds.size} maintenance request(s)? This cannot be undone.`)) return;
-
     setIsLoading(true);
     try {
       const ids = Array.from(selectedIds);
@@ -357,22 +401,15 @@ export default function MaintenancePage(props) {
   };
 
   // ---------- View / Print ----------
-  const openView = (row) => {
-    setViewData(row);
-    setViewModalOpen(true);
-  };
+  const openView = (row) => { setViewData(row); setViewModalOpen(true); };
+  const openPrint = (row) => { setViewData(row); setPrintModalOpen(true) }
 
   // ---------- Status & Notes ----------
   const updateStatus = async (id, newStatus) => {
     try {
       const row = list.find(r => r.id === id);
       if (!row) return;
-
-      if (!canModify(row)) {
-        toast.error("You don't have permission to update this.");
-        return;
-      }
-
+      if (!canModify(row)) { toast.error("You don't have permission to update this."); return; }
       const requestRef = doc(db, "maintenance", id);
       await updateDoc(requestRef, { status: newStatus });
       toast.success("Status updated!");
@@ -387,17 +424,9 @@ export default function MaintenancePage(props) {
     const msg = (text ?? "").trim() || prompt("Add note:");
     if (!msg) return;
     try {
-      if (!canModify(row)) {
-        toast.error("You don't have permission to add a note here.");
-        return;
-      }
+      if (!canModify(row)) { toast.error("You don't have permission to add a note here."); return; }
       const requestRef = doc(db, "maintenance", row.id);
-      const entry = {
-        by: authUser?.email || uid,
-        byUid: uid || null,
-        at: new Date().toISOString(),
-        text: msg
-      };
+      const entry = { by: authUser?.email || uid, byUid: uid || null, at: new Date().toISOString(), text: msg };
       const prevNotes = Array.isArray(row.adminNotes) ? row.adminNotes : [];
       await updateDoc(requestRef, { adminNotes: [...prevNotes, entry] });
       toast.success("Note added");
@@ -430,7 +459,6 @@ export default function MaintenancePage(props) {
       const prevNotes = Array.isArray(current?.adminNotes) ? current.adminNotes : [];
       const nextNotes = noteEntry ? [...prevNotes, noteEntry] : prevNotes;
 
-      // Optional UID mapping for clean rules
       const assignedToUid = await getEmployeeUidByEmail(assignEmail.trim());
 
       await updateDoc(requestRef, {
@@ -477,8 +505,18 @@ export default function MaintenancePage(props) {
     const statusOK = filters.status === "All" || (r.status || "").toLowerCase() === filters.status.toLowerCase();
     const mtOK = filters.maintenancetype === "All" || maintenancetypeStr === filters.maintenancetype.toLowerCase();
     const issueOK = filters.issue === "All" || issueStr === filters.issue.toLowerCase();
-    const mineOK = !filters.mineOnly ||
+
+    // Admin can toggle "mine only"; non-admin is already pre-filtered in getList()
+    const mineFlag = isAdmin ? filters.mineOnly : true;
+    const mineOK = !mineFlag ||
       (r.assignedToEmail && r.assignedToEmail.toLowerCase() === myEmail);
+
+    // Header calendar range filter using createdDate/createdAt
+    let rangeOK = true;
+    if (listDateRange?.startDate && listDateRange?.endDate) {
+      const itemDate = parseDateSafe(r.createdDate) || parseDateSafe(r.createdAt) || null;
+      rangeOK = inRangeInclusive(itemDate, listDateRange.startDate, listDateRange.endDate);
+    }
 
     return (
       (!filters.request || reqStr.includes(filters.request.toLowerCase())) &&
@@ -488,7 +526,8 @@ export default function MaintenancePage(props) {
       mtOK &&
       (!filters.date || dateStr.includes(filters.date.toLowerCase())) &&
       statusOK &&
-      mineOK
+      mineOK &&
+      rangeOK
     );
   });
 
@@ -511,8 +550,8 @@ export default function MaintenancePage(props) {
       case "status":
         return ((a.status || "").localeCompare(b.status || "")) * dir;
       case "date": {
-        const ad = new Date(a.createdDate || 0).getTime();
-        const bd = new Date(b.createdDate || 0).getTime();
+        const ad = (parseDateSafe(a.createdDate) || parseDateSafe(a.createdAt) || new Date(0)).getTime();
+        const bd = (parseDateSafe(b.createdDate) || parseDateSafe(b.createdAt) || new Date(0)).getTime();
         return (ad - bd) * dir;
       }
       default:
@@ -528,44 +567,61 @@ export default function MaintenancePage(props) {
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
   const somePageSelected = pageIds.some((id) => selectedIds.has(id)) && !allPageSelected;
 
-  const openNoteModal = (row) => {
-    setNoteTarget(row);
-    setNoteText("");
-    setNoteModalOpen(true);
-  };
-
+  const openNoteModal = (row) => { setNoteTarget(row); setNoteText(""); setNoteModalOpen(true); };
   const submitNote = async () => {
     const row = noteTarget;
     const msg = (noteText || "").trim();
     if (!row || !msg) { toast.error("Write something before saving."); return; }
-
     try {
-      if (!canModify(row)) {
-        toast.error("You don't have permission to add a note here.");
-        return;
-      }
+      if (!canModify(row)) { toast.error("You don't have permission to add a note here."); return; }
       const requestRef = doc(db, "maintenance", row.id);
-      const entry = {
-        by: authUser?.email || uid,
-        byUid: uid || null,
-        at: new Date().toISOString(),
-        text: msg
-      };
+      const entry = { by: authUser?.email || uid, byUid: uid || null, at: new Date().toISOString(), text: msg };
       const prevNotes = Array.isArray(row.adminNotes) ? row.adminNotes : [];
       await updateDoc(requestRef, { adminNotes: [...prevNotes, entry] });
       toast.success("Note added");
-      setNoteModalOpen(false);
-      setNoteTarget(null);
-      setNoteText("");
+      setNoteModalOpen(false); setNoteTarget(null); setNoteText("");
       await getList();
     } catch (e) {
       console.error(e);
       toast.error("Failed to add note");
     }
   };
+  const printSingleRef = useRef(null);
+  const printAllRef = useRef();
+
+  const handlePrintSingle = useReactToPrint({
+    contentRef: printSingleRef,
+    pageStyle: `
+      @page { size: A4; margin: 14mm; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 10mm; }
+      .h1 { text-align:center; font-size:18px; font-weight:700; margin-bottom:6mm; border-bottom:1px solid #000; padding-bottom:2mm; }
+      table.kv { width:100%; border-collapse:collapse; margin-bottom:6mm; }
+      table.kv th { text-align:left; width:40mm; padding:2mm; vertical-align:top; }
+      table.kv td { padding:2mm; }
+      .notes .note { border:1px solid #ccc; padding:3mm; margin-bottom:3mm; border-radius:4px; page-break-inside: avoid; }
+      img { max-width:70mm; max-height:70mm; margin:5mm 0; border:1px solid #ccc; border-radius:4px; }
+      .no-print { display:none !important; }
+    `
+  });
+  // const handlePrint = useReactToPrint({ contentRef });
+  const handlePrintAll = useReactToPrint({
+    content: () => printAllRef.current,
+    pageStyle: `
+      @page { size: A4; margin: 10mm; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .sheet { width:210mm; min-height:297mm; margin:0 auto; padding:10mm; }
+      .h1 { text-align:center; font-size:18px; font-weight:700; margin-bottom:6mm; }
+      table { width:100%; border-collapse:collapse; font-size:12px; }
+      th, td { border:1px solid #ccc; padding:3mm; text-align:left; }
+      thead { display: table-header-group; }
+      tr { break-inside: avoid; }
+      .no-print { display:none !important; }
+    `
+  });
 
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
+    <main className="flex-1 p-2 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Maintenance</h1>
         <button
@@ -592,7 +648,11 @@ export default function MaintenancePage(props) {
       {selectedIds.size > 0 && (
         <div className="mb-2 flex items-center gap-3">
           <span className="text-sm text-gray-700">{selectedIds.size} selected</span>
-          <button onClick={deleteSelected} className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm">Delete selected</button>
+          {isAdmin && (
+            <button onClick={deleteSelected} className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm">
+              Delete selected
+            </button>
+          )}
           <button
             onClick={() => setSelectedIds(new Set(filteredList.map((r) => r.id)))}
             className="px-3 py-1.5 bg-gray-200 rounded text-sm"
@@ -625,7 +685,7 @@ export default function MaintenancePage(props) {
                   { key: "select", label: "", sortable: false },
                 ].map((col) => (
                   <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
-                    {col.sortable === false || col.key === "mineonly" ? (
+                    {col.sortable === false ? (
                       <span>{col.label}</span>
                     ) : (
                       <button
@@ -664,9 +724,68 @@ export default function MaintenancePage(props) {
                     {maintenanceTypes.map((t) => (<option key={t} value={t}>{t}</option>))}
                   </select>
                 </th>
-                <th className="px-6 pb-3">
-                  <input className="w-full border border-gray-300 p-1 rounded text-sm" placeholder="YYYY-MM or date" defaultValue={filters.date} onChange={(e) => setFilterDebounced("date", e.target.value)} />
+
+                {/* Submitted On: header DateRange */}
+                <th className="px-6 pb-3 relative">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowListPicker(v => !v)}
+                      className="mt-2 w-full border border-gray-300 p-1 rounded text-sm"
+                      title="Filter by submitted date range"
+                    >
+                      {listDateRange?.startDate && listDateRange?.endDate
+                        ? `${format(listDateRange.startDate, "MMM dd, yyyy")} – ${format(listDateRange.endDate, "MMM dd, yyyy")}`
+                        : "Filter by date…"}
+                    </button>
+
+                    {listDateRange?.startDate && listDateRange?.endDate && (
+                      <button
+                        type="button"
+                        onClick={() => setListDateRange(null)}
+                        className="text-xs text-gray-600 underline"
+                        title="Clear date filter"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {showListPicker && (
+                    <div
+                      ref={listPickerRef}
+                      style={{ position: "absolute", top: "100%", zIndex: 1000, boxShadow: "0px 2px 10px rgba(0,0,0,0.2)" }}
+                      className="mt-2 bg-white"
+                    >
+                      <DateRange
+                        onChange={(item) => {
+                          const sel = item.selection;
+                          setListDateRange({
+                            startDate: sel.startDate,
+                            endDate: sel.endDate || sel.startDate,
+                          });
+                        }}
+                        moveRangeOnFirstSelection={false}
+                        ranges={[{
+                          startDate: listDateRange?.startDate || new Date(),
+                          endDate: listDateRange?.endDate || new Date(),
+                          key: "selection"
+                        }]}
+                        locale={enUS}
+                      />
+                      <div className="flex justify-end bg-white p-2 border border-t-0">
+                        <button
+                          type="button"
+                          onClick={() => setShowListPicker(false)}
+                          className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </th>
+
                 <th className="px-6 pb-3">
                   <select className="w-full border border-gray-300 p-1 rounded text-sm bg-white" value={filters.status} onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}>
                     <option>All</option>
@@ -676,19 +795,24 @@ export default function MaintenancePage(props) {
                     <option>Closed</option>
                   </select>
                 </th>
+
+                {/* Mine only — admin only */}
                 <th className="px-6 pb-3">
-                  <div className="mb-2">
-                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={filters.mineOnly}
-                        onChange={(e) => setFilters(p => ({ ...p, mineOnly: e.target.checked }))}
-                      />
-                      <span>Show only requests assigned to me</span>
-                    </label>
-                  </div>
+                  {/* {isAdmin && (
+                    <div className="mb-2">
+                      <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={filters.mineOnly}
+                          onChange={(e) => setFilters(p => ({ ...p, mineOnly: e.target.checked }))}
+                        />
+                        <span>Show only requests assigned to me</span>
+                      </label>
+                    </div>
+                  )} */}
                 </th>
+
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3">
                   <input
@@ -724,11 +848,10 @@ export default function MaintenancePage(props) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.roomno}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item.maintenancetype}
-                      <br />
-                      I agree to allow a staff member <br /> to enter my room to complete <br />
-                      the requested maintenance work, <br /> even if I am not present at the time.
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.createdDate}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.createdDate || (item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000).toISOString().slice(0, 10) : "—")}
+                    </td>
 
                     {/* Status */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -769,9 +892,9 @@ export default function MaintenancePage(props) {
                           <span className="px-2 py-0.5 rounded bg-gray-100 border text-gray-700">
                             {item.assignedToEmail}
                           </span>
-                          {item.assignedToEmail.toLowerCase() === myEmail && (
+                          {/* {item.assignedToEmail.toLowerCase() === myEmail && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">me</span>
-                          )}
+                          )} */}
                           {Array.isArray(item.adminNotes) && item.adminNotes.length > 0 && (
                             <span className="text-xs text-gray-500">({item.adminNotes.length} note{item.adminNotes.length > 1 ? "s" : ""})</span>
                           )}
@@ -781,13 +904,10 @@ export default function MaintenancePage(props) {
                       )}
                     </td>
 
-                    {/* Mine column cell (empty, purely header toggle) */}
-                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" /> */}
-
                     {/* Actions */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm space-x-3">
                       <button onClick={() => openView(item)} className="text-blue-600 underline hover:text-blue-800">View</button>
-                      <button onClick={() => openView(item)} className="text-blue-600 underline hover:text-blue-800">Print</button>
+                      <button onClick={() => openPrint(item)} className="text-blue-600 underline hover:text-blue-800">Print</button>
                       {isAdmin && item.status !== "Closed" && (
                         <button onClick={() => openAssign(item)} className="text-indigo-600 underline hover:text-indigo-800">Assign</button>
                       )}
@@ -799,12 +919,14 @@ export default function MaintenancePage(props) {
                           Add Note
                         </button>
                       )}
-                      <button
-                        onClick={() => { setDelete(item); setConfirmDeleteOpen(true); }}
-                        className="text-red-600 underline hover:text-red-800"
-                      >
-                        Delete
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => { setDelete(item); setConfirmDeleteOpen(true); }}
+                          className="text-red-600 underline hover:text-red-800"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </td>
 
                     {/* Row select */}
@@ -896,6 +1018,17 @@ export default function MaintenancePage(props) {
                   </label>
                   <span className="text-sm text-gray-600 truncate max-w-[150px]">{fileName}</span>
                 </div>
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.isagree}
+                      onChange={(e) => setForm({ ...form, isagree: e.target.checked })}
+                    />
+                    <span> I agree to allow a staff member to enter my room to complete the requested
+                      maintenance work, even if I am not present at the time.</span>
+                  </label>
+                </div>
               </div>
               <div className="flex justify-end mt-6 space-x-3">
                 <button onClick={() => setModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400" type="button">Cancel</button>
@@ -927,7 +1060,7 @@ export default function MaintenancePage(props) {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-bold mb-4">Maintenance Request</h2>
-            <div ref={contentRef} className="space-y-3">
+            <div ref={printSingleRef} className="space-y-3">
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                 <span className="font-medium">User:</span><span>{viewData?.username}</span>
                 <span className="font-medium">Room No.:</span><span>{viewData?.roomno}</span>
@@ -940,7 +1073,6 @@ export default function MaintenancePage(props) {
                 <span className="font-medium">Assigned To:</span><span>{viewData?.assignedToEmail || "—"}</span>
               </div>
 
-              {/* Admin/Assignee notes list */}
               {Array.isArray(viewData?.adminNotes) && viewData.adminNotes.length > 0 && (
                 <div className="mt-3">
                   <div className="font-medium mb-1">Notes</div>
@@ -955,39 +1087,13 @@ export default function MaintenancePage(props) {
                 </div>
               )}
 
-              {/* Inline composer for editors */}
-              {/* {canModify(viewData) && (
-                <div className="mt-2 flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Write a note… (press Enter)"
-                    className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        const text = e.currentTarget.value;
-                        e.currentTarget.value = "";
-                        addNote(viewData, text);
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      const input = e => e; 
-                    }}
-                    className="px-3 py-1 bg-emerald-600 text-white rounded text-sm"
-                  >
-                    Add
-                  </button>
-                </div>
-              )} */}
-
               {viewData?.imageUrl && (
                 <img src={viewData.imageUrl} alt="uploaded" className="mt-4 w-[250px] h-[250px] object-cover rounded-lg border" />
               )}
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setViewModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Close</button>
-              <button onClick={() => handlePrint()} className="px-4 py-2 bg-black text-white rounded hover:bg-black">Print</button>
+              <button onClick={() => handlePrintSingle()} className="px-4 py-2 bg-black text-white rounded hover:bg-black">Print</button>
             </div>
           </div>
         </div>
@@ -1028,6 +1134,7 @@ export default function MaintenancePage(props) {
         </div>
       )}
 
+
       {/* Assign modal (ADMIN ONLY) */}
       {assignModalOpen && isAdmin && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -1039,8 +1146,6 @@ export default function MaintenancePage(props) {
                 <div><span className="font-medium">User:</span> {assignTarget?.username}</div>
               </div>
 
-              {/* Email picker: select from employees or type freely */}
-              <label className="block text-sm font-medium">Assign to (email)</label>
               {adminEmails.length > 0 && (
                 <select
                   className="w-full border border-gray-300 p-2 rounded bg-white"
@@ -1076,6 +1181,8 @@ export default function MaintenancePage(props) {
           </div>
         </div>
       )}
+
+      {/* Add note modal */}
       {noteModalOpen && noteTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-md p-6 rounded-lg shadow-lg">
@@ -1107,6 +1214,7 @@ export default function MaintenancePage(props) {
           </div>
         </div>
       )}
+
       <ToastContainer />
     </main>
   );

@@ -1,5 +1,6 @@
 @import "mapbox-gl/dist/mapbox-gl.css";
 @import "@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css";
+
 .App {
   text-align: center;
 }
@@ -25,30 +26,37 @@
   font-size: calc(10px + 2vmin);
   color: white;
 }
+
 .custom-scroll::-webkit-scrollbar {
   display: none;
 }
+
 .scroll-container {
   height: 390px;
   overflow-y: scroll;
-  scrollbar-width: none; 
-  -ms-overflow-style: none;  
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+
 .custom-scroll {
-  scrollbar-width: none;          
-  -ms-overflow-style: none;      
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+
 .custom-scroll::-webkit-scrollbar {
-  display: none;                  
+  display: none;
 }
+
 .no-scrollbar::-webkit-scrollbar {
   width: 0px;
   height: 0px;
 }
+
 .no-scrollbar {
-  -ms-overflow-style: none;  
-  scrollbar-width: none;     
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
+
 input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
@@ -56,22 +64,29 @@ input[type='number']::-webkit-outer-spin-button {
 }
 
 input[type='number'] {
-  -moz-appearance: textfield; /* Firefox */
+  -moz-appearance: textfield;
+  /* Firefox */
 }
+
 /* Hide scrollbar for IE, Edge and Firefox */
 .custom-scroll {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
 }
+
 .App-link {
   color: #61dafb;
 }
+
 .header {
   /* background: linear-gradient(90deg, #004D40, #00796B, #00B8D4, #80DEEA); */
-  background:#282c34;
+  background: #282c34;
   color: white;
   font-weight: bold;
 }
+
 .privacy-container {
   max-width: 800px;
   margin: auto;
@@ -103,6 +118,7 @@ input[type='number'] {
   margin-left: 20px;
   list-style-type: disc;
 }
+
 .terms-container {
   max-width: 900px;
   margin: auto;
@@ -139,11 +155,51 @@ input[type='number'] {
   color: #007BFF;
   text-decoration: none;
 }
+
 @keyframes App-logo-spin {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media print {
+  .print-container {
+    background: #fff !important;
+    margin: 0 auto;
+    padding: 20px;
+    width: 100% !important;
+    max-width: 800px;
+  }
+
+  .print-header {
+    font-size: 20px;
+    font-weight: bold;
+    text-align: center;
+    border-bottom: 2px solid #000;
+    margin-bottom: 20px;
+  }
+
+  .print-grid {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 6px 12px;
+    font-size: 13px;
+    margin-bottom: 15px;
+  }
+
+  .print-notes li {
+    border: 1px solid #ccc;
+    margin-bottom: 8px;
+    padding: 8px;
+    border-radius: 6px;
+  }
+
+  button,
+  .no-print {
+    display: none !important;
   }
 }

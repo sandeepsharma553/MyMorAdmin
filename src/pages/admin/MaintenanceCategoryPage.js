@@ -707,16 +707,7 @@ const MaintenanceCategoryPage = () => {
                 />
               ) : (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">Categories</label>
-                    <button
-                      type="button"
-                      onClick={() => addRow(setItemCatRows, itemCatRows)}
-                      className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
-                    >
-                      + Add row
-                    </button>
-                  </div>
+                 
 
                   {itemCatRows.map((row, idx) => (
                     <div key={row.id} className="flex gap-2">
@@ -736,6 +727,16 @@ const MaintenanceCategoryPage = () => {
                       </button>
                     </div>
                   ))}
+                   <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">Categories</label>
+                    <button
+                      type="button"
+                      onClick={() => addRow(setItemCatRows, itemCatRows)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      + Add row
+                    </button>
+                  </div>
                   <p className="text-xs text-gray-500">Duplicates (within the selected problem) are ignored automatically.</p>
                 </div>
               )}
@@ -911,16 +912,7 @@ const MaintenanceCategoryPage = () => {
                 />
               ) : (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">Items</label>
-                    <button
-                      type="button"
-                      onClick={() => addRow(setItemRows, itemRows)}
-                      className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
-                    >
-                      + Add row
-                    </button>
-                  </div>
+                 
 
                   {itemRows.map((row, idx) => (
                     <div key={row.id} className="flex gap-2">
@@ -940,6 +932,17 @@ const MaintenanceCategoryPage = () => {
                       </button>
                     </div>
                   ))}
+                   <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">Items</label>
+                    <button
+                      type="button"
+                      onClick={() => addRow(setItemRows, itemRows)}
+                      // className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      + Add row
+                    </button>
+                  </div>
                   <p className="text-xs text-gray-500">Duplicates (within the selected problem & category) are ignored automatically.</p>
                 </div>
               )}

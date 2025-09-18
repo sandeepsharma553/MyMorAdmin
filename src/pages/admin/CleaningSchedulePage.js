@@ -28,11 +28,11 @@ export default function CleaningSchedulePage(props) {
   const uid = useSelector((state) => state.auth.user.uid);
   const emp = useSelector((state) => state.auth.employee);
 
-  // ---------- View mode (match Events: 'past' | 'current' | 'future') ----------
-  const [weekMode, setWeekMode] = useState("current");
+  // ---------- View mode (week buckets) ----------
+  const [weekMode, setWeekMode] = useState("current"); // 'past' | 'current' | 'future'
 
   // ---------- Filters + sorting ----------
-  const [filters, setFilters] = useState({ roomtype: "", hall: "", day: "", time: "" });
+  const [filters, setFilters] = useState({ roomtype: "", hall: "", day: "", time: "", name: "" });
   const [sortConfig, setSortConfig] = useState({ key: "roomtype", direction: "asc" });
   const debounceRef = useRef(null);
   const setFilterDebounced = (field, value) => {
@@ -265,54 +265,66 @@ export default function CleaningSchedulePage(props) {
     }
   };
 
-  // ---------- Time classification (date + time-aware) ----------
-  const todayYMD = new Date().toISOString().slice(0, 10);
-
-  const parseHM = (s = "") => {
-    // Supports "HH:MM", "H:MM am/pm", or range "HH:MM-HH:MM"
-    if (!s) return null;
-    const [startRaw, endRaw] = String(s).split("-").map((x) => x.trim());
-
-    const toMinutes = (piece) => {
-      if (!piece) return null;
-      const m = piece.match(/^(\d{1,2}):(\d{2})(?:\s*(am|pm))?$/i);
-      if (!m) return null;
-      let [, hh, mm, ap] = m;
-      let h = Number(hh);
-      const mins = Number(mm);
-      if (ap) {
-        ap = ap.toLowerCase();
-        if (ap === "pm" && h !== 12) h += 12;
-        if (ap === "am" && h === 12) h = 0;
-      }
-      if (h < 0 || h > 23 || mins < 0 || mins > 59) return null;
-      return h * 60 + mins;
-    };
-
-    return { start: toMinutes(startRaw), end: toMinutes(endRaw) };
+  // =========================
+  // Week helpers + ranges
+  // =========================
+  const WEEK_START = 1; // 1=Mon, 0=Sun
+  const toYMD = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+  const addDays = (d, n) => {
+    const x = new Date(d);
+    x.setDate(x.getDate() + n);
+    return x;
+  };
+  const startOfWeek = (date, weekStartsOn = WEEK_START) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    const dow = d.getDay(); // 0..6 (Sun..Sat)
+    const diff = (dow - weekStartsOn + 7) % 7;
+    d.setDate(d.getDate() - diff);
+    return d;
+  };
+  const endOfWeek = (date, weekStartsOn = WEEK_START) => {
+    const s = startOfWeek(date, weekStartsOn);
+    const e = addDays(s, 6);
+    e.setHours(23, 59, 59, 999);
+    return e;
   };
 
-  const classifySchedule = (row) => {
-    const d = (row?.date || "").slice(0, 10); // "YYYY-MM-DD"
-    if (!d) return "current";
-    if (d < todayYMD) return "past";
-    if (d > todayYMD) return "future";
+  // Compute week windows
+  const today = new Date();
+  const curWeekStart = startOfWeek(today);
+  const curWeekEnd   = endOfWeek(today);
+  const nextWeekStart = addDays(curWeekStart, 7);
+  const nextWeekEnd   = addDays(curWeekEnd, 7);
 
-    // Same day (today): refine with time if present
-    const t = parseHM(row?.time);
-    if (!t || (t.start == null && t.end == null)) return "current";
+  // As YMD strings to compare with doc.date "YYYY-MM-DD"
+  const curStartYMD  = toYMD(curWeekStart);
+  const curEndYMD    = toYMD(curWeekEnd);
+  const nextStartYMD = toYMD(nextWeekStart);
+  const nextEndYMD   = toYMD(nextWeekEnd);
 
-    const now = new Date();
-    const nowMins = now.getHours() * 60 + now.getMinutes();
+  // =========================
+  // Derive filtered/sorted/paginated
+  // =========================
 
-    if (t.start != null && nowMins < t.start) return "future";
-    if (t.end != null && nowMins > t.end) return "past";
-    return "current";
-  };
+  // 1) week bucket
+  const timeFiltered = list.filter((r) => {
+    const d = (r?.date || "").slice(0, 10);
+    if (!d) return false;
 
-  // ---------- Derive filtered/sorted/paginated ----------
-  // 1) time bucket first (like Events)
-  const timeFiltered = list.filter((r) => classifySchedule(r) === weekMode);
+    if (weekMode === "current") {
+      return d >= curStartYMD && d <= curEndYMD;              // this week
+    }
+    if (weekMode === "future") {
+      return d >= nextStartYMD && d <= nextEndYMD;            // next week only
+    }
+    return d < curStartYMD;                                   // past weeks
+  });
 
   // 2) column filters
   const filteredData = timeFiltered.filter((r) => {
@@ -320,11 +332,13 @@ export default function CleaningSchedulePage(props) {
     const hl = (r.hall || "").toLowerCase();
     const dy = (r.day || "").toLowerCase();
     const tm = (r.time || "").toLowerCase();
+    const nm = (r.empname || "").toLowerCase();
     return (
       (!filters.roomtype || rt.includes(filters.roomtype.toLowerCase())) &&
       (!filters.hall || hl.includes(filters.hall.toLowerCase())) &&
       (!filters.day || dy.includes(filters.day.toLowerCase())) &&
-      (!filters.time || tm.includes(filters.time.toLowerCase()))
+      (!filters.time || tm.includes(filters.time.toLowerCase())) &&
+      (!filters.name || nm.includes(filters.name.toLowerCase()))
     );
   });
 
@@ -351,7 +365,10 @@ export default function CleaningSchedulePage(props) {
     }
   }, [somePageSelected, allPageSelected]);
 
-  const weekLabel = weekMode === "past" ? "Past" : weekMode === "future" ? "Future" : "Current (today)";
+  const weekLabel =
+    weekMode === "past"   ? "Previous Weeks"
+  : weekMode === "future" ? "Next Week"
+  :                        "This Week";
 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
@@ -459,6 +476,7 @@ export default function CleaningSchedulePage(props) {
                   { key: "hall", label: "Hall" },
                   { key: "day", label: "Day" },
                   { key: "time", label: "Time" },
+                  { key: "empname", label: "Name" }, // NEW
                   { key: "actions", label: "Actions", sortable: false },
                   { key: "select", label: "", sortable: false },
                 ].map((col) => (
@@ -511,6 +529,15 @@ export default function CleaningSchedulePage(props) {
                     onChange={(e) => setFilterDebounced("time", e.target.value)}
                   />
                 </th>
+                {/* Name filter */}
+                <th className="px-6 pb-3">
+                  <input
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    placeholder="Filter name"
+                    defaultValue={filters.name}
+                    onChange={(e) => setFilterDebounced("name", e.target.value)}
+                  />
+                </th>
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3">
                   <input
@@ -534,7 +561,7 @@ export default function CleaningSchedulePage(props) {
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan="7" className="px-6 py-4 text-center text-gray-500">
                     No matching schedules found.
                   </td>
                 </tr>
@@ -545,6 +572,10 @@ export default function CleaningSchedulePage(props) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.hall}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.day}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.time}</td>
+                    {/* Name column */}
+                    <td className="px-6 py-4 text-sm text-gray-700 whitespace-normal break-words max-w-xs">
+                      {item.empname || "—"}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button
                         className="text-blue-600 hover:underline mr-3"

@@ -29,7 +29,6 @@ export default function AnnouncementPage(props) {
   const emp = useSelector((state) => state.auth.employee);
 
   const [visiblePoll, setVisiblePoll] = useState(false);
-
   const [selectedIds, setSelectedIds] = useState(new Set());
 
   const [timeFilter, setTimeFilter] = useState('current'); // 'past' | 'current' | 'future'
@@ -58,6 +57,23 @@ export default function AnnouncementPage(props) {
   const [showPicker, setShowPicker] = useState(false);
   const pickerRef = useRef();
 
+  // === Header date filter for LIST (live) ===
+  const [listDateRange, setListDateRange] = useState(null); // { startDate: Date, endDate: Date }
+  const [showListPicker, setShowListPicker] = useState(false);
+  const listPickerRef = useRef(null);
+
+  // Close header calendar on outside click
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!showListPicker) return;
+      if (listPickerRef.current && !listPickerRef.current.contains(e.target)) {
+        setShowListPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [showListPicker]);
+
   const initialForm = {
     id: 0,
     title: '',
@@ -79,7 +95,7 @@ export default function AnnouncementPage(props) {
     },
     isPinned: false,
     pinnedAt: null,
-    pinnedOrder: 0,                 // <<— NEW
+    pinnedOrder: 0, // NEW
 
     posterUrls: [],
     postersFiles: [],
@@ -155,15 +171,36 @@ export default function AnnouncementPage(props) {
     return userMap[uid] || "";
   };
 
+  // Overlap check for two [start, end] ranges
+  const rangesOverlap = (aStart, aEnd, bStart, bEnd) => {
+    if (!aStart || !aEnd || !bStart || !bEnd) return true; // if missing, don't block
+    return aStart <= bEnd && bStart <= aEnd; // inclusive overlap
+  };
+
+  // Parse an announcement's date range to JS Dates
+  const getItemDates = (item) => {
+    const s = toJsDate(item?.date?.startDate);
+    const e = toJsDate(item?.date?.endDate);
+    return { s, e };
+  };
+
   // ===== Derived list =====
   const timeFiltered = list.filter(item => classifyByDate(item.date) === timeFilter);
 
   const headerFiltered = timeFiltered.filter(item => {
     const titleOK = !filters.title || (item.title || '').toLowerCase().includes(filters.title.toLowerCase());
-    const descOK = !filters.desc || (item.shortdesc || '').toLowerCase().includes(filters.desc.toLowerCase());
+    const descOK  = !filters.desc  || (item.shortdesc || '').toLowerCase().includes(filters.desc.toLowerCase());
     const dateStr = formatDateTime(item.date).toLowerCase();
-    const dateOK = !filters.date || dateStr.includes(filters.date.toLowerCase());
-    return titleOK && descOK && dateOK;
+    const dateOK  = !filters.date  || dateStr.includes(filters.date.toLowerCase());
+
+    // Live date-range filter (header calendar)
+    let rangeOK = true;
+    if (listDateRange?.startDate && listDateRange?.endDate) {
+      const { s, e } = getItemDates(item);
+      rangeOK = rangesOverlap(listDateRange.startDate, listDateRange.endDate, s, e);
+    }
+
+    return titleOK && descOK && dateOK && rangeOK;
   });
 
   const pinFiltered = showPinnedOnly ? headerFiltered.filter(a => !!a.isPinned) : headerFiltered;
@@ -640,15 +677,75 @@ export default function AnnouncementPage(props) {
                       onChange={(e) => setFilterDebounced('desc', e.target.value)}
                     />
                   </th>
-                  <th className="px-6 pb-3">
-                    <input
-                      className="w-full border border-gray-300 p-1 rounded text-sm"
-                      placeholder="Filter date (e.g. Aug 2025)"
+
+                  {/* Date column: header calendar + text filter */}
+                  <th className="px-6 pb-3 relative">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowListPicker(v => !v)}
+                        className="mt-2 w-full border border-gray-300 p-1 rounded text-sm"
+                        title="Filter by date range"
+                      >
+                        {listDateRange?.startDate && listDateRange?.endDate
+                          ? `${format(listDateRange.startDate, 'MMM dd, yyyy')} – ${format(listDateRange.endDate, 'MMM dd, yyyy')}`
+                          : 'Filter by date…'}
+                      </button>
+
+                      {listDateRange?.startDate && listDateRange?.endDate && (
+                        <button
+                          type="button"
+                          onClick={() => setListDateRange(null)}
+                          className="text-xs text-gray-600 underline"
+                          title="Clear date filter"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+
+                    {/* <input
+                      className="mt-2 w-full border border-gray-300 p-1 rounded text-sm"
+                      placeholder="e.g. Aug 2025"
                       defaultValue={filters.date}
                       onChange={(e) => setFilterDebounced('date', e.target.value)}
-                    />
+                    /> */}
+
+                    {showListPicker && (
+                      <div
+                        ref={listPickerRef}
+                        style={{ position: 'absolute', top: '100%', zIndex: 1000, boxShadow: '0px 2px 10px rgba(0,0,0,0.2)' }}
+                        className="mt-2 bg-white"
+                      >
+                        <DateRange
+                          onChange={(item) => {
+                            const sel = item.selection;
+                            setListDateRange({
+                              startDate: sel.startDate,
+                              endDate: sel.endDate || sel.startDate,
+                            });
+                          }}
+                          moveRangeOnFirstSelection={false}
+                          ranges={[{
+                            startDate: listDateRange?.startDate || new Date(),
+                            endDate:   listDateRange?.endDate   || new Date(),
+                            key: 'selection'
+                          }]}
+                          locale={enUS}
+                        />
+                        <div className="flex justify-end bg-white p-2 border border-t-0">
+                          <button
+                            type="button"
+                            onClick={() => setShowListPicker(false)}
+                            className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </th>
-                  <th className="px-6 pb-3" />
+
                   <th className="px-6 pb-3" />
                   <th className="px-6 pb-3" />
                   <th className="px-6 pb-3">

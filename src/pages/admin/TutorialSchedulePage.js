@@ -28,8 +28,8 @@ export default function TutorialSchedulePage(props) {
   const uid = useSelector((state) => state.auth.user.uid);
   const emp = useSelector((state) => state.auth.employee);
 
-  // ---------- View controls (match Events: 'past' | 'current' | 'future') ----------
-  const [weekMode, setWeekMode] = useState("current");
+  // ---------- View controls (week buckets) ----------
+  const [weekMode, setWeekMode] = useState("current"); // 'past' | 'current' | 'future'
 
   // ---------- Filters + sorting ----------
   const [filters, setFilters] = useState({ roomtype: "", hall: "", day: "", time: "", empname: "" });
@@ -86,10 +86,7 @@ export default function TutorialSchedulePage(props) {
     }
   };
 
-  // initial load
   useEffect(() => { getList(); /* eslint-disable-next-line */ }, [emp?.hostelid]);
-
-  // keep pagination sane on filter/sort/mode change
   useEffect(() => { setCurrentPage(1); }, [filters, sortConfig, weekMode]);
 
   // ---------- Add / Update ----------
@@ -180,7 +177,7 @@ export default function TutorialSchedulePage(props) {
           day: row["Day"] || "",
           time: row["Time"] || "",
           date,
-          empname: row["Name"] || "", // will be "" if sheet has no Name column
+          empname: row["Name"] || "",
           hostelid: emp.hostelid,
         };
       });
@@ -259,54 +256,66 @@ export default function TutorialSchedulePage(props) {
     }
   };
 
-  // ---------- Time classification (date + time-aware) ----------
-  const todayYMD = new Date().toISOString().slice(0, 10);
-
-  const parseHM = (s = "") => {
-    // Supports "HH:MM", "H:MM am/pm", or range "HH:MM-HH:MM"
-    if (!s) return null;
-    const [startRaw, endRaw] = String(s).split("-").map((x) => x.trim());
-
-    const toMinutes = (piece) => {
-      if (!piece) return null;
-      const m = piece.match(/^(\d{1,2}):(\d{2})(?:\s*(am|pm))?$/i);
-      if (!m) return null;
-      let [, hh, mm, ap] = m;
-      let h = Number(hh);
-      const mins = Number(mm);
-      if (ap) {
-        ap = ap.toLowerCase();
-        if (ap === "pm" && h !== 12) h += 12;
-        if (ap === "am" && h === 12) h = 0;
-      }
-      if (h < 0 || h > 23 || mins < 0 || mins > 59) return null;
-      return h * 60 + mins;
-    };
-
-    return { start: toMinutes(startRaw), end: toMinutes(endRaw) };
+  // =========================
+  // Week helpers + ranges (Mon–Sun; set WEEK_START=0 for Sun–Sat)
+  // =========================
+  const WEEK_START = 1; // 1 = Monday, 0 = Sunday
+  const toYMD = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+  const addDays = (d, n) => {
+    const x = new Date(d);
+    x.setDate(x.getDate() + n);
+    return x;
+  };
+  const startOfWeek = (date, weekStartsOn = WEEK_START) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    const dow = d.getDay(); // 0..6 (Sun..Sat)
+    const diff = (dow - weekStartsOn + 7) % 7;
+    d.setDate(d.getDate() - diff);
+    return d;
+  };
+  const endOfWeek = (date, weekStartsOn = WEEK_START) => {
+    const s = startOfWeek(date, weekStartsOn);
+    const e = addDays(s, 6);
+    e.setHours(23, 59, 59, 999);
+    return e;
   };
 
-  const classifySchedule = (row) => {
-    const d = (row?.date || "").slice(0, 10); // "YYYY-MM-DD"
-    if (!d) return "current";
-    if (d < todayYMD) return "past";
-    if (d > todayYMD) return "future";
+  // Compute week windows
+  const today = new Date();
+  const curWeekStart = startOfWeek(today);
+  const curWeekEnd   = endOfWeek(today);
+  const nextWeekStart = addDays(curWeekStart, 7);
+  const nextWeekEnd   = addDays(curWeekEnd, 7);
 
-    // Same day (today): refine with time if present
-    const t = parseHM(row?.time);
-    if (!t || (t.start == null && t.end == null)) return "current";
+  // As YMD strings to compare with doc.date "YYYY-MM-DD"
+  const curStartYMD  = toYMD(curWeekStart);
+  const curEndYMD    = toYMD(curWeekEnd);
+  const nextStartYMD = toYMD(nextWeekStart);
+  const nextEndYMD   = toYMD(nextWeekEnd);
 
-    const now = new Date();
-    const nowMins = now.getHours() * 60 + now.getMinutes();
+  // =========================
+  // Derive filtered/sorted/paginated
+  // =========================
 
-    if (t.start != null && nowMins < t.start) return "future";
-    if (t.end != null && nowMins > t.end) return "past";
-    return "current";
-  };
+  // 1) Week bucket first: current (this week), future (next week), past (before this week)
+  const timeFiltered = list.filter((r) => {
+    const d = (r?.date || "").slice(0, 10);
+    if (!d) return false;
 
-  // ---------- Derive filtered/sorted/paginated ----------
-  // 1) Apply time bucket first (like Events/Cleaning)
-  const timeFiltered = list.filter((r) => classifySchedule(r) === weekMode);
+    if (weekMode === "current") {
+      return d >= curStartYMD && d <= curEndYMD;
+    }
+    if (weekMode === "future") {
+      return d >= nextStartYMD && d <= nextEndYMD;
+    }
+    return d < curStartYMD; // past weeks
+  });
 
   // 2) Column filters (including empname)
   const filteredData = timeFiltered.filter((r) => {
@@ -347,7 +356,10 @@ export default function TutorialSchedulePage(props) {
     }
   }, [somePageSelected, allPageSelected]);
 
-  const viewLabel = weekMode === "past" ? "Past" : weekMode === "future" ? "Future" : "Current (today)";
+  const viewLabel =
+    weekMode === "past"   ? "Previous Weeks"
+  : weekMode === "future" ? "Next Week"
+  :                        "This Week";
 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>

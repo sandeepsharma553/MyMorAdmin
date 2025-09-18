@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
   query, where, getDoc, setDoc, serverTimestamp
-} from "firebase/firestore"; // ✅ setDoc, serverTimestamp added
+} from "firebase/firestore";
 import { db, storage } from "../../firebase";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
@@ -355,10 +355,11 @@ export default function FeedbackPage(props) {
                 </th>
                 <th className="px-6 pb-3">
                   <input
+                    type="date"
                     className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="YYYY-MM or date"
-                    defaultValue={filters.date}
-                    onChange={(e) => setFilterDebounced("date", e.target.value)}
+                    value={filters.date}
+                    onChange={(e) => setFilters((p) => ({ ...p, date: e.target.value }))}
+                    max={new Date().toISOString().split("T")[0]} // prevent future dates if you want
                   />
                 </th>
                 <th className="px-6 pb-3">
