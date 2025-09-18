@@ -34,8 +34,11 @@ export default function MaintenancePage(props) {
   // Assign / Notes
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [assignTarget, setAssignTarget] = useState(null);
-  const [assignEmail, setAssignEmail] = useState("");
+  // NEW: multi-assignee UI state
+  const [assignEmails, setAssignEmails] = useState([]);     // string[]
+  const [assignFreeText, setAssignFreeText] = useState(""); // free text to parse
   const [assignNote, setAssignNote] = useState("");
+
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [noteTarget, setNoteTarget] = useState(null);
   const [noteText, setNoteText] = useState("");
@@ -103,8 +106,38 @@ export default function MaintenancePage(props) {
   const [form, setForm] = useState(initialForm);
 
   // Print
-  const contentRef = useRef(null);
-  const handlePrint = useReactToPrint({ contentRef });
+  const viewPrintRef = useRef(null); // single
+  const listPrintRef = useRef(null); // all
+  const handlePrintSingle = useReactToPrint({
+    contentRef: viewPrintRef,
+    pageStyle: `
+      @page { size: A4; margin: 14mm; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 10mm; }
+      .h1 { text-align:center; font-size:18px; font-weight:700; margin-bottom:6mm; border-bottom:1px solid #000; padding-bottom:2mm; }
+      table.kv { width:100%; border-collapse:collapse; margin-bottom:6mm; }
+      table.kv th { text-align:left; width:40mm; padding:2mm; vertical-align:top; }
+      table.kv td { padding:2mm; }
+      .notes .note { border:1px solid #ccc; padding:3mm; margin-bottom:3mm; border-radius:4px; page-break-inside: avoid; }
+      img { max-width:70mm; max-height:70mm; margin:5mm 0; border:1px solid #ccc; border-radius:4px; }
+      .no-print { display:none !important; }
+    `
+  });
+  const handlePrintAll = useReactToPrint({
+    contentRef: listPrintRef,
+    pageStyle: `
+      @page { size: A4; margin: 10mm; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .sheet { width:210mm; min-height:297mm; margin:0 auto; padding:10mm; }
+      .h1 { text-align:center; font-size:18px; font-weight:700; margin-bottom:6mm; }
+      table { width:100%; border-collapse:collapse; font-size:12px; }
+      th, td { border:1px solid #ccc; padding:3mm; text-align:left; }
+      thead { display: table-header-group; }
+      tr { break-inside: avoid; }
+      .no-print { display:none !important; }
+    `
+  });
+
   // Admin directory (for assign)
   const [adminEmails, setAdminEmails] = useState([]);
 
@@ -153,10 +186,54 @@ export default function MaintenancePage(props) {
     }
   }, [isAdmin]);
 
+  // ---------- Multi-assignee helpers ----------
+  const normEmail = (e) => (e || "").trim().toLowerCase();
+
+  const uniqByEmail = (arr) => {
+    // accepts [{email, uid?, by?, at?}] or string[]
+    const out = [];
+    const seen = new Set();
+    for (const a of arr) {
+      const email = typeof a === "string" ? normEmail(a) : normEmail(a.email);
+      if (!email || seen.has(email)) continue;
+      seen.add(email);
+      if (typeof a === "string") out.push({ email });
+      else out.push({ ...a, email });
+    }
+    return out;
+  };
+
+  const resolveEmployeesByEmails = async (emails /* string[] */) => {
+    const results = [];
+    for (const raw of emails) {
+      const email = normEmail(raw);
+      if (!email) continue;
+      const qEmp = query(collection(db, "employees"), where("email", "==", email));
+      const snap = await getDocs(qEmp);
+      let uidFound = null;
+      snap.forEach(d => {
+        const u = d.data();
+        uidFound = u.uid || u.userId || null;
+      });
+      results.push({ email, uid: uidFound });
+    }
+    return results;
+  };
+
+  const getAssigneesFromRow = (row) => {
+    const fromArray = Array.isArray(row?.assignedTo) ? row.assignedTo : [];
+    const fromLegacy = row?.assignedToEmail
+      ? [{ email: normEmail(row.assignedToEmail), uid: row.assignedToUid || null }]
+      : [];
+    return uniqByEmail([...fromArray, ...fromLegacy]);
+  };
+
   // ---------- Helpers ----------
   const canModify = (row) => {
-    const assignedEmail = (row?.assignedToEmail || "").toLowerCase();
-    return isAdmin || (assignedEmail && assignedEmail === myEmail);
+    if (isAdmin) return true;
+    const myE = normEmail(myEmail);
+    const assignees = getAssigneesFromRow(row);
+    return assignees.some(a => a.email === myE || (a.uid && a.uid === uid));
   };
 
   const getEmployeeUidByEmail = async (email) => {
@@ -180,7 +257,7 @@ export default function MaintenancePage(props) {
       snap.forEach(d => {
         const u = d.data();
         const role = (u.role || u.Role || "").toLowerCase();
-        if (role !== "admin" && u.email) emails.push(u.email);
+        if (u.email && role !== "admin") emails.push(u.email);
       });
       setAdminEmails(Array.from(new Set(emails)).sort((a, b) => a.localeCompare(b)));
     } catch (e) {
@@ -204,21 +281,29 @@ export default function MaintenancePage(props) {
     // Maintenance
     const maintenanceQuery = query(collection(db, "maintenance"), where("hostelid", "==", emp.hostelid));
     const maintenanceSnapshot = await getDocs(maintenanceQuery);
-    let rows = maintenanceSnapshot.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-      username: userMap[d.data().uid] || "",
-      assignedToEmail: d.data().assignedToEmail || "",
-      assignedToUid: d.data().assignedToUid || null,
-      adminNotes: Array.isArray(d.data().adminNotes) ? d.data().adminNotes : [],
-    }));
+    let rows = maintenanceSnapshot.docs.map((d) => {
+      const data = d.data();
+      const base = {
+        id: d.id,
+        ...data,
+        username: userMap[data.uid] || "",
+        adminNotes: Array.isArray(data.adminNotes) ? data.adminNotes : [],
+        noteSeenBy: d.data().noteSeenBy || {},
+      };
+      const assignees = getAssigneesFromRow(base);
+      return {
+        ...base,
+        assignedTo: assignees,
+        assignedToEmail: base.assignedToEmail || "",
+        assignedToUid: base.assignedToUid || null,
+      };
+    });
 
-    // 🔒 Visibility: non-admins see only their assigned items (by email or uid)
+    // 🔒 Visibility: non-admins see only their assigned items (email or uid)
     if (!isAdmin) {
-      const me = (myEmail || "").trim().toLowerCase();
+      const me = normEmail(myEmail);
       rows = rows.filter(r =>
-        (r.assignedToEmail && (r.assignedToEmail || "").toLowerCase() === me) ||
-        (r.assignedToUid && r.assignedToUid === uid)
+        getAssigneesFromRow(r).some(a => a.email === me || (a.uid && a.uid === uid))
       );
     }
 
@@ -344,8 +429,11 @@ export default function MaintenancePage(props) {
           createdDate: new Date().toISOString().split("T")[0],
           createdAt: serverTimestamp(),
           status: "Pending",
+          // legacy fields default
           assignedToEmail: "",
           assignedToUid: null,
+          // new field
+          assignedTo: [],
           adminNotes: [],
         });
         toast.success("Successfully saved");
@@ -401,8 +489,8 @@ export default function MaintenancePage(props) {
   };
 
   // ---------- View / Print ----------
-  const openView = (row) => { setViewData(row); setViewModalOpen(true); };
-  const openPrint = (row) => { setViewData(row); setPrintModalOpen(true) }
+  const openView = (row) => { setViewData(row); setViewModalOpen(true); markNotesSeen(row); };
+  const openPrint = () => { setPrintModalOpen(true); };
 
   // ---------- Status & Notes ----------
   const updateStatus = async (id, newStatus) => {
@@ -411,7 +499,10 @@ export default function MaintenancePage(props) {
       if (!row) return;
       if (!canModify(row)) { toast.error("You don't have permission to update this."); return; }
       const requestRef = doc(db, "maintenance", id);
-      await updateDoc(requestRef, { status: newStatus });
+      await updateDoc(requestRef, {
+        status: newStatus, updatedBy: authUser?.email || uid,
+        updatedAt: serverTimestamp(),
+      });
       toast.success("Status updated!");
       getList();
     } catch (error) {
@@ -437,35 +528,63 @@ export default function MaintenancePage(props) {
     }
   };
 
-  // ---------- Assign ----------
+  // ---------- Assign (Multi) ----------
   const openAssign = (row) => {
     setAssignTarget(row);
-    setAssignEmail(row.assignedToEmail || "");
+    const current = getAssigneesFromRow(row).map(a => a.email);
+    setAssignEmails(current);
+    setAssignFreeText("");
     setAssignNote("");
     setAssignModalOpen(true);
   };
 
   const saveAssignment = async () => {
     if (!assignTarget?.id) return;
-    if (!assignEmail.trim()) { toast.error("Please enter an email to assign."); return; }
+
+    // Merge typed emails if user didn't blur the input
+    let emails = [...assignEmails];
+    if (assignFreeText.trim()) {
+      emails = emails.concat(assignFreeText.split(/[,\s]+/).map(normEmail).filter(Boolean));
+    }
+    emails = Array.from(new Set(emails.map(normEmail)));
+
+    if (emails.length === 0) {
+      toast.error("Please add at least one email.");
+      return;
+    }
 
     try {
       const requestRef = doc(db, "maintenance", assignTarget.id);
-      const noteEntry = assignNote.trim()
-        ? { by: authUser?.email || uid, at: new Date().toISOString(), text: assignNote.trim() }
-        : null;
 
+      // Resolve UIDs
+      const resolved = await resolveEmployeesByEmails(emails);
+
+      // Build new assignee entries
+      const now = new Date().toISOString();
+      const byWho = authUser?.email || uid || null;
+      const newEntries = resolved.map(r => ({ ...r, by: byWho, at: now }));
+
+      // Merge with existing
       const current = list.find(x => x.id === assignTarget.id);
+      const prevAssignees = getAssigneesFromRow(current);
+      const merged = uniqByEmail([...prevAssignees, ...newEntries]);
+
+      // Optional note handling
+      const noteEntry = assignNote.trim()
+        ? { by: byWho, at: now, text: assignNote.trim() }
+        : null;
       const prevNotes = Array.isArray(current?.adminNotes) ? current.adminNotes : [];
       const nextNotes = noteEntry ? [...prevNotes, noteEntry] : prevNotes;
 
-      const assignedToUid = await getEmployeeUidByEmail(assignEmail.trim());
+      // For legacy compatibility, keep first assignee in old fields too
+      const first = merged[0] || null;
 
       await updateDoc(requestRef, {
-        assignedToEmail: assignEmail.trim(),
-        assignedToUid: assignedToUid || null,
-        assignedBy: authUser?.email || uid,
-        assignedAt: new Date().toISOString(),
+        assignedTo: merged,
+        assignedToEmail: first ? first.email : "",
+        assignedToUid: first ? (first.uid || null) : null,
+        assignedBy: byWho,
+        assignedAt: now,
         adminNotes: nextNotes,
       });
 
@@ -508,8 +627,9 @@ export default function MaintenancePage(props) {
 
     // Admin can toggle "mine only"; non-admin is already pre-filtered in getList()
     const mineFlag = isAdmin ? filters.mineOnly : true;
-    const mineOK = !mineFlag ||
-      (r.assignedToEmail && r.assignedToEmail.toLowerCase() === myEmail);
+    const mineOK = !mineFlag || getAssigneesFromRow(r).some(a =>
+      a.email === normEmail(myEmail) || (a.uid && a.uid === uid)
+    );
 
     // Header calendar range filter using createdDate/createdAt
     let rangeOK = true;
@@ -554,6 +674,8 @@ export default function MaintenancePage(props) {
         const bd = (parseDateSafe(b.createdDate) || parseDateSafe(b.createdAt) || new Date(0)).getTime();
         return (ad - bd) * dir;
       }
+      case "assigned":
+        return ((getAssigneesFromRow(a)[0]?.email || "").localeCompare(getAssigneesFromRow(b)[0]?.email || "")) * dir;
       default:
         return 0;
     }
@@ -586,50 +708,55 @@ export default function MaintenancePage(props) {
       toast.error("Failed to add note");
     }
   };
-  const printSingleRef = useRef(null);
-  const printAllRef = useRef();
+  const getUnseenNotesCount = (row) => {
+    const total = Array.isArray(row?.adminNotes) ? row.adminNotes.length : 0;
+    const seen = row?.noteSeenBy?.[uid]?.count || 0;
+    return Math.max(0, total - seen);
+  };
 
-  const handlePrintSingle = useReactToPrint({
-    contentRef: printSingleRef,
-    pageStyle: `
-      @page { size: A4; margin: 14mm; }
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 10mm; }
-      .h1 { text-align:center; font-size:18px; font-weight:700; margin-bottom:6mm; border-bottom:1px solid #000; padding-bottom:2mm; }
-      table.kv { width:100%; border-collapse:collapse; margin-bottom:6mm; }
-      table.kv th { text-align:left; width:40mm; padding:2mm; vertical-align:top; }
-      table.kv td { padding:2mm; }
-      .notes .note { border:1px solid #ccc; padding:3mm; margin-bottom:3mm; border-radius:4px; page-break-inside: avoid; }
-      img { max-width:70mm; max-height:70mm; margin:5mm 0; border:1px solid #ccc; border-radius:4px; }
-      .no-print { display:none !important; }
-    `
-  });
-  // const handlePrint = useReactToPrint({ contentRef });
-  const handlePrintAll = useReactToPrint({
-    content: () => printAllRef.current,
-    pageStyle: `
-      @page { size: A4; margin: 10mm; }
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .sheet { width:210mm; min-height:297mm; margin:0 auto; padding:10mm; }
-      .h1 { text-align:center; font-size:18px; font-weight:700; margin-bottom:6mm; }
-      table { width:100%; border-collapse:collapse; font-size:12px; }
-      th, td { border:1px solid #ccc; padding:3mm; text-align:left; }
-      thead { display: table-header-group; }
-      tr { break-inside: avoid; }
-      .no-print { display:none !important; }
-    `
-  });
+  // Mark all current notes as seen for this user
+  const markNotesSeen = async (row) => {
+    if (!uid || !row?.id) return;
+    try {
+      const total = Array.isArray(row?.adminNotes) ? row.adminNotes.length : 0;
+      const requestRef = doc(db, "maintenance", row.id);
+      const payload = { count: total, at: new Date().toISOString() };
+
+      // write to Firestore: noteSeenBy.<uid> = { count, at }
+      await updateDoc(requestRef, { [`noteSeenBy.${uid}`]: payload });
+
+      // Optimistic UI update so badge disappears immediately
+      setList((prev) =>
+        prev.map((r) =>
+          r.id === row.id
+            ? { ...r, noteSeenBy: { ...(r.noteSeenBy || {}), [uid]: payload } }
+            : r
+        )
+      );
+    } catch (e) {
+      console.error("markNotesSeen error", e);
+    }
+  };
 
   return (
     <main className="flex-1 p-2 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
+      {/* Page header */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Maintenance</h1>
-        <button
-          className="px-4 py-2 bg-black text-white rounded hover:bg-black"
-          onClick={() => { setEditing(null); setForm(initialForm); setModalOpen(true); }}
-        >
-          + Add
-        </button>
+        <div className="flex gap-2">
+          <button
+            className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-black"
+            onClick={() => openPrint()}
+          >
+            Print All
+          </button>
+          <button
+            className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+            onClick={() => { setEditing(null); setForm(initialForm); setModalOpen(true); }}
+          >
+            + Add
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -640,7 +767,7 @@ export default function MaintenancePage(props) {
         <div className="bg-white rounded-xl shadow p-2"><div className="text-lg font-bold">{stats.resolved}</div><div className="text-gray-500 text-xs">Resolved</div></div>
         <div className="bg-white rounded-xl shadow p-2"><div className="text-lg font-bold">{stats.closed}</div><div className="text-gray-500 text-xs">Closed</div></div>
         <div className="bg-white rounded-xl shadow p-2"><div className="text-lg font-bold">
-          {list.filter(x => x.assignedToEmail).length}
+          {list.filter(x => getAssigneesFromRow(x).length > 0).length}
         </div><div className="text-gray-500 text-xs">Assigned</div></div>
       </div>
 
@@ -663,6 +790,7 @@ export default function MaintenancePage(props) {
         </div>
       )}
 
+      {/* Table */}
       <div className="overflow-x-auto bg-white rounded shadow">
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
@@ -796,21 +924,8 @@ export default function MaintenancePage(props) {
                   </select>
                 </th>
 
-                {/* Mine only — admin only */}
                 <th className="px-6 pb-3">
-                  {/* {isAdmin && (
-                    <div className="mb-2">
-                      <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4"
-                          checked={filters.mineOnly}
-                          onChange={(e) => setFilters(p => ({ ...p, mineOnly: e.target.checked }))}
-                        />
-                        <span>Show only requests assigned to me</span>
-                      </label>
-                    </div>
-                  )} */}
+                  {/* Mine-only toggle (kept out to simplify UI); enable if desired */}
                 </th>
 
                 <th className="px-6 pb-3" />
@@ -886,19 +1001,35 @@ export default function MaintenancePage(props) {
                         </select>
                       )}
                     </td>
+
+                    {/* Assigned to (multi) */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.assignedToEmail ? (
-                        <span className="inline-flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-gray-100 border text-gray-700">
-                            {item.assignedToEmail}
-                          </span>
-                          {/* {item.assignedToEmail.toLowerCase() === myEmail && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">me</span>
-                          )} */}
-                          {Array.isArray(item.adminNotes) && item.adminNotes.length > 0 && (
-                            <span className="text-xs text-gray-500">({item.adminNotes.length} note{item.adminNotes.length > 1 ? "s" : ""})</span>
+                      {getAssigneesFromRow(item).length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {getAssigneesFromRow(item).slice(0, 3).map((a, i) => (
+                            <span key={i} className="px-2 py-0.5 rounded bg-gray-100 border text-gray-700">
+                              {a.email}
+                            </span>
+                          ))}
+                          {getAssigneesFromRow(item).length > 3 && (
+                            <span className="text-xs text-gray-500">
+                              +{getAssigneesFromRow(item).length - 3} more
+                            </span>
                           )}
-                        </span>
+                          {Array.isArray(item.adminNotes) && item.adminNotes.length > 0 && (
+                            <span className="text-xs text-gray-500 ml-1">
+                              ({item.adminNotes.length} note{item.adminNotes.length > 1 ? "s" : ""})
+                              {getUnseenNotesCount(item) > 0 && (
+                                <span
+                                  title={`${getUnseenNotesCount(item)} new note(s)`}
+                                  className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold"
+                                >
+                                  {getUnseenNotesCount(item)}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-gray-400 text-xs">Unassigned</span>
                       )}
@@ -907,7 +1038,7 @@ export default function MaintenancePage(props) {
                     {/* Actions */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm space-x-3">
                       <button onClick={() => openView(item)} className="text-blue-600 underline hover:text-blue-800">View</button>
-                      <button onClick={() => openPrint(item)} className="text-blue-600 underline hover:text-blue-800">Print</button>
+                      <button onClick={() => openView(item)} className="text-blue-600 underline hover:text-blue-800">Print</button>
                       {isAdmin && item.status !== "Closed" && (
                         <button onClick={() => openAssign(item)} className="text-indigo-600 underline hover:text-indigo-800">Assign</button>
                       )}
@@ -1055,12 +1186,12 @@ export default function MaintenancePage(props) {
         </div>
       )}
 
-      {/* View/Print modal */}
+      {/* View/Print modal (single) */}
       {viewModalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-bold mb-4">Maintenance Request</h2>
-            <div ref={printSingleRef} className="space-y-3">
+            <div ref={viewPrintRef} className="space-y-3">
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                 <span className="font-medium">User:</span><span>{viewData?.username}</span>
                 <span className="font-medium">Room No.:</span><span>{viewData?.roomno}</span>
@@ -1070,7 +1201,14 @@ export default function MaintenancePage(props) {
                 <span className="font-medium">Description:</span><span className="col-span-1">{viewData?.description}</span>
                 <span className="font-medium">Cause:</span><span className="col-span-1">{viewData?.cause || "—"}</span>
                 <span className="font-medium">Comments:</span><span className="col-span-1">{viewData?.comments || "—"}</span>
-                <span className="font-medium">Assigned To:</span><span>{viewData?.assignedToEmail || "—"}</span>
+                <span className="font-medium">Assigned To:</span>
+                <span>
+                  {getAssigneesFromRow(viewData).length
+                    ? getAssigneesFromRow(viewData).map(a => a.email).join(", ")
+                    : "—"}
+                </span>
+                <span className="font-medium">Submitted On:</span>
+                <span>{viewData?.createdDate || (viewData?.createdAt?.seconds ? new Date(viewData.createdAt.seconds * 1000).toISOString().slice(0, 10) : "—")}</span>
               </div>
 
               {Array.isArray(viewData?.adminNotes) && viewData.adminNotes.length > 0 && (
@@ -1103,15 +1241,17 @@ export default function MaintenancePage(props) {
       {printModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-6xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <div ref={contentRef}>
-              <h2 className="text-xl font-bold mb-4">All Maintenance Requests</h2>
+            <div ref={listPrintRef} className="sheet">
+              <div className="h1 text-xl font-bold mb-4 text-center">All Maintenance Requests</div>
               <table className="min-w-full text-sm border border-gray-300">
                 <thead className="bg-gray-100">
                   <tr>
                     <th className="border p-2">User</th>
                     <th className="border p-2">Room No.</th>
                     <th className="border p-2">Issue Type</th>
+                    <th className="border p-2">Assigned (first)</th>
                     <th className="border p-2">Status</th>
+                    <th className="border p-2">Submitted On</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1120,7 +1260,9 @@ export default function MaintenancePage(props) {
                       <td className="border p-2">{item.username}</td>
                       <td className="border p-2">{item.roomno}</td>
                       <td className="border p-2">{item.problemcategory}</td>
+                      <td className="border p-2">{getAssigneesFromRow(item)[0]?.email || "—"}</td>
                       <td className="border p-2">{item.status || "New"}</td>
+                      <td className="border p-2">{item.createdDate || (item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000).toISOString().slice(0, 10) : "—")}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1128,12 +1270,11 @@ export default function MaintenancePage(props) {
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setPrintModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Close</button>
-              <button onClick={handlePrint} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Print</button>
+              <button onClick={handlePrintAll} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Print</button>
             </div>
           </div>
         </div>
       )}
-
 
       {/* Assign modal (ADMIN ONLY) */}
       {assignModalOpen && isAdmin && (
@@ -1146,24 +1287,71 @@ export default function MaintenancePage(props) {
                 <div><span className="font-medium">User:</span> {assignTarget?.username}</div>
               </div>
 
+              {/* Multi-select from known employees */}
               {adminEmails.length > 0 && (
-                <select
-                  className="w-full border border-gray-300 p-2 rounded bg-white"
-                  value={assignEmail}
-                  onChange={(e) => setAssignEmail(e.target.value)}
-                >
-                  <option value="">Select email</option>
-                  {adminEmails.map(em => (<option key={em} value={em}>{em}</option>))}
-                </select>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Select employees</label>
+                  <select
+                    multiple
+                    className="w-full border border-gray-300 p-2 rounded bg-white h-28"
+                    value={assignEmails}
+                    onChange={(e) => {
+                      const opts = Array.from(e.target.selectedOptions).map(o => normEmail(o.value));
+                      setAssignEmails(uniqByEmail(opts).map(a => a.email));
+                    }}
+                  >
+                    {adminEmails.map(em => (
+                      <option key={em} value={normEmail(em)}>{em}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple.</p>
+                </div>
               )}
-              <input
-                type="email"
-                placeholder="or type email…"
-                className="w-full border border-gray-300 p-2 rounded"
-                value={assignEmail}
-                onChange={(e) => setAssignEmail(e.target.value)}
-              />
 
+              {/* Free text add (comma/space separated) */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Add emails (comma or space separated)</label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 p-2 rounded"
+                  placeholder="e.g. a@x.com, b@y.com"
+                  value={assignFreeText}
+                  onChange={(e) => setAssignFreeText(e.target.value)}
+                  onBlur={() => {
+                    if (!assignFreeText.trim()) return;
+                    const parsed = assignFreeText
+                      .split(/[,\s]+/)
+                      .map(normEmail)
+                      .filter(Boolean);
+                    const merged = uniqByEmail([
+                      ...assignEmails,
+                      ...parsed
+                    ]).map(a => a.email);
+                    setAssignEmails(merged);
+                    setAssignFreeText("");
+                  }}
+                />
+              </div>
+
+              {/* Chips */}
+              <div className="flex flex-wrap gap-1">
+                {assignEmails.map((em) => (
+                  <span key={em} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 border text-gray-700">
+                    {em}
+                    <button
+                      type="button"
+                      className="text-xs text-red-600"
+                      onClick={() => setAssignEmails(assignEmails.filter(x => x !== em))}
+                      title="Remove"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                {assignEmails.length === 0 && <span className="text-xs text-gray-500">No assignees selected</span>}
+              </div>
+
+              {/* Optional note */}
               <label className="block text-sm font-medium mt-2">Note (optional)</label>
               <textarea
                 className="w-full border border-gray-300 p-2 rounded"

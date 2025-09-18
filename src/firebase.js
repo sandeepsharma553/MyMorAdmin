@@ -5,6 +5,7 @@ import { getAnalytics } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
 import { getDatabase } from 'firebase/database';
 import { getStorage } from "firebase/storage";
+import { getMessaging } from "firebase/messaging"
 // const firebaseConfig = {
 //     apiKey: "AIzaSyA9-R9ud3SsJgdCbutEkspJSWQ5GOuqIxo",
 //     authDomain: "mymor-development.firebaseapp.com",
@@ -59,4 +60,8 @@ const db = getFirestore(app);
 const firestore = getFirestore(app)
 const storage = getStorage(app);
 const database = getDatabase(app);
-export { auth,analytics,db,firestore,storage,database,firebaseConfig };
+const messaging = getMessaging(app)
+const VAPID_KEY = process.env.REACT_APP_ENV === 'production'
+  ? process.env.REACT_APP_FIREBASE_PROD_VAPID_KEY
+  : process.env.REACT_APP_FIREBASE_DEV_VAPID_KEY;
+export { auth,analytics,db,firestore,storage,database,firebaseConfig,messaging,VAPID_KEY };

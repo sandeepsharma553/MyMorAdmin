@@ -3,31 +3,37 @@
     {
       "target": "dev",
       "public": "build",
-      "ignore": [
-        "firebase.json",
-        "**/.*",
-        "**/node_modules/**"
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "headers": [
+        {
+          "source": "/firebase-messaging-sw.js",
+          "headers": [
+            { "key": "Cache-Control", "value": "no-cache" },
+            { "key": "Service-Worker-Allowed", "value": "/" }
+          ]
+        }
       ],
       "rewrites": [
-        {
-          "source": "**",
-          "destination": "/index.html"
-        }
+        { "source": "/firebase-messaging-sw.js", "destination": "/firebase-messaging-sw.js" },
+        { "source": "**", "destination": "/index.html" }
       ]
     },
     {
       "target": "prod",
       "public": "build",
-      "ignore": [
-        "firebase.json",
-        "**/.*",
-        "**/node_modules/**"
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "headers": [
+        {
+          "source": "/firebase-messaging-sw.js",
+          "headers": [
+            { "key": "Cache-Control", "value": "no-cache" },
+            { "key": "Service-Worker-Allowed", "value": "/" }
+          ]
+        }
       ],
       "rewrites": [
-        {
-          "source": "**",
-          "destination": "/index.html"
-        }
+        { "source": "/firebase-messaging-sw.js", "destination": "/firebase-messaging-sw.js" },
+        { "source": "**", "destination": "/index.html" }
       ]
     }
   ]

@@ -47,6 +47,8 @@
     "yup": "^1.6.1"
   },
   "scripts": {
+    "prebuild": "node scripts/inject-sw.js",
+    "prestart": "node scripts/inject-sw.js",
     "start": "react-scripts start",
     "test": "react-scripts test",
     "eject": "react-scripts eject",

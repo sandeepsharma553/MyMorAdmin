@@ -187,7 +187,7 @@ export default function CleaningSchedulePage(props) {
           day: row["Day"] || "",
           time: row["Time"] || "",
           date,
-          empname: "",
+          empname: row["Name"]|| "",
           hostelid: emp.hostelid,
         };
       });
