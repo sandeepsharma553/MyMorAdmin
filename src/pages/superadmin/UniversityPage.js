@@ -1,9 +1,17 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
-  query, where, getDoc
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  doc,
+  deleteDoc,
+  query,
+  where,
+  getDoc,
 } from "firebase/firestore";
-import { db } from "../../firebase";
+import { db, storage } from "../../firebase";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -17,7 +25,7 @@ const initialForm = {
   campus: "",
   domain: "",
   studomain: "",
-  // new fields from LocationPicker
+  // location fields
   countryCode: "",
   countryName: "",
   stateCode: "",
@@ -25,6 +33,9 @@ const initialForm = {
   cityName: "",
   lat: null,
   lng: null,
+  // images
+  images: [],     // [{ url, name }]
+  imageFiles: [], // [File]
 };
 
 export default function UniversityPage(props) {
@@ -70,6 +81,14 @@ export default function UniversityPage(props) {
     setEditing(null);
   };
 
+  const uniquePath = (folder, file) => {
+    const ext = file.name.includes(".") ? file.name.split(".").pop() : "jpg";
+    const base = file.name.replace(/\.[^/.]+$/, "");
+    const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const prefix = folder ? `${folder}/` : "";
+    return `${prefix}${base}_${stamp}.${ext}`;
+  };
+
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.name) {
@@ -77,13 +96,13 @@ export default function UniversityPage(props) {
       return;
     }
 
-    const payload = {
+    // base (without images)
+    const payloadBase = {
       uid,
       name: form.name?.trim(),
       campus: form.campus?.trim() || "",
       domain: form.domain?.trim() || "",
       studomain: form.studomain?.trim() || "",
-      // new location fields
       countryCode: form.countryCode || "",
       countryName: form.countryName || "",
       stateCode: form.stateCode || "",
@@ -94,6 +113,24 @@ export default function UniversityPage(props) {
     };
 
     try {
+      // upload any newly selected files
+      let uploaded = [];
+      if (form.imageFiles?.length) {
+        const uploads = form.imageFiles.map(async (file) => {
+          const path = uniquePath(
+            `university_images/${(form.name || "university").replace(/\s+/g, "_")}`,
+            file
+          );
+          const sRef = storageRef(storage, path);
+          await uploadBytes(sRef, file);
+          const url = await getDownloadURL(sRef);
+          return { url, name: file.name };
+        });
+        uploaded = await Promise.all(uploads);
+      }
+
+      const finalImages = [...(form.images || []), ...uploaded];
+
       if (editingData) {
         // update
         const docRef = doc(db, "university", form.id);
@@ -103,21 +140,26 @@ export default function UniversityPage(props) {
           return;
         }
         await updateDoc(docRef, {
-          ...payload,
+          ...payloadBase,
+          images: finalImages,
           updatedBy: uid,
           updatedDate: new Date(),
         });
         toast.success("Successfully updated");
       } else {
-        // prevent duplicate by name (optional: also include campus)
-        const qy = query(collection(db, "university"), where("name", "==", payload.name));
+        // prevent duplicate by name (optional: include campus too if you like)
+        const qy = query(
+          collection(db, "university"),
+          where("name", "==", payloadBase.name)
+        );
         const exists = await getDocs(qy);
         if (!exists.empty) {
           toast.warn("Duplicate found! Not adding.");
           return;
         }
         await addDoc(collection(db, "university"), {
-          ...payload,
+          ...payloadBase,
+          images: finalImages,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -136,7 +178,7 @@ export default function UniversityPage(props) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "university", deleteData.id)); // fixed: use deleteData.id
+      await deleteDoc(doc(db, "university", deleteData.id));
       toast.success("Successfully deleted!");
       await getList();
     } catch (error) {
@@ -167,6 +209,8 @@ export default function UniversityPage(props) {
       cityName: item.cityName || "",
       lat: typeof item.lat === "number" ? item.lat : null,
       lng: typeof item.lng === "number" ? item.lng : null,
+      images: Array.isArray(item.images) ? item.images : [],
+      imageFiles: [],
     });
     setModalOpen(true);
   };
@@ -199,34 +243,68 @@ export default function UniversityPage(props) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">University</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Location</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Campus</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  University
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Location
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Images
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Campus
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
+                  <td
+                    colSpan="5"
+                    className="px-6 py-4 text-center text-gray-500"
+                  >
                     No universities found.
                   </td>
                 </tr>
               ) : (
                 paginatedData.map((item) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {item.name}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       <div className="flex flex-col">
                         <span>{formatLocation(item)}</span>
-                        {/* {typeof item.lat === "number" && typeof item.lng === "number" ? (
-                          <span className="text-gray-500 text-xs">
-                            {item.lat.toFixed(4)}, {item.lng.toFixed(4)}
-                          </span>
-                        ) : null} */}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.campus || "—"}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {item.images?.[0]?.url ? (
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={item.images[0].url}
+                            alt=""
+                            width={56}
+                            height={56}
+                            className="rounded object-cover"
+                            style={{ width: 56, height: 56 }}
+                          />
+                          {item.images.length > 1 && (
+                            <span className="text-xs text-gray-500">
+                              +{item.images.length - 1} more
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {item.campus || "—"}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button
                         className="text-blue-600 hover:underline mr-3"
@@ -277,9 +355,11 @@ export default function UniversityPage(props) {
 
       {/* Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
-            <h2 className="text-xl font-bold mb-4">{editingData ? "Edit University" : "Add University"}</h2>
+       <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
+            <h2 className="text-xl font-bold mb-4">
+              {editingData ? "Edit University" : "Add University"}
+            </h2>
 
             <form onSubmit={handleAdd} className="space-y-4">
               <input
@@ -292,14 +372,13 @@ export default function UniversityPage(props) {
               />
 
               <LocationPicker
-                key={form.id || 'new'}
+                key={form.id || "new"}
                 value={{
                   countryCode: form.countryCode || "",
                   stateCode: form.stateCode || "",
                   cityName: form.cityName || "",
                 }}
                 onChange={(loc) => {
-
                   const next = {
                     countryCode: loc.country?.code || "",
                     countryName: loc.country?.name || "",
@@ -310,7 +389,7 @@ export default function UniversityPage(props) {
                     lng: loc.coords?.lng ?? null,
                   };
 
-                  setForm(prev => {
+                  setForm((prev) => {
                     const same =
                       prev.countryCode === next.countryCode &&
                       prev.countryName === next.countryName &&
@@ -331,11 +410,14 @@ export default function UniversityPage(props) {
                 className="w-full border border-gray-300 p-2 rounded"
                 value={
                   form.cityName
-                    ? `${form.cityName}${form.stateName ? ", " + form.stateName : ""}${form.countryName ? ", " + form.countryName : ""
-                    }`
+                    ? `${form.cityName}${
+                        form.stateName ? ", " + form.stateName : ""
+                      }${
+                        form.countryName ? ", " + form.countryName : ""
+                      }`
                     : ""
                 }
-                onChange={() => { }}
+                onChange={() => {}}
                 readOnly
               />
 
@@ -363,6 +445,98 @@ export default function UniversityPage(props) {
                 value={form.studomain}
                 onChange={(e) => setForm({ ...form, studomain: e.target.value })}
               />
+
+              {/* Images (multiple) */}
+              <div className="space-y-2">
+                <label className="block font-medium">
+                  Images (you can add multiple)
+                </label>
+                <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (!files.length) return;
+                        setForm((prev) => ({
+                          ...prev,
+                          imageFiles: [...prev.imageFiles, ...files],
+                        }));
+                      }}
+                    />
+                    📁 Choose Images
+                  </label>
+                  <span className="text-sm text-gray-600">
+                    {form.imageFiles.length
+                      ? `${form.imageFiles.length} selected`
+                      : "No files selected"}
+                  </span>
+                </div>
+
+                {!!form.imageFiles.length && (
+                  <div className="mt-2 grid grid-cols-3 md:grid-cols-4 gap-2">
+                    {form.imageFiles.map((f, i) => (
+                      <div key={`${f.name}-${i}`} className="relative">
+                        <img
+                          src={URL.createObjectURL(f)}
+                          alt={f.name}
+                          className="w-full h-24 object-cover rounded"
+                        />
+                        <button
+                          type="button"
+                          className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
+                          onClick={() =>
+                            setForm((prev) => {
+                              const next = [...prev.imageFiles];
+                              next.splice(i, 1);
+                              return { ...prev, imageFiles: next };
+                            })
+                          }
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!!form.images.length && (
+                  <>
+                    <div className="text-sm text-gray-500 mt-3">
+                      Already saved
+                    </div>
+                    <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                      {form.images.map((img, i) => (
+                        <div key={`${img.url}-${i}`} className="relative">
+                          <img
+                            src={img.url}
+                            alt={img.name || `image-${i}`}
+                            className="w-full h-24 object-cover rounded"
+                          />
+                          <button
+                            type="button"
+                            className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
+                            onClick={() =>
+                              setForm((prev) => {
+                                const next = [...prev.images];
+                                next.splice(i, 1);
+                                return { ...prev, images: next };
+                              })
+                            }
+                            title="Remove from university"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Lat/Lng preview (read-only) */}
               <div className="text-xs text-gray-600">
@@ -395,9 +569,12 @@ export default function UniversityPage(props) {
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
-            <h2 className="text-xl font-semibold mb-4 text-red-600">Delete University</h2>
+            <h2 className="text-xl font-semibold mb-4 text-red-600">
+              Delete University
+            </h2>
             <p className="mb-4">
-              Are you sure you want to delete <strong>{deleteData?.name}</strong>?
+              Are you sure you want to delete{" "}
+              <strong>{deleteData?.name}</strong>?
             </p>
             <div className="flex justify-end space-x-3">
               <button

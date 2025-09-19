@@ -3,7 +3,8 @@ import {
   collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
   query, where, getDoc
 } from "firebase/firestore";
-import { db } from "../../firebase";
+import { db, storage } from "../../firebase"; // ⬅️ storage added
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage"; // ⬅️ upload utils
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -51,6 +52,10 @@ const initialForm = {
   cityName: "",
   lat: null,
   lng: null,
+
+  // ⬇️ Images (like posters)
+  images: [],       // [{url, name}]
+  imageFiles: [],   // File[]
 };
 
 const HostelPage = () => {
@@ -67,7 +72,6 @@ const HostelPage = () => {
   const [toggleItem, setToggleItem] = useState(null);
   const [form, setForm] = useState(initialForm);
 
-  // keep a mounted flag to avoid state updates on unmounted
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -84,7 +88,6 @@ const HostelPage = () => {
     getList();
   }, []);
 
-  // If list shrinks, keep currentPage in bounds
   useEffect(() => {
     if (currentPage > totalPages) {
       setCurrentPage(totalPages);
@@ -94,7 +97,16 @@ const HostelPage = () => {
   const resetForm = () => {
     setForm(initialForm);
     setEditing(null);
-    setUniversities([]); // clear the dropdown until a country is picked
+    setUniversities([]);
+  };
+
+  // unique path for images
+  const uniquePath = (folder, file, nameHint = "") => {
+    const ext = file.name.includes(".") ? file.name.split(".").pop() : "jpg";
+    const base = (nameHint || file.name.replace(/\.[^/.]+$/, "")) || "img";
+    const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const prefix = folder ? `${folder}/` : "";
+    return `${prefix}${base}_${stamp}.${ext}`;
   };
 
   const getList = async () => {
@@ -116,6 +128,7 @@ const HostelPage = () => {
           countryCode = "", countryName = "",
           stateCode = "", stateName = "",
           cityName = "", lat = null, lng = null,
+          images = [], // ⬅️ bring saved images
         } = data;
 
         const universityNames = uniIds.map((id) => uniMap[id] ?? "Unknown");
@@ -130,6 +143,7 @@ const HostelPage = () => {
           active,
           disabledReason, disabledAt,
           countryCode, countryName, stateCode, stateName, cityName, lat, lng,
+          images: Array.isArray(images) ? images : [],
         };
       });
 
@@ -142,7 +156,6 @@ const HostelPage = () => {
     }
   };
 
-  // Fetch universities by country (and only touch state if mounted)
   const fetchUniversitiesByCountry = async (countryName) => {
     if (!countryName) {
       setUniversities([]);
@@ -153,7 +166,7 @@ const HostelPage = () => {
       const qy = query(collection(db, "university"), where("countryName", "==", countryName));
       const uniSnap = await getDocs(qy);
       const uniArr = uniSnap.docs.map((d) => ({ id: d.id, name: d.data().name }));
-      if (mountedRef.current) setUniversities(uniArr); // [] if none
+      if (mountedRef.current) setUniversities(uniArr);
     } catch (err) {
       console.error("fetchUniversitiesByCountry error:", err);
       toast.error("Failed to load universities");
@@ -162,11 +175,12 @@ const HostelPage = () => {
       if (mountedRef.current) setIsLoading(false);
     }
   };
+
   useEffect(() => {
     if (modalOpen && form.countryName) {
       fetchUniversitiesByCountry(form.countryName);
     }
-  }, [modalOpen]);
+  }, [modalOpen]); // eslint-disable-line
 
   const handleAdd = async (e) => {
     e.preventDefault();
@@ -177,16 +191,36 @@ const HostelPage = () => {
       return toast.warn("Please select at least one university");
     }
 
+    // upload any NEW images
+    let uploaded = [];
+    try {
+      if (form.imageFiles?.length) {
+        const uploads = form.imageFiles.map(async (file) => {
+          const path = uniquePath(`hostel_images/${rawName.replace(/\s+/g, "_")}`, file, rawName.replace(/\s+/g, "_"));
+          const sRef = storageRef(storage, path);
+          await uploadBytes(sRef, file);
+          const url = await getDownloadURL(sRef);
+          return { url, name: file.name };
+        });
+        uploaded = await Promise.all(uploads);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Image upload failed");
+      return;
+    }
+
+    const images = [...(form.images || []), ...uploaded];
+
     const featuresToSave = { ...DEFAULT_FEATURES, ...(form.features || {}) };
 
     const payload = {
       uid,
       name: rawName,
-      // unique uniIds
       uniIds: [...new Set(form.uniIds)],
       location: form.location?.trim() || "",
       features: featuresToSave,
-      active: !!form.active, // respect the current form
+      active: !!form.active,
       disabledReason: null,
       disabledAt: null,
 
@@ -197,6 +231,8 @@ const HostelPage = () => {
       cityName: form.cityName || "",
       lat: typeof form.lat === "number" ? form.lat : null,
       lng: typeof form.lng === "number" ? form.lng : null,
+
+      images, // ⬅️ save merged images
     };
 
     try {
@@ -214,7 +250,7 @@ const HostelPage = () => {
         });
         toast.success("Successfully updated");
       } else {
-        // Avoid creating another doc with the same name linked to overlapping uniIds
+        // Prevent duplicate links for same name + uniIds
         const qy = query(collection(db, "hostel"), where("name", "==", rawName));
         const qs = await getDocs(qy);
 
@@ -354,6 +390,8 @@ const HostelPage = () => {
       cityName: item.cityName || "",
       lat: typeof item.lat === "number" ? item.lat : null,
       lng: typeof item.lng === "number" ? item.lng : null,
+      images: Array.isArray(item.images) ? item.images : [], // ⬅️ carry saved
+      imageFiles: [], // ⬅️ reset local files
     });
     setModalOpen(true);
   };
@@ -397,6 +435,7 @@ const HostelPage = () => {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Hostel</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">University</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Location</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Images</th>{/* ⬅️ new column */}
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
               </tr>
@@ -404,7 +443,7 @@ const HostelPage = () => {
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
                     No matching hostels found.
                   </td>
                 </tr>
@@ -422,14 +461,27 @@ const HostelPage = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       <div className="flex flex-col">
                         <span>{formatLocation(item)}</span>
-                        {/* Show coords if needed:
-                        {typeof item.lat === "number" && typeof item.lng === "number" ? (
-                          <span className="text-gray-500 text-xs">
-                            {item.lat.toFixed(4)}, {item.lng.toFixed(4)}
-                          </span>
-                        ) : null} */}
                       </div>
                     </td>
+
+                    {/* thumbnail */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {item.images?.[0]?.url ? (
+                        <>
+                          <img
+                            src={item.images[0].url}
+                            alt={item.images[0].name || "hostel"}
+                            width={80}
+                            height={80}
+                            className="rounded"
+                          />
+                          {item.images.length > 1 && (
+                            <div className="text-xs text-gray-500 mt-1">+{item.images.length - 1} more</div>
+                          )}
+                        </>
+                      ) : "—"}
+                    </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       {item.active ? (
                         <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-800">Active</span>
@@ -447,12 +499,12 @@ const HostelPage = () => {
                       >
                         {item.active ? "Disable" : "Enable"}
                       </button>
-                      <button
+                      {/* <button
                         className="text-red-600 hover:underline"
                         onClick={() => { setDelete(item); setConfirmDeleteOpen(true); }}
                       >
                         Delete
-                      </button>
+                      </button> */}
                     </td>
                   </tr>
                 ))
@@ -526,13 +578,13 @@ const HostelPage = () => {
                       prev.lat === next.lat &&
                       prev.lng === next.lng;
 
-                    return same ? prev : { ...prev, ...next, uniIds: [] }; 
+                    return same ? prev : { ...prev, ...next, uniIds: [] };
                   });
                   fetchUniversitiesByCountry(loc?.country?.name || "");
                 }}
               />
 
-              {/* Optional display text (kept editable) */}
+              {/* Optional display text */}
               <input
                 type="text"
                 placeholder="Location (optional display text)"
@@ -546,7 +598,7 @@ const HostelPage = () => {
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
               />
 
-              {/* University multi-select, depends on picked country */}
+              {/* University multi-select */}
               <Select
                 className="w-full"
                 multiple
@@ -586,6 +638,84 @@ const HostelPage = () => {
                   ))}
                 </div>
               </fieldset>
+
+              {/* ⬇️ IMAGES (multiple) */}
+              <div className="space-y-2">
+                <label className="block font-medium">Images (you can add multiple)</label>
+                <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (!files.length) return;
+                        setForm((prev) => ({ ...prev, imageFiles: [...prev.imageFiles, ...files] }));
+                      }}
+                    />
+                    📁 Choose Images
+                  </label>
+                  <span className="text-sm text-gray-600">
+                    {form.imageFiles.length ? `${form.imageFiles.length} selected` : "No files selected"}
+                  </span>
+                </div>
+
+                {/* New (unsaved) previews */}
+                {!!form.imageFiles.length && (
+                  <div className="mt-2 grid grid-cols-3 md:grid-cols-4 gap-2">
+                    {form.imageFiles.map((f, i) => (
+                      <div key={`${f.name}-${i}`} className="relative">
+                        <img src={URL.createObjectURL(f)} alt={f.name} className="w-full h-24 object-cover rounded" />
+                        <button
+                          type="button"
+                          className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
+                          onClick={() =>
+                            setForm((prev) => {
+                              const next = [...prev.imageFiles];
+                              next.splice(i, 1);
+                              return { ...prev, imageFiles: next };
+                            })
+                          }
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Already saved images */}
+                {!!form.images.length && (
+                  <>
+                    <div className="text-sm text-gray-500 mt-3">Already saved</div>
+                    <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                      {form.images.map((img, i) => (
+                        <div key={`${img.url}-${i}`} className="relative">
+                          <img src={img.url} alt={img.name || `image-${i}`} className="w-full h-24 object-cover rounded" />
+                          <button
+                            type="button"
+                            className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
+                            onClick={() =>
+                              setForm((prev) => {
+                                const next = [...prev.images];
+                                next.splice(i, 1);
+                                return { ...prev, images: next };
+                              })
+                            }
+                            title="Remove from hostel"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
               <div className="flex justify-end mt-6 space-x-3">
                 <button
                   type="button"
@@ -633,10 +763,10 @@ const HostelPage = () => {
       {confirmToggleOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
-            <h2 className="text-xl font-semibold mb-4">
+            <h2 className="text-xl font-semibold">
               {toggleItem?.active ? "Disable Hostel" : "Enable Hostel"}
             </h2>
-            <p className="mb-4">
+            <p className="my-4">
               Are you sure you want to {toggleItem?.active ? "disable" : "enable"}{" "}
               <strong>{toggleItem?.name}</strong>?
             </p>
@@ -661,8 +791,7 @@ const HostelPage = () => {
                     setToggleItem(null);
                   }
                 }}
-                className={`px-4 py-2 text-white rounded ${toggleItem?.active ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"
-                  }`}
+                className={`px-4 py-2 text-white rounded ${toggleItem?.active ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}`}
               >
                 {toggleItem?.active ? "Disable" : "Enable"}
               </button>

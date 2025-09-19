@@ -44,7 +44,7 @@ export default function EventPage({ navbarHeight }) {
   const [categoryFilter, setCategoryFilter] = useState("All");
 
   const [sortConfig, setSortConfig] = useState({ key: "start", direction: "asc" });
-  const [filters, setFilters] = useState({ name: "", date: "", location: "" });
+  const [filters, setFilters] = useState({ name: "", location: "" });
   const debounceRef = useRef(null);
   const setFilterDebounced = (field, value) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -102,10 +102,47 @@ export default function EventPage({ navbarHeight }) {
   };
   const [form, setForm] = useState(initialFormData);
 
+  // --- BOOKINGS ---
+  const [bookingsByEvent, setBookingsByEvent] = useState({});
+  const [bookingModal, setBookingModal] = useState({
+    open: false,
+    event: null,
+    page: 1,
+    pageSize: 10,
+    sort: { key: "timestamp", dir: "desc" }, // 'userName' | 'userEmail' | 'totalPrice' | 'timestamp'
+    q: "",
+  });
+
+  // --- List header date-range filter (calendar) ---
+  const [filterRange, setFilterRange] = useState([{ startDate: null, endDate: null, key: "selection" }]);
+  const [showFilterPicker, setShowFilterPicker] = useState(false);
+  const filterPickerRef = useRef(null);
+
   useEffect(() => {
     getList();
     getCategory();
     getPaymentList();
+  }, []);
+
+  // Load bookings for hostel
+  useEffect(() => {
+    (async () => {
+      try {
+        const qB = query(collection(db, "publiceventbookings"));
+        const snap = await getDocs(qB);
+        const grouped = {};
+        snap.docs.forEach((d) => {
+          const b = { id: d.id, ...d.data() };
+          const key = b.eventId || "__unknown__";
+          if (!grouped[key]) grouped[key] = [];
+          grouped[key].push(b);
+        });
+        setBookingsByEvent(grouped);
+      } catch (e) {
+        console.error(e);
+        toast.error("Failed to load bookings");
+      }
+    })();
   }, []);
 
   const getList = async () => {
@@ -186,7 +223,7 @@ export default function EventPage({ navbarHeight }) {
       let uploaded = [];
       if (form.posterFiles?.length) {
         const uploads = form.posterFiles.map(async (file) => {
-          const path = uniquePath(`public_event_posters/${emp.hostelid}/${form.eventName || "publicevents"}`, file);
+          const path = uniquePath(`public_event_posters/${emp.id}/${form.eventName || "publicevents"}`, file);
           const sRef = storageRef(storage, path);
           await uploadBytes(sRef, file);
           const url = await getDownloadURL(sRef);
@@ -206,8 +243,8 @@ export default function EventPage({ navbarHeight }) {
         uid,
         isPinned: !!form.isPinned,
         pinnedAt: form.isPinned ? form.pinnedAt || Timestamp.now() : null,
-        pinnedOrder: Number.isFinite(form.pinnedOrder) ? form.pinnedOrder : null,
-        maxPurchaseTickets: Number.isNaN(maxPerNum) ? null : maxPerNum,
+        pinnedOrder: Number.isFinite(Number(form.pinnedOrder)) ? Number(form.pinnedOrder) : null,
+        maxPurchaseTickets: Number.isNaN(Number(form.maxPurchaseTickets)) ? null : Number(form.maxPurchaseTickets),
       };
       delete eventData.id;
       delete eventData.posterFiles;
@@ -246,34 +283,49 @@ export default function EventPage({ navbarHeight }) {
     setDelete(null);
   };
 
+  const toMillis = (val) => {
+    if (!val) return null;
+    if (typeof val === "object" && val.seconds != null) return val.seconds * 1000;
+    if (val?.toDate) return val.toDate().getTime();
+    const ms = new Date(val).getTime();
+    return Number.isNaN(ms) ? null : ms;
+  };
+
   const formatDateTime = (ts) => {
     const ms = toMillis(ts);
     if (!ms) return "—";
     return dayjs(ms).format("YYYY-MM-DD hh:mm A");
   };
 
-  function toMillis(val) {
-    if (!val) return null;
-    if (typeof val === "object" && "seconds" in val) return val.seconds * 1000;
-    if (val?.toDate) return val.toDate().getTime();
-    const ms = new Date(val).getTime();
-    return Number.isNaN(ms) ? null : ms;
+  // windows + classification
+  function getEventWindowMillis(item) {
+    const s1 = toMillis(item.startDateTime);
+    const e1 = toMillis(item.endDateTime);
+    if (s1 || e1) return { start: s1 ?? e1, end: e1 ?? s1, source: "dateTime" };
+    const sd = toMillis(item?.date?.startDate);
+    const ed = toMillis(item?.date?.endDate);
+    if (sd || ed) {
+      const start = sd ? new Date(sd) : (ed ? new Date(ed) : null);
+      const end = ed ? new Date(ed) : (sd ? new Date(sd) : null);
+      if (start && end) {
+        const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0).getTime();
+        const dayEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999).getTime();
+        return { start: dayStart, end: dayEnd, source: "dateOnly" };
+      }
+    }
+    return { start: null, end: null, source: "none" };
   }
 
   function classifyEvent(item) {
     const now = Date.now();
-    const start = toMillis(item.startDateTime);
-    const end = toMillis(item.endDateTime);
-    if (!start && !end) return "current";
-    if (start && now < start) return "future";
-    if (end && now > end) return "past";
-    if (start && end && start <= now && now <= end) return "current";
-    if (!end && start && now >= start) return "current";
-    if (!start && end && now <= end) return "current";
+    const { start, end } = getEventWindowMillis(item);
+    if (start == null && end == null) return "current";
+    if (start != null && now < start) return "future";
+    if (end != null && now > end) return "past";
     return "current";
   }
 
-  // ---- pin helpers ----
+  // pin helpers
   const eNumber = (v) => (v === "" || v === null || v === undefined ? NaN : Number(v));
   const getPinnedSorted = () =>
     [...list].filter((e) => e.isPinned).sort((a, b) => {
@@ -342,7 +394,55 @@ export default function EventPage({ navbarHeight }) {
     }
   };
 
-  // ---------- filter/sort ----------
+  // ----- helper lines for compact time/date in table -----
+  const SHOW_ALL_DAY_FOR_DATE_ONLY = true;
+  const toMilli = toMillis;
+
+  function getTimeLine(item) {
+    const s = toMilli(item.startDateTime);
+    const e = toMilli(item.endDateTime);
+    if (s || e) {
+      const st = s ? dayjs(s).format("hh:mm A") : "";
+      const et = e ? dayjs(e).format("hh:mm A") : "";
+      return st && et ? `${st} to ${et}` : (st || et || "");
+    }
+    return SHOW_ALL_DAY_FOR_DATE_ONLY ? "All day" : "";
+  }
+
+  function getDateLine(item) {
+    let s = toMilli(item.startDateTime) ?? toMilli(item?.date?.startDate);
+    let e = toMilli(item.endDateTime) ?? toMilli(item?.date?.endDate);
+
+    if (!s && !e) return "—";
+    if (!s) s = e;
+    if (!e) e = s;
+
+    const sd = dayjs(s), ed = dayjs(e);
+    const sameMonth = sd.month() === ed.month() && sd.year() === ed.year();
+    const sameYear = sd.year() === ed.year();
+
+    const monLower = (d) => d.format("MMM").toLowerCase();
+    const needYear = !sameYear || sd.year() !== dayjs().year();
+
+    if (sameMonth) {
+      return `${sd.format("D")}–${ed.format("D")} ${monLower(sd)}${needYear ? " " + sd.format("YYYY") : ""}`;
+    }
+    if (sameYear) {
+      return `${sd.format("D")} ${monLower(sd)}–${ed.format("D")} ${monLower(ed)}${needYear ? " " + sd.format("YYYY") : ""}`;
+    }
+    return `${sd.format("D MMM YYYY")}–${ed.format("D MMM YYYY")}`.replace(/MMM/g, (m) => m.toLowerCase());
+  }
+
+  // ---- list filtering/sorting (with calendar header filter) ----
+  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+  const dayEnd   = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+  const overlaps = (evStartMs, evEndMs, fStart, fEnd) => {
+    if (!fStart || !fEnd) return true; // no active filter
+    const fs = dayStart(fStart);
+    const fe = dayEnd(fEnd);
+    return evStartMs <= fe && evEndMs >= fs;
+  };
+
   const timeFiltered = list.filter((ev) => classifyEvent(ev) === timeFilter);
   const catFiltered = categoryFilter === "All" ? timeFiltered : timeFiltered.filter((ev) => (ev.category || "") === categoryFilter);
   const pinFiltered = showPinnedOnly ? catFiltered.filter((ev) => !!ev.isPinned) : catFiltered;
@@ -350,9 +450,13 @@ export default function EventPage({ navbarHeight }) {
   const filtered = pinFiltered.filter((ev) => {
     const nameOK = !filters.name || (ev.eventName || "").toLowerCase().includes(filters.name.toLowerCase());
     const locOK = !filters.location || (ev.locationName || "").toLowerCase().includes(filters.location.toLowerCase());
-    const dateStr = [ev.startDateTime, ev.endDateTime].map(formatDateTime).join(" ");
-    const dateOK = !filters.date || dateStr.toLowerCase().includes(filters.date.toLowerCase());
-    return nameOK && locOK && dateOK;
+
+    const { start, end } = getEventWindowMillis(ev);
+    const fStart = filterRange?.[0]?.startDate;
+    const fEnd   = filterRange?.[0]?.endDate;
+    const rangeOK = (start == null && end == null) ? true : overlaps(start ?? 0, end ?? 0, fStart, fEnd);
+
+    return nameOK && locOK && rangeOK;
   });
 
   const getSortVal = (ev, key) => {
@@ -389,8 +493,7 @@ export default function EventPage({ navbarHeight }) {
   const handleRangeChange = (item) => {
     const selected = item.selection;
     setRange([selected]);
-    const bothSelected =
-      selected.startDate && selected.endDate && selected.startDate.getTime() !== selected.endDate.getTime();
+    const bothSelected = selected.startDate && selected.endDate && selected.startDate.getTime() !== selected.endDate.getTime();
     if (bothSelected) {
       setForm((prev) => ({
         ...prev,
@@ -456,6 +559,7 @@ export default function EventPage({ navbarHeight }) {
                   { key: "category", label: "Category" },
                   { key: "start", label: "Event Date" },
                   { key: "location", label: "Location" },
+                  { key: "bookings", label: "Bookings", sortable: false },
                   { key: "image", label: "Poster(s)", sortable: false },
                   { key: "pin", label: "Pin", sortable: false },
                   { key: "actions", label: "Actions", sortable: false },
@@ -503,15 +607,70 @@ export default function EventPage({ navbarHeight }) {
                     ))}
                   </select>
                 </th>
-                <th className="px-6 pb-3" />
-                <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="Filter date (e.g. 2025-01)"
-                    defaultValue={filters.date}
-                    onChange={(e) => setFilterDebounced("date", e.target.value)}
-                  />
+
+                {/* DATE RANGE FILTER (calendar popover) */}
+                <th className="px-6 pb-3 relative">
+                  <button
+                    type="button"
+                    className="w-full border border-gray-300 rounded text-sm px-2 py-1 text-left bg-white hover:bg-gray-50"
+                    onClick={() => setShowFilterPicker((v) => !v)}
+                    title="Filter by date range"
+                  >
+                    {(() => {
+                      const s = filterRange?.[0]?.startDate;
+                      const e = filterRange?.[0]?.endDate;
+                      if (s && e) {
+                        return `${format(s, "MMM dd, yyyy")} – ${format(e, "MMM dd, yyyy")}`;
+                      }
+                      return "Any date";
+                    })()}
+                  </button>
+
+                  {showFilterPicker && (
+                    <div
+                      ref={filterPickerRef}
+                      className="absolute z-50 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg"
+                      style={{ left: 0 }}
+                    >
+                      <DateRange
+                        ranges={[
+                          {
+                            startDate: filterRange?.[0]?.startDate ?? new Date(),
+                            endDate: filterRange?.[0]?.endDate ?? new Date(),
+                            key: "selection",
+                          },
+                        ]}
+                        onChange={(r) => {
+                          const sel = r.selection;
+                          setFilterRange([{ ...sel }]);
+                        }}
+                        moveRangeOnFirstSelection={false}
+                        locale={enUS}
+                        editableDateInputs
+                      />
+                      <div className="flex items-center justify-end gap-2 p-2 border-t bg-gray-50">
+                        <button
+                          type="button"
+                          className="text-sm px-3 py-1 rounded border hover:bg-white"
+                          onClick={() => {
+                            setFilterRange([{ startDate: null, endDate: null, key: "selection" }]);
+                            setShowFilterPicker(false);
+                          }}
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          className="text-sm px-3 py-1 rounded border bg-black text-white hover:opacity-90"
+                          onClick={() => setShowFilterPicker(false)}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </th>
+
                 <th className="px-6 pb-3">
                   <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
@@ -522,13 +681,14 @@ export default function EventPage({ navbarHeight }) {
                 </th>
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-200">
               {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-10 text-center text-gray-500">No events to show for this filter.</td>
+                  <td colSpan="8" className="px-6 py-10 text-center text-gray-500">No events to show for this filter.</td>
                 </tr>
               ) : (
                 sorted.map((item) => (
@@ -536,9 +696,44 @@ export default function EventPage({ navbarHeight }) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.eventName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.category || "—"}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {formatDateTime(item.startDateTime)} — {formatDateTime(item.endDateTime)}
+                      {getTimeLine(item)} <br />
+                      {getDateLine(item)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.locationName}</td>
+
+                    {/* Bookings column */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {(() => {
+                        const arr = bookingsByEvent[item.eventName] || [];
+                        const count = arr.length;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                              {count}
+                            </span>
+                            {count > 0 && (
+                              <button
+                                type="button"
+                                className="text-blue-600 hover:underline"
+                                onClick={() =>
+                                  setBookingModal({
+                                    open: true,
+                                    event: item,
+                                    page: 1,
+                                    pageSize: 10,
+                                    sort: { key: "timestamp", dir: "desc" },
+                                    q: "",
+                                  })
+                                }
+                              >
+                                View
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {item.posters?.[0]?.url ? (
                         <img src={item.posters[0].url} alt="" width={80} height={80} className="rounded" />
@@ -548,7 +743,7 @@ export default function EventPage({ navbarHeight }) {
                       )}
                     </td>
 
-                    {/* Pin column: star + order input + up/down */}
+                    {/* Pin column */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex items-center gap-2">
                         <button
@@ -647,7 +842,7 @@ export default function EventPage({ navbarHeight }) {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Create/Edit Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -946,6 +1141,7 @@ export default function EventPage({ navbarHeight }) {
         </div>
       )}
 
+      {/* Map modal */}
       <Dialog open={showMapModal} onClose={() => setShowMapModal(false)} maxWidth="md" fullWidth>
         <DialogTitle>Pick a Location</DialogTitle>
         <DialogContent dividers sx={{ overflow: "hidden" }}>
@@ -958,6 +1154,225 @@ export default function EventPage({ navbarHeight }) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* BOOKINGS MODAL */}
+      {bookingModal.open && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
+          <div className="bg-white w-full max-w-3xl max-h-[85vh] rounded-lg shadow-lg flex flex-col">
+            <div className="px-5 py-4 border-b flex items-center justify-between gap-2">
+              <h3 className="text-lg font-semibold">
+                Bookings — {bookingModal.event?.eventName || "Event"}
+              </h3>
+              <div className="flex items-center gap-2">
+                {/* Export CSV */}
+                <button
+                  className="text-sm px-2 py-1 border rounded hover:bg-gray-50"
+                  onClick={() => {
+                    const rows = bookingsByEvent[bookingModal.event?.id] || [];
+                    const csv = [
+                      ["userName","userEmail","totalPrice","timestamp","ticketsJSON"],
+                      ...rows.map(b => [
+                        (b.userName||"").replaceAll(",", " "),
+                        (b.userEmail||""),
+                        String(b.totalPrice ?? ""),
+                        b.timestamp ? dayjs(toMillis(b.timestamp)).format("YYYY-MM-DD HH:mm") : "",
+                        JSON.stringify(b.tickets || {})
+                      ])
+                    ].map(r => r.join(",")).join("\n");
+                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${(bookingModal.event?.eventName||"event").replace(/\s+/g,"_")}_bookings.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  Export CSV
+                </button>
+
+                <button
+                  className="text-gray-600 hover:text-black"
+                  onClick={() => setBookingModal((p) => ({ ...p, open: false }))}
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div className="px-5 py-3 border-b flex items-center gap-3">
+              <input
+                className="border rounded px-3 py-1.5 text-sm w-60"
+                placeholder="Search name/email"
+                value={bookingModal.q}
+                onChange={(e) => setBookingModal((p) => ({ ...p, q: e.target.value, page: 1 }))}
+              />
+
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-sm text-gray-600">Rows</span>
+                <select
+                  className="border rounded px-2 py-1 text-sm"
+                  value={bookingModal.pageSize}
+                  onChange={(e) => setBookingModal((p) => ({ ...p, pageSize: Number(e.target.value), page: 1 }))}
+                >
+                  {[5,10,20,50,100].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {[
+                      { key: "userName", label: "User" },
+                      { key: "userEmail", label: "Email" },
+                      { key: "tickets", label: "Tickets", sortable: false },
+                      { key: "totalPrice", label: "Total Price" },
+                      { key: "timestamp", label: "Booked At" },
+                    ].map((c) => (
+                      <th key={c.key} className="px-5 py-3 text-left text-sm font-medium text-gray-600">
+                        {c.sortable === false ? (
+                          <span>{c.label}</span>
+                        ) : (
+                          <button
+                            className="flex items-center gap-1 hover:underline"
+                            onClick={() =>
+                              setBookingModal((p) =>
+                                p.sort.key === c.key
+                                  ? { ...p, sort: { key: c.key, dir: p.sort.dir === "asc" ? "desc" : "asc" } }
+                                  : { ...p, sort: { key: c.key, dir: "asc" } }
+                              )
+                            }
+                          >
+                            <span>{c.label}</span>
+                            {bookingModal.sort.key === c.key && (
+                              <span className="text-gray-400">{bookingModal.sort.dir === "asc" ? "▲" : "▼"}</span>
+                            )}
+                          </button>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {(() => {
+                    const rows = bookingsByEvent[bookingModal.event?.eventName] || [];
+
+                    // filter
+                    const q = (bookingModal.q || "").trim().toLowerCase();
+                    const filtered = q
+                      ? rows.filter(b =>
+                          (b.userName || "").toLowerCase().includes(q) ||
+                          (b.userEmail || "").toLowerCase().includes(q)
+                        )
+                      : rows;
+
+                    // sort
+                    const dir = bookingModal.sort.dir === "asc" ? 1 : -1;
+                    const sortedRows = [...filtered].sort((a, b) => {
+                      const key = bookingModal.sort.key;
+                      switch (key) {
+                        case "userName": return ((a.userName || "").localeCompare(b.userName || "")) * dir;
+                        case "userEmail": return ((a.userEmail || "").localeCompare(b.userEmail || "")) * dir;
+                        case "totalPrice": return ((Number(a.totalPrice || 0) - Number(b.totalPrice || 0)) * dir);
+                        case "timestamp":
+                        default: return (((toMillis(a.timestamp) ?? 0) - (toMillis(b.timestamp) ?? 0)) * dir);
+                      }
+                    });
+
+                    // paginate
+                    const total = sortedRows.length;
+                    const start = (bookingModal.page - 1) * bookingModal.pageSize;
+                    const pageRows = sortedRows.slice(start, start + bookingModal.pageSize);
+
+                    if (pageRows.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={5} className="px-5 py-10 text-center text-gray-500">
+                            No bookings found.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return pageRows.map((b) => (
+                      <tr key={b.id}>
+                        <td className="px-5 py-3 text-sm text-gray-700">
+                          <div className="flex items-center gap-2">
+                            {b.userPhotoURL ? <img src={b.userPhotoURL} alt="" className="w-8 h-8 rounded-full" /> : null}
+                            <span>{b.userName || "—"}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3 text-sm text-gray-700">{b.userEmail || "—"}</td>
+                        <td className="px-5 py-3 text-sm text-gray-700">
+                          {b.tickets && Object.keys(b.tickets).length ? (
+                            <ul className="space-y-0.5">
+                              {Object.entries(b.tickets).map(([type, count]) => (
+                                <li key={type}>{type}: <strong>{count}</strong></li>
+                              ))}
+                            </ul>
+                          ) : "—"}
+                        </td>
+                        <td className="px-5 py-3 text-sm text-gray-700">
+                          {typeof b.totalPrice === "number" ? `$${b.totalPrice}` : (b.totalPrice || "—")}
+                        </td>
+                        <td className="px-5 py-3 text-sm text-gray-700">
+                          {b.timestamp ? dayjs(toMillis(b.timestamp)).format("MMM DD, YYYY hh:mm A") : "—"}
+                        </td>
+                      </tr>
+                    ));
+                  })()}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pager */}
+            <div className="px-5 py-3 border-t flex items-center justify-between">
+              {(() => {
+                const rows = bookingsByEvent[bookingModal.event?.id] || [];
+                const q = (bookingModal.q || "").trim().toLowerCase();
+                const filtered = q
+                  ? rows.filter(b =>
+                      (b.userName || "").toLowerCase().includes(q) ||
+                      (b.userEmail || "").toLowerCase().includes(q)
+                    )
+                  : rows;
+                const total = filtered.length;
+                const totalPages = Math.max(1, Math.ceil(total / bookingModal.pageSize));
+                const canPrev = bookingModal.page > 1;
+                const canNext = bookingModal.page < totalPages;
+                return (
+                  <>
+                    <span className="text-sm text-gray-600">
+                      Page {bookingModal.page} of {totalPages} • {total} total
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className={`px-3 py-1 rounded border ${canPrev ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
+                        onClick={() => canPrev && setBookingModal((p)=>({ ...p, page: p.page - 1 }))}
+                        disabled={!canPrev}
+                      >
+                        Prev
+                      </button>
+                      <button
+                        className={`px-3 py-1 rounded border ${canNext ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
+                        onClick={() => canNext && setBookingModal((p)=>({ ...p, page: p.page + 1 }))}
+                        disabled={!canNext}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       <ToastContainer />
     </main>

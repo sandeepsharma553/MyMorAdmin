@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
   query, where, getDoc, Timestamp, writeBatch,
@@ -44,7 +44,7 @@ export default function EventPage({ navbarHeight }) {
   const [categoryFilter, setCategoryFilter] = useState("All");
 
   const [sortConfig, setSortConfig] = useState({ key: "start", direction: "asc" });
-  const [filters, setFilters] = useState({ name: "", date: "", location: "" });
+  const [filters, setFilters] = useState({ name: "", location: "" });
   const debounceRef = useRef(null);
   const setFilterDebounced = (field, value) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -102,7 +102,7 @@ export default function EventPage({ navbarHeight }) {
   };
   const [form, setForm] = useState(initialFormData);
 
-  // --- BOOKINGS (new) ---
+  // --- BOOKINGS ---
   const [bookingsByEvent, setBookingsByEvent] = useState({});
   const [bookingModal, setBookingModal] = useState({
     open: false,
@@ -113,16 +113,22 @@ export default function EventPage({ navbarHeight }) {
     q: "",
   });
 
+  // --- List header date-range filter (calendar) ---
+  const [filterRange, setFilterRange] = useState([{ startDate: null, endDate: null, key: "selection" }]);
+  const [showFilterPicker, setShowFilterPicker] = useState(false);
+  const filterPickerRef = useRef(null);
+
   useEffect(() => {
     getList();
     getCategory();
     getPaymentList();
   }, []);
 
-  // Load bookings for hostel (new)
+  // Load bookings for hostel
   useEffect(() => {
     (async () => {
       try {
+        if (!emp?.hostelid) return;
         const qB = query(collection(db, "eventbookings"), where("hostelid", "==", emp.hostelid));
         const snap = await getDocs(qB);
         const grouped = {};
@@ -132,14 +138,13 @@ export default function EventPage({ navbarHeight }) {
           if (!grouped[key]) grouped[key] = [];
           grouped[key].push(b);
         });
-        console.log(grouped,'grouped')
         setBookingsByEvent(grouped);
       } catch (e) {
         console.error(e);
         toast.error("Failed to load bookings");
       }
     })();
-  }, [emp.hostelid]);
+  }, [emp?.hostelid]);
 
   const getList = async () => {
     setIsLoading(true);
@@ -281,33 +286,27 @@ export default function EventPage({ navbarHeight }) {
     setDelete(null);
   };
 
-  const formatDateTime = (ts, fallbackDate) => {
-    const ms = toMillis(ts) ?? toMillis(fallbackDate);
-    if (!ms) return "—";
-    return dayjs(ms).format("YYYY-MM-DD hh:mm A");
-  };
-  function toMillis(val) {
+  const toMillis = (val) => {
     if (!val) return null;
     if (typeof val === "object" && val.seconds != null) return val.seconds * 1000;
     if (val?.toDate) return val.toDate().getTime();
     const ms = new Date(val).getTime();
     return Number.isNaN(ms) ? null : ms;
-  }
+  };
+
+  const formatDateTime = (ts) => {
+    const ms = toMillis(ts);
+    if (!ms) return "—";
+    return dayjs(ms).format("YYYY-MM-DD hh:mm A");
+  };
+
+  // windows + classification
   function getEventWindowMillis(item) {
     const s1 = toMillis(item.startDateTime);
     const e1 = toMillis(item.endDateTime);
-
-    if (s1 || e1) {
-      return {
-        start: s1 ?? e1,
-        end: e1 ?? s1,
-        source: "dateTime"
-      };
-    }
-
+    if (s1 || e1) return { start: s1 ?? e1, end: e1 ?? s1, source: "dateTime" };
     const sd = toMillis(item?.date?.startDate);
     const ed = toMillis(item?.date?.endDate);
-
     if (sd || ed) {
       const start = sd ? new Date(sd) : (ed ? new Date(ed) : null);
       const end = ed ? new Date(ed) : (sd ? new Date(sd) : null);
@@ -317,21 +316,19 @@ export default function EventPage({ navbarHeight }) {
         return { start: dayStart, end: dayEnd, source: "dateOnly" };
       }
     }
-
     return { start: null, end: null, source: "none" };
   }
 
   function classifyEvent(item) {
     const now = Date.now();
     const { start, end } = getEventWindowMillis(item);
-
     if (start == null && end == null) return "current";
     if (start != null && now < start) return "future";
     if (end != null && now > end) return "past";
     return "current";
   }
 
-  // ---- pin helpers ----
+  // pin helpers
   const eNumber = (v) => (v === "" || v === null || v === undefined ? NaN : Number(v));
   const getPinnedSorted = () =>
     [...list].filter((e) => e.isPinned).sort((a, b) => {
@@ -400,93 +397,9 @@ export default function EventPage({ navbarHeight }) {
     }
   };
 
-  // ---------- filter/sort for main table ----------
-  const timeFiltered = list.filter((ev) => classifyEvent(ev) === timeFilter);
-  const catFiltered = categoryFilter === "All" ? timeFiltered : timeFiltered.filter((ev) => (ev.category || "") === categoryFilter);
-  const pinFiltered = showPinnedOnly ? catFiltered.filter((ev) => !!ev.isPinned) : catFiltered;
-
-  const filtered = pinFiltered.filter((ev) => {
-    const nameOK = !filters.name || (ev.eventName || "").toLowerCase().includes(filters.name.toLowerCase());
-    const locOK = !filters.location || (ev.locationName || "").toLowerCase().includes(filters.location.toLowerCase());
-    const dateStr = [ev.startDateTime, ev.endDateTime].map(formatDateTime).join(" ");
-    const dateOK = !filters.date || dateStr.toLowerCase().includes(filters.date.toLowerCase());
-    return nameOK && locOK && dateOK;
-  });
-
-  const getSortVal = (ev, key) => {
-    if (key === "name") return (ev.eventName || "").toLowerCase();
-    if (key === "start") return toMillis(ev.startDateTime) ?? 0;
-    if (key === "location") return (ev.locationName || "").toLowerCase();
-    if (key === "category") return (ev.category || "").toLowerCase();
-    return "";
-  };
-
-  const sorted = [...filtered].sort((a, b) => {
-    const ap = a.isPinned ? 1 : 0;
-    const bp = b.isPinned ? 1 : 0;
-    if (ap !== bp) return bp - ap;
-
-    if (ap === 1 && bp === 1) {
-      const ao = Number.isFinite(eNumber(a.pinnedOrder)) ? a.pinnedOrder : 1e9;
-      const bo = Number.isFinite(eNumber(b.pinnedOrder)) ? b.pinnedOrder : 1e9;
-      if (ao !== bo) return ao - bo;
-      const aPA = toMillis(a.pinnedAt) ?? 0;
-      const bPA = toMillis(b.pinnedAt) ?? 0;
-      if (aPA !== bPA) return bPA - aPA;
-    }
-
-    const dir = sortConfig.direction === "asc" ? 1 : -1;
-    const va = getSortVal(a, sortConfig.key);
-    const vb = getSortVal(b, sortConfig.key);
-    if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
-    return String(va).localeCompare(String(vb)) * dir;
-  });
-
-  const categoryOptions = ["All", ...Array.from(new Set((category || []).map((c) => c.name).filter(Boolean)))];
-
-  const handleRangeChange = (item) => {
-    const selected = item.selection;
-    setRange([selected]);
-    const bothSelected =
-      selected.startDate && selected.endDate && selected.startDate.getTime() !== selected.endDate.getTime();
-    if (bothSelected) {
-      setForm((prev) => ({
-        ...prev,
-        date: { startDate: selected.startDate.toISOString(), endDate: selected.endDate.toISOString() },
-      }));
-      setShowPicker(false);
-    }
-  };
-  const toDate = (ts) => (ts?.seconds ? new Date(ts.seconds * 1000) : new Date(ts));
-  const two = (n) => String(n).padStart(2, '0');
-  const timeStr = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  const formatRangeParts = (startTs, endTs) => {
-    const s = toDate(startTs);
-    const e = toDate(endTs);
-    if (isNaN(s) || isNaN(e)) return { time: '', date: '' };
-    const sameYear = s.getFullYear() === e.getFullYear();
-    const sameMonth = sameYear && s.getMonth() === e.getMonth();
-    const sDay = two(s.getDate()), eDay = two(e.getDate());
-    const m = (d) => d.toLocaleString('en-US', { month: 'short' }).toLowerCase();
-
-    let datePart;
-    if (sameMonth) datePart = `${sDay}-${eDay} ${m(s)}`;
-    else if (sameYear) datePart = `${sDay} ${m(s)}-${eDay} ${m(e)}`;
-    else datePart = `${sDay} ${m(s)} ${s.getFullYear()}-${eDay} ${m(e)} ${e.getFullYear()}`;
-
-    return { time: `${timeStr(s)} to ${timeStr(e)}`, date: datePart };
-  };
-
-  function toMilli(v) {
-    if (!v) return null;
-    if (typeof v === "object" && v.seconds != null) return v.seconds * 1000;
-    if (v?.toDate) return v.toDate().getTime();
-    const ms = new Date(v).getTime();
-    return Number.isNaN(ms) ? null : ms;
-  }
-
-  // ----- compact lines -----
+  // ----- helper lines for compact time/date in table -----
   const SHOW_ALL_DAY_FOR_DATE_ONLY = true;
+  const toMilli = toMillis;
 
   function getTimeLine(item) {
     const s = toMilli(item.startDateTime);
@@ -523,7 +436,76 @@ export default function EventPage({ navbarHeight }) {
     return `${sd.format("D MMM YYYY")}–${ed.format("D MMM YYYY")}`.replace(/MMM/g, (m) => m.toLowerCase());
   }
 
-  // ------- RENDER -------
+  // ---- list filtering/sorting (with calendar header filter) ----
+  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+  const dayEnd   = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+  const overlaps = (evStartMs, evEndMs, fStart, fEnd) => {
+    if (!fStart || !fEnd) return true; // no active filter
+    const fs = dayStart(fStart);
+    const fe = dayEnd(fEnd);
+    return evStartMs <= fe && evEndMs >= fs;
+  };
+
+  const timeFiltered = list.filter((ev) => classifyEvent(ev) === timeFilter);
+  const catFiltered = categoryFilter === "All" ? timeFiltered : timeFiltered.filter((ev) => (ev.category || "") === categoryFilter);
+  const pinFiltered = showPinnedOnly ? catFiltered.filter((ev) => !!ev.isPinned) : catFiltered;
+
+  const filtered = pinFiltered.filter((ev) => {
+    const nameOK = !filters.name || (ev.eventName || "").toLowerCase().includes(filters.name.toLowerCase());
+    const locOK = !filters.location || (ev.locationName || "").toLowerCase().includes(filters.location.toLowerCase());
+
+    const { start, end } = getEventWindowMillis(ev);
+    const fStart = filterRange?.[0]?.startDate;
+    const fEnd   = filterRange?.[0]?.endDate;
+    const rangeOK = (start == null && end == null) ? true : overlaps(start ?? 0, end ?? 0, fStart, fEnd);
+
+    return nameOK && locOK && rangeOK;
+  });
+
+  const getSortVal = (ev, key) => {
+    if (key === "name") return (ev.eventName || "").toLowerCase();
+    if (key === "start") return toMillis(ev.startDateTime) ?? 0;
+    if (key === "location") return (ev.locationName || "").toLowerCase();
+    if (key === "category") return (ev.category || "").toLowerCase();
+    return "";
+  };
+
+  const sorted = [...filtered].sort((a, b) => {
+    const ap = a.isPinned ? 1 : 0;
+    const bp = b.isPinned ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+
+    if (ap === 1 && bp === 1) {
+      const ao = Number.isFinite(eNumber(a.pinnedOrder)) ? a.pinnedOrder : 1e9;
+      const bo = Number.isFinite(eNumber(b.pinnedOrder)) ? b.pinnedOrder : 1e9;
+      if (ao !== bo) return ao - bo;
+      const aPA = toMillis(a.pinnedAt) ?? 0;
+      const bPA = toMillis(b.pinnedAt) ?? 0;
+      if (aPA !== bPA) return bPA - aPA;
+    }
+
+    const dir = sortConfig.direction === "asc" ? 1 : -1;
+    const va = getSortVal(a, sortConfig.key);
+    const vb = getSortVal(b, sortConfig.key);
+    if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+    return String(va).localeCompare(String(vb)) * dir;
+  });
+
+  const categoryOptions = ["All", ...Array.from(new Set((category || []).map((c) => c.name).filter(Boolean)))];
+
+  const handleRangeChange = (item) => {
+    const selected = item.selection;
+    setRange([selected]);
+    const bothSelected = selected.startDate && selected.endDate && selected.startDate.getTime() !== selected.endDate.getTime();
+    if (bothSelected) {
+      setForm((prev) => ({
+        ...prev,
+        date: { startDate: selected.startDate.toISOString(), endDate: selected.endDate.toISOString() },
+      }));
+      setShowPicker(false);
+    }
+  };
+
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       <div className="flex justify-between items-center mb-4">
@@ -580,7 +562,7 @@ export default function EventPage({ navbarHeight }) {
                   { key: "category", label: "Category" },
                   { key: "start", label: "Event Date" },
                   { key: "location", label: "Location" },
-                  { key: "bookings", label: "Bookings", sortable: false }, // NEW
+                  { key: "bookings", label: "Bookings", sortable: false },
                   { key: "image", label: "Poster(s)", sortable: false },
                   { key: "pin", label: "Pin", sortable: false },
                   { key: "actions", label: "Actions", sortable: false },
@@ -628,14 +610,70 @@ export default function EventPage({ navbarHeight }) {
                     ))}
                   </select>
                 </th>
-                <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="Filter date (e.g. 2025-01)"
-                    defaultValue={filters.date}
-                    onChange={(e) => setFilterDebounced("date", e.target.value)}
-                  />
+
+                {/* DATE RANGE FILTER (calendar popover) */}
+                <th className="px-6 pb-3 relative">
+                  <button
+                    type="button"
+                    className="w-full border border-gray-300 rounded text-sm px-2 py-1 text-left bg-white hover:bg-gray-50"
+                    onClick={() => setShowFilterPicker((v) => !v)}
+                    title="Filter by date range"
+                  >
+                    {(() => {
+                      const s = filterRange?.[0]?.startDate;
+                      const e = filterRange?.[0]?.endDate;
+                      if (s && e) {
+                        return `${format(s, "MMM dd, yyyy")} – ${format(e, "MMM dd, yyyy")}`;
+                      }
+                      return "Any date";
+                    })()}
+                  </button>
+
+                  {showFilterPicker && (
+                    <div
+                      ref={filterPickerRef}
+                      className="absolute z-50 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg"
+                      style={{ left: 0 }}
+                    >
+                      <DateRange
+                        ranges={[
+                          {
+                            startDate: filterRange?.[0]?.startDate ?? new Date(),
+                            endDate: filterRange?.[0]?.endDate ?? new Date(),
+                            key: "selection",
+                          },
+                        ]}
+                        onChange={(r) => {
+                          const sel = r.selection;
+                          setFilterRange([{ ...sel }]);
+                        }}
+                        moveRangeOnFirstSelection={false}
+                        locale={enUS}
+                        editableDateInputs
+                      />
+                      <div className="flex items-center justify-end gap-2 p-2 border-t bg-gray-50">
+                        <button
+                          type="button"
+                          className="text-sm px-3 py-1 rounded border hover:bg-white"
+                          onClick={() => {
+                            setFilterRange([{ startDate: null, endDate: null, key: "selection" }]);
+                            setShowFilterPicker(false);
+                          }}
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          className="text-sm px-3 py-1 rounded border bg-black text-white hover:opacity-90"
+                          onClick={() => setShowFilterPicker(false)}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </th>
+
                 <th className="px-6 pb-3">
                   <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
@@ -644,7 +682,6 @@ export default function EventPage({ navbarHeight }) {
                     onChange={(e) => setFilterDebounced("location", e.target.value)}
                   />
                 </th>
-                <th className="px-6 pb-3" /> {/* Bookings filter empty */}
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
@@ -667,7 +704,7 @@ export default function EventPage({ navbarHeight }) {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.locationName}</td>
 
-                    {/* NEW: Bookings column */}
+                    {/* Bookings column */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {(() => {
                         const arr = bookingsByEvent[item.eventName] || [];
@@ -1121,7 +1158,7 @@ export default function EventPage({ navbarHeight }) {
         </DialogActions>
       </Dialog>
 
-      {/* BOOKINGS MODAL (new) */}
+      {/* BOOKINGS MODAL */}
       {bookingModal.open && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
           <div className="bg-white w-full max-w-3xl max-h-[85vh] rounded-lg shadow-lg flex flex-col">
@@ -1141,7 +1178,7 @@ export default function EventPage({ navbarHeight }) {
                         (b.userName||"").replaceAll(",", " "),
                         (b.userEmail||""),
                         String(b.totalPrice ?? ""),
-                        dayjs(toMillis(b.timestamp)).format("YYYY-MM-DD HH:mm"),
+                        b.timestamp ? dayjs(toMillis(b.timestamp)).format("YYYY-MM-DD HH:mm") : "",
                         JSON.stringify(b.tickets || {})
                       ])
                     ].map(r => r.join(",")).join("\n");
@@ -1246,7 +1283,7 @@ export default function EventPage({ navbarHeight }) {
                         case "userEmail": return ((a.userEmail || "").localeCompare(b.userEmail || "")) * dir;
                         case "totalPrice": return ((Number(a.totalPrice || 0) - Number(b.totalPrice || 0)) * dir);
                         case "timestamp":
-                        default: return ((toMillis(a.timestamp) - toMillis(b.timestamp)) * dir);
+                        default: return (((toMillis(a.timestamp) ?? 0) - (toMillis(b.timestamp) ?? 0)) * dir);
                       }
                     });
 
