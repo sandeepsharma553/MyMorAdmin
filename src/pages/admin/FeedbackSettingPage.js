@@ -105,7 +105,7 @@ const FeedbackSettingPage = (props) => {
   const getReportList = async () => {
     setIsLoading(true);
     const maintenanceCategoryQuery = query(
-      collection(db, "reportitems"),
+      collection(db, "feedbackitems"),
       where("hostelid", "==", emp.hostelid)
     );
 
@@ -125,13 +125,13 @@ const FeedbackSettingPage = (props) => {
     try {
       if (!form.name) return;
       if (editingData) {
-        const docRef = doc(db, "reportitems", form.id);
+        const docRef = doc(db, "feedbackitems", form.id);
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) {
           toast.warning("data does not exist! Cannot update.");
           return;
         }
-        await updateDoc(doc(db, "reportitems", form.id), {
+        await updateDoc(doc(db, "feedbackitems", form.id), {
           uid,
           name: form.name,
           hostelid: emp.hostelid,
@@ -141,14 +141,14 @@ const FeedbackSettingPage = (props) => {
         toast.success("Successfully updated");
         getReportList();
       } else {
-        const q = query(collection(db, "reportitems"), where("name", "==", form.name),
+        const q = query(collection(db, "feedbackitems"), where("name", "==", form.name),
         where("hostelid", "==", emp.hostelid));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
           toast.warn("Duplicate found! Not adding.");
           return;
         }
-        await addDoc(collection(db, "reportitems"), {
+        await addDoc(collection(db, "feedbackitems"), {
           uid,
           name: form.name,
           hostelid: emp.hostelid,
@@ -170,7 +170,7 @@ const FeedbackSettingPage = (props) => {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, "reportitems", form.id));
+      await deleteDoc(doc(db, "feedbackitems", form.id));
       toast.success("Successfully deleted!");
       getReportList();
     } catch (error) {
