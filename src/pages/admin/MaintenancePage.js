@@ -24,12 +24,14 @@ export default function MaintenancePage(props) {
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [printAllModalOpen, setPrintAllModalOpen] = useState(false);
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [viewData, setViewData] = useState(null);
   const [fileName, setFileName] = useState("No file chosen");
   const [problemCatlist, setProblemCatList] = useState([]);
   const [itemCatlist, setItemCatList] = useState([]);
   const [itemlist, setItemList] = useState([]);
+  const [previewSrc, setPreviewSrc] = useState(null);
 
   // Assign / Notes
   const [assignModalOpen, setAssignModalOpen] = useState(false);
@@ -109,6 +111,36 @@ export default function MaintenancePage(props) {
   const viewPrintRef = useRef(null); // single
   const listPrintRef = useRef(null); // all
   const handlePrintSingle = useReactToPrint({
+    contentRef: viewPrintRef,
+    onBeforeGetContent: () => {
+      return new Promise((resolve) => {
+        const images = viewPrintRef.current?.querySelectorAll("img") || [];
+        let loaded = 0;
+        if (images.length === 0) resolve();
+        images.forEach((img) => {
+          if (img.complete) {
+            loaded++;
+            if (loaded === images.length) resolve();
+          } else {
+            img.onload = () => {
+              loaded++;
+              if (loaded === images.length) resolve();
+            };
+            img.onerror = () => {
+              loaded++;
+              if (loaded === images.length) resolve();
+            };
+          }
+        });
+      });
+    },
+    pageStyle: `
+      @page { size: A4; margin: 14mm; }
+      img { max-width: 100% !important; max-height: 200px !important; }
+    `
+  });
+
+  const handlePrintSingle1 = useReactToPrint({
     contentRef: viewPrintRef,
     pageStyle: `
       @page { size: A4; margin: 14mm; }
@@ -490,7 +522,7 @@ export default function MaintenancePage(props) {
 
   // ---------- View / Print ----------
   const openView = (row) => { setViewData(row); setViewModalOpen(true); markNotesSeen(row); };
-  const openPrint = () => { setPrintModalOpen(true); };
+  const openPrint = () => { setPrintAllModalOpen(true); };
 
   // ---------- Status & Notes ----------
   const updateStatus = async (id, newStatus) => {
@@ -737,6 +769,16 @@ export default function MaintenancePage(props) {
       console.error("markNotesSeen error", e);
     }
   };
+  const images = Array.isArray(viewData?.imageUrls)
+    ? viewData.imageUrls.filter(Boolean)
+    : (viewData?.imageUrl ? [viewData.imageUrl] : []);
+  const printRow = (row) => {
+    setViewData(row);
+    setPrintModalOpen(true)
+    // setTimeout(() => {
+    //   try { handlePrintSingle(); } catch { }
+    // }, 100);
+  };
 
   return (
     <main className="flex-1 p-2 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
@@ -925,7 +967,7 @@ export default function MaintenancePage(props) {
                 </th>
 
                 <th className="px-6 pb-3">
-                  {/* Mine-only toggle (kept out to simplify UI); enable if desired */}
+                  {/* Mine-only toggle area (optional UI) */}
                 </th>
 
                 <th className="px-6 pb-3" />
@@ -1037,8 +1079,18 @@ export default function MaintenancePage(props) {
 
                     {/* Actions */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm space-x-3">
-                      <button onClick={() => openView(item)} className="text-blue-600 underline hover:text-blue-800">View</button>
-                      <button onClick={() => openView(item)} className="text-blue-600 underline hover:text-blue-800">Print</button>
+                      <button
+                        onClick={() => openView(item)}
+                        className="text-blue-600 underline hover:text-blue-800"
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={() => printRow(item)}
+                        className="text-blue-600 underline hover:text-blue-800"
+                      >
+                        Print
+                      </button>
                       {isAdmin && item.status !== "Closed" && (
                         <button onClick={() => openAssign(item)} className="text-indigo-600 underline hover:text-indigo-800">Assign</button>
                       )}
@@ -1081,6 +1133,14 @@ export default function MaintenancePage(props) {
             </tbody>
           </table>
         )}
+        {/* print helpers */}
+        <style>{`
+          @media print {
+            .print-img-grid img { height: 160px !important; }
+            .print-img-cell img { height: 60px !important; margin-right: 6px; }
+            button, select, input[type="checkbox"] { display: none !important; }
+          }
+        `}</style>
       </div>
 
       {/* Pagination */}
@@ -1186,7 +1246,7 @@ export default function MaintenancePage(props) {
         </div>
       )}
 
-      {/* View/Print modal (single) */}
+
       {viewModalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -1225,10 +1285,148 @@ export default function MaintenancePage(props) {
                 </div>
               )}
 
-              {viewData?.imageUrl && (
-                <img src={viewData.imageUrl} alt="uploaded" className="mt-4 w-[250px] h-[250px] object-cover rounded-lg border" />
+              {images.length > 0 && (
+                <div className="mt-3">
+                  <div className="font-medium mb-1">Images</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 print-img-grid">
+
+                    {images.map((src, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setPreviewSrc(src)}
+                        className="relative group rounded-lg overflow-hidden border"
+                        title="Click to view"
+                      >
+                        <img
+                          src={src}
+                          alt={`uploaded ${idx + 1}`}
+                          crossOrigin={`anonymous ${idx + 1}`}
+                          className="w-full h-32 object-cover"
+                        />
+
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
+
+            {/* Lightbox Preview (not printed) */}
+            {previewSrc && (
+              <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+                <button
+                  type="button"
+                  onClick={() => setPreviewSrc(null)}
+                  className="absolute top-4 right-4 bg-white/90 hover:bg-white text-black px-3 py-1 rounded"
+                >
+                  Close
+                </button>
+                <img
+                  src={previewSrc}
+                  alt="preview"
+                  className="max-h-[85vh] max-w-[90vw] object-contain rounded shadow-2xl"
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setViewModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Close</button>
+              <button onClick={() => handlePrintSingle()} className="px-4 py-2 bg-black text-white rounded hover:bg-black">Print</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {printModalOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
+            <h2 className="text-xl font-bold mb-4">Maintenance Request</h2>
+            <div ref={viewPrintRef} className="space-y-3">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <span className="font-medium">User:</span><span>{viewData?.username}</span>
+                <span className="font-medium">Room No.:</span><span>{viewData?.roomno}</span>
+                <span className="font-medium">Issue Type:</span><span>{viewData?.problemcategory}</span>
+                <span className="font-medium">Item Category:</span><span>{viewData?.itemcategory}</span>
+                <span className="font-medium">Item:</span><span>{viewData?.item}</span>
+                <span className="font-medium">Description:</span><span className="col-span-1">{viewData?.description}</span>
+                <span className="font-medium">Cause:</span><span className="col-span-1">{viewData?.cause || "—"}</span>
+                <span className="font-medium">Comments:</span><span className="col-span-1">{viewData?.comments || "—"}</span>
+                <span className="font-medium">Assigned To:</span>
+                <span>
+                  {getAssigneesFromRow(viewData).length
+                    ? getAssigneesFromRow(viewData).map(a => a.email).join(", ")
+                    : "—"}
+                </span>
+                <span className="font-medium">Submitted On:</span>
+                <span>{viewData?.createdDate || (viewData?.createdAt?.seconds ? new Date(viewData.createdAt.seconds * 1000).toISOString().slice(0, 10) : "—")}</span>
+              </div>
+
+              {Array.isArray(viewData?.adminNotes) && viewData.adminNotes.length > 0 && (
+                <div className="mt-3">
+                  <div className="font-medium mb-1">Notes</div>
+                  <ul className="space-y-2 text-sm">
+                    {viewData.adminNotes.map((n, idx) => (
+                      <li key={idx} className="border rounded p-2 bg-gray-50">
+                        <div className="text-gray-700">{n.text}</div>
+                        <div className="text-[11px] text-gray-500 mt-1">by {n.by} • {new Date(n.at).toLocaleString()}</div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {images?.length > 0 && (
+                <section className="mt-3">
+                  <h3 className="font-medium mb-1">Images</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 print-img-grid">
+                    {images.map((src, idx) => (
+                      <div
+                        key={src || idx}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`View image ${idx + 1}`}
+                        onClick={() => setPreviewSrc(src)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") setPreviewSrc(src);
+                        }}
+                        className="relative group rounded-lg overflow-hidden border cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-black/40"
+                        title="Click to view"
+                      >
+                        <img
+                          src={src}
+                          alt={`uploaded ${idx + 1}`}
+
+                          loading="lazy"
+                          className="w-full h-32 object-cover block"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition" />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+            </div>
+
+            {/* Lightbox Preview (not printed) */}
+            {previewSrc && (
+              <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+                <button
+                  type="button"
+                  onClick={() => setPreviewSrc(null)}
+                  className="absolute top-4 right-4 bg-white/90 hover:bg-white text-black px-3 py-1 rounded"
+                >
+                  Close
+                </button>
+                <img
+                  src={previewSrc}
+                  alt="preview"
+                  className="max-h-[85vh] max-w-[90vw] object-contain rounded shadow-2xl"
+                />
+              </div>
+            )}
+
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setViewModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Close</button>
               <button onClick={() => handlePrintSingle()} className="px-4 py-2 bg-black text-white rounded hover:bg-black">Print</button>
@@ -1237,8 +1435,7 @@ export default function MaintenancePage(props) {
         </div>
       )}
 
-      {/* Print all modal */}
-      {printModalOpen && (
+      {printAllModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-6xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <div ref={listPrintRef} className="sheet">
@@ -1249,27 +1446,53 @@ export default function MaintenancePage(props) {
                     <th className="border p-2">User</th>
                     <th className="border p-2">Room No.</th>
                     <th className="border p-2">Issue Type</th>
+                    <th className="border p-2">Images</th> {/* NEW */}
                     <th className="border p-2">Assigned (first)</th>
                     <th className="border p-2">Status</th>
                     <th className="border p-2">Submitted On</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map((item, idx) => (
-                    <tr key={idx} className="odd:bg-white even:bg-gray-50">
-                      <td className="border p-2">{item.username}</td>
-                      <td className="border p-2">{item.roomno}</td>
-                      <td className="border p-2">{item.problemcategory}</td>
-                      <td className="border p-2">{getAssigneesFromRow(item)[0]?.email || "—"}</td>
-                      <td className="border p-2">{item.status || "New"}</td>
-                      <td className="border p-2">{item.createdDate || (item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000).toISOString().slice(0, 10) : "—")}</td>
-                    </tr>
-                  ))}
+                  {list.map((item, idx) => {
+                    const imgs = Array.isArray(item?.imageUrls)
+                      ? item.imageUrls.filter(Boolean)
+                      : (item?.imageUrl ? [item.imageUrl] : []);
+                    return (
+                      <tr key={idx} className="odd:bg-white even:bg-gray-50">
+                        <td className="border p-2">{item.username}</td>
+                        <td className="border p-2">{item.roomno}</td>
+                        <td className="border p-2">{item.problemcategory}</td>
+
+                        {/* Images column (prints nicely) */}
+                        <td className="border p-2">
+                          {imgs.length === 0 ? "—" : (
+                            <div className="flex flex-row flex-wrap gap-1 print-img-cell">
+                              {imgs.slice(0, 3).map((src, i) => (
+                                <img
+                                  key={i}
+                                  src={src}
+                                  alt={`img-${i + 1}`}
+                                  style={{ width: 60, height: 40, objectFit: "cover", borderRadius: 4, border: "1px solid #ddd" }}
+                                />
+                              ))}
+                              {imgs.length > 3 && <span className="text-[10px] text-gray-500">+{imgs.length - 3}</span>}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="border p-2">{getAssigneesFromRow(item)[0]?.email || "—"}</td>
+                        <td className="border p-2">{item.status || "New"}</td>
+                        <td className="border p-2">
+                          {item.createdDate || (item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000).toISOString().slice(0, 10) : "—")}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setPrintModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Close</button>
+              <button onClick={() => setPrintAllModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Close</button>
               <button onClick={handlePrintAll} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Print</button>
             </div>
           </div>
@@ -1308,7 +1531,7 @@ export default function MaintenancePage(props) {
                 </div>
               )}
 
-              {/* Free text add (comma/space separated) */}
+              {/* Free text add */}
               <div>
                 <label className="block text-sm font-medium mb-1">Add emails (comma or space separated)</label>
                 <input
