@@ -73,6 +73,7 @@ export default function UniclubPage({ navbarHeight }) {
   // Auth
   const uid = useSelector((s) => s.auth?.user?.uid);
   const emp = useSelector((s) => s.auth?.employee);
+  const user = useSelector((s) => s.auth?.user);
 
   // File input
   const [fileName, setFileName] = useState("No file chosen");
@@ -192,8 +193,8 @@ export default function UniclubPage({ navbarHeight }) {
         updatedAt: Date.now(),
         creatorId: uid || "",
         uid: emp?.uid || "",
-        displayName: (emp?.firstName || "") + (emp?.lastName ? ` ${emp.lastName}` : ""),
-        photoURL: emp?.photoURL || "",
+        displayName: user?.displayName || emp?.name || "",
+        photoURL: user?.photoURL || emp?.imageUrl || "",
       };
 
       // strip undefined so we don't overwrite createdAt on edit with undefined
