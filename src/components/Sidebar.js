@@ -56,6 +56,7 @@ const SECTIONS = [
   { key: "deal", label: "Deals", Icon: Utensils },
   { key: "faq", label: "FAQs", Icon: HelpCircle },
   { key: "setting", label: "Setting", Icon: SettingsIcon },
+  { key: "uniclub", label: "Uniclub", Icon: UserPlus },
 ];
 
 /* -------------------------------- Badge ------------------------------- */

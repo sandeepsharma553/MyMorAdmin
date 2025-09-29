@@ -32,6 +32,11 @@ const DEFAULT_FEATURES = {
   community: false,
   employee: false,
   student: false,
+  discover:false,
+  activity: false,
+  room:false,
+  social: false,
+  uniclub: false,
 };
 
 const pageSize = 10;

@@ -24,7 +24,7 @@ import {
 import { useSelector } from "react-redux";
 import LocationPicker from "./LocationPicker";
 
-export default function AdminEmployeePage(props) {
+export default function UniclubEmployeePage(props) {
   const { navbarHeight } = props;
 
   /* -------------------- State -------------------- */
@@ -57,11 +57,8 @@ export default function AdminEmployeePage(props) {
     email: "",
     mobileNo: "",
     address: "",
-
-    // NEW: bind & save university
     universityId: "",
     university: "",
-
     hostelid: "",
     hostel: "",
     role: "admin",
@@ -69,8 +66,6 @@ export default function AdminEmployeePage(props) {
     isActive: true,
     domain: "",
     permissions: [],
-
-    // structured location fields
     countryCode: "",
     countryName: "",
     stateCode: "",
@@ -78,8 +73,6 @@ export default function AdminEmployeePage(props) {
     cityName: "",
     lat: null,
     lng: null,
-
-    // local-only
     image: null,
     imageUrl: "",
     password: "",
@@ -124,7 +117,7 @@ export default function AdminEmployeePage(props) {
     maintenance: "maintenance",
     bookingroom: "bookingroom",
     academicgroup: "academicgroup",
-    reportincedent: "reportincident", 
+    reportincedent: "reportincident",
     feedback: "feedback",
     wellbeing: "wellbeing",
     faqs: "faq",
@@ -190,7 +183,7 @@ export default function AdminEmployeePage(props) {
         collection(db, "employees"),
         where("type", "==", "admin"),
         where("uid", "==", uid),
-        where("empType", "==", "hostel")
+        where("empType", "==", "uniclub")
       );
       const empSnap = await getDocs(qEmp);
       const superAdmins = empSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -240,7 +233,7 @@ export default function AdminEmployeePage(props) {
     try {
       const qy = query(collection(db, "university"), where("countryName", "==", countryName));
       const uniSnap = await getDocs(qy);
-      const uniArr = uniSnap.docs.map((d) => ({ id: d.id, name: d.data().name }));
+      const uniArr = uniSnap.docs.map((d) => ({ id: d.id, name: d.data().name, features: d.data().features || {}, }));
       if (mountedRef.current) setUniversities(uniArr);
     } catch (err) {
       console.error("fetchUniversitiesByCountry error:", err);
@@ -259,14 +252,14 @@ export default function AdminEmployeePage(props) {
 
   const isHostelInactive = (hid) => hostels.find((h) => h.id === hid)?.active === false;
 
-  const handleHostelChange = (e) => {
+  const handleUniChange = (e) => {
     const selectedId = e.target.value;
-    setSelectedHostel(selectedId);
+    setSelectedUniversityId(selectedId);
 
-    const hostel = hostels.find((h) => h.id === selectedId);
-    const features = hostel?.features || {};
+    const uni = universities.find((h) => h.id === selectedId);
+    console.log("Selected uni:", selectedId, uni);
+    const features = uni?.features || {};
     setHostelFeatures(features);
-
     const allowedKeys = [
       "dashboard",
       "setting",
@@ -297,8 +290,8 @@ export default function AdminEmployeePage(props) {
         toast.error("Please enter a valid email address");
         return;
       }
-      if (!form.universityId || !form.hostelid) {
-        toast.error("Please select university and hostel");
+      if (!form.universityId) {
+        toast.error("Please select university");
         return;
       }
 
@@ -322,15 +315,15 @@ export default function AdminEmployeePage(props) {
         universityId: form.universityId || "",
         university: form.university || "",
 
-        hostelid: form.hostelid || "",
-        hostel: form.hostel || "",
+        // hostelid: form.hostelid || "",
+        // hostel: form.hostel || "",
 
         role: "admin",
         type: "admin",
         isActive: !!form.isActive,
         domain: form.domain || "",
         permissions: Array.isArray(form.permissions) ? form.permissions : [],
-        empType: "hostel",
+        empType: "uniclub",
         // structured location
         countryCode: form.countryCode || "",
         countryName: form.countryName || "",
@@ -354,30 +347,29 @@ export default function AdminEmployeePage(props) {
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) {
           toast.warning("Employee does not exist! Cannot update.");
-          try { await deleteApp(tempApp); } catch {}
+          try { await deleteApp(tempApp); } catch { }
           return;
         }
 
         await updateDoc(docRef, baseData);
 
-        if (form.hostelid) {
-          await updateDoc(doc(db, "hostel", form.hostelid), { adminUID: form.id });
-        }
+        // if (form.hostelid) {
+        //   await updateDoc(doc(db, "hostel", form.hostelid), { adminUID: form.id });
+        // }
 
         toast.success("Employee updated successfully");
       } else {
-        // CREATE (only if hostel has no admin)
-        const hostelRef = doc(db, "hostel", form.hostelid);
-        const hostelSnap = await getDoc(hostelRef);
-        if (!hostelSnap.exists()) {
-          toast.warn("Hostel not found.");
-          try { await deleteApp(tempApp); } catch {}
+        const uniRef = doc(db, "university", form.universityId);
+        const uniSnap = await getDoc(uniRef);
+        if (!uniSnap.exists()) {
+          toast.warn("University not found.");
+          try { await deleteApp(tempApp); } catch { }
           return;
         }
-        const hostelData = hostelSnap.data();
-        if (hostelData.adminUID) {
-          toast.warn("This hostel already has an assigned admin.");
-          try { await deleteApp(tempApp); } catch {}
+        const uniData = uniSnap.data();
+        if (uniData.adminUID) {
+          toast.warn("This university already has an assigned admin.");
+          try { await deleteApp(tempApp); } catch { }
           return;
         }
 
@@ -392,17 +384,15 @@ export default function AdminEmployeePage(props) {
         const employeeRef = doc(db, "employees", user.uid);
         await setDoc(employeeRef, { ...baseData, password });
 
-        await updateDoc(doc(db, "hostel", form.hostelid), { adminUID: user.uid });
-
-        // optional: minimal "users" doc
+        await updateDoc(doc(db, "university", form.universityId), { adminUID: user.uid });
         await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           firstname: baseData.name,
           lastname: "",
           username: baseData.name,
           email: baseData.email,
-          hostelid: form.hostelid,
-          hostel: form.hostel,
+          hostelid: form.hostelid || "",
+          hostel: form.hostel || "",
           universityId: form.universityId || "",
           university: form.university || "",
           livingtype: "hostel",
@@ -413,7 +403,7 @@ export default function AdminEmployeePage(props) {
         toast.success("Employee created successfully");
       }
 
-      try { await deleteApp(tempApp); } catch {}
+      try { await deleteApp(tempApp); } catch { }
 
       await getList();
       setModalOpen(false);
@@ -482,8 +472,8 @@ export default function AdminEmployeePage(props) {
 
       await updateDoc(doc(db, "employees", form.id), { status: "disabled", isActive: false });
 
-      if (form.hostelid) {
-        await updateDoc(doc(db, "hostel", form.hostelid), { adminUID: null });
+      if (form.universityId) {
+        await updateDoc(doc(db, "university", form.universityId), { adminUID: null });
       }
 
       toast.success("Account disabled successfully!");
@@ -512,8 +502,8 @@ export default function AdminEmployeePage(props) {
 
       await updateDoc(doc(db, "employees", form.id), { status: "active", isActive: true });
 
-      if (form.hostelid) {
-        await updateDoc(doc(db, "hostel", form.hostelid), { adminUID: form.id });
+      if (form.universityId) {
+        await updateDoc(doc(db, "university", form.universityId), { adminUID: form.id });
       }
 
       toast.success("Account enabled successfully!");
@@ -531,7 +521,7 @@ export default function AdminEmployeePage(props) {
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Hostel Employee</h1>
+        <h1 className="text-2xl font-semibold">Uni Club Employee</h1>
         <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
@@ -573,8 +563,8 @@ export default function AdminEmployeePage(props) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                {/* <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">University</th> */}
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Hostel</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">University</th>
+                {/* <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Hostel</th> */}
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Name</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Email</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Mobile No</th>
@@ -593,8 +583,8 @@ export default function AdminEmployeePage(props) {
               ) : (
                 paginatedData.map((item) => (
                   <tr key={item.id}>
-                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.university || "—"}</td> */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.hostel}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.university || "—"}</td>
+                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.hostel}</td> */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.email}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.mobileNo}</td>
@@ -739,7 +729,7 @@ export default function AdminEmployeePage(props) {
                       prev.cityName === next.cityName &&
                       prev.lat === next.lat &&
                       prev.lng === next.lng;
-                  return same ? prev : { ...prev, ...next, universityId: "", university: "", hostelid: "", hostel: "", domain: "", permissions: [] };
+                    return same ? prev : { ...prev, ...next, universityId: "", university: "", hostelid: "", hostel: "", domain: "", permissions: [] };
                   });
                   setSelectedUniversityId("");
                   setSelectedHostel("");
@@ -760,6 +750,7 @@ export default function AdminEmployeePage(props) {
                   setSelectedHostel("");
                   setAllowedMenuKeys([]);
                   setHostelFeatures({});
+                  handleUniChange(e);
                 }}
                 className="w-full border border-gray-300 p-2 rounded"
                 required
@@ -770,7 +761,7 @@ export default function AdminEmployeePage(props) {
               </select>
 
               {/* Hostel */}
-              <select
+              {/* <select
                 name="hostelid"
                 value={form.hostelid}
                 onChange={(e) => {
@@ -778,7 +769,7 @@ export default function AdminEmployeePage(props) {
                   const selectedHostelObj = hostels.find((h) => h.id === selectedHostelId);
                   setForm((prev) => ({ ...prev, hostelid: selectedHostelId, hostel: selectedHostelObj?.name || "" }));
                   setSelectedHostel(selectedHostelId);
-                  handleHostelChange(e);
+                  handleUniChange(e);
                 }}
                 className="w-full border border-gray-300 p-2 rounded"
                 required
@@ -790,7 +781,7 @@ export default function AdminEmployeePage(props) {
                     {h.name} - {h.location} {!h.active ? " (Disabled)" : ""}
                   </option>
                 ))}
-              </select>
+              </select> */}
 
               <textarea name="address" placeholder="Address" value={form.address} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
 

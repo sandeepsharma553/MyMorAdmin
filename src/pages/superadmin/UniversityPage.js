@@ -18,6 +18,33 @@ import { ToastContainer, toast } from "react-toastify";
 import LocationPicker from "./LocationPicker";
 
 const pageSize = 10;
+const DEFAULT_FEATURES = {
+  events: false,
+  eventbooking: false,
+  deals: false,
+  announcement: false,
+  hostelevent: false,
+  diningmenu: false,
+  cleaningschedule: false,
+  tutorialschedule: false,
+  maintenance: false,
+  bookingroom: false,
+  academicgroup: false,
+  reportincedent: false,
+  feedback: false,
+  wellbeing: false,
+  faqs: false,
+  resource: false,
+  poi: false,
+  community: false,
+  employee: false,
+  student: false,
+  discover: false,
+  activity: false,
+  room: false,
+  social: false,
+  uniclub: false,
+};
 
 const initialForm = {
   id: "",
@@ -25,7 +52,6 @@ const initialForm = {
   campus: "",
   domain: "",
   studomain: "",
-  // location fields
   countryCode: "",
   countryName: "",
   stateCode: "",
@@ -33,9 +59,9 @@ const initialForm = {
   cityName: "",
   lat: null,
   lng: null,
-  // images
-  images: [],     // [{ url, name }]
-  imageFiles: [], // [File]
+  images: [],
+  imageFiles: [],
+  features: { ...DEFAULT_FEATURES },
 };
 
 export default function UniversityPage(props) {
@@ -66,7 +92,11 @@ export default function UniversityPage(props) {
     try {
       setIsLoading(true);
       const qs = await getDocs(collection(db, "university"));
-      const documents = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const documents = qs.docs.map((d) => ({
+        id: d.id, 
+        features: { ...DEFAULT_FEATURES, ...(d.features || {}) },
+        ...d.data(),
+      }));
       setList(documents);
     } catch (e) {
       console.error(e);
@@ -95,7 +125,7 @@ export default function UniversityPage(props) {
       toast.warn("Name is required");
       return;
     }
-
+    const featuresToSave = { ...DEFAULT_FEATURES, ...(form.features || {}) };
     // base (without images)
     const payloadBase = {
       uid,
@@ -110,6 +140,7 @@ export default function UniversityPage(props) {
       cityName: form.cityName || "",
       lat: typeof form.lat === "number" ? form.lat : null,
       lng: typeof form.lng === "number" ? form.lng : null,
+      features: featuresToSave,
     };
 
     try {
@@ -211,6 +242,7 @@ export default function UniversityPage(props) {
       lng: typeof item.lng === "number" ? item.lng : null,
       images: Array.isArray(item.images) ? item.images : [],
       imageFiles: [],
+      features: { ...DEFAULT_FEATURES, ...(item.features || {}) },
     });
     setModalOpen(true);
   };
@@ -218,6 +250,13 @@ export default function UniversityPage(props) {
   const formatLocation = (row) => {
     const parts = [row.cityName, row.stateName, row.countryName].filter(Boolean);
     return parts.length ? parts.join(", ") : "—";
+  };
+  const handleFeatureChange = (e) => {
+    const { name, checked } = e.target;
+    setForm((prev) => ({
+      ...prev,
+      features: { ...prev.features, [name]: checked },
+    }));
   };
 
   return (
@@ -355,7 +394,7 @@ export default function UniversityPage(props) {
 
       {/* Modal */}
       {modalOpen && (
-       <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-bold mb-4">
               {editingData ? "Edit University" : "Add University"}
@@ -410,14 +449,12 @@ export default function UniversityPage(props) {
                 className="w-full border border-gray-300 p-2 rounded"
                 value={
                   form.cityName
-                    ? `${form.cityName}${
-                        form.stateName ? ", " + form.stateName : ""
-                      }${
-                        form.countryName ? ", " + form.countryName : ""
-                      }`
+                    ? `${form.cityName}${form.stateName ? ", " + form.stateName : ""
+                    }${form.countryName ? ", " + form.countryName : ""
+                    }`
                     : ""
                 }
-                onChange={() => {}}
+                onChange={() => { }}
                 readOnly
               />
 
@@ -445,7 +482,22 @@ export default function UniversityPage(props) {
                 value={form.studomain}
                 onChange={(e) => setForm({ ...form, studomain: e.target.value })}
               />
-
+              <fieldset style={{ marginTop: "20px" }}>
+                <legend style={{ fontWeight: "bold", marginBottom: "10px" }}>Features</legend>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "20px", padding: "10px 0" }}>
+                  {Object.keys(form.features).map((key) => (
+                    <label key={key} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <input
+                        type="checkbox"
+                        name={key}
+                        checked={!!form.features[key]}
+                        onChange={handleFeatureChange}
+                      />
+                      {key.charAt(0).toUpperCase() + key.slice(1)}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               {/* Images (multiple) */}
               <div className="space-y-2">
                 <label className="block font-medium">
