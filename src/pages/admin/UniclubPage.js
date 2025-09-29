@@ -183,24 +183,17 @@ export default function UniclubPage({ navbarHeight }) {
         contactName: form.contactName?.trim() || "",
         contactPhone: form.contactPhone?.trim() || "",
         contactEmail: form.contactEmail?.trim() || "",
-        // canonical times
-        startAtMs: startAtMs || 0,
-        endAtMs: endAtMs || 0,
-        // human-friendly labels for existing clients
         date: startAtMs ? dayjs(startAtMs).format("dddd, MMMM D") : "",
         time: startAtMs ? dayjs(startAtMs).format("h:mm A") : "",
-        startAt: startAtMs ? dayjs(startAtMs).format("h:mm A") : "",
-        endAt: endAtMs ? dayjs(endAtMs).format("h:mm A") : "",
-        // media
+        startAt: startAtMs,
+        endAt: endAtMs,
         image: imageUrl,
-        // audit
         createdAt: editingData ? undefined : Date.now(),
         updatedAt: Date.now(),
         creatorId: uid || "",
         uid: emp?.uid || "",
         displayName: (emp?.firstName || "") + (emp?.lastName ? ` ${emp.lastName}` : ""),
         photoURL: emp?.photoURL || "",
-        hostelid: emp?.hostelid || "",
       };
 
       // strip undefined so we don't overwrite createdAt on edit with undefined
