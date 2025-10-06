@@ -75,22 +75,54 @@ const safeParseInt = (x) => {
   return Number.isNaN(n) ? null : n;
 };
 
-/* ------------------- Badge Hook (pre-warmed, lastOpen-based) -------------------
-   - Pre-warm lastOpened from localStorage to show badge on first paint
-   - If no lastOpened anywhere, show 0 (since "last open" basis)
-   - Listeners attach only when hostelid is ready
---------------------------------------------------------------------------- */
+/**
+ * Robustly extract ms from various "created" shapes:
+ * - Firestore Timestamp: { toMillis() } or { _seconds }
+ * - ISO string
+ * - epoch number in ms or s
+ * - legacy createdDate string
+ */
+const extractCreatedMs = (docData) => {
+  const ts =
+    docData?.createdAt ??
+    docData?.created_on ??
+    docData?.created ??
+    null;
+
+  // Firestore Timestamp
+  if (ts?.toMillis) return ts.toMillis();
+  if (typeof ts?._seconds === "number") return ts._seconds * 1000;
+
+  // ISO string
+  if (typeof ts === "string") {
+    const t = Date.parse(ts);
+    if (!Number.isNaN(t)) return t;
+  }
+
+  // numeric epoch (ms or s)
+  if (typeof ts === "number") {
+    return ts < 10_000_000_000 ? ts * 1000 : ts; // seconds → ms
+  }
+
+  // Legacy field name support
+  if (typeof docData?.createdDate === "string") {
+    const t = Date.parse(docData.createdDate);
+    if (!Number.isNaN(t)) return t;
+  }
+
+  return 0;
+};
+
 function useBadgeCount({
   adminUid,
   menuKey,
   collName,
   hostelid,
   statusIn = [],
-  preferZeroIfNoLastOpened = true,
+  // On first-ever open (no lastOpened stored), we want to show existing unseen docs.
+  preferZeroIfNoLastOpened = false,
 }) {
   const storageKey = adminUid && menuKey ? `amState:${adminUid}:${menuKey}` : null;
-
-  // Pre-warm lastOpened from localStorage (ms)
   const [lastOpenedMs, setLastOpenedMs] = useState(() => {
     if (!storageKey) return null;
     const raw = localStorage.getItem(storageKey);
@@ -100,7 +132,7 @@ function useBadgeCount({
   const [firestoreLastOpened, setFirestoreLastOpened] = useState(null);
   const [docs, setDocs] = useState([]);
 
-  // Track lastOpened from Firestore (real source of truth)
+  // Track lastOpened from Firestore (source of truth)
   useEffect(() => {
     if (!adminUid || !menuKey) return;
     const ref = doc(db, "adminMenuState", adminUid, "menus", menuKey);
@@ -117,7 +149,7 @@ function useBadgeCount({
     if (ms) {
       try {
         localStorage.setItem(storageKey, String(ms));
-        setLastOpenedMs(ms); // update state to reflect latest
+        setLastOpenedMs(ms);
       } catch {
         // ignore storage issues
       }
@@ -129,7 +161,7 @@ function useBadgeCount({
     if (!collName || !hostelid) return;
     const baseRef = collection(db, collName);
 
-    const clauses = [where("hostelid", "==", hostelid)];
+    const clauses = [where("hostelid", "==", String(hostelid))];
     if (statusIn?.length) clauses.push(where("status", "in", statusIn));
 
     const q = query(baseRef, ...clauses);
@@ -139,16 +171,6 @@ function useBadgeCount({
   }, [collName, hostelid, JSON.stringify(statusIn)]);
 
   const count = useMemo(() => {
-    const toMillis = (d) => {
-      if (d?.createdAt?.toMillis) return d.createdAt.toMillis();
-      if (d?.createdAt?._seconds) return d.createdAt._seconds * 1000;
-      if (typeof d?.createdDate === "string") {
-        const t = Date.parse(d.createdDate);
-        return Number.isNaN(t) ? 0 : t;
-      }
-      return 0;
-    };
-
     // Decide which "last opened" to use (Firestore > cached > none)
     const openedAt =
       firestoreLastOpened?.toMillis?.() ??
@@ -159,7 +181,7 @@ function useBadgeCount({
       return preferZeroIfNoLastOpened ? 0 : docs.length;
     }
 
-    return docs.filter((d) => toMillis(d) > openedAt).length;
+    return docs.filter((d) => extractCreatedMs(d) > openedAt).length;
   }, [docs, firestoreLastOpened, lastOpenedMs, preferZeroIfNoLastOpened]);
 
   return count;
@@ -175,14 +197,14 @@ function Sidebar({ onSectionClick, isLoading }) {
   const adminUid = employee?.uid || employee?.id || null;
   const hostelid = employee?.hostelid || null;
 
-  // --- Badges (last open based, pre-warmed) ---
   const maintenanceBadge = useBadgeCount({
     adminUid,
     menuKey: "maintenance",
     collName: "maintenance",
     hostelid,
     statusIn: ["Pending", "New"],
-    preferZeroIfNoLastOpened: true,
+    // show counts even on first-ever open
+    preferZeroIfNoLastOpened: false,
   });
 
   const reportBadge = useBadgeCount({
@@ -191,22 +213,27 @@ function Sidebar({ onSectionClick, isLoading }) {
     collName: "reportIncident",
     hostelid,
     statusIn: ["Pending"],
-    preferZeroIfNoLastOpened: true,
+    preferZeroIfNoLastOpened: false,
   });
 
   const feedbackBadge = useBadgeCount({
     adminUid,
     menuKey: "feedback",
-    collName: "feedbacks",
+    collName: "feedback",
     hostelid,
     statusIn: ["Pending"],
-    preferZeroIfNoLastOpened: true,
+    preferZeroIfNoLastOpened: false,
   });
 
   const resetMenuKey = async (menuKey) => {
     if (!adminUid) return;
-    const ref = doc(db, "adminMenuState", adminUid, "menus", menuKey);
-    await setDoc(ref, { lastOpened: serverTimestamp() }, { merge: true });
+    try {
+      const ref = doc(db, "adminMenuState", adminUid, "menus", menuKey);
+      await setDoc(ref, { lastOpened: serverTimestamp() }, { merge: true });
+      // local cache will be updated by the onSnapshot -> sync effect
+    } catch (e) {
+      // optional: console.error("Failed to set lastOpened", e);
+    }
   };
 
   const handleClick = async (sectionKey) => {
@@ -214,7 +241,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     onSectionClick?.(sectionKey);
     navigate(`/${sectionKey}`);
 
-    // Mark opened
+    // Mark opened for the sections we badge
     if (sectionKey === "maintenance") resetMenuKey("maintenance");
     if (sectionKey === "reportincident") resetMenuKey("reportincident");
     if (sectionKey === "feedback") resetMenuKey("feedback");
