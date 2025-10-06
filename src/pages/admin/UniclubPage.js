@@ -7,7 +7,7 @@ import {
   push,
   update,
   remove,
-  off,
+  off,serverTimestamp
 } from "firebase/database";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useSelector } from "react-redux";
@@ -94,7 +94,8 @@ export default function UniclubPage({ navbarHeight }) {
     endTimeStr: "",      
     endAtMs: 0,          
     imageFile: null,      
-    imageUrl: "",         
+    imageUrl: "",       
+    privacyType:''  
   };
   const [form, setForm] = useState(initialForm);
 
@@ -195,6 +196,7 @@ export default function UniclubPage({ navbarHeight }) {
         uid: emp?.uid || "",
         displayName: user?.displayName || emp?.name || "",
         photoURL: user?.photoURL || emp?.imageUrl || "",
+        privacyType:form.privacyType
       };
 
       // strip undefined so we don't overwrite createdAt on edit with undefined
@@ -207,6 +209,14 @@ export default function UniclubPage({ navbarHeight }) {
         const newRef = push(dbRef(database, "uniclubs/"));
         const withId = { ...payload, id: newRef.key };
         await set(newRef, withId);
+        await set(dbRef(database, `uniclubs/${newRef.key}/members/${user.uid}`), {
+          uid: user.uid,
+          name: user.displayName || '',
+          photoURL: user.photoURL ?? '',
+          isAdmin: true,
+          joinedAt: serverTimestamp()
+        });
+    
         toast.success("Uniclub created successfully");
       }
     } catch (error) {
@@ -367,6 +377,7 @@ export default function UniclubPage({ navbarHeight }) {
                                 startAtMs: item.startAtMs || 0,
                                 endTimeStr: item.endAt ? dayjs(item.endAt, ["h:mm A"], true).isValid() ? dayjs(item.endAt, "h:mm A").format("HH:mm") : "" : "",
                               });
+                              console.log(item)
                               setFileName("No file chosen");
                               setPreviewUrl(item.image || "");
                               setModalOpen(true);
@@ -467,7 +478,19 @@ export default function UniclubPage({ navbarHeight }) {
                   </div>
                   <p className="text-xs text-gray-500 mt-1">Tip: End time is on the same day by default; if it’s earlier than start, we roll it to the next day.</p>
                 </div>
-
+                <section className="space-y-4">
+                  <h2 className="text-xl font-semibold">🔒 Privacy & Access</h2>
+                  <select
+                    name="privacyType"
+                    value={form.privacyType}
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 p-2 rounded"
+                  >
+                    <option value="Public">Public</option>
+                    <option value="Private">Private</option>
+                    <option value="Hidden">Hidden / Invite-only</option>
+                  </select>
+                </section>
                 {/* Links */}
                 <div>
                   <h3 className="text-sm font-semibold mb-1">Links</h3>

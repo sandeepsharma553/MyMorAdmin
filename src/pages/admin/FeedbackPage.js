@@ -536,6 +536,7 @@ const getList = async () => {
   const paginatedData = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const viewPrintRef = useRef(null); // single
   const listPrintRef = useRef(null); // all
+  console.log(paginatedData)
   const handlePrintSingle = useReactToPrint({
     contentRef: viewPrintRef,
     pageStyle: `
@@ -683,7 +684,7 @@ const getList = async () => {
                   const unread = getUnreadCount(item);
                   return (
                     <tr key={item.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.username}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.isreport === true ? item.username:'Anonymous'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.incidenttype}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {fmtDate(item.datetime)}
