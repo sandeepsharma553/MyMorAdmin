@@ -103,6 +103,7 @@ export default function UniclubEmployeePage(props) {
     { key: "setting", label: "Setting" },
     { key: "employee", label: "Employee" },
     { key: "uniclub", label: "UniClub" },
+    { key: "uniclubstudent", label: "UniClubStudent" },
   ];
 
   const FEATURE_TO_MENU_KEY = {
@@ -125,6 +126,7 @@ export default function UniclubEmployeePage(props) {
     employee: "employee",
     student: "student",
     uniclub: "uniclub",
+    uniclubstudent: "uniclubstudent",
   };
 
   const LABEL_BY_KEY = useMemo(

@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
-import { database, storage } from "../../firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { database, storage, db } from "../../firebase";
 import {
   ref as dbRef,
   onValue,
-  set,
+  set as rtdbSet,
   push,
-  update,
+  update as rtdbUpdate,
   remove,
-  off,serverTimestamp
+  off,
+  serverTimestamp,
+  get as rtdbGet,            // ✅ added to fetch counts for list rows
 } from "firebase/database";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useSelector } from "react-redux";
@@ -17,39 +20,90 @@ import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 dayjs.extend(customParseFormat);
 
-// ----- helpers -----
+/* ------------------------------------------------
+   Helpers
+-------------------------------------------------*/
+const pad2 = (n) => String(n).padStart(2, "0");
 const toLocalInputValue = (ms) => {
   if (!ms) return "";
   const d = new Date(ms);
-  const pad = (n) => String(n).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-  const hh = pad(d.getHours());
-  const min = pad(d.getMinutes());
-  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(
+    d.getMinutes()
+  )}`;
+};
+const toDateInputValue = (ms) => {
+  if (!ms) return "";
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 const fromLocalInputValue = (str) => (str ? new Date(str).getTime() : 0);
+const parseTags = (s = "") => s.split(",").map((t) => t.trim()).filter(Boolean);
 
-// combine a base date (ms) with a time string ("HH:mm" or "h:mm A") -> ms
-const combineDateAndTimeMs = (baseMs, timeStr) => {
-  if (!baseMs || !timeStr) return 0;
-  const base = dayjs(baseMs);
-  const candidate = dayjs(
-    `${base.format("YYYY-MM-DD")} ${timeStr}`,
-    ["YYYY-MM-DD HH:mm", "YYYY-MM-DD H:mm", "YYYY-MM-DD h:mm A"],
-    true
-  );
-  return candidate.isValid() ? candidate.valueOf() : 0;
+/* Safe answers renderer */
+const renderAnswers = (ans) => {
+  if (!ans) return null;
+  const isPrimitive = (x) => ["string", "number", "boolean"].includes(typeof x);
+
+  if (Array.isArray(ans)) {
+    return (
+      <ul className="list-disc list-inside space-y-1">
+        {ans.map((item, idx) => {
+          if (isPrimitive(item)) return <li key={idx}>{String(item)}</li>;
+          if (item && typeof item === "object") {
+            if ("value" in item || "questionId" in item) {
+              const label = item.questionId ?? `Q${idx + 1}`;
+              const val = item.value ?? "";
+              return (
+                <li key={idx}>
+                  <strong>{label}:</strong> {String(val)}
+                </li>
+              );
+            }
+            return <li key={idx}>{JSON.stringify(item)}</li>;
+          }
+          return <li key={idx}>{String(item)}</li>;
+        })}
+      </ul>
+    );
+  }
+
+  if (typeof ans === "object") {
+    return (
+      <ul className="list-disc list-inside space-y-1">
+        {Object.entries(ans).map(([k, v]) => (
+          <li key={k}>
+            <strong>{k}:</strong> {isPrimitive(v) ? String(v) : JSON.stringify(v)}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  return <span>{String(ans)}</span>;
 };
 
+/* ------------------------------------------------
+   Component
+-------------------------------------------------*/
 export default function UniclubPage({ navbarHeight }) {
+  /* ---------- State ---------- */
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([]);
+
+  // 🔀 Requests/Members moved out into separate modals
+  const [reqModalOpen, setReqModalOpen] = useState(false);
+  const [memModalOpen, setMemModalOpen] = useState(false);
+  const [activeClubId, setActiveClubId] = useState("");
+  const [activeClubTitle, setActiveClubTitle] = useState("");
+  const [requests, setRequests] = useState([]);
+  const [membersList, setMembersList] = useState([]);
+
   const [isLoading, setIsLoading] = useState(false);
+  const [category, setCategory] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [members, setMembers] = useState([]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -67,7 +121,9 @@ export default function UniclubPage({ navbarHeight }) {
   };
   const onSort = (key) =>
     setSortConfig((prev) =>
-      prev.key === key ? { key, direction: prev.direction === "asc" ? "desc" : "asc" } : { key, direction: "asc" }
+      prev.key === key
+        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: "asc" }
     );
 
   // Auth
@@ -90,34 +146,144 @@ export default function UniclubPage({ navbarHeight }) {
     contactName: "",
     contactPhone: "",
     contactEmail: "",
-    startAtMs: 0,        
-    endTimeStr: "",      
-    endAtMs: 0,          
-    imageFile: null,      
-    imageUrl: "",       
-    privacyType:''  
+    startAtMs: 0,
+    endAtMs: 0,
+    imageFile: null,
+    imageUrl: "",
+    privacyType: "",
+    category: "",
+    tags: "",
+    rules: "",
+    joinQInput: "",
+    joinQuestions: [],
+    allowEventsByMembers: false,
+    pollsEnabled: false,
+    sharedFilesEnabled: false,
+    allowSubGroups: false,
+    enableChat: false,
+    allowNotifications: true,
+    maxMembers: "",
+    paymentType: "free",
+    paymentAmount: "",
+    memberValidFromMs: 0,
+    memberValidToMs: 0,
+    successorUid: "",
+    memberId: "",
+    roleId: "",
+    role: "",
   };
   const [form, setForm] = useState(initialForm);
 
+  /* ---------- Effects ---------- */
   useEffect(() => {
     getList();
+    getMembers();
+    getCategory();
+    getRole();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [filters, sortConfig]);
 
+  // ✅ Live listeners tied to separate modals now
+  useEffect(() => {
+    if (!reqModalOpen || !activeClubId) return;
+    const reqRef = dbRef(database, `uniclubs/${activeClubId}/joinRequests`);
+    const handler = (snap) => {
+      const val = snap.val() || {};
+      const arr = Object.entries(val).map(([uid, r]) => ({ uid, ...r }));
+      setRequests(arr);
+    };
+    onValue(reqRef, handler);
+    return () => off(reqRef, "value", handler);
+  }, [reqModalOpen, activeClubId]);
+
+  useEffect(() => {
+    if (!memModalOpen || !activeClubId) return;
+    const memRef = dbRef(database, `uniclubs/${activeClubId}/members`);
+    const handler = (snap) => {
+      const val = snap.val() || {};
+      const arr = Object.entries(val).map(([uid, m]) => ({ uid, ...m }));
+      setMembersList(arr);
+    };
+    onValue(memRef, handler);
+    return () => off(memRef, "value", handler);
+  }, [memModalOpen, activeClubId]);
+
+  /* ---------- Data IO ---------- */
   const getList = () => {
     setIsLoading(true);
     const ref = dbRef(database, "uniclubs/");
-    const handler = (snap) => {
+    const handler = async (snap) => {
       const val = snap.val();
       const arr = val ? Object.entries(val).map(([id, v]) => ({ id, ...v })) : [];
-      setList(arr);
+
+      // 🔢 Fetch counts for each row so we can show them in the list
+      const withCounts = await Promise.all(
+        arr.map(async (item) => {
+          try {
+            const [reqSnap, memSnap] = await Promise.all([
+              rtdbGet(dbRef(database, `uniclubs/${item.id}/joinRequests`)),
+              rtdbGet(dbRef(database, `uniclubs/${item.id}/members`)),
+            ]);
+            const requestsCount = reqSnap.exists() ? Object.keys(reqSnap.val()).length : 0;
+            const membersCount = memSnap.exists() ? Object.keys(memSnap.val()).length : 0;
+            return { ...item, requestsCount, membersCount };
+          } catch {
+            return { ...item, requestsCount: 0, membersCount: 0 };
+          }
+        })
+      );
+
+      setList(withCounts);
       setIsLoading(false);
     };
     onValue(ref, handler, { onlyOnce: false });
     return () => off(ref, "value", handler);
+  };
+
+  const getMembers = async () => {
+    setIsLoading(true);
+    try {
+      const constraints = [where("uid", "==", uid), where("livingtype", "==", "university")];
+      const q = query(collection(db, "users"), ...constraints);
+      const snap = await getDocs(q);
+      const rows = snap.docs
+        .map((d) => ({ id: d.id, name: d.data().firstname || "User" }))
+        .filter((u) => u.name !== (emp?.name || ""));
+      setMembers(rows);
+    } catch (err) {
+      console.error("getMembers error:", err);
+      toast.error("Failed to load students");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getCategory = async () => {
+    try {
+      if (!uid) return setCategory([]);
+      const qCat = query(collection(db, "uniclubcategory"), where("uid", "==", uid));
+      const snap = await getDocs(qCat);
+      setCategory(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load categories");
+    }
+  };
+
+  const getRole = async () => {
+    try {
+      if (!uid) return setRoles([]);
+      const qCat = query(collection(db, "uniclubrole"), where("uid", "==", uid));
+      const snap = await getDocs(qCat);
+      setRoles(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load roles");
+    }
   };
 
   const handleChange = (e) => {
@@ -145,6 +311,21 @@ export default function UniclubPage({ navbarHeight }) {
       toast.error("Enter a valid email");
       return false;
     }
+    if (form.paymentType === "paid") {
+      const amt = Number(form.paymentAmount);
+      if (!Number.isFinite(amt) || amt <= 0) {
+        toast.error("Enter a valid payment amount");
+        return false;
+      }
+    }
+    if (form.memberValidFromMs && form.memberValidToMs && form.memberValidToMs < form.memberValidFromMs) {
+      toast.error("Membership end must be after start");
+      return false;
+    }
+    if (form.startAtMs && form.endAtMs && form.endAtMs < form.startAtMs) {
+      toast.error("End date/time must be after start date/time");
+      return false;
+    }
     return true;
   };
 
@@ -153,18 +334,12 @@ export default function UniclubPage({ navbarHeight }) {
     if (!validate()) return;
 
     try {
-      // compute endAtMs from endTimeStr (may be empty)
-      let startAtMs = form.startAtMs || 0;
-      let endAtMs = form.endAtMs || 0;
-      if (startAtMs && form.endTimeStr) {
-        endAtMs = combineDateAndTimeMs(startAtMs, form.endTimeStr);
-        // if end time appears before start, assume next day
-        if (endAtMs && endAtMs < startAtMs) endAtMs = dayjs(endAtMs).add(1, "day").valueOf();
-      }
+      const startAtMs = form.startAtMs || 0;
+      const endAtMs = form.endAtMs || 0;
 
-      // image upload
+      // ---- image upload ----
       let imageUrl = form.imageUrl || "";
-      const isNewImage = form.imageFile instanceof File;
+      const isNewImage = !!(form.imageFile && typeof form.imageFile.name === "string");
       if (!editingData && !imageUrl && !isNewImage) {
         toast.error("Please choose the file");
         return;
@@ -175,6 +350,23 @@ export default function UniclubPage({ navbarHeight }) {
         await uploadBytes(storRef, form.imageFile);
         imageUrl = await getDownloadURL(storRef);
       }
+
+      // ---- derived values ----
+      const cleanedTags = parseTags(form.tags);
+
+      const settingsPayload = {
+        chatEnabled: !!form.enableChat,
+        allowEventsByMembers: !!form.allowEventsByMembers,
+        pollsEnabled: !!form.pollsEnabled,
+        sharedFilesEnabled: !!form.sharedFilesEnabled,
+        allowSubGroups: !!form.allowSubGroups,
+        allowNotifications: !!form.allowNotifications,
+        maxMembers: form.maxMembers ? Number(form.maxMembers) : null,
+        paymentType: form.paymentType,
+        amount: form.paymentType === "paid" ? Number(form.paymentAmount) : 0,
+        memberValidFromMs: form.memberValidFromMs || 0,
+        memberValidToMs: form.memberValidToMs || 0,
+      };
 
       const payload = {
         title: form.title.trim(),
@@ -196,40 +388,62 @@ export default function UniclubPage({ navbarHeight }) {
         uid: emp?.uid || "",
         displayName: user?.displayName || emp?.name || "",
         photoURL: user?.photoURL || emp?.imageUrl || "",
-        privacyType:form.privacyType
+        privacyType: form.privacyType,
+        tags: cleanedTags,
+        rules: form.rules?.trim() || "",
+        joinQuestions: (form.joinQuestions || []).map((s) => s.trim()).filter(Boolean),
+        category: form.category || "",
+        settings: settingsPayload,
       };
 
-      // strip undefined so we don't overwrite createdAt on edit with undefined
       Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
+      // ---- create vs update ----
+      let clubId;
       if (editingData?.id) {
-        await update(dbRef(database, `uniclubs/${editingData.id}`), payload);
+        clubId = editingData.id;
+        await rtdbUpdate(dbRef(database, `uniclubs/${clubId}`), payload);
         toast.success("Uniclub updated successfully!");
       } else {
         const newRef = push(dbRef(database, "uniclubs/"));
-        const withId = { ...payload, id: newRef.key };
-        await set(newRef, withId);
-        await set(dbRef(database, `uniclubs/${newRef.key}/members/${user.uid}`), {
-          uid: user.uid,
-          name: user.displayName || '',
-          photoURL: user.photoURL ?? '',
-          isAdmin: true,
-          joinedAt: serverTimestamp()
-        });
-    
+        clubId = newRef.key;
+        await rtdbSet(newRef, { ...payload, id: clubId });
+
+        // add creator as admin
+        if (user?.uid) {
+          await rtdbSet(dbRef(database, `uniclubs/${clubId}/members/${user.uid}`), {
+            uid: user.uid,
+            name: user.displayName || "",
+            photoURL: user.photoURL ?? "",
+            role: "admin",
+            status: "active",
+            joinedAt: serverTimestamp(),
+          });
+        }
         toast.success("Uniclub created successfully");
       }
+
+      // ---- role assignment (optional) ----
+      if (form.memberId && form.roleId) {
+        const base = `uniclubs/${clubId}`;
+        await Promise.all([
+          rtdbSet(dbRef(database, `${base}/roles/${form.memberId}`), { roleId: form.roleId, roleName: form.role }),
+          rtdbSet(dbRef(database, `${base}/members/${form.memberId}/role`), form.role || "contributor"),
+          rtdbSet(dbRef(database, `${base}/members/${form.memberId}/status`), "active"),
+        ]);
+      }
+
+      // ---- reset + refresh ----
+      getList();
+      setModalOpen(false);
+      setEditing(null);
+      setForm(initialForm);
+      setFileName("No file chosen");
+      setPreviewUrl("");
     } catch (error) {
       console.error("Error saving uniclubs:", error);
       toast.error("Failed to save uniclubs.");
     }
-
-    getList();
-    setModalOpen(false);
-    setEditing(null);
-    setForm(initialForm);
-    setFileName("No file chosen");
-    setPreviewUrl("");
   };
 
   const handleDelete = async () => {
@@ -246,7 +460,55 @@ export default function UniclubPage({ navbarHeight }) {
     setDelete(null);
   };
 
-  // ---------- Filter + Sort + Paginate ----------
+  /* ---------- Approve / Reject join requests (works from Requests modal) ---------- */
+  const approveRequest = async (clubId, req) => {
+    const base = `uniclubs/${clubId}`;
+    const memberRecord = {
+      uid: req.uid,
+      name: req.name || req.displayName || "",
+      photoURL: req.photoURL || "",
+      role: "member",
+      status: "active",
+      joinedAt: serverTimestamp(),
+      answers: req.answers || null,
+    };
+    try {
+      await Promise.all([
+        rtdbSet(dbRef(database, `${base}/members/${req.uid}`), memberRecord),
+        remove(dbRef(database, `${base}/joinRequests/${req.uid}`)),
+      ]);
+
+      // optimistic UI (listeners also update)
+      setRequests((prev) => prev.filter((r) => r.uid !== req.uid));
+      setMembersList((prev) => {
+        const without = prev.filter((m) => m.uid !== req.uid);
+        return [...without, memberRecord];
+      });
+
+      // refresh counts shown in list
+      getList();
+
+      toast.success("Request approved");
+    } catch (e) {
+      console.error("approveRequest error", e);
+      toast.error("Could not approve request");
+    }
+  };
+
+  const rejectRequest = async (clubId, req) => {
+    const base = `uniclubs/${clubId}`;
+    try {
+      await remove(dbRef(database, `${base}/joinRequests/${req.uid}`));
+      setRequests((prev) => prev.filter((r) => r.uid !== req.uid));
+      getList(); // refresh counts
+      toast.success("Request rejected");
+    } catch (e) {
+      console.error("rejectRequest error", e);
+      toast.error("Could not reject request");
+    }
+  };
+
+  /* ---------- Filter + Sort + Paginate ---------- */
   const filteredData = list.filter((g) => {
     const titleOK = !filters.title || (g.title || "").toLowerCase().includes(filters.title.toLowerCase());
     return titleOK;
@@ -263,6 +525,7 @@ export default function UniclubPage({ navbarHeight }) {
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
   const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
+  /* ---------- Render ---------- */
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto no-scrollbar" style={{ paddingTop: navbarHeight || 0 }}>
       {/* Top bar */}
@@ -296,6 +559,9 @@ export default function UniclubPage({ navbarHeight }) {
                   { key: "location", label: "Location" },
                   { key: "when", label: "When", sortable: false },
                   { key: "desc", label: "Description" },
+                  // 🆕 two new columns for counts
+                  { key: "requests", label: "Requests", sortable: false },
+                  { key: "members", label: "Members", sortable: false },
                   { key: "actions", label: "Action", sortable: false },
                 ].map((col) => (
                   <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
@@ -310,9 +576,7 @@ export default function UniclubPage({ navbarHeight }) {
                       >
                         <span>{col.label}</span>
                         {sortConfig.key === col.key && (
-                          <span className="text-gray-400">
-                            {sortConfig.direction === "asc" ? "▲" : "▼"}
-                          </span>
+                          <span className="text-gray-400">{sortConfig.direction === "asc" ? "▲" : "▼"}</span>
                         )}
                       </button>
                     )}
@@ -334,21 +598,25 @@ export default function UniclubPage({ navbarHeight }) {
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
                     No matching uniclubs found.
                   </td>
                 </tr>
               ) : (
                 paginatedData.map((item) => {
-                  const whenLabel = item.startAtMs
-                    ? `${dayjs(item.startAtMs).format("DD MMM, h:mm A")}${
-                        item.endAtMs ? ` – ${dayjs(item.endAtMs).format("h:mm A")}` : ""
+                  const start = item.startAtMs || item.startAt;
+                  const end = item.endAtMs || item.endAt;
+                  const whenLabel = start
+                    ? `${dayjs(start).format("DD MMM, h:mm A")}${
+                        end ? ` – ${dayjs(end).format("DD MMM, h:mm A")}` : ""
                       }`
                     : item.date || item.time
                     ? `${item.date || ""}${item.time ? ` • ${item.time}${item.endAt ? ` – ${item.endAt}` : ""}` : ""}`
@@ -362,6 +630,43 @@ export default function UniclubPage({ navbarHeight }) {
                       <td className="px-6 py-4 text-sm text-gray-500 whitespace-normal break-words max-w-xs">
                         {item.desc}
                       </td>
+
+                      {/* 🆕 Requests count + modal trigger */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          onClick={() => {
+                            setActiveClubId(item.id);
+                            setActiveClubTitle(item.title || "Club");
+                            setReqModalOpen(true);
+                          }}
+                          title="View join requests"
+                        >
+                          <span>View</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200">
+                            {item.requestsCount ?? 0}
+                          </span>
+                        </button>
+                      </td>
+
+                      {/* 🆕 Members count + modal trigger */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          onClick={() => {
+                            setActiveClubId(item.id);
+                            setActiveClubTitle(item.title || "Club");
+                            setMemModalOpen(true);
+                          }}
+                          title="View members"
+                        >
+                          <span>View</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200">
+                            {item.membersCount ?? 0}
+                          </span>
+                        </button>
+                      </td>
+
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div className="flex items-center gap-3">
                           <button
@@ -371,13 +676,35 @@ export default function UniclubPage({ navbarHeight }) {
                               setForm({
                                 ...initialForm,
                                 ...item,
-                                // normalize legacy fields into the new form keys
                                 imageFile: null,
                                 imageUrl: item.image || "",
-                                startAtMs: item.startAtMs || 0,
-                                endTimeStr: item.endAt ? dayjs(item.endAt, ["h:mm A"], true).isValid() ? dayjs(item.endAt, "h:mm A").format("HH:mm") : "" : "",
+                                startAtMs: item.startAtMs || item.startAt || 0,
+                                endAtMs: item.endAtMs || item.endAt || 0,
+                                tags: Array.isArray(item.tags) ? item.tags.join(", ") : item.tags || "",
+                                rules: item.rules || "",
+                                joinQInput: "",
+                                joinQuestions: Array.isArray(item.joinQuestions) ? item.joinQuestions : [],
+                                category: item.category || "",
+                                enableChat: !!item?.settings?.chatEnabled,
+                                allowEventsByMembers: !!item?.settings?.allowEventsByMembers,
+                                pollsEnabled: !!item?.settings?.pollsEnabled,
+                                sharedFilesEnabled: !!item?.settings?.sharedFilesEnabled,
+                                allowSubGroups: !!item?.settings?.allowSubGroups,
+                                allowNotifications:
+                                  item?.settings?.allowNotifications === false ? false : true,
+                                maxMembers: Number.isFinite(item?.settings?.maxMembers)
+                                  ? String(item?.settings?.maxMembers)
+                                  : "",
+                                paymentType: item?.settings?.paymentType || "free",
+                                paymentAmount:
+                                  item?.settings?.amount != null ? String(item.settings.amount) : "",
+                                memberValidFromMs: item?.settings?.memberValidFromMs || 0,
+                                memberValidToMs: item?.settings?.memberValidToMs || 0,
+                                successorUid: item?.ownership?.successorUid || "",
+                                memberId: "",
+                                roleId: "",
+                                role: "",
                               });
-                              console.log(item)
                               setFileName("No file chosen");
                               setPreviewUrl(item.image || "");
                               setModalOpen(true);
@@ -407,7 +734,9 @@ export default function UniclubPage({ navbarHeight }) {
 
       {/* Pagination */}
       <div className="flex justify-between items-center mt-4">
-        <p className="text-sm text-gray-600">Page {currentPage} of {totalPages}</p>
+        <p className="text-sm text-gray-600">
+          Page {currentPage} of {totalPages}
+        </p>
         <div className="space-x-2">
           <button
             onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
@@ -426,7 +755,7 @@ export default function UniclubPage({ navbarHeight }) {
         </div>
       </div>
 
-      {/* Create/Edit modal */}
+      {/* Create/Edit modal (➡️ requests/members removed from here) */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -441,6 +770,7 @@ export default function UniclubPage({ navbarHeight }) {
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   required
                 />
+
                 <textarea
                   placeholder="Description"
                   className="w-full border border-gray-300 p-2 rounded"
@@ -467,33 +797,284 @@ export default function UniclubPage({ navbarHeight }) {
                       type="datetime-local"
                       className="w-full border border-gray-300 p-2 rounded"
                       value={toLocalInputValue(form.startAtMs)}
-                      onChange={(e) => setForm((p) => ({ ...p, startAtMs: fromLocalInputValue(e.target.value) }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, startAtMs: fromLocalInputValue(e.target.value) }))
+                      }
                     />
                     <input
-                      type="time"
+                      type="datetime-local"
                       className="w-full border border-gray-300 p-2 rounded"
-                      value={form.endTimeStr}
-                      onChange={(e) => setForm((p) => ({ ...p, endTimeStr: e.target.value }))}
+                      value={toLocalInputValue(form.endAtMs)}
+                      onChange={(e) => setForm((p) => ({ ...p, endAtMs: fromLocalInputValue(e.target.value) }))}
                     />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">Tip: End time is on the same day by default; if it’s earlier than start, we roll it to the next day.</p>
                 </div>
+
+                {/* Privacy */}
                 <section className="space-y-4">
-                  <h2 className="text-xl font-semibold">🔒 Privacy & Access</h2>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Privacy Type</label>
                   <select
                     name="privacyType"
                     value={form.privacyType}
                     onChange={handleChange}
                     className="w-full border border-gray-300 p-2 rounded"
                   >
+                    <option value="">Select Privacy Type</option>
                     <option value="Public">Public</option>
                     <option value="Private">Private</option>
                     <option value="Hidden">Hidden / Invite-only</option>
                   </select>
                 </section>
+
+                {/* Category */}
+                <section className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">Category</label>
+                  <select
+                    name="category"
+                    value={form.category}
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 p-2 rounded"
+                    required
+                  >
+                    <option value="">Select Category</option>
+                    {category?.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </section>
+
+                {/* Club Meta */}
+                <section className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Tags</label>
+                    <input
+                      type="text"
+                      className="w-full border border-gray-300 p-2 rounded"
+                      placeholder="football, weekend, beginners"
+                      value={form.tags}
+                      onChange={(e) => setForm((p) => ({ ...p, tags: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Rules &amp; Guidelines</label>
+                    <textarea
+                      className="w-full border border-gray-300 p-2 rounded"
+                      placeholder="Be respectful, no spam…"
+                      rows={3}
+                      value={form.rules}
+                      onChange={(e) => setForm((p) => ({ ...p, rules: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Join Questions</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        className="flex-1 border border-gray-300 p-2 rounded"
+                        placeholder="Add a question (press +)"
+                        value={form.joinQInput}
+                        onChange={(e) => setForm((p) => ({ ...p, joinQInput: e.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        className="px-3 py-2 rounded bg-gray-800 text-white"
+                        onClick={() => {
+                          const q = (form.joinQInput || "").trim();
+                          if (q) setForm((p) => ({ ...p, joinQuestions: [...p.joinQuestions, q], joinQInput: "" }));
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                    {form.joinQuestions?.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {form.joinQuestions.map((q, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-2 bg-gray-100 border px-2 py-1 rounded-full text-sm"
+                          >
+                            {q}
+                            <button
+                              type="button"
+                              className="text-red-600"
+                              onClick={() =>
+                                setForm((p) => ({ ...p, joinQuestions: p.joinQuestions.filter((_, idx) => idx !== i) }))
+                              }
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* Toggles */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    ["allowEventsByMembers", "Allow Events by Members"],
+                    ["pollsEnabled", "Allow Polls"],
+                    ["sharedFilesEnabled", "Allow Shared Files"],
+                    ["allowSubGroups", "Allow Sub-Groups/Channels"],
+                    ["enableChat", "Enable Chat"],
+                    ["allowNotifications", "Allow Notifications to Members"],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex items-center justify-between border rounded px-3 py-2">
+                      <span className="text-sm">{label}</span>
+                      <input
+                        type="checkbox"
+                        className="h-5 w-5"
+                        checked={!!form[key]}
+                        onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.checked }))}
+                      />
+                    </label>
+                  ))}
+                </div>
+
+                {/* Limits */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Max Members (optional)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full border border-gray-300 p-2 rounded"
+                    placeholder="200"
+                    value={form.maxMembers}
+                    onChange={(e) => setForm((p) => ({ ...p, maxMembers: e.target.value }))}
+                  />
+                </div>
+
+                {/* Payment & Membership validity */}
+                <section className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="col-span-1">
+                      <label className="block text-sm font-medium text-gray-700">Payment Type</label>
+                      <select
+                        name="paymentType"
+                        value={form.paymentType}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 p-2 rounded"
+                      >
+                        <option value="free">Free</option>
+                        <option value="paid">Paid</option>
+                      </select>
+                    </div>
+
+                    <div className="col-span-1">
+                      <label className="block text-sm font-medium text-gray-700">Amount</label>
+                      <input
+                        type="number"
+                        name="paymentAmount"
+                        step="0.01"
+                        min="0"
+                        disabled={form.paymentType !== "paid"}
+                        className="w-full border border-gray-300 p-2 rounded disabled:opacity-60"
+                        value={form.paymentAmount}
+                        onChange={handleChange}
+                        placeholder="e.g., 10.00"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Membership Valid From</label>
+                      <input
+                        type="date"
+                        className="w-full border border-gray-300 p-2 rounded"
+                        value={toDateInputValue(form.memberValidFromMs)}
+                        onChange={(e) => {
+                          const ms = e.target.value ? new Date(e.target.value).getTime() : 0;
+                          setForm((p) => ({ ...p, memberValidFromMs: ms }));
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Membership Valid To</label>
+                      <input
+                        type="date"
+                        className="w-full border border-gray-300 p-2 rounded"
+                        value={toDateInputValue(form.memberValidToMs)}
+                        onChange={(e) => {
+                          const ms = e.target.value ? new Date(e.target.value).getTime() : 0;
+                          setForm((p) => ({ ...p, memberValidToMs: ms }));
+                        }}
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                {/* Ownership Transfer */}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ownership Transfer Contact</label>
+                <select
+                  name="successorUid"
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={form.successorUid}
+                  onChange={handleChange}
+                >
+                  <option value="">Select</option>
+                  {members?.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Moderator + Role */}
+                <section className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="col-span-1">
+                      <label className="block text-sm font-medium text-gray-700">Add Moderator</label>
+                      <select
+                        name="memberId"
+                        className="w-full border border-gray-300 p-2 rounded"
+                        value={form.memberId}
+                        onChange={handleChange}
+                      >
+                        <option value="">Select</option>
+                        {members?.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="col-span-1">
+                      <label className="block text-sm font-medium text-gray-700">Assign Role</label>
+                      <select
+                        name="roleId"
+                        className="w-full border border-gray-300 p-2 rounded"
+                        value={form.roleId}
+                        onChange={(e) => {
+                          const roleId = e.target.value;
+                          const r = roles.find((x) => x.id === roleId);
+                          setForm((prev) => ({
+                            ...prev,
+                            roleId,
+                            role: r?.name || "",
+                          }));
+                        }}
+                      >
+                        <option value="">Select Role</option>
+                        {roles?.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </section>
+
                 {/* Links */}
                 <div>
-                  <h3 className="text-sm font-semibold mb-1">Links</h3>
+                  <h3 className="block text-sm font-medium text-gray-700">Links</h3>
                   <input
                     type="url"
                     name="website"
@@ -516,7 +1097,7 @@ export default function UniclubPage({ navbarHeight }) {
 
                 {/* Contact */}
                 <div>
-                  <h3 className="text-sm font-semibold mb-1">Contact</h3>
+                  <h3 className="block text-sm font-medium text-gray-700">Contact</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <input
                       type="text"
@@ -583,6 +1164,116 @@ export default function UniclubPage({ navbarHeight }) {
         </div>
       )}
 
+      {/* 🆕 Requests modal */}
+      {reqModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
+                Join Requests — {activeClubTitle} {requests.length ? `(${requests.length})` : ""}
+              </h3>
+              <button
+                className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300"
+                onClick={() => {
+                  setReqModalOpen(false);
+                  setActiveClubId("");
+                  setActiveClubTitle("");
+                  setRequests([]);
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            {requests.length === 0 ? (
+              <div className="text-sm text-gray-500">No pending requests.</div>
+            ) : (
+              <ul className="space-y-3">
+                {requests.map((r) => (
+                  <li key={r.uid} className="border rounded p-3 flex items-start justify-between">
+                    <div className="space-y-1">
+                      <div className="font-medium">{r.name || r.displayName || r.uid}</div>
+                      {r.answers && (
+                        <div className="text-sm bg-gray-50 rounded p-2">{renderAnswers(r.answers)}</div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="px-3 py-1 rounded bg-green-600 text-white"
+                        onClick={() => approveRequest(activeClubId, r)}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        className="px-3 py-1 rounded bg-red-600 text-white"
+                        onClick={() => rejectRequest(activeClubId, r)}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 🆕 Members modal */}
+      {memModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
+                Members — {activeClubTitle} {membersList.length ? `(${membersList.length})` : ""}
+              </h3>
+              <button
+                className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300"
+                onClick={() => {
+                  setMemModalOpen(false);
+                  setActiveClubId("");
+                  setActiveClubTitle("");
+                  setMembersList([]);
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            {membersList.length === 0 ? (
+              <div className="text-sm text-gray-500">No members yet.</div>
+            ) : (
+              <ul className="divide-y">
+                {membersList.map((m) => (
+                  <li key={m.uid} className="py-2 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {m.photoURL ? (
+                        <img src={m.photoURL} alt="" className="w-8 h-8 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-gray-200" />
+                      )}
+                      <div>
+                        <div className="font-medium">{m.name || m.uid}</div>
+                        <div className="text-xs text-gray-500">{m.role || "member"}</div>
+                      </div>
+                    </div>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded ${
+                        m.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      {m.status || "active"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Delete confirm */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -601,10 +1292,7 @@ export default function UniclubPage({ navbarHeight }) {
               >
                 Cancel
               </button>
-              <button
-                onClick={handleDelete}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-              >
+              <button onClick={handleDelete} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
                 Delete
               </button>
             </div>

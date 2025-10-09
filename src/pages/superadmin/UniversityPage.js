@@ -44,6 +44,7 @@ const DEFAULT_FEATURES = {
   room: false,
   social: false,
   uniclub: false,
+  uniclubstudent: false,
 };
 
 const initialForm = {

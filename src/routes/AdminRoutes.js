@@ -22,6 +22,7 @@ import FaqPage from "../pages/admin/FaqPage";
 import MaintenanceCategoryPage from "../pages/admin/MaintenanceCategoryPage";
 import ReportSettingPage from "../pages/admin/ReportSettingPage";
 import UniclubPage from "../pages/admin/UniclubPage";
+import UniclubStudentPage from "../pages/admin/UniclubStudentPage";
 
 export default function AdminRoutes({ route }) {
 
@@ -52,6 +53,7 @@ export default function AdminRoutes({ route }) {
           <Route path="/maintenancesetting" element={<MaintenanceCategoryPage />} />
           <Route path="/reportsetting" element={<ReportSettingPage />} />
           <Route path="/uniclub" element={<UniclubPage />} />
+          <Route path="/uniclubstudent" element={<UniclubStudentPage />} />
     </Routes>
   );
 }

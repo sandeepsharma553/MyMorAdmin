@@ -6,6 +6,7 @@ import { db } from "../../firebase";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
+import UniclubSetting from "./UniclubSetting";
 
 const MaintenanceCategoryPage = lazy(() =>
   import("./MaintenanceCategoryPage") 
@@ -161,9 +162,8 @@ const SettingPage = () => {
   const uid = useSelector((s) => s.auth.user?.uid);
   const emp = useSelector((s) => s.auth.employee);
   const hostelId = emp?.hostelid;
-
-  // Sidebar menu — both open inline now
-  const MENU = [
+ 
+  const FULL_MENU = [
     { key: "events", label: "Event Categories" },
     { key: "academics", label: "Academic Categories" },
     { key: "maintenance", label: "Maintenance Settings" },
@@ -171,8 +171,14 @@ const SettingPage = () => {
     { key: "feedback", label: "Feebback Setting" },
     { key: "employee", label: "Employee Setting" },
     { key: "event", label: "Event Setting" },
+    { key: "uniclub", label: "Uniclub Setting" },
   ];
-  const [activeKey, setActiveKey] = useState("events");
+  
+  const MENU = hostelId == null
+    ? FULL_MENU.filter(m => m.key === "uniclub")
+    : FULL_MENU;
+  
+  const [activeKey, setActiveKey] = useState(MENU[0]?.key || "events");
 
   // Full lists (client-side pagination)
   const [eventAll, setEventAll] = useState([]);
@@ -460,6 +466,17 @@ const SettingPage = () => {
           }>
             <div className="bg-white rounded shadow p-4">
               <EventSettingPage hostelid={hostelId} uid={uid} embedded />
+            </div>
+          </Suspense>
+        )}
+        {activeKey === "uniclub" && (
+          <Suspense fallback={
+            <div className="flex justify-center items-center h-64">
+              <FadeLoader color="#36d7b7" />
+            </div>
+          }>
+            <div className="bg-white rounded shadow p-4">
+              <UniclubSetting  uid={uid} embedded />
             </div>
           </Suspense>
         )}
