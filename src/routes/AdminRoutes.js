@@ -21,39 +21,45 @@ import StudentPage from "../pages/admin/StudentPage";
 import FaqPage from "../pages/admin/FaqPage";
 import MaintenanceCategoryPage from "../pages/admin/MaintenanceCategoryPage";
 import ReportSettingPage from "../pages/admin/ReportSettingPage";
-import UniclubPage from "../pages/admin/UniclubPage";
-import UniclubStudentPage from "../pages/admin/UniclubStudentPage";
+import UniclubPage from "../pages/uniclub/UniclubPage";
+import UniclubStudentPage from "../pages/uniclub/UniclubStudentPage";
+import UniclubEventBookingPage from "../pages/uniclub/UniclubEventBooking";
+import UniclubEventPage from "../pages/uniclub/UniclubEvent";
+import UniclubAnnouncementPage from "../pages/uniclub/UniclubAnnouncement";
 
 export default function AdminRoutes({ route }) {
 
   return (
 
     <Routes>
-       {/* <Route path="dashboard" element={<HomePage />} /> */}
-         <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/diningmenu" element={<DiningMenuPage />} />
-          <Route path="/cleaningschedule" element={<CleaningSchedulePage />} />
-          <Route path="/tutorialSchedule" element={<TutorialSchedulePage />} />
-          <Route path="/maintenance" element={<MaintenancePage />} />
-          <Route path="/bookingroom" element={<BookingPage />} />
-          <Route path="/academicgroup" element={<AcademicGroupPage />} />
-          <Route path="/announcement" element={<AnnouncementPage />} />
-          <Route path="/reportincident" element={<ReportIncidentPage />} />
-          <Route path="/event" element={<EventPage />} />
-          <Route path="/eventbooking" element={<EventBookingPage />} />
-          <Route path="/deal" element={<DealPage />} />
-          <Route path="/requestdelete" element={<AccountDeletionPage />} />
-          <Route path="/employee" element={<EmployeePage />} />
-          <Route path="/changepassword" element={<ChangePasswordPage />} />
-          <Route path="/resources" element={<ResourcesPage />} />
-          <Route path="/setting" element={<SettingPage />} />
-          <Route path="/feedback" element={<FeedbackPage />} />
-          <Route path="/student" element={<StudentPage />} />
-          <Route path="/faq" element={<FaqPage />} />
-          <Route path="/maintenancesetting" element={<MaintenanceCategoryPage />} />
-          <Route path="/reportsetting" element={<ReportSettingPage />} />
-          <Route path="/uniclub" element={<UniclubPage />} />
-          <Route path="/uniclubstudent" element={<UniclubStudentPage />} />
+      {/* <Route path="dashboard" element={<HomePage />} /> */}
+      <Route path="/dashboard" element={<DashboardPage />} />
+      <Route path="/diningmenu" element={<DiningMenuPage />} />
+      <Route path="/cleaningschedule" element={<CleaningSchedulePage />} />
+      <Route path="/tutorialSchedule" element={<TutorialSchedulePage />} />
+      <Route path="/maintenance" element={<MaintenancePage />} />
+      <Route path="/bookingroom" element={<BookingPage />} />
+      <Route path="/academicgroup" element={<AcademicGroupPage />} />
+      <Route path="/announcement" element={<AnnouncementPage />} />
+      <Route path="/reportincident" element={<ReportIncidentPage />} />
+      <Route path="/event" element={<EventPage />} />
+      <Route path="/eventbooking" element={<EventBookingPage />} />
+      <Route path="/deal" element={<DealPage />} />
+      <Route path="/requestdelete" element={<AccountDeletionPage />} />
+      <Route path="/employee" element={<EmployeePage />} />
+      <Route path="/changepassword" element={<ChangePasswordPage />} />
+      <Route path="/resources" element={<ResourcesPage />} />
+      <Route path="/setting" element={<SettingPage />} />
+      <Route path="/feedback" element={<FeedbackPage />} />
+      <Route path="/student" element={<StudentPage />} />
+      <Route path="/faq" element={<FaqPage />} />
+      <Route path="/maintenancesetting" element={<MaintenanceCategoryPage />} />
+      <Route path="/reportsetting" element={<ReportSettingPage />} />
+      <Route path="/uniclub" element={<UniclubPage />} />
+      <Route path="/uniclubstudent" element={<UniclubStudentPage />} />
+      <Route path="/uniclubevent" element={<UniclubEventPage />} />
+      <Route path="/uniclubeventbooking" element={<UniclubEventBookingPage />} />
+      <Route path="/uniclubannouncement" element={<UniclubAnnouncementPage />} />
     </Routes>
   );
 }

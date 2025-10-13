@@ -85,23 +85,10 @@ export default function UniclubEmployeePage(props) {
 
   const MENU_OPTIONS = [
     { key: "dashboard", label: "Dashboard" },
-    { key: "announcement", label: "Announcement" },
-    { key: "student", label: "Student" },
-    { key: "diningmenu", label: "Dining Menu" },
-    { key: "cleaningschedule", label: "Cleaning Schedule" },
-    { key: "tutorialschedule", label: "Tutorial Schedule" },
-    { key: "maintenance", label: "Maintenance" },
-    { key: "bookingroom", label: "Book a Room" },
-    { key: "academicgroup", label: "Academic Groups" },
-    { key: "reportincident", label: "Report Incident" },
-    { key: "feedback", label: "Feedback" },
-    { key: "resources", label: "Resources" },
-    { key: "event", label: "Event" },
-    { key: "eventbooking", label: "Event Booking" },
-    { key: "deal", label: "Deals" },
-    { key: "faq", label: "FAQs" },
+    { key: "uniclubannouncement", label: "Announcement" },
+    { key: "uniclubevent", label: "Event" },
+    { key: "uniclubeventbooking", label: "Event Booking" },
     { key: "setting", label: "Setting" },
-    { key: "employee", label: "Employee" },
     { key: "uniclub", label: "UniClub" },
     { key: "uniclubstudent", label: "UniClubStudent" },
   ];
@@ -127,6 +114,9 @@ export default function UniclubEmployeePage(props) {
     student: "student",
     uniclub: "uniclub",
     uniclubstudent: "uniclubstudent",
+    uniclubannouncement: "uniclubannouncement",
+    uniclubevent: "uniclubevent",
+    uniclubeventbooking: "uniclubeventbooking",
   };
 
   const LABEL_BY_KEY = useMemo(
@@ -203,7 +193,7 @@ export default function UniclubEmployeePage(props) {
       //   name: d.data().name,
       //   domain: d.data().domain,
       // }));
-
+ 
       const hostelArr = hostelSnap.docs.map((d) => {
         const data = d.data();
         return {
@@ -245,7 +235,7 @@ export default function UniclubEmployeePage(props) {
       if (mountedRef.current) setIsLoading(false);
     }
   };
-
+  console.log("Universities:", list);
   /* -------------------- Helpers -------------------- */
   const isEmailValid = (email) => {
     const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -393,9 +383,9 @@ export default function UniclubEmployeePage(props) {
           lastname: "",
           username: baseData.name,
           email: baseData.email,
-          hostelid: form.hostelid || "",
-          hostel: form.hostel || "",
-          universityId: form.universityId || "",
+          hostelid: "",
+          hostel: "",
+          universityid: form.universityId || "",
           university: form.university || "",
           livingtype: "hostel",
           createdby: user.uid,
@@ -660,7 +650,7 @@ export default function UniclubEmployeePage(props) {
                         Edit
                       </button>
 
-                      {item.isActive ? (
+                      {/* {item.isActive ? (
                         <button
                           disabled={isHostelInactive(item.hostelid)}
                           className={`text-red-600 hover:underline ${isHostelInactive(item.hostelid) ? "opacity-40 cursor-not-allowed" : ""}`}
@@ -676,7 +666,7 @@ export default function UniclubEmployeePage(props) {
                         >
                           Activate
                         </button>
-                      )}
+                      )} */}
                     </td>
                   </tr>
                 ))

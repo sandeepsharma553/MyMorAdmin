@@ -18,6 +18,7 @@ import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
+import { useNavigate } from "react-router-dom";
 dayjs.extend(customParseFormat);
 
 /* ------------------------------------------------
@@ -108,7 +109,7 @@ export default function UniclubPage({ navbarHeight }) {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
-
+  const navigate = useNavigate();
   // Sorting + Filters
   const [sortConfig, setSortConfig] = useState({ key: "title", direction: "asc" });
   const [filters, setFilters] = useState({ title: "" });
@@ -168,6 +169,7 @@ export default function UniclubPage({ navbarHeight }) {
     memberValidFromMs: 0,
     memberValidToMs: 0,
     successorUid: "",
+    successor: '',
     memberId: "",
     roleId: "",
     role: "",
@@ -247,11 +249,11 @@ export default function UniclubPage({ navbarHeight }) {
   const getMembers = async () => {
     setIsLoading(true);
     try {
-      const constraints = [where("uid", "==", uid), where("livingtype", "==", "university")];
+      const constraints = [where("createdby", "==", uid), where("livingtype", "==", "university")];
       const q = query(collection(db, "users"), ...constraints);
       const snap = await getDocs(q);
       const rows = snap.docs
-        .map((d) => ({ id: d.id, name: d.data().firstname || "User" }))
+        .map((d) => ({ id: d.id, name: d.data().firstname || "User", photoURL: d.data().imageUrl || d.data().photoURL || "" }))
         .filter((u) => u.name !== (emp?.name || ""));
       setMembers(rows);
     } catch (err) {
@@ -385,11 +387,12 @@ export default function UniclubPage({ navbarHeight }) {
         createdAt: editingData ? undefined : Date.now(),
         updatedAt: Date.now(),
         creatorId: uid || "",
-        uid: emp?.uid || "",
+        uid: user.uid || "",
         displayName: user?.displayName || emp?.name || "",
         photoURL: user?.photoURL || emp?.imageUrl || "",
         privacyType: form.privacyType,
         tags: cleanedTags,
+        role: "Admin",
         rules: form.rules?.trim() || "",
         joinQuestions: (form.joinQuestions || []).map((s) => s.trim()).filter(Boolean),
         category: form.category || "",
@@ -422,14 +425,24 @@ export default function UniclubPage({ navbarHeight }) {
         }
         toast.success("Uniclub created successfully");
       }
-
-      // ---- role assignment (optional) ----
+      const base = `uniclubs/${clubId}`;
+      if (form.successorUid && form.successorUid !== user?.uid) {
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/joinedAt`), serverTimestamp());
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/name`), form.successor.name);
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/photoURL`), form.successor.photoURL);
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/role`), 'admin');
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/status`), 'active');
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/uid`), form.successorUid);
+        if (user?.uid) {
+          await rtdbSet(dbRef(database, `${base}/members/${user.uid}/role`), 'moderator');
+        }
+        await rtdbSet(dbRef(database, `${base}/uid`), form.successorUid);
+      }
       if (form.memberId && form.roleId) {
-        const base = `uniclubs/${clubId}`;
+
         await Promise.all([
           rtdbSet(dbRef(database, `${base}/roles/${form.memberId}`), { roleId: form.roleId, roleName: form.role }),
           rtdbSet(dbRef(database, `${base}/members/${form.memberId}/role`), form.role || "contributor"),
-          rtdbSet(dbRef(database, `${base}/members/${form.memberId}/status`), "active"),
         ]);
       }
 
@@ -524,7 +537,6 @@ export default function UniclubPage({ navbarHeight }) {
 
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
   const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
   /* ---------- Render ---------- */
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto no-scrollbar" style={{ paddingTop: navbarHeight || 0 }}>
@@ -562,6 +574,9 @@ export default function UniclubPage({ navbarHeight }) {
                   // 🆕 two new columns for counts
                   { key: "requests", label: "Requests", sortable: false },
                   { key: "members", label: "Members", sortable: false },
+                  { key: "members", label: "Announcement", sortable: false },
+                  { key: "members", label: "Events", sortable: false },
+                  { key: "members", label: "EventBookings", sortable: false },
                   { key: "actions", label: "Action", sortable: false },
                 ].map((col) => (
                   <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
@@ -600,6 +615,9 @@ export default function UniclubPage({ navbarHeight }) {
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
               </tr>
             </thead>
 
@@ -615,12 +633,11 @@ export default function UniclubPage({ navbarHeight }) {
                   const start = item.startAtMs || item.startAt;
                   const end = item.endAtMs || item.endAt;
                   const whenLabel = start
-                    ? `${dayjs(start).format("DD MMM, h:mm A")}${
-                        end ? ` – ${dayjs(end).format("DD MMM, h:mm A")}` : ""
-                      }`
+                    ? `${dayjs(start).format("DD MMM, h:mm A")}${end ? ` – ${dayjs(end).format("DD MMM, h:mm A")}` : ""
+                    }`
                     : item.date || item.time
-                    ? `${item.date || ""}${item.time ? ` • ${item.time}${item.endAt ? ` – ${item.endAt}` : ""}` : ""}`
-                    : "-";
+                      ? `${item.date || ""}${item.time ? ` • ${item.time}${item.endAt ? ` – ${item.endAt}` : ""}` : ""}`
+                      : "-";
 
                   return (
                     <tr key={item.id}>
@@ -664,6 +681,47 @@ export default function UniclubPage({ navbarHeight }) {
                           <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200">
                             {item.membersCount ?? 0}
                           </span>
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          onClick={() =>
+                                 navigate("/uniclubannouncement", {
+                                  state: { groupId: item.id, groupName: item.title || "Club" },
+                                 })
+                               }
+                          title="Announcements"
+                        >
+                          <span>Announcements</span>
+
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          onClick={() =>
+                                 navigate("/uniclubevent", {
+                                   state: { groupId: item.id, groupName: item.title || "Club" },
+                                 })
+                               }
+                          title="Events"
+                        >
+                          <span>Events</span>
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          onClick={() =>
+                                 navigate("/uniclubeventbooking", {
+                                   state: { groupId: item.id, groupName: item.title || "Club" },
+                                 })
+                               }
+                          title="s"
+                        >
+                          <span>EventBooking</span>
+
                         </button>
                       </td>
 
@@ -1015,7 +1073,16 @@ export default function UniclubPage({ navbarHeight }) {
                   name="successorUid"
                   className="w-full border border-gray-300 p-2 rounded"
                   value={form.successorUid}
-                  onChange={handleChange}
+                  // onChange={handleChange}
+                  onChange={(e) => {
+                    const successorUid = e.target.value;
+                    const r = members.find((x) => x.id === successorUid);
+                    setForm((prev) => ({
+                      ...prev,
+                      successorUid,
+                      successor: r,
+                    }));
+                  }}
                 >
                   <option value="">Select</option>
                   {members?.map((c) => (
@@ -1260,9 +1327,8 @@ export default function UniclubPage({ navbarHeight }) {
                       </div>
                     </div>
                     <span
-                      className={`text-xs px-2 py-0.5 rounded ${
-                        m.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                      }`}
+                      className={`text-xs px-2 py-0.5 rounded ${m.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                        }`}
                     >
                       {m.status || "active"}
                     </span>

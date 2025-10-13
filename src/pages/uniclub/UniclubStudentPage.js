@@ -57,14 +57,14 @@ export default function UniclubStudentPage(props) {
     setIsLoading(true);
     try {
       const constraints = [
-        where('uid', '==', uid),
+        where('createdby', '==', uid),
         where('livingtype', '==', 'university'),
       ];
       const q = query(collection(db, 'users'), ...constraints);
       const snap = await getDocs(q);
       const rows = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
-        .filter(u => u.firstnamed !== emp.name); 
+        .filter(u => u.firstname !== emp.name);
 
       setList(rows);
     } catch (err) {
@@ -134,8 +134,7 @@ export default function UniclubStudentPage(props) {
           address: form.address || '',
           studentid: form.studentid || '',
           ...(finalImageUrl ? { imageUrl: finalImageUrl } : { imageUrl: '' }),
-          uid: docSnap.data()?.uid || form.id, // keep original account owner uid on the user doc
-          // do NOT overwrite password on update (keep existing)
+          uid: form.id,
           password: docSnap.data()?.password || '',
         };
 

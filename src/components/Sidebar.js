@@ -55,9 +55,13 @@ const SECTIONS = [
   { key: "eventbooking", label: "Event Booking", Icon: Calendar },
   { key: "deal", label: "Deals", Icon: Utensils },
   { key: "faq", label: "FAQs", Icon: HelpCircle },
-  { key: "setting", label: "Setting", Icon: SettingsIcon },
   { key: "uniclub", label: "Uniclub", Icon: UserPlus },
   { key: "uniclubstudent", label: "Student", Icon: UserPlus },
+  { key: "uniclubannouncement", label: "Announcement", Icon: Bell },
+  { key: "uniclubevent", label: "Event", Icon: Calendar },
+  { key: "uniclubeventbooking", label: "Event Booking", Icon: Calendar },
+  { key: "setting", label: "Setting", Icon: SettingsIcon },
+  
 ];
 
 /* -------------------------------- Badge ------------------------------- */

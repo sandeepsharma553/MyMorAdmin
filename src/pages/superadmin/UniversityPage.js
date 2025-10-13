@@ -45,6 +45,9 @@ const DEFAULT_FEATURES = {
   social: false,
   uniclub: false,
   uniclubstudent: false,
+  uniclubannouncement: false,
+  uniclubevent: false,
+  uniclubeventbooking: false,
 };
 
 const initialForm = {

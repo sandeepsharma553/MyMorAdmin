@@ -6,7 +6,7 @@ import { db } from "../../firebase";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import UniclubSetting from "./UniclubSetting";
+import UniclubSetting from "../uniclub/UniclubSetting";
 
 const MaintenanceCategoryPage = lazy(() =>
   import("./MaintenanceCategoryPage") 
