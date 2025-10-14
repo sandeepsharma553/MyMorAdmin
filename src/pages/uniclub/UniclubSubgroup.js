@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { database, storage, db } from "../../firebase";
 import {
@@ -10,7 +10,7 @@ import {
   remove,
   off,
   serverTimestamp,
-  get as rtdbGet,            // ✅ added to fetch counts for list rows
+  get as rtdbGet,
 } from "firebase/database";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useSelector } from "react-redux";
@@ -18,7 +18,7 @@ import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 dayjs.extend(customParseFormat);
 
 /* ------------------------------------------------
@@ -82,18 +82,25 @@ const renderAnswers = (ans) => {
   return <span>{String(ans)}</span>;
 };
 
-/* ------------------------------------------------
-   Component
--------------------------------------------------*/
-export default function UniclubPage({ navbarHeight }) {
-  /* ---------- State ---------- */
+export default function UniclubSubgroup({ navbarHeight }) {
+  const { state } = useLocation();
+  const [params] = useSearchParams();
+  const groupId = state?.groupId || params.get("groupId");
+  const groupName = state?.groupName || params.get("groupName") || "Club";
+
+  // basePath (nested under parent groupId if present)
+  const basePath = useMemo(
+    () => (groupId ? `uniclubsubgroup/${groupId}` : `uniclubsubgroup`),
+    [groupId]
+  );
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([]);
 
-  // 🔀 Requests/Members moved out into separate modals
+  // Requests/Members in separate modals
   const [reqModalOpen, setReqModalOpen] = useState(false);
   const [memModalOpen, setMemModalOpen] = useState(false);
   const [activeClubId, setActiveClubId] = useState("");
@@ -110,6 +117,7 @@ export default function UniclubPage({ navbarHeight }) {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
   const navigate = useNavigate();
+
   // Sorting + Filters
   const [sortConfig, setSortConfig] = useState({ key: "title", direction: "asc" });
   const [filters, setFilters] = useState({ title: "" });
@@ -169,7 +177,7 @@ export default function UniclubPage({ navbarHeight }) {
     memberValidFromMs: 0,
     memberValidToMs: 0,
     successorUid: "",
-    successor: '',
+    successor: "",
     memberId: "",
     roleId: "",
     role: "",
@@ -183,16 +191,24 @@ export default function UniclubPage({ navbarHeight }) {
     getCategory();
     getRole();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [basePath]); // refresh if groupId changes
 
   useEffect(() => {
     setCurrentPage(1);
   }, [filters, sortConfig]);
 
-  // ✅ Live listeners tied to separate modals now
+  // Optional guard if groupId is required
+  useEffect(() => {
+    if (!groupId) {
+      // comment this out if you want to allow flat root mode
+      // toast.error("Missing groupId — open this screen via a parent group.");
+    }
+  }, [groupId]);
+
+  // Live listeners tied to separate modals
   useEffect(() => {
     if (!reqModalOpen || !activeClubId) return;
-    const reqRef = dbRef(database, `uniclubs/${activeClubId}/joinRequests`);
+    const reqRef = dbRef(database, `${basePath}/${activeClubId}/joinRequests`);
     const handler = (snap) => {
       const val = snap.val() || {};
       const arr = Object.entries(val).map(([uid, r]) => ({ uid, ...r }));
@@ -200,11 +216,11 @@ export default function UniclubPage({ navbarHeight }) {
     };
     onValue(reqRef, handler);
     return () => off(reqRef, "value", handler);
-  }, [reqModalOpen, activeClubId]);
+  }, [reqModalOpen, activeClubId, basePath]);
 
   useEffect(() => {
     if (!memModalOpen || !activeClubId) return;
-    const memRef = dbRef(database, `uniclubs/${activeClubId}/members`);
+    const memRef = dbRef(database, `${basePath}/${activeClubId}/members`);
     const handler = (snap) => {
       const val = snap.val() || {};
       const arr = Object.entries(val).map(([uid, m]) => ({ uid, ...m }));
@@ -212,23 +228,23 @@ export default function UniclubPage({ navbarHeight }) {
     };
     onValue(memRef, handler);
     return () => off(memRef, "value", handler);
-  }, [memModalOpen, activeClubId]);
+  }, [memModalOpen, activeClubId, basePath]);
 
   /* ---------- Data IO ---------- */
   const getList = () => {
     setIsLoading(true);
-    const ref = dbRef(database, "uniclubs/");
+    const ref = dbRef(database, `${basePath}`);
     const handler = async (snap) => {
       const val = snap.val();
       const arr = val ? Object.entries(val).map(([id, v]) => ({ id, ...v })) : [];
 
-      // 🔢 Fetch counts for each row so we can show them in the list
+      // Fetch counts for each row
       const withCounts = await Promise.all(
         arr.map(async (item) => {
           try {
             const [reqSnap, memSnap] = await Promise.all([
-              rtdbGet(dbRef(database, `uniclubs/${item.id}/joinRequests`)),
-              rtdbGet(dbRef(database, `uniclubs/${item.id}/members`)),
+              rtdbGet(dbRef(database, `${basePath}/${item.id}/joinRequests`)),
+              rtdbGet(dbRef(database, `${basePath}/${item.id}/members`)),
             ]);
             const requestsCount = reqSnap.exists() ? Object.keys(reqSnap.val()).length : 0;
             const membersCount = memSnap.exists() ? Object.keys(memSnap.val()).length : 0;
@@ -243,6 +259,7 @@ export default function UniclubPage({ navbarHeight }) {
       setIsLoading(false);
     };
     onValue(ref, handler, { onlyOnce: false });
+    // best-effort cleanup on re-run
     return () => off(ref, "value", handler);
   };
 
@@ -253,7 +270,11 @@ export default function UniclubPage({ navbarHeight }) {
       const q = query(collection(db, "users"), ...constraints);
       const snap = await getDocs(q);
       const rows = snap.docs
-        .map((d) => ({ id: d.id, name: d.data().firstname || "User", photoURL: d.data().imageUrl || d.data().photoURL || "" }))
+        .map((d) => ({
+          id: d.id,
+          name: d.data().firstname || "User",
+          photoURL: d.data().imageUrl || d.data().photoURL || "",
+        }))
         .filter((u) => u.name !== (emp?.name || ""));
       setMembers(rows);
     } catch (err) {
@@ -339,7 +360,7 @@ export default function UniclubPage({ navbarHeight }) {
       const startAtMs = form.startAtMs || 0;
       const endAtMs = form.endAtMs || 0;
 
-      // ---- image upload ----
+      // image upload
       let imageUrl = form.imageUrl || "";
       const isNewImage = !!(form.imageFile && typeof form.imageFile.name === "string");
       if (!editingData && !imageUrl && !isNewImage) {
@@ -353,9 +374,7 @@ export default function UniclubPage({ navbarHeight }) {
         imageUrl = await getDownloadURL(storRef);
       }
 
-      // ---- derived values ----
       const cleanedTags = parseTags(form.tags);
-
       const settingsPayload = {
         chatEnabled: !!form.enableChat,
         allowEventsByMembers: !!form.allowEventsByMembers,
@@ -387,7 +406,7 @@ export default function UniclubPage({ navbarHeight }) {
         createdAt: editingData ? undefined : Date.now(),
         updatedAt: Date.now(),
         creatorId: uid || "",
-        uid: user.uid || "",
+        uid: user?.uid || "",
         displayName: user?.displayName || emp?.name || "",
         photoURL: user?.photoURL || emp?.imageUrl || "",
         privacyType: form.privacyType,
@@ -401,20 +420,20 @@ export default function UniclubPage({ navbarHeight }) {
 
       Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
-      // ---- create vs update ----
+      // create vs update under nested basePath
       let clubId;
       if (editingData?.id) {
         clubId = editingData.id;
-        await rtdbUpdate(dbRef(database, `uniclubs/${clubId}`), payload);
+        await rtdbUpdate(dbRef(database, `${basePath}/${clubId}`), payload);
         toast.success("Uniclub updated successfully!");
       } else {
-        const newRef = push(dbRef(database, "uniclubs/"));
+        const newRef = push(dbRef(database, `${basePath}`));
         clubId = newRef.key;
         await rtdbSet(newRef, { ...payload, id: clubId });
 
         // add creator as admin
         if (user?.uid) {
-          await rtdbSet(dbRef(database, `uniclubs/${clubId}/members/${user.uid}`), {
+          await rtdbSet(dbRef(database, `${basePath}/${clubId}/members/${user.uid}`), {
             uid: user.uid,
             name: user.displayName || "",
             photoURL: user.photoURL ?? "",
@@ -425,28 +444,29 @@ export default function UniclubPage({ navbarHeight }) {
         }
         toast.success("Uniclub created successfully");
       }
-      const base = `uniclubs/${clubId}`;
+
+      const base = `${basePath}/${clubId}`;
       if (form.successorUid && form.successorUid !== user?.uid) {
         await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/joinedAt`), serverTimestamp());
         await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/name`), form.successor.name);
         await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/photoURL`), form.successor.photoURL);
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/role`), 'admin');
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/status`), 'active');
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/role`), "admin");
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/status`), "active");
         await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/uid`), form.successorUid);
         if (user?.uid) {
-          await rtdbSet(dbRef(database, `${base}/members/${user.uid}/role`), 'moderator');
+          await rtdbSet(dbRef(database, `${base}/members/${user.uid}/role`), "moderator");
         }
         await rtdbSet(dbRef(database, `${base}/uid`), form.successorUid);
       }
-      if (form.memberId && form.roleId) {
 
+      if (form.memberId && form.roleId) {
         await Promise.all([
           rtdbSet(dbRef(database, `${base}/roles/${form.memberId}`), { roleId: form.roleId, roleName: form.role }),
           rtdbSet(dbRef(database, `${base}/members/${form.memberId}/role`), form.role || "contributor"),
         ]);
       }
 
-      // ---- reset + refresh ----
+      // reset + refresh
       getList();
       setModalOpen(false);
       setEditing(null);
@@ -454,28 +474,28 @@ export default function UniclubPage({ navbarHeight }) {
       setFileName("No file chosen");
       setPreviewUrl("");
     } catch (error) {
-      console.error("Error saving uniclubs:", error);
-      toast.error("Failed to save uniclubs.");
+      console.error("Error saving uniclubsubgroup:", error);
+      toast.error("Failed to save uniclubsubgroup.");
     }
   };
 
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await remove(dbRef(database, `uniclubs/${deleteData.id}`));
+      await remove(dbRef(database, `${basePath}/${deleteData.id}`));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
-      console.error("Error deleting uniclubs: ", error);
+      console.error("Error deleting uniclubsubgroup: ", error);
       toast.error("Failed to delete uniclub.");
     }
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
 
-  /* ---------- Approve / Reject join requests (works from Requests modal) ---------- */
+  /* ---------- Approve / Reject join requests ---------- */
   const approveRequest = async (clubId, req) => {
-    const base = `uniclubs/${clubId}`;
+    const base = `${basePath}/${clubId}`;
     const memberRecord = {
       uid: req.uid,
       name: req.name || req.displayName || "",
@@ -491,16 +511,14 @@ export default function UniclubPage({ navbarHeight }) {
         remove(dbRef(database, `${base}/joinRequests/${req.uid}`)),
       ]);
 
-      // optimistic UI (listeners also update)
+      // optimistic UI
       setRequests((prev) => prev.filter((r) => r.uid !== req.uid));
       setMembersList((prev) => {
         const without = prev.filter((m) => m.uid !== req.uid);
         return [...without, memberRecord];
       });
 
-      // refresh counts shown in list
       getList();
-
       toast.success("Request approved");
     } catch (e) {
       console.error("approveRequest error", e);
@@ -509,11 +527,11 @@ export default function UniclubPage({ navbarHeight }) {
   };
 
   const rejectRequest = async (clubId, req) => {
-    const base = `uniclubs/${clubId}`;
+    const base = `${basePath}/${clubId}`;
     try {
       await remove(dbRef(database, `${base}/joinRequests/${req.uid}`));
       setRequests((prev) => prev.filter((r) => r.uid !== req.uid));
-      getList(); // refresh counts
+      getList();
       toast.success("Request rejected");
     } catch (e) {
       console.error("rejectRequest error", e);
@@ -537,12 +555,15 @@ export default function UniclubPage({ navbarHeight }) {
 
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
   const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   /* ---------- Render ---------- */
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto no-scrollbar" style={{ paddingTop: navbarHeight || 0 }}>
       {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Uniclub</h1>
+        <h1 className="text-2xl font-semibold">
+          {groupName} — Uniclub {groupId ? "(Subgroups)" : ""}
+        </h1>
         <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
@@ -553,7 +574,7 @@ export default function UniclubPage({ navbarHeight }) {
             setModalOpen(true);
           }}
         >
-          + Add uniclub
+          + Add Subgroup
         </button>
       </div>
 
@@ -571,13 +592,11 @@ export default function UniclubPage({ navbarHeight }) {
                   { key: "location", label: "Location" },
                   { key: "when", label: "When", sortable: false },
                   { key: "desc", label: "Description" },
-                  // 🆕 two new columns for counts
                   { key: "requests", label: "Requests", sortable: false },
-                  { key: "members", label: "Members", sortable: false },
-                  { key: "announcement", label: "Announcement", sortable: false },
-                  { key: "events", label: "Events", sortable: false },
-                  { key: "eventbookings", label: "EventBookings", sortable: false },
-                  { key: "subgroup", label: "Sub Group", sortable: false },
+                  { key: "membersCol", label: "Members", sortable: false },
+                  { key: "announcementCol", label: "Announcement", sortable: false },
+                  { key: "eventsCol", label: "Events", sortable: false },
+                  { key: "eventBookingsCol", label: "EventBookings", sortable: false },
                   { key: "actions", label: "Action", sortable: false },
                 ].map((col) => (
                   <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
@@ -619,15 +638,14 @@ export default function UniclubPage({ navbarHeight }) {
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
-                <th className="px-6 pb-3" />
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
-                    No matching uniclubs found.
+                  <td colSpan={10} className="px-6 py-8 text-center text-gray-500">
+                    {groupId ? "No subgroups yet. Create one." : "No groups found."}
                   </td>
                 </tr>
               ) : (
@@ -635,11 +653,12 @@ export default function UniclubPage({ navbarHeight }) {
                   const start = item.startAtMs || item.startAt;
                   const end = item.endAtMs || item.endAt;
                   const whenLabel = start
-                    ? `${dayjs(start).format("DD MMM, h:mm A")}${end ? ` – ${dayjs(end).format("DD MMM, h:mm A")}` : ""
-                    }`
+                    ? `${dayjs(start).format("DD MMM, h:mm A")}${
+                        end ? ` – ${dayjs(end).format("DD MMM, h:mm A")}` : ""
+                      }`
                     : item.date || item.time
-                      ? `${item.date || ""}${item.time ? ` • ${item.time}${item.endAt ? ` – ${item.endAt}` : ""}` : ""}`
-                      : "-";
+                    ? `${item.date || ""}${item.time ? ` • ${item.time}${item.endAt ? ` – ${item.endAt}` : ""}` : ""}`
+                    : "-";
 
                   return (
                     <tr key={item.id}>
@@ -650,7 +669,7 @@ export default function UniclubPage({ navbarHeight }) {
                         {item.desc}
                       </td>
 
-                      {/* 🆕 Requests count + modal trigger */}
+                      {/* Requests count + modal trigger */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
@@ -668,7 +687,7 @@ export default function UniclubPage({ navbarHeight }) {
                         </button>
                       </td>
 
-                      {/* 🆕 Members count + modal trigger */}
+                      {/* Members count + modal trigger */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
@@ -685,62 +704,57 @@ export default function UniclubPage({ navbarHeight }) {
                           </span>
                         </button>
                       </td>
+
+                      {/* Announcements */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
                           onClick={() =>
-                                 navigate("/uniclubannouncement", {
-                                  state: { groupId: item.id, groupName: item.title || "Club" },
-                                 })
-                               }
+                            navigate("/subgroupannouncement", {
+                              state: {
+                                groupId,                // parent
+                                subgroupId: item.id,    // this subgroup
+                                groupName: item.title || "Club",
+                              },
+                            })
+                          }
                           title="Announcements"
                         >
                           <span>Announcements</span>
-
                         </button>
                       </td>
+
+                      {/* Events */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
                           onClick={() =>
-                                 navigate("/uniclubevent", {
-                                   state: { groupId: item.id, groupName: item.title || "Club" },
-                                 })
-                               }
+                            navigate("/subgroupevent", {
+                              state: { groupId, subgroupId: item.id, groupName: item.title || "Club" },
+                            })
+                          }
                           title="Events"
                         >
                           <span>Events</span>
                         </button>
                       </td>
+
+                      {/* Event Bookings */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
                           onClick={() =>
-                                 navigate("/uniclubeventbooking", {
-                                   state: { groupId: item.id, groupName: item.title || "Club" },
-                                 })
-                               }
-                          title="EventBooking"
+                            navigate("/subgroupeventbooking", {
+                              state: { groupId, subgroupId: item.id, groupName: item.title || "Club" },
+                            })
+                          }
+                          title="Event Bookings"
                         >
                           <span>EventBooking</span>
-
-                        </button>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button
-                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
-                          onClick={() =>
-                                 navigate("/uniclubsubgroup", {
-                                   state: { groupId: item.id, groupName: item.title || "Club" },
-                                 })
-                               }
-                          title="Subgroups"
-                        >
-                          <span>Sub Group</span>
-
                         </button>
                       </td>
 
+                      {/* Actions */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div className="flex items-center gap-3">
                           <button
@@ -771,7 +785,7 @@ export default function UniclubPage({ navbarHeight }) {
                                   : "",
                                 paymentType: item?.settings?.paymentType || "free",
                                 paymentAmount:
-                                  item?.settings?.amount != null ? String(item.settings.amount) : "",
+                                  item?.settings?.amount != null ? String(item?.settings?.amount) : "",
                                 memberValidFromMs: item?.settings?.memberValidFromMs || 0,
                                 memberValidToMs: item?.settings?.memberValidToMs || 0,
                                 successorUid: item?.ownership?.successorUid || "",
@@ -829,11 +843,11 @@ export default function UniclubPage({ navbarHeight }) {
         </div>
       </div>
 
-      {/* Create/Edit modal (➡️ requests/members removed from here) */}
+      {/* Create/Edit modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold mb-4">{editingData ? "Edit uniclub" : "Add uniclub"}</h2>
+            <h2 className="text-xl font-bold mb-4">{editingData ? "Edit subgroup" : "Add subgroup"}</h2>
             <form onSubmit={handleAdd} className="space-y-4">
               <div className="space-y-4">
                 <input
@@ -1089,7 +1103,6 @@ export default function UniclubPage({ navbarHeight }) {
                   name="successorUid"
                   className="w-full border border-gray-300 p-2 rounded"
                   value={form.successorUid}
-                  // onChange={handleChange}
                   onChange={(e) => {
                     const successorUid = e.target.value;
                     const r = members.find((x) => x.id === successorUid);
@@ -1247,7 +1260,7 @@ export default function UniclubPage({ navbarHeight }) {
         </div>
       )}
 
-      {/* 🆕 Requests modal */}
+      {/* Requests modal */}
       {reqModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -1276,9 +1289,7 @@ export default function UniclubPage({ navbarHeight }) {
                   <li key={r.uid} className="border rounded p-3 flex items-start justify-between">
                     <div className="space-y-1">
                       <div className="font-medium">{r.name || r.displayName || r.uid}</div>
-                      {r.answers && (
-                        <div className="text-sm bg-gray-50 rounded p-2">{renderAnswers(r.answers)}</div>
-                      )}
+                      {r.answers && <div className="text-sm bg-gray-50 rounded p-2">{renderAnswers(r.answers)}</div>}
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -1304,7 +1315,7 @@ export default function UniclubPage({ navbarHeight }) {
         </div>
       )}
 
-      {/* 🆕 Members modal */}
+      {/* Members modal */}
       {memModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -1343,8 +1354,9 @@ export default function UniclubPage({ navbarHeight }) {
                       </div>
                     </div>
                     <span
-                      className={`text-xs px-2 py-0.5 rounded ${m.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                        }`}
+                      className={`text-xs px-2 py-0.5 rounded ${
+                        m.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                      }`}
                     >
                       {m.status || "active"}
                     </span>

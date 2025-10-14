@@ -23,7 +23,7 @@ import "react-date-range/dist/theme/default.css";
 import { enUS } from "date-fns/locale";
 import { format } from "date-fns";
 import { useLocation, useSearchParams, Link } from "react-router-dom";
-export default function UniclubEventPage({ navbarHeight }) {
+export default function SubgroupEvent({ navbarHeight }) {
   const { state } = useLocation();
   const [params] = useSearchParams();
   const groupId = state?.groupId || params.get("groupId");
@@ -33,7 +33,7 @@ export default function UniclubEventPage({ navbarHeight }) {
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
-  const [paymentlist, setPaymentList] = useState([ { name: 'General', id: 'General' },
+  const [paymentlist, setPaymentList] = useState([  { name: 'General', id: 'General' },
     { name: 'VIP', id: 'VIP' },]);
   const [category, setCategory] = useState([]);
   const [list, setList] = useState([]);
@@ -133,7 +133,7 @@ export default function UniclubEventPage({ navbarHeight }) {
   useEffect(() => {
     (async () => {
       try {
-        const qB = query(collection(db, "discovereventbookings"));
+        const qB = query(collection(db, "subgroupeventbookings"));
         const snap = await getDocs(qB);
         const grouped = {};
         snap.docs.forEach((d) => {
@@ -153,7 +153,7 @@ export default function UniclubEventPage({ navbarHeight }) {
   const getList = async () => {
     setIsLoading(true);
     try {
-      const qEvents = query(collection(db, "discoverevents"),where("groupid", "==", groupId));
+      const qEvents = query(collection(db, "subgroupevents"),where("groupid", "==", groupId));
       const snap = await getDocs(qEvents);
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       docs.sort((a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0));
@@ -228,7 +228,7 @@ export default function UniclubEventPage({ navbarHeight }) {
       let uploaded = [];
       if (form.posterFiles?.length) {
         const uploads = form.posterFiles.map(async (file) => {
-          const path = uniquePath(`public_event_posters/${emp.id}/${form.eventName || "discoverevents"}`, file);
+          const path = uniquePath(`public_event_posters/${emp.id}/${form.eventName || "subgroupevents"}`, file);
           const sRef = storageRef(storage, path);
           await uploadBytes(sRef, file);
           const url = await getDownloadURL(sRef);
@@ -257,13 +257,13 @@ export default function UniclubEventPage({ navbarHeight }) {
       delete eventData.posterFiles;
 
       if (editingData) {
-        const ref = doc(db, "discoverevents", editingData.id);
+        const ref = doc(db, "subgroupevents", editingData.id);
         const snap = await getDoc(ref);
         if (!snap.exists()) return toast.warning("Event does not exist! Cannot update.");
         await updateDoc(ref, eventData);
         toast.success("Event updated successfully");
       } else {
-        await addDoc(collection(db, "discoverevents"), eventData);
+        await addDoc(collection(db, "subgroupevents"), eventData);
         toast.success("Event created successfully");
       }
       await getList();
@@ -279,7 +279,7 @@ export default function UniclubEventPage({ navbarHeight }) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "discoverevents", deleteData.id));
+      await deleteDoc(doc(db, "subgroupevents", deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (e) {
@@ -349,7 +349,7 @@ export default function UniclubEventPage({ navbarHeight }) {
     const batch = writeBatch(db);
     pinned.forEach((ev, i) => {
       const order = i + 1;
-      if (ev.pinnedOrder !== order) batch.update(doc(db, "discoverevents", ev.id), { pinnedOrder: order });
+      if (ev.pinnedOrder !== order) batch.update(doc(db, "subgroupevents", ev.id), { pinnedOrder: order });
     });
     await batch.commit();
     await getList();
@@ -363,8 +363,8 @@ export default function UniclubEventPage({ navbarHeight }) {
     const a = pinned[idx];
     const b = pinned[swapIdx];
     const batch = writeBatch(db);
-    batch.update(doc(db, "discoverevents", a.id), { pinnedOrder: b.pinnedOrder });
-    batch.update(doc(db, "discoverevents", b.id), { pinnedOrder: a.pinnedOrder });
+    batch.update(doc(db, "subgroupevents", a.id), { pinnedOrder: b.pinnedOrder });
+    batch.update(doc(db, "subgroupevents", b.id), { pinnedOrder: a.pinnedOrder });
     await batch.commit();
     await getList();
   };
@@ -377,14 +377,14 @@ export default function UniclubEventPage({ navbarHeight }) {
     const sequence = [...pinned];
     sequence.splice(newOrder - 1, 0, { ...item });
     const batch = writeBatch(db);
-    sequence.forEach((ev, i) => batch.update(doc(db, "discoverevents", ev.id), { pinnedOrder: i + 1 }));
+    sequence.forEach((ev, i) => batch.update(doc(db, "subgroupevents", ev.id), { pinnedOrder: i + 1 }));
     await batch.commit();
     await getList();
   };
 
   const togglePin = async (item, makePinned) => {
     try {
-      const ref = doc(db, "discoverevents", item.id);
+      const ref = doc(db, "subgroupevents", item.id);
       if (makePinned) {
         const currentPinned = getPinnedSorted();
         const nextOrder = (currentPinned[currentPinned.length - 1]?.pinnedOrder || 0) + 1;
