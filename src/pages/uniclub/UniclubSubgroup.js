@@ -90,7 +90,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
 
   // basePath (nested under parent groupId if present)
   const basePath = useMemo(
-    () => (groupId ? `uniclubsubgroup/${groupId}` : `uniclubsubgroup`),
+    () => (groupId ? `uniclubsubgroup` : `uniclubsubgroup`),
     [groupId]
   );
 
@@ -254,8 +254,8 @@ export default function UniclubSubgroup({ navbarHeight }) {
           }
         })
       );
-
-      setList(withCounts);
+      const filtered = withCounts.filter(x => String(x.parentGroupId || "") === String(groupId));
+      setList(filtered);
       setIsLoading(false);
     };
     onValue(ref, handler, { onlyOnce: false });
@@ -390,6 +390,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
       };
 
       const payload = {
+        parentGroupId: groupId,
         title: form.title.trim(),
         location: form.location.trim(),
         desc: form.desc.trim(),
@@ -653,12 +654,11 @@ export default function UniclubSubgroup({ navbarHeight }) {
                   const start = item.startAtMs || item.startAt;
                   const end = item.endAtMs || item.endAt;
                   const whenLabel = start
-                    ? `${dayjs(start).format("DD MMM, h:mm A")}${
-                        end ? ` – ${dayjs(end).format("DD MMM, h:mm A")}` : ""
-                      }`
+                    ? `${dayjs(start).format("DD MMM, h:mm A")}${end ? ` – ${dayjs(end).format("DD MMM, h:mm A")}` : ""
+                    }`
                     : item.date || item.time
-                    ? `${item.date || ""}${item.time ? ` • ${item.time}${item.endAt ? ` – ${item.endAt}` : ""}` : ""}`
-                    : "-";
+                      ? `${item.date || ""}${item.time ? ` • ${item.time}${item.endAt ? ` – ${item.endAt}` : ""}` : ""}`
+                      : "-";
 
                   return (
                     <tr key={item.id}>
@@ -712,8 +712,8 @@ export default function UniclubSubgroup({ navbarHeight }) {
                           onClick={() =>
                             navigate("/subgroupannouncement", {
                               state: {
-                                groupId,                // parent
-                                subgroupId: item.id,    // this subgroup
+                                groupId: item.id,
+                                subgroupId: item.id,
                                 groupName: item.title || "Club",
                               },
                             })
@@ -730,7 +730,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                           className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
                           onClick={() =>
                             navigate("/subgroupevent", {
-                              state: { groupId, subgroupId: item.id, groupName: item.title || "Club" },
+                              state: { groupId: item.id, subgroupId: item.id, groupName: item.title || "Club" },
                             })
                           }
                           title="Events"
@@ -745,7 +745,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                           className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
                           onClick={() =>
                             navigate("/subgroupeventbooking", {
-                              state: { groupId, subgroupId: item.id, groupName: item.title || "Club" },
+                              state: { groupId: item.id, subgroupId: item.id, groupName: item.title || "Club" },
                             })
                           }
                           title="Event Bookings"
@@ -1354,9 +1354,8 @@ export default function UniclubSubgroup({ navbarHeight }) {
                       </div>
                     </div>
                     <span
-                      className={`text-xs px-2 py-0.5 rounded ${
-                        m.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                      }`}
+                      className={`text-xs px-2 py-0.5 rounded ${m.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                        }`}
                     >
                       {m.status || "active"}
                     </span>
