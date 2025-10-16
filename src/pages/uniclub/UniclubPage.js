@@ -1066,6 +1066,7 @@ export default function UniclubPage({ navbarHeight }) {
                           const ms = e.target.value ? new Date(e.target.value).getTime() : 0;
                           setForm((p) => ({ ...p, memberValidFromMs: ms }));
                         }}
+                        required
                       />
                     </div>
                     <div>
@@ -1078,6 +1079,7 @@ export default function UniclubPage({ navbarHeight }) {
                           const ms = e.target.value ? new Date(e.target.value).getTime() : 0;
                           setForm((p) => ({ ...p, memberValidToMs: ms }));
                         }}
+                        required
                       />
                     </div>
                   </div>

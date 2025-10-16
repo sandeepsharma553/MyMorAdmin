@@ -939,7 +939,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                 </section>
 
                 {/* Category */}
-                <section className="space-y-2">
+                {/* <section className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">Category</label>
                   <select
                     name="category"
@@ -955,7 +955,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                       </option>
                     ))}
                   </select>
-                </section>
+                </section> */}
 
                 {/* Club Meta */}
                 <section className="space-y-4">
@@ -1104,6 +1104,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                           const ms = e.target.value ? new Date(e.target.value).getTime() : 0;
                           setForm((p) => ({ ...p, memberValidFromMs: ms }));
                         }}
+                        required
                       />
                     </div>
                     <div>
@@ -1116,6 +1117,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                           const ms = e.target.value ? new Date(e.target.value).getTime() : 0;
                           setForm((p) => ({ ...p, memberValidToMs: ms }));
                         }}
+                        required
                       />
                     </div>
                   </div>
