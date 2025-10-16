@@ -48,6 +48,7 @@ const DEFAULT_FEATURES = {
   uniclubannouncement: false,
   uniclubevent: false,
   uniclubeventbooking: false,
+  uniclubsubgroup: false,
 };
 
 const initialForm = {

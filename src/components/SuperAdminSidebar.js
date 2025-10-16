@@ -11,7 +11,8 @@ import { useSelector } from "react-redux";
 const SECTIONS = [
     { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
     { key: "employee", label: "Hostel Employee", Icon: UserPlus },
-    { key: "uniclub", label: "Uni Club Employee", Icon: UserPlus },
+    { key: "uniclubemp", label: "Uni Club Employee", Icon: UserPlus },
+    { key: "uniclub", label: "UniClub", Icon: UserPlus },
     { key: "university", label: "University", Icon: GraduationCap },
     { key: "hostel", label: "Hostel", Icon: Hotel },
     { key: "event", label: "Event", Icon: Calendar },

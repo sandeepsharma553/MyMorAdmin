@@ -22,8 +22,9 @@ import "react-date-range/dist/styles.css";
 import "react-date-range/dist/theme/default.css";
 import { enUS } from "date-fns/locale";
 import { format } from "date-fns";
-import { useLocation, useSearchParams, Link } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
 export default function SubgroupEvent({ navbarHeight }) {
+  const navigate = useNavigate();
   const { state } = useLocation();
   const [params] = useSearchParams();
   const groupId = state?.groupId || params.get("groupId");
@@ -33,8 +34,8 @@ export default function SubgroupEvent({ navbarHeight }) {
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
-  const [paymentlist, setPaymentList] = useState([  { name: 'General', id: 'General' },
-    { name: 'VIP', id: 'VIP' },]);
+  const [paymentlist, setPaymentList] = useState([{ name: 'General', id: 'General' },
+  { name: 'VIP', id: 'VIP' },]);
   const [category, setCategory] = useState([]);
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -153,7 +154,7 @@ export default function SubgroupEvent({ navbarHeight }) {
   const getList = async () => {
     setIsLoading(true);
     try {
-      const qEvents = query(collection(db, "subgroupevents"),where("groupid", "==", groupId));
+      const qEvents = query(collection(db, "subgroupevents"), where("groupid", "==", groupId));
       const snap = await getDocs(qEvents);
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       docs.sort((a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0));
@@ -512,6 +513,15 @@ export default function SubgroupEvent({ navbarHeight }) {
 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
+      <div className="flex justify-between items-center mb-3">
+        <button
+          onClick={() => navigate("/uniclubsubgroup")}
+          className="flex items-center gap-2 text-gray-700 hover:text-black"
+        >
+          <span className="text-xl">←</span>
+          <span className="text-lg font-semibold">Back Sub Group</span>
+        </button>
+      </div>
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Event</h1>
         <button
@@ -861,7 +871,7 @@ export default function SubgroupEvent({ navbarHeight }) {
 
                 <label className="block font-medium">Description</label>
                 <EditorPro value={form.eventDescriptionHtml} onChange={(html) => setForm((f) => ({ ...f, eventDescriptionHtml: html }))} placeholder="Describe your event…" />
-{/* 
+                {/* 
                 <select name="category" value={form.category} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required>
                   <option value="">Select Category</option>
                   {category?.map((item) => (
@@ -913,7 +923,7 @@ export default function SubgroupEvent({ navbarHeight }) {
 
                 <input name="locationName" placeholder="Location Name" value={form.locationName} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                 <input name="address" placeholder="Address / Room" value={form.address} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-{/* 
+                {/* 
                 <div className="relative">
                   <input name="mapLocation" readOnly placeholder="Select on map" value={form.mapLocation} onClick={() => setShowMapModal(true)} className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer" />
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />

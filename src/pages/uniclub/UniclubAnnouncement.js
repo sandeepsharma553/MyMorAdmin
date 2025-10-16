@@ -18,8 +18,11 @@ export default function UniclubAnnouncementPage(props) {
   const { navbarHeight } = props;
   const { state } = useLocation();
   const [params] = useSearchParams();
-  const groupId = state?.groupId || params.get("groupId");
-  const groupName = state?.groupName || params.get("groupName") || "Club";
+  const uid = useSelector((state) => state.auth.user.uid);
+  const user = useSelector((state) => state.auth.user);
+  const emp = useSelector((state) => state.auth.employee);
+  const groupId = emp.uniclubid;
+  const groupName = emp.uniclub;
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
@@ -30,9 +33,7 @@ export default function UniclubAnnouncementPage(props) {
   const [currentPage, setCurrentPage] = useState(1);
   const [fileName, setFileName] = useState('No file chosen');
 
-  const uid = useSelector((state) => state.auth.user.uid);
-  const user = useSelector((state) => state.auth.user);
-  const emp = useSelector((state) => state.auth.employee);
+ 
 
   const [visiblePoll, setVisiblePoll] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());

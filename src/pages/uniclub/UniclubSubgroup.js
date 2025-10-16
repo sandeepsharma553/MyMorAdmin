@@ -85,9 +85,13 @@ const renderAnswers = (ans) => {
 export default function UniclubSubgroup({ navbarHeight }) {
   const { state } = useLocation();
   const [params] = useSearchParams();
-  const groupId = state?.groupId || params.get("groupId");
-  const groupName = state?.groupName || params.get("groupName") || "Club";
-
+  const uid = useSelector((s) => s.auth?.user?.uid);
+  const emp = useSelector((s) => s.auth?.employee);
+  const user = useSelector((s) => s.auth?.user);
+  // const groupId = state?.groupId || params.get("groupId");
+  // const groupName = state?.groupName || params.get("groupName") || "Club";
+  const groupId = emp.uniclubid;
+  const groupName = emp.uniclub;
   // basePath (nested under parent groupId if present)
   const basePath = useMemo(
     () => (groupId ? `uniclubsubgroup` : `uniclubsubgroup`),
@@ -120,7 +124,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
 
   // Sorting + Filters
   const [sortConfig, setSortConfig] = useState({ key: "title", direction: "asc" });
-  const [filters, setFilters] = useState({ title: "" });
+  const [filters, setFilters] = useState({ title: "", desc: "" });
   const debounceRef = useRef(null);
   const setFilterDebounced = (field, value) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -136,9 +140,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
     );
 
   // Auth
-  const uid = useSelector((s) => s.auth?.user?.uid);
-  const emp = useSelector((s) => s.auth?.employee);
-  const user = useSelector((s) => s.auth?.user);
+
 
   // File input
   const [fileName, setFileName] = useState("No file chosen");
@@ -543,7 +545,8 @@ export default function UniclubSubgroup({ navbarHeight }) {
   /* ---------- Filter + Sort + Paginate ---------- */
   const filteredData = list.filter((g) => {
     const titleOK = !filters.title || (g.title || "").toLowerCase().includes(filters.title.toLowerCase());
-    return titleOK;
+    const descOK = !filters.desc || (g.desc || "").toLowerCase().includes(filters.desc.toLowerCase());
+    return titleOK && descOK;
   });
 
   const sortedData = [...filteredData].sort((a, b) => {
@@ -590,9 +593,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
               <tr>
                 {[
                   { key: "title", label: "Title" },
-                  { key: "location", label: "Location" },
-                  { key: "when", label: "When", sortable: false },
+                  // { key: "location", label: "Location" },
                   { key: "desc", label: "Description" },
+                  { key: "when", label: "When", sortable: false },
                   { key: "requests", label: "Requests", sortable: false },
                   { key: "membersCol", label: "Members", sortable: false },
                   { key: "announcementCol", label: "Announcement", sortable: false },
@@ -630,8 +633,15 @@ export default function UniclubSubgroup({ navbarHeight }) {
                     onChange={(e) => setFilterDebounced("title", e.target.value)}
                   />
                 </th>
-                <th className="px-6 pb-3" />
-                <th className="px-6 pb-3" />
+                {/* <th className="px-6 pb-3" /> */}
+                <th className="px-6 pb-3">
+                  <input
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    placeholder="Search description"
+                    defaultValue={filters.desc}
+                    onChange={(e) => setFilterDebounced("desc", e.target.value)}
+                  />
+                </th>
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
@@ -663,52 +673,65 @@ export default function UniclubSubgroup({ navbarHeight }) {
                   return (
                     <tr key={item.id}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.location || "-"}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{whenLabel}</td>
+                      {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.location || "-"}</td> */}
                       <td className="px-6 py-4 text-sm text-gray-500 whitespace-normal break-words max-w-xs">
                         {item.desc}
                       </td>
 
-                      {/* Requests count + modal trigger */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{whenLabel}</td>
+
+
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button
-                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
-                          onClick={() => {
-                            setActiveClubId(item.id);
-                            setActiveClubTitle(item.title || "Club");
-                            setReqModalOpen(true);
-                          }}
-                          title="View join requests"
-                        >
-                          <span>View</span>
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200">
+
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                             {item.requestsCount ?? 0}
                           </span>
-                        </button>
+                          {item.requestsCount > 0 && (
+                            <button
+                              type="button"
+                              className="text-blue-600 hover:underline"
+                              onClick={() => {
+                                setActiveClubId(item.id);
+                                setActiveClubTitle(item.title || "Club");
+                                setReqModalOpen(true);
+                              }}
+                              title="Requests"
+                            >
+                              View
+                            </button>
+                          )}
+                        </div>
                       </td>
 
-                      {/* Members count + modal trigger */}
+
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button
-                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
-                          onClick={() => {
-                            setActiveClubId(item.id);
-                            setActiveClubTitle(item.title || "Club");
-                            setMemModalOpen(true);
-                          }}
-                          title="View members"
-                        >
-                          <span>View</span>
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200">
+
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                             {item.membersCount ?? 0}
                           </span>
-                        </button>
+                          {item.membersCount > 0 && (
+                            <button
+                              type="button"
+                              className="text-blue-600 hover:underline"
+                              onClick={() => {
+                                setActiveClubId(item.id);
+                                setActiveClubTitle(item.title || "Club");
+                                setMemModalOpen(true);
+                              }}
+                              title="Members"
+                            >
+                              View
+                            </button>
+                          )}
+                        </div>
                       </td>
 
                       {/* Announcements */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
-                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          className="text-blue-600 hover:underline"
                           onClick={() =>
                             navigate("/subgroupannouncement", {
                               state: {
@@ -720,14 +743,15 @@ export default function UniclubSubgroup({ navbarHeight }) {
                           }
                           title="Announcements"
                         >
-                          <span>Announcements</span>
+                          <span> + Add</span>
                         </button>
+
                       </td>
 
                       {/* Events */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
-                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          className="text-blue-600 hover:underline"
                           onClick={() =>
                             navigate("/subgroupevent", {
                               state: { groupId: item.id, subgroupId: item.id, groupName: item.title || "Club" },
@@ -735,14 +759,14 @@ export default function UniclubSubgroup({ navbarHeight }) {
                           }
                           title="Events"
                         >
-                          <span>Events</span>
+                          <span>+ Add</span>
                         </button>
                       </td>
 
                       {/* Event Bookings */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
-                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          className="text-blue-600 hover:underline"
                           onClick={() =>
                             navigate("/subgroupeventbooking", {
                               state: { groupId: item.id, subgroupId: item.id, groupName: item.title || "Club" },
@@ -750,7 +774,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                           }
                           title="Event Bookings"
                         >
-                          <span>EventBooking</span>
+                          <span>View</span>
                         </button>
                       </td>
 

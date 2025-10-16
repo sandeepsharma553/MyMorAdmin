@@ -17,7 +17,7 @@ import {
   Bell,
   UserPlus,
   Settings as SettingsIcon,
-  HelpCircle,
+  HelpCircle,Handshake,Layers
 } from "lucide-react";
 import { useSelector } from "react-redux";
 
@@ -55,11 +55,12 @@ const SECTIONS = [
   { key: "eventbooking", label: "Event Booking", Icon: Calendar },
   { key: "deal", label: "Deals", Icon: Utensils },
   { key: "faq", label: "FAQs", Icon: HelpCircle },
-  { key: "uniclub", label: "Uniclub", Icon: UserPlus },
+  { key: "uniclub", label: "Uniclub", Icon: Handshake },
   { key: "uniclubstudent", label: "Student", Icon: UserPlus },
   { key: "uniclubannouncement", label: "Announcement", Icon: Bell },
   { key: "uniclubevent", label: "Event", Icon: Calendar },
   { key: "uniclubeventbooking", label: "Event Booking", Icon: Calendar },
+  { key: "uniclubsubgroup", label: "Sub Group", Icon: Layers },
   { key: "setting", label: "Setting", Icon: SettingsIcon },
   
 ];

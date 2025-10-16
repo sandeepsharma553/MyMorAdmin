@@ -10,7 +10,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../../firebase";
-import { useLocation, useSearchParams, Link } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
 // Small, reusable pager
 const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -39,22 +39,20 @@ const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
         </span>
         <div className="flex items-center gap-2">
           <button
-            className={`px-3 py-1 rounded border ${
-              canPrev
+            className={`px-3 py-1 rounded border ${canPrev
                 ? "bg-white hover:bg-gray-50"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
-            }`}
+              }`}
             onClick={() => canPrev && setPage((p) => p - 1)}
             disabled={!canPrev}
           >
             Prev
           </button>
           <button
-            className={`px-3 py-1 rounded border ${
-              canNext
+            className={`px-3 py-1 rounded border ${canNext
                 ? "bg-white hover:bg-gray-50"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
-            }`}
+              }`}
             onClick={() => canNext && setPage((p) => p + 1)}
             disabled={!canNext}
           >
@@ -68,7 +66,7 @@ const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
 
 export default function SubgroupEventBooking() {
   const emp = useSelector((s) => s.auth.employee);
-
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [bookings, setBookings] = useState([]);
   const { state } = useLocation();
@@ -170,6 +168,15 @@ export default function SubgroupEventBooking() {
 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
+      <div className="flex justify-between items-center mb-3">
+        <button
+          onClick={() => navigate("/uniclubsubgroup")}
+          className="flex items-center gap-2 text-gray-700 hover:text-black"
+        >
+          <span className="text-xl">←</span>
+          <span className="text-lg font-semibold">Back Sub Group</span>
+        </button>
+      </div>
       <div className="flex justify-between items-center mb-3">
         <h1 className="text-2xl font-semibold">Event Bookings</h1>
       </div>
@@ -310,10 +317,10 @@ export default function SubgroupEventBooking() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         {b.timestamp
                           ? dayjs(
-                              typeof b.timestamp === "string"
-                                ? b.timestamp
-                                : toMillis(b.timestamp)
-                            ).format("MMM DD, YYYY hh:mm A")
+                            typeof b.timestamp === "string"
+                              ? b.timestamp
+                              : toMillis(b.timestamp)
+                          ).format("MMM DD, YYYY hh:mm A")
                           : "—"}
                       </td>
                     </tr>

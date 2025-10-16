@@ -26,8 +26,11 @@ import { useLocation, useSearchParams, Link } from "react-router-dom";
 export default function UniclubEventPage({ navbarHeight }) {
   const { state } = useLocation();
   const [params] = useSearchParams();
-  const groupId = state?.groupId || params.get("groupId");
-  const groupName = state?.groupName || params.get("groupName") || "Club";
+
+  const uid = useSelector((s) => s.auth.user.uid);
+  const emp = useSelector((s) => s.auth.employee);
+  const groupId = emp.uniclubid;
+  const groupName = emp.uniclub;
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
@@ -58,8 +61,6 @@ export default function UniclubEventPage({ navbarHeight }) {
   const onSort = (key) =>
     setSortConfig((p) => (p.key === key ? { key, direction: p.direction === "asc" ? "desc" : "asc" } : { key, direction: "asc" }));
 
-  const uid = useSelector((s) => s.auth.user.uid);
-  const emp = useSelector((s) => s.auth.employee);
 
   const initialFormData = {
     id: 0,

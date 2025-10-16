@@ -12,15 +12,14 @@ import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import { enUS } from 'date-fns/locale';
 import { format } from 'date-fns';
-import { useLocation, useSearchParams, Link } from "react-router-dom";
-
+import { useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
 export default function SubgroupAnnouncement(props) {
   const { navbarHeight } = props;
   const { state } = useLocation();
   const [params] = useSearchParams();
   const groupId = state?.groupId || params.get("groupId");
   const groupName = state?.groupName || params.get("groupName") || "Club";
-
+  const navigate = useNavigate();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
@@ -574,7 +573,15 @@ export default function SubgroupAnnouncement(props) {
           </div>
         </div>
       )}
-
+      <div className="flex justify-between items-center mb-3">
+        <button
+          onClick={() => navigate("/uniclubsubgroup")}
+          className="flex items-center gap-2 text-gray-700 hover:text-black"
+        >
+          <span className="text-xl">←</span>
+          <span className="text-lg font-semibold">Back Sub Group</span>
+        </button>
+      </div>
       <div className="flex justify-between items-center mb-3">
         <h1 className="text-2xl font-semibold">Announcements — {groupName}</h1>
         <button

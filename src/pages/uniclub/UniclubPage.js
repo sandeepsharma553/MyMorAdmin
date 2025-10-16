@@ -10,7 +10,7 @@ import {
   remove,
   off,
   serverTimestamp,
-  get as rtdbGet,            // ✅ added to fetch counts for list rows
+  get as rtdbGet,  orderByChild, equalTo, query as rtdbQuery
 } from "firebase/database";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useSelector } from "react-redux";
@@ -131,7 +131,7 @@ export default function UniclubPage({ navbarHeight }) {
   const uid = useSelector((s) => s.auth?.user?.uid);
   const emp = useSelector((s) => s.auth?.employee);
   const user = useSelector((s) => s.auth?.user);
-
+ console.log("emp", emp);
   // File input
   const [fileName, setFileName] = useState("No file chosen");
   const [previewUrl, setPreviewUrl] = useState("");
@@ -217,7 +217,7 @@ export default function UniclubPage({ navbarHeight }) {
   /* ---------- Data IO ---------- */
   const getList = () => {
     setIsLoading(true);
-    const ref = dbRef(database, "uniclubs/");
+    const ref = rtdbQuery(dbRef(database, "uniclubs"), orderByChild("universityid"), equalTo(emp.universityId));
     const handler = async (snap) => {
       const val = snap.val();
       const arr = val ? Object.entries(val).map(([id, v]) => ({ id, ...v })) : [];
@@ -267,7 +267,7 @@ export default function UniclubPage({ navbarHeight }) {
   const getCategory = async () => {
     try {
       if (!uid) return setCategory([]);
-      const qCat = query(collection(db, "uniclubcategory"), where("uid", "==", uid));
+      const qCat = query(collection(db, "discovercategory"));
       const snap = await getDocs(qCat);
       setCategory(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (e) {
@@ -543,7 +543,7 @@ export default function UniclubPage({ navbarHeight }) {
       {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Uniclub</h1>
-        <button
+        {/* <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
@@ -554,7 +554,7 @@ export default function UniclubPage({ navbarHeight }) {
           }}
         >
           + Add uniclub
-        </button>
+        </button> */}
       </div>
 
       <div className="overflow-x-auto bg-white rounded shadow no-scrollbar">
@@ -574,10 +574,10 @@ export default function UniclubPage({ navbarHeight }) {
                   // 🆕 two new columns for counts
                   { key: "requests", label: "Requests", sortable: false },
                   { key: "members", label: "Members", sortable: false },
-                  { key: "announcement", label: "Announcement", sortable: false },
-                  { key: "events", label: "Events", sortable: false },
-                  { key: "eventbookings", label: "EventBookings", sortable: false },
-                  { key: "subgroup", label: "Sub Group", sortable: false },
+                  // { key: "announcement", label: "Announcement", sortable: false },
+                  // { key: "events", label: "Events", sortable: false },
+                  // { key: "eventbookings", label: "EventBookings", sortable: false },
+                  // { key: "subgroup", label: "Sub Group", sortable: false },
                   { key: "actions", label: "Action", sortable: false },
                 ].map((col) => (
                   <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
@@ -616,9 +616,9 @@ export default function UniclubPage({ navbarHeight }) {
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
+                {/* <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
-                <th className="px-6 pb-3" />
-                <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" /> */}
                 <th className="px-6 pb-3" />
               </tr>
             </thead>
@@ -685,7 +685,7 @@ export default function UniclubPage({ navbarHeight }) {
                           </span>
                         </button>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {/* <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
                           onClick={() =>
@@ -739,7 +739,7 @@ export default function UniclubPage({ navbarHeight }) {
                           <span>Sub Group</span>
 
                         </button>
-                      </td>
+                      </td> */}
 
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div className="flex items-center gap-3">
@@ -786,7 +786,7 @@ export default function UniclubPage({ navbarHeight }) {
                           >
                             Edit
                           </button>
-                          <button
+                          {/* <button
                             className="text-red-600 hover:underline"
                             onClick={() => {
                               setDelete(item);
@@ -794,7 +794,7 @@ export default function UniclubPage({ navbarHeight }) {
                             }}
                           >
                             Delete
-                          </button>
+                          </button> */}
                         </div>
                       </td>
                     </tr>

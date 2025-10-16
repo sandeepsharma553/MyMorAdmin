@@ -346,13 +346,13 @@ const UniclubSetting = () => {
 
 
 
-      <SimpleCrudSection
+      {/* <SimpleCrudSection
         title="Categories"
         collectionName="uniclubcategory"
         addButtonLabel="+ Add Category"
         duplicateWhere={(uid) => [where("uid", "==", uid)]}
       />
-      <br />
+      <br /> */}
       <SimpleCrudSection
         title="Role"
         collectionName="uniclubrole"
