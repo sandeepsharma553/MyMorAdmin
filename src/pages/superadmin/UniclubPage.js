@@ -184,7 +184,7 @@ export default function UniclubPage({ navbarHeight }) {
     const handler = async (snap) => {
       const val = snap.val();
       const arr = val ? Object.entries(val).map(([id, v]) => ({ id, ...v })) : [];
-      console.log(arr);
+      console.log(val);
       setList(arr);
       setIsLoading(false);
     };

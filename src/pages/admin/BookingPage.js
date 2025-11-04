@@ -423,7 +423,7 @@ export default function BookingPage({ navbarHeight }) {
     <main className="flex-1 p-1 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       {/* Top bar */}
       <div className="flex flex-wrap gap-2 justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Booking</h1>
+        <h1 className="text-2xl font-semibold">Booking (When a notification appears, the app page should refresh.)</h1>
         <div className="flex gap-2">
           <button className="px-4 py-2 bg-black text-white rounded hover:bg-black" onClick={() => setListModelOpen(true)}>Manage Room Types</button>
           <button className="px-4 py-2 bg-black text-white rounded hover:bg-black" onClick={() => { setEditing(null); setForm(initialForm); setModalOpen(true); }}>

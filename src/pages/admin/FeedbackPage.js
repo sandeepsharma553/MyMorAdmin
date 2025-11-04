@@ -571,7 +571,7 @@ const getList = async () => {
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Feedback</h1>
+        <h1 className="text-2xl font-semibold">Feedback </h1>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setPrintModalOpen(true)}
@@ -586,6 +586,9 @@ const getList = async () => {
             + Add
           </button>
         </div>
+      </div>
+      <div>
+      (When notification appears, refresh page)
       </div>
 
       {/* Table */}
@@ -684,7 +687,7 @@ const getList = async () => {
                   const unread = getUnreadCount(item);
                   return (
                     <tr key={item.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.isreport === true ? item.username:'Anonymous'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.isreport === false ? item.username:'Anonymous'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.incidenttype}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {fmtDate(item.datetime)}

@@ -76,6 +76,7 @@ export default function TutorialSchedulePage(props) {
         return (a.time || "").localeCompare(b.time || "");
       });
       setList(documents);
+      console.log(documents)
       setSelectedIds(new Set());
       setCurrentPage(1);
     } catch (e) {
@@ -111,6 +112,7 @@ export default function TutorialSchedulePage(props) {
           hostelid: emp.hostelid,
           updatedBy: uid,
           updatedDate: new Date(),
+          isPrivate:false
         });
         toast.success("Successfully updated");
       } else {
@@ -125,6 +127,7 @@ export default function TutorialSchedulePage(props) {
           hostelid: emp.hostelid,
           createdBy: uid,
           createdDate: new Date(),
+          isPrivate:false
         });
         toast.success("Successfully saved");
       }
@@ -179,6 +182,7 @@ export default function TutorialSchedulePage(props) {
           date,
           empname: row["Name"] || "",
           hostelid: emp.hostelid,
+          isPrivate:false
         };
       });
 

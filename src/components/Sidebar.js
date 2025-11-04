@@ -230,6 +230,22 @@ function Sidebar({ onSectionClick, isLoading }) {
     statusIn: ["Pending"],
     preferZeroIfNoLastOpened: false,
   });
+  const bookingBadge = useBadgeCount({
+    adminUid,
+    menuKey: "bookingroom",
+    collName: "bookingroom",
+    hostelid,
+    statusIn: ["Pending"],
+    preferZeroIfNoLastOpened: false,
+  });
+  const eventBadge = useBadgeCount({
+    adminUid,
+    menuKey: "eventbooking",
+    collName: "eventbookings",
+    hostelid,
+    statusIn: ["Pending"],
+    preferZeroIfNoLastOpened: false,
+  });
 
   const resetMenuKey = async (menuKey) => {
     if (!adminUid) return;
@@ -291,6 +307,8 @@ function Sidebar({ onSectionClick, isLoading }) {
             if (key === "maintenance") badgeValue = maintenanceBadge;
             if (key === "reportincident") badgeValue = reportBadge;
             if (key === "feedback") badgeValue = feedbackBadge;
+            if (key === "bookingroom") badgeValue = bookingBadge;
+            if (key === "eventbooking") badgeValue = eventBadge;
 
             return (
               <button key={key} onClick={() => handleClick(key)} className={cls}>

@@ -800,7 +800,9 @@ export default function MaintenancePage(props) {
           </button>
         </div>
       </div>
-
+      <div>
+      (When notification appears, refresh page)
+      </div>
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-center mb-2">
         <div className="bg-white rounded-xl shadow p-2"><div className="text-lg font-bold">{stats.total}</div><div className="text-gray-500 text-xs">Total</div></div>

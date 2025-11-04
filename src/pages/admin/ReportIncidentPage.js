@@ -586,6 +586,9 @@ const getList = async () => {
           </button>
         </div>
       </div>
+      <div>
+      (When notification appears, refresh page)
+      </div>
 
       {/* Table */}
       <div className="overflow-x-auto bg-white rounded shadow">
@@ -683,7 +686,7 @@ const getList = async () => {
                   const unread = getUnreadCount(item);
                   return (
                     <tr key={item.id}>
-                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.isreport === true ? item.username:'Anonymous'}</td>
+                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.isreport === false ? item.username:'Anonymous'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.incidenttype}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {fmtDate(item.datetime)}

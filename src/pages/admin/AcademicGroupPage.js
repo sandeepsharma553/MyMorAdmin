@@ -169,6 +169,7 @@ export default function AcademicGroupPage(props) {
               };
             })
         );
+        
         setList(arr);
       } else {
         setList([]);
@@ -195,7 +196,81 @@ export default function AcademicGroupPage(props) {
     }
   };
 
-  const handleAdd = async (e) => {
+const handleAdd = async (e) => {
+  e.preventDefault();
+  if (!form.title) return;
+
+  try {
+    if (form.id === 0 && !form.poster) {
+      toast.error("Please choose the file");
+      return;
+    }
+
+    // Upload new image if present
+    let posterUrl = form.posterUrl || "";
+    const isNewImage = form.poster instanceof File;
+    if (isNewImage) {
+      const storRef = storageRef(storage, `group_posters/${form.poster.name}`);
+      await uploadBytes(storRef, form.poster);
+      posterUrl = await getDownloadURL(storRef);
+    }
+
+    // ✅ WHITELISTED payload only (NO members, NO joinRequests, NO computed stuff)
+    const payload = {
+      title: form.title,
+      description: form.description,
+      category: form.category,
+      tags: form.tags || "",
+      type: form.type || "Popular",
+      groupType: form.groupType || "Public",
+      joinQuestions: form.joinQuestions || "",
+      restrictions: form.restrictions || "",
+      maxMembers: form.maxMembers || "",
+      postApproval: !!form.postApproval,
+      groupChat: form.groupChat !== false,
+      eventsEnabled: form.eventsEnabled !== false,
+      pollsEnabled: !!form.pollsEnabled,
+      resourcesEnabled: !!form.resourcesEnabled,
+      location: form.location || "",
+      campusSpecific: !!form.campusSpecific,
+      notifications: form.notifications !== false,
+      autoAlert: form.autoAlert !== false,
+      hostelid: emp.hostelid,
+      ...(posterUrl ? { posterUrl } : {}), // only set if present
+    };
+
+    if (editingData) {
+      // ✅ update only whitelisted fields
+      await update(dbRef(database, `groups/${form.id}`), {
+        ...payload,
+        // if you *really* want to change creator on edit (usually you shouldn't),
+        // include creatorId: uid, but I'd recommend NOT changing it.
+      });
+      toast.success("Group updated successfully!");
+    } else {
+      // Create
+      const newGroupRef = push(dbRef(database, "groups/"));
+      await set(newGroupRef, {
+        ...payload,
+        creatorId: uid,
+        createdAt: serverTimestamp(),
+        admins: { [uid]: true }, // optional
+      });
+      toast.success("Group created successfully");
+    }
+  } catch (error) {
+    console.error("Error saving group:", error);
+    toast.error("Failed to save group.");
+  }
+
+  getList();
+  setModalOpen(false);
+  setEditing(null);
+  setForm(initialForm);
+  setFileName("No file chosen");
+};
+
+  const handleAdd1 = async (e) => {
     e.preventDefault();
     if (!form.title) return;
 
@@ -480,9 +555,28 @@ export default function AcademicGroupPage(props) {
                               onClick={() => {
                                 setEditing(item);
                                 setForm({
-                                  ...initialForm,
-                                  ...item,
-                                  poster: null, // keep file input empty on edit
+                                  id: item.id,
+                                  title: item.title || "",
+                                  description: item.description || "",
+                                  category: item.category || "",
+                                  tags: item.tags || "",
+                                  type: item.type || "Popular",
+                                  groupType: item.groupType || "Public",
+                                  joinQuestions: item.joinQuestions || "",
+                                  restrictions: item.restrictions || "",
+                                  maxMembers: item.maxMembers || "",
+                                  postApproval: !!item.postApproval,
+                                  groupChat: item.groupChat !== false,
+                                  eventsEnabled: item.eventsEnabled !== false,
+                                  pollsEnabled: !!item.pollsEnabled,
+                                  resourcesEnabled: !!item.resourcesEnabled,
+                                  location: item.location || "",
+                                  campusSpecific: !!item.campusSpecific,
+                                  notifications: item.notifications !== false,
+                                  autoAlert: item.autoAlert !== false,
+                                  hostelid: item.hostelid || emp.hostelid,
+                                  poster: null, // keep file input empty
+                                  posterUrl: item.posterUrl || "",
                                 });
                                 setModalOpen(true);
                               }}
