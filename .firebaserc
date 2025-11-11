@@ -7,12 +7,16 @@
   "targets": {
     "mymor-development": {
       "hosting": {
-        "dev": ["mymor-development"]
+        "dev": [
+          "mymor-development"
+        ]
       }
     },
     "mymor-one": {
       "hosting": {
-        "prod": ["mymor-one"]
+        "prod": [
+          "mymor-one"
+        ]
       }
     }
   },
