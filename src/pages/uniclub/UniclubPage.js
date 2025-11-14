@@ -216,13 +216,32 @@ export default function UniclubPage({ navbarHeight }) {
 
   /* ---------- Data IO ---------- */
   const getList = () => {
+    if (!emp?.universityId) return;
+  
     setIsLoading(true);
-    const ref = rtdbQuery(dbRef(database, "uniclubs"), orderByChild("universityid"), equalTo(emp.universityId));
+  
+    const ref = rtdbQuery(
+      dbRef(database, "uniclubs"),
+      orderByChild("universityid"),
+      equalTo(emp.universityId)
+    );
+  
     const handler = async (snap) => {
       const val = snap.val();
-      const arr = val ? Object.entries(val).map(([id, v]) => ({ id, ...v })) : [];
-
-      // 🔢 Fetch counts for each row so we can show them in the list
+  
+      // 🔹 Pehle universityid == emp.universityId ke saare clubs milenge
+      const rawEntries = val ? Object.entries(val) : [];
+  
+      // 🔹 Ab yaha pe AND laga rahe hain: id === emp.uniclubid
+      const filteredEntries = rawEntries.filter(
+        ([id, v]) => id === emp.uniclubid
+        // agar id nahi, koi aur field match karni ho (jaise v.uid), to yaha change kar sakte ho
+        // ([id, v]) => v.uid === emp.uniclubid
+      );
+  
+      const arr = filteredEntries.map(([id, v]) => ({ id, ...v }));
+  
+      // 🔢 Counts add karna
       const withCounts = await Promise.all(
         arr.map(async (item) => {
           try {
@@ -238,14 +257,15 @@ export default function UniclubPage({ navbarHeight }) {
           }
         })
       );
-
+  
       setList(withCounts);
       setIsLoading(false);
     };
+  
     onValue(ref, handler, { onlyOnce: false });
     return () => off(ref, "value", handler);
   };
-
+  
   const getMembers = async () => {
     setIsLoading(true);
     try {
@@ -386,7 +406,6 @@ export default function UniclubPage({ navbarHeight }) {
         image: imageUrl,
         createdAt: editingData ? undefined : Date.now(),
         updatedAt: Date.now(),
-        creatorId: uid || "",
         uid: user.uid || "",
         displayName: user?.displayName || emp?.name || "",
         photoURL: user?.photoURL || emp?.imageUrl || "",
@@ -865,7 +884,7 @@ export default function UniclubPage({ navbarHeight }) {
 
                 {/* When */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">When</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Club vaild from</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
                       type="datetime-local"

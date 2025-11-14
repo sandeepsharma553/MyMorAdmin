@@ -169,6 +169,13 @@ export default function UniclubPage({ navbarHeight }) {
     role: "",
     universityid: '',
     university: '',
+    countryCode: "",
+    countryName: "",
+    stateCode: "",
+    stateName: "",
+    cityName: "",
+    lat: null,
+    lng: null,
   };
   const [form, setForm] = useState(initialForm);
   useEffect(() => {
@@ -321,6 +328,13 @@ export default function UniclubPage({ navbarHeight }) {
         settings: settingsPayload,
         universityid: form.universityid || "",
         university: form.university || "",
+        countryCode: form.countryCode || "",
+        countryName: form.countryName || "",
+        stateCode: form.stateCode || "",
+        stateName: form.stateName || "",
+        cityName: form.cityName || "",
+        lat: form.lat ?? null,
+        lng: form.lng ?? null,
       };
 
       Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
@@ -550,6 +564,9 @@ export default function UniclubPage({ navbarHeight }) {
                             className="text-blue-600 hover:underline"
                             onClick={() => {
                               setEditing(item);
+                              if (item.countryName) {
+                                fetchUniversitiesByCountry(item.countryName);
+                              }
                               setForm({
                                 ...initialForm,
                                 ...item,
@@ -581,7 +598,19 @@ export default function UniclubPage({ navbarHeight }) {
                                 memberId: "",
                                 roleId: "",
                                 role: "",
+                                universityid: item.universityid || "",
+                                university: item.university || "",
+                                countryCode: item.countryCode || "",
+                                countryName: item.countryName || "",
+                                stateCode: item.stateCode || "",
+                                stateName: item.stateName || "",
+                                cityName: item.cityName || "",
+                                lat: item.lat ?? null,
+                                lng: item.lng ?? null,
                               });
+                            setTimeout(() => {
+                              setSelectedUniversityId(item.universityid || "");
+                            }, 200);
                               setFileName("No file chosen");
                               setPreviewUrl(item.image || "");
                               setModalOpen(true);
@@ -589,6 +618,8 @@ export default function UniclubPage({ navbarHeight }) {
                           >
                             Edit
                           </button>
+
+
                           <button
                             className="text-red-600 hover:underline"
                             onClick={() => {
