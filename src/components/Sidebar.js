@@ -62,6 +62,7 @@ const SECTIONS = [
   { key: "uniclubeventbooking", label: "Event Booking", Icon: Calendar },
   { key: "uniclubsubgroup", label: "Sub Group", Icon: Layers },
   { key: "setting", label: "Setting", Icon: SettingsIcon },
+  { key: "contact", label: "Contact", Icon: HelpCircle },
   
 ];
 

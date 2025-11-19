@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import {
     LayoutDashboard, Calendar, Menu, BookOpen, BrushCleaning, Settings,
     Users, MessageSquareWarning, Handshake, Utensils, GraduationCap,MapIcon,
-    Hotel, Bell, UserPlus, SettingsIcon
+    Hotel, Bell, UserPlus, SettingsIcon,HelpCircle
 } from "lucide-react";
 import { useSelector } from "react-redux";
 const SECTIONS = [
@@ -19,6 +19,7 @@ const SECTIONS = [
     { key: "eventbooking", label: "Event Booking", Icon: Calendar },
     { key: "poi", label: "Poi", Icon: MapIcon },
     { key: "setting", label: "Setting", Icon: SettingsIcon },
+    { key: "contact", label: "Contact", Icon: HelpCircle },
 ];
 
 function SuperAdminSidebar({ onSectionClick, isLoading }) {

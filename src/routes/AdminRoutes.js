@@ -30,7 +30,7 @@ import UniclubSubgroup from "../pages/uniclub/UniclubSubgroup";
 import SubgroupEventBooking from "../pages/uniclub/SubgroupEventBooking";
 import SubgroupAnnouncement from "../pages/uniclub/SubgroupAnnouncement";
 import SubgroupEvent from "../pages/uniclub/SubgroupEvent";
-
+import ContactPage from "../pages/ContactPage";
 export default function AdminRoutes({ route }) {
 
   return (
@@ -68,6 +68,7 @@ export default function AdminRoutes({ route }) {
       <Route path="/subgroupevent" element={<SubgroupEvent />} />
       <Route path="/subgroupeventbooking" element={<SubgroupEventBooking />} />
       <Route path="/subgroupannouncement" element={<SubgroupAnnouncement />} />
+      <Route path="/contact" element={<ContactPage />} />
     </Routes>
   );
 }

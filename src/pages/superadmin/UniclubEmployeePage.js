@@ -109,6 +109,7 @@ export default function UniclubEmployeePage(props) {
     { key: "uniclub", label: "UniClub" },
     { key: "uniclubstudent", label: "UniclubStudent" },
     { key: "uniclubsubgroup", label: "UniclubSubgroup" },
+    { key: "contact", label: "Contact" },
   ];
 
   const FEATURE_TO_MENU_KEY = {
@@ -301,6 +302,7 @@ export default function UniclubEmployeePage(props) {
     const allowedKeys = [
       "dashboard",
       "setting",
+      'contact',
       ...Object.entries(features)
         .filter(([, enabled]) => enabled)
         .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
@@ -678,6 +680,7 @@ export default function UniclubEmployeePage(props) {
                           const allowedKeys = [
                             "dashboard",
                             "setting",
+                            'contact',
                             ...Object.entries(features)
                               .filter(([, enabled]) => enabled)
                               .map(([feature]) => FEATURE_TO_MENU_KEY[feature])

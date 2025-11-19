@@ -301,32 +301,84 @@ export default function EventPage({ navbarHeight }) {
   };
 
   // windows + classification
+  // function getEventWindowMillis(item) {
+  //   const s1 = toMillis(item.startDateTime);
+  //   const e1 = toMillis(item.endDateTime);
+  //   if (s1 || e1) return { start: s1 ?? e1, end: e1 ?? s1, source: "dateTime" };
+  //   const sd = toMillis(item?.date?.startDate);
+  //   const ed = toMillis(item?.date?.endDate);
+  //   if (sd || ed) {
+  //     const start = sd ? new Date(sd) : (ed ? new Date(ed) : null);
+  //     const end = ed ? new Date(ed) : (sd ? new Date(sd) : null);
+  //     if (start && end) {
+  //       const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0).getTime();
+  //       const dayEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999).getTime();
+  //       return { start: dayStart, end: dayEnd, source: "dateOnly" };
+  //     }
+  //   }
+  //   return { start: null, end: null, source: "none" };
+  // }
   function getEventWindowMillis(item) {
-    const s1 = toMillis(item.startDateTime);
-    const e1 = toMillis(item.endDateTime);
-    if (s1 || e1) return { start: s1 ?? e1, end: e1 ?? s1, source: "dateTime" };
-    const sd = toMillis(item?.date?.startDate);
-    const ed = toMillis(item?.date?.endDate);
-    if (sd || ed) {
-      const start = sd ? new Date(sd) : (ed ? new Date(ed) : null);
-      const end = ed ? new Date(ed) : (sd ? new Date(sd) : null);
-      if (start && end) {
-        const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0).getTime();
-        const dayEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999).getTime();
-        return { start: dayStart, end: dayEnd, source: "dateOnly" };
+    // 1) Prefer the date range (date.startDate / date.endDate)
+    const sdMs = toMillis(item?.date?.startDate);
+    const edMs = toMillis(item?.date?.endDate);
+  
+    if (sdMs || edMs) {
+      const startDate = sdMs ? new Date(sdMs) : (edMs ? new Date(edMs) : null);
+      const endDate   = edMs ? new Date(edMs) : (sdMs ? new Date(sdMs) : null);
+  
+      if (startDate && endDate) {
+        const dayStart = new Date(
+          startDate.getFullYear(),
+          startDate.getMonth(),
+          startDate.getDate(),
+          0, 0, 0, 0
+        ).getTime();
+  
+        const dayEnd = new Date(
+          endDate.getFullYear(),
+          endDate.getMonth(),
+          endDate.getDate(),
+          23, 59, 59, 999
+        ).getTime();
+  
+        return { start: dayStart, end: dayEnd, source: "dateRange" };
       }
     }
+  
+    // 2) Fallback to explicit start/end date-time
+    const s1 = toMillis(item.startDateTime);
+    const e1 = toMillis(item.endDateTime);
+  
+    if (s1 || e1) {
+      return {
+        start: s1 ?? e1,
+        end: e1 ?? s1,
+        source: "dateTime",
+      };
+    }
+  
+    // 3) No usable dates
     return { start: null, end: null, source: "none" };
   }
-
   function classifyEvent(item) {
     const now = Date.now();
     const { start, end } = getEventWindowMillis(item);
+  
     if (start == null && end == null) return "current";
     if (start != null && now < start) return "future";
     if (end != null && now > end) return "past";
     return "current";
   }
+  
+  // function classifyEvent(item) {
+  //   const now = Date.now();
+  //   const { start, end } = getEventWindowMillis(item);
+  //   if (start == null && end == null) return "current";
+  //   if (start != null && now < start) return "future";
+  //   if (end != null && now > end) return "past";
+  //   return "current";
+  // }
 
   // pin helpers
   const eNumber = (v) => (v === "" || v === null || v === undefined ? NaN : Number(v));

@@ -5,6 +5,7 @@ import { useSelector } from "react-redux";
 import LoginPage from "./auth/LoginPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import SupportPage from "./pages/SupportPage";
+import ContactPage from "./pages/ContactPage";
 import AccountDeletionPage from "./pages/admin/AccountDeletionPage";
 import Layout from './components/Layout';
 import SuperAdminLayout from './components/SuperAdminLayout';
@@ -109,6 +110,7 @@ function AppWrapper() {
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/support" element={<SupportPage />} />
       <Route path="/requestdelete" element={<AccountDeletionPage />} />
+      {/* <Route path="/contact" element={<ContactPage />} /> */}
 
       {!isLoggedIn && (
         <Route path="*" element={<LoginPage />} />
