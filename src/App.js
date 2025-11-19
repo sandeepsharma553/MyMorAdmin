@@ -27,83 +27,79 @@ function AppWrapper() {
     const timer = setTimeout(() => setChecking(false), 100);
     return () => clearTimeout(timer);
   }, []);
-  useEffect(() => {
-    if (!isLoggedIn || !user) return;
+  // useEffect(() => {
+  //   if (!isLoggedIn || !user) return;
 
-    const hostelid = employee?.hostelid || user?.hostelid; // pick whichever holds hostel id
-    const uid = user?.uid;
-    if (!hostelid || !uid) {
-      console.warn("Missing hostelid/uid; skip FCM setup");
-      return;
-    }
+  //   const hostelid = employee?.hostelid || user?.hostelid; // pick whichever holds hostel id
+  //   const uid = user?.uid;
+  //   if (!hostelid || !uid) {
+  //     return;
+  //   }
 
-    async function setupWebPush() {
-      try {
-        // 1) Register the service worker (must be at public root)
-         const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-       // const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { type: 'module' })
-        // .then((registration) => {
+  //   async function setupWebPush() {
+  //     try {
+  //       // 1) Register the service worker (must be at public root)
+  //        const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+  //      // const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { type: 'module' })
+  //       // .then((registration) => {
          
-        //     console.log('ServiceWorker registration successful with scope: ', registration.scope);
-        // })
-        // .catch((error) => {
-        //   alert(1)
-        //     console.error('ServiceWorker registration failed: ', error);
-        // });
-        // 2) Ask browser permission
-        const perm = await Notification.requestPermission();
-        if (perm !== 'granted') {
-          console.warn("Notification permission not granted");
-          return;
-        }
+  //       //     console.log('ServiceWorker registration successful with scope: ', registration.scope);
+  //       // })
+  //       // .catch((error) => {
+  //       //   alert(1)
+  //       //     console.error('ServiceWorker registration failed: ', error);
+  //       // });
+  //       // 2) Ask browser permission
+  //       const perm = await Notification.requestPermission();
+  //       if (perm !== 'granted') {
+  //         console.warn("Notification permission not granted");
+  //         return;
+  //       }
 
-        // 3) Get token
-        const token = await getToken(messaging, {
-          vapidKey: VAPID_KEY,
-          serviceWorkerRegistration: swReg,
-        });
+  //       // 3) Get token
+  //       const token = await getToken(messaging, {
+  //         vapidKey: VAPID_KEY,
+  //         serviceWorkerRegistration: swReg,
+  //       });
 
-        if (token) {
-          console.log("✅ Web FCM token:", token);
+  //       if (token) {
+  //         console.log("✅ Web FCM token:", token);
 
-          // 4) Save token to RTDB at /hostelTokens/{hostelid}/{uid}
-          //    Use a unique key so multiple sessions/devices can coexist
-          const key = `web_${Date.now()}`;
-          await update(ref(database, `/hostelTokens/${hostelid}/${uid}`), {
-            [key]: token
-          });
-        } else {
-          console.warn("No registration token available.");
-        }
+  //         // 4) Save token to RTDB at /hostelTokens/{hostelid}/{uid}
+  //         //    Use a unique key so multiple sessions/devices can coexist
+  //         const key = `web_${Date.now()}`;
+  //         await update(ref(database, `/hostelTokens/${hostelid}/${uid}`), {
+  //           [key]: token
+  //         });
+  //       } else {
+  //         console.warn("No registration token available.");
+  //       }
 
-        // 5) Foreground messages
-        const unsubscribe = onMessage(messaging, (payload) => {
-          console.log("📩 Foreground message:", payload);
-          const title = payload?.notification?.title || "Notification";
-          const body = payload?.notification?.body || "";
-          // Native browser notification (tab must be focused & permission granted)
-          try {
-            new Notification(title, { body, icon: "/icon.png" });
-          } catch {
-            // fallback: alert or custom toast UI
-            alert(`${title}\n\n${body}`);
-          }
-        });
+  //       // 5) Foreground messages
+  //       const unsubscribe = onMessage(messaging, (payload) => {
+  //         console.log("📩 Foreground message:", payload);
+  //         const title = payload?.notification?.title || "Notification";
+  //         const body = payload?.notification?.body || "";
+  //         // Native browser notification (tab must be focused & permission granted)
+  //         try {
+  //           new Notification(title, { body, icon: "/icon.png" });
+  //         } catch {
+  //           // fallback: alert or custom toast UI
+  //           alert(`${title}\n\n${body}`);
+  //         }
+  //       });
 
-        return () => unsubscribe();
-      } catch (err) {
-        console.error("FCM setup error:", err);
-      }
-    }
+  //       return () => unsubscribe();
+  //     } catch (err) {
+  //       console.error("FCM setup error:", err);
+  //     }
+  //   }
 
-    setupWebPush();
-  }, [isLoggedIn, user, employee]);
+  //   setupWebPush();
+  // }, [isLoggedIn, user, employee]);
 
   if (checking) return null;
   
- 
-
-  console.log("LoggedIn:", isLoggedIn, "Role:", type,"user",user);
 
   return (
     <Routes>
