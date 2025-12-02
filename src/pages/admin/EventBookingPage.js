@@ -7,7 +7,7 @@ import {
   collection,
   getDocs,
   query,
-  where,
+  where, setDoc, serverTimestamp, doc
 } from "firebase/firestore";
 import { db } from "../../firebase";
 
@@ -39,22 +39,20 @@ const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
         </span>
         <div className="flex items-center gap-2">
           <button
-            className={`px-3 py-1 rounded border ${
-              canPrev
+            className={`px-3 py-1 rounded border ${canPrev
                 ? "bg-white hover:bg-gray-50"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
-            }`}
+              }`}
             onClick={() => canPrev && setPage((p) => p - 1)}
             disabled={!canPrev}
           >
             Prev
           </button>
           <button
-            className={`px-3 py-1 rounded border ${
-              canNext
+            className={`px-3 py-1 rounded border ${canNext
                 ? "bg-white hover:bg-gray-50"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
-            }`}
+              }`}
             onClick={() => canNext && setPage((p) => p + 1)}
             disabled={!canNext}
           >
@@ -67,6 +65,7 @@ const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
 };
 
 export default function EventBookingPage() {
+  const uid = useSelector((s) => s.auth.user.uid);
   const emp = useSelector((s) => s.auth.employee);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -85,7 +84,12 @@ export default function EventBookingPage() {
       setPage(1);
     }, 250);
   };
-
+  const adminId = emp?.uid || uid;
+  useEffect(() => {
+    if (!adminId) return;
+    const refDoc = doc(db, "adminMenuState", adminId, "menus", "eventbooking");
+    setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
+  }, [adminId]);
   useEffect(() => {
     (async () => {
       setIsLoading(true);
@@ -307,10 +311,10 @@ export default function EventBookingPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         {b.timestamp
                           ? dayjs(
-                              typeof b.timestamp === "string"
-                                ? b.timestamp
-                                : toMillis(b.timestamp)
-                            ).format("MMM DD, YYYY hh:mm A")
+                            typeof b.timestamp === "string"
+                              ? b.timestamp
+                              : toMillis(b.timestamp)
+                          ).format("MMM DD, YYYY hh:mm A")
                           : "—"}
                       </td>
                     </tr>

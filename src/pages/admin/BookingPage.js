@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
-  query, where, getDoc, writeBatch
+  query, where, getDoc, writeBatch, setDoc, serverTimestamp
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
@@ -72,7 +72,12 @@ export default function BookingPage({ navbarHeight }) {
   const [showPicker, setShowPicker] = useState(false);
   const pickerRef = useRef();
   const [timeRange, setTimeRange] = useState({ start: "", end: "" }); // HH:mm – HH:mm
-
+  const adminId = emp?.uid || uid;
+  useEffect(() => {
+    if (!adminId) return;
+    const refDoc = doc(db, "adminMenuState", adminId, "menus", "bookingroom");
+    setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
+  }, [adminId]);
   useEffect(() => {
     const onClickOutside = (e) => {
       if (pickerRef.current && !pickerRef.current.contains(e.target)) setShowPicker(false);
@@ -336,7 +341,7 @@ export default function BookingPage({ navbarHeight }) {
     const s = toJsDate(row.startdate);
     const e = toJsDate(row.enddate);
     const r = range[0];
-  
+
     if (!s || !e) {
       const bd = row.date ? parseBookingDate(row.date) : null;
       if (!bd) return false;
@@ -347,7 +352,7 @@ export default function BookingPage({ navbarHeight }) {
     const rs = toLocalDateOnly(r.startDate), re = toLocalDateOnly(r.endDate);
     return s0 <= re && e0 >= rs;
   };
-  
+
 
   const withinTimeHeaderRange = (row) => {
     const start = toJsDate(row.startdate);
@@ -416,8 +421,8 @@ export default function BookingPage({ navbarHeight }) {
   };
 
   const formattedRange = dateActive
-  ? `${format(range[0].startDate, "MM/dd/yyyy")} - ${format(range[0].endDate, "MM/dd/yyyy")}`
-  : "";
+    ? `${format(range[0].startDate, "MM/dd/yyyy")} - ${format(range[0].endDate, "MM/dd/yyyy")}`
+    : "";
 
   return (
     <main className="flex-1 p-1 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
@@ -520,16 +525,16 @@ export default function BookingPage({ navbarHeight }) {
                       className="w-full border border-gray-300 p-1 rounded text-sm cursor-pointer"
                       placeholder="Select date range"
                     />
-                      {dateActive && (
-                        <button
-                          type="button"
-                          className="absolute right-1 top-1 text-xs px-1.5 py-0.5 border rounded bg-white"
-                          onClick={() => setDateActive(false)}  // don’t null the dates
-                          title="Clear"
-                        >
-                          Clear
-                        </button>
-)}
+                    {dateActive && (
+                      <button
+                        type="button"
+                        className="absolute right-1 top-1 text-xs px-1.5 py-0.5 border rounded bg-white"
+                        onClick={() => setDateActive(false)}  // don’t null the dates
+                        title="Clear"
+                      >
+                        Clear
+                      </button>
+                    )}
                     {showPicker && (
                       <div
                         ref={pickerRef}
@@ -585,8 +590,8 @@ export default function BookingPage({ navbarHeight }) {
                     <td className="px-6 py-4 text-sm text-gray-500">{item.displayTime}</td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       <span className={`px-2 py-1 rounded-full text-xs font-semibold ${item.status === "Rejected" ? "bg-red-200 text-red-800"
-                          : (item.status === "Approved" || item.status === "Booked") ? "bg-green-200 text-green-800"
-                            : "bg-yellow-200 text-yellow-800"
+                        : (item.status === "Approved" || item.status === "Booked") ? "bg-green-200 text-green-800"
+                          : "bg-yellow-200 text-yellow-800"
                         }`}>{item.status}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

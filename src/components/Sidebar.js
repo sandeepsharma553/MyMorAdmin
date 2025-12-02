@@ -236,7 +236,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     menuKey: "bookingroom",
     collName: "bookingroom",
     hostelid,
-    statusIn: ["Pending"],
+    statusIn: ["Booked"],
     preferZeroIfNoLastOpened: false,
   });
   const eventBadge = useBadgeCount({
@@ -244,7 +244,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     menuKey: "eventbooking",
     collName: "eventbookings",
     hostelid,
-    statusIn: ["Pending"],
+    statusIn: ["Booked"],
     preferZeroIfNoLastOpened: false,
   });
 
@@ -265,9 +265,15 @@ function Sidebar({ onSectionClick, isLoading }) {
     navigate(`/${sectionKey}`);
 
     // Mark opened for the sections we badge
-    if (sectionKey === "maintenance") resetMenuKey("maintenance");
-    if (sectionKey === "reportincident") resetMenuKey("reportincident");
-    if (sectionKey === "feedback") resetMenuKey("feedback");
+    if (
+      sectionKey === "maintenance" ||
+      sectionKey === "reportincident" ||
+      sectionKey === "feedback" ||
+      sectionKey === "bookingroom" ||
+      sectionKey === "eventbooking"
+    ) {
+      resetMenuKey(sectionKey);
+    }
   };
 
   return (
