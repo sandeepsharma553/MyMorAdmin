@@ -295,6 +295,20 @@ const HostelPage = () => {
       toast.error("Something went wrong.");
     }
   };
+  const allFeaturesSelected = useMemo(
+    () => Object.values(form.features || {}).every(Boolean),
+    [form.features]
+  );
+
+  const handleSelectAllFeatures = (checked) => {
+    setForm((prev) => ({
+      ...prev,
+      features: Object.keys(prev.features || {}).reduce((acc, key) => {
+        acc[key] = checked;
+        return acc;
+      }, {}),
+    }));
+  };
 
   const handleFeatureChange = (e) => {
     const { name, checked } = e.target;
@@ -629,9 +643,26 @@ const HostelPage = () => {
               {/* Features */}
               <fieldset style={{ marginTop: "20px" }}>
                 <legend style={{ fontWeight: "bold", marginBottom: "10px" }}>Features</legend>
+
+                {/* 🔘 Select all toggle */}
+                <div style={{ marginBottom: "10px" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <input
+                      type="checkbox"
+                      checked={allFeaturesSelected}
+                      onChange={(e) => handleSelectAllFeatures(e.target.checked)}
+                    />
+                    <span>
+                      {allFeaturesSelected ? "Unselect all features" : "Select all features"}
+                    </span>
+                  </label>
+                </div>
+
+                {/* Individual feature checkboxes */}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "20px", padding: "10px 0" }}>
                   {Object.keys(form.features).map((key) => (
-                    <label key={key} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <label key={key} style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                    className="flex items-center gap-2 text-sm bg-gray-50 px-2 py-1 rounded border border-gray-200">
                       <input
                         type="checkbox"
                         name={key}
@@ -643,6 +674,7 @@ const HostelPage = () => {
                   ))}
                 </div>
               </fieldset>
+
 
               {/* ⬇️ IMAGES (multiple) */}
               <div className="space-y-2">

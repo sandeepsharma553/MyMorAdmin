@@ -89,6 +89,23 @@ export default function UniversityPage(props) {
     [list, currentPage]
   );
 
+  // 🔘 are all features checked?
+  const allFeaturesSelected = useMemo(
+    () => Object.values(form.features || {}).every(Boolean),
+    [form.features]
+  );
+
+  // 🔘 select/unselect all features
+  const handleSelectAllFeatures = (checked) => {
+    setForm((prev) => ({
+      ...prev,
+      features: Object.keys(prev.features || {}).reduce((acc, key) => {
+        acc[key] = checked;
+        return acc;
+      }, {}),
+    }));
+  };
+
   useEffect(() => {
     getList();
   }, []);
@@ -98,7 +115,7 @@ export default function UniversityPage(props) {
       setIsLoading(true);
       const qs = await getDocs(collection(db, "university"));
       const documents = qs.docs.map((d) => ({
-        id: d.id, 
+        id: d.id,
         features: { ...DEFAULT_FEATURES, ...(d.features || {}) },
         ...d.data(),
       }));
@@ -256,6 +273,7 @@ export default function UniversityPage(props) {
     const parts = [row.cityName, row.stateName, row.countryName].filter(Boolean);
     return parts.length ? parts.join(", ") : "—";
   };
+
   const handleFeatureChange = (e) => {
     const { name, checked } = e.target;
     setForm((prev) => ({
@@ -487,11 +505,29 @@ export default function UniversityPage(props) {
                 value={form.studomain}
                 onChange={(e) => setForm({ ...form, studomain: e.target.value })}
               />
+
+              {/* 🔘 Features with "Select all" */}
               <fieldset style={{ marginTop: "20px" }}>
                 <legend style={{ fontWeight: "bold", marginBottom: "10px" }}>Features</legend>
+
+                {/* Select all toggle */}
+                <div style={{ marginBottom: "10px" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <input
+                      type="checkbox"
+                      checked={allFeaturesSelected}
+                      onChange={(e) => handleSelectAllFeatures(e.target.checked)}
+                    />
+                    <span>
+                      {allFeaturesSelected ? "Unselect all features" : "Select all features"}
+                    </span>
+                  </label>
+                </div>
+
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "20px", padding: "10px 0" }}>
                   {Object.keys(form.features).map((key) => (
-                    <label key={key} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <label key={key} style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                    className="flex items-center gap-2 text-sm bg-gray-50 px-2 py-1 rounded border border-gray-200">
                       <input
                         type="checkbox"
                         name={key}
@@ -503,6 +539,7 @@ export default function UniversityPage(props) {
                   ))}
                 </div>
               </fieldset>
+
               {/* Images (multiple) */}
               <div className="space-y-2">
                 <label className="block font-medium">

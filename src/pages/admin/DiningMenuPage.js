@@ -244,7 +244,7 @@ export default function DiningMenuPage(props) {
     reader.readAsBinaryString(file);
   };
 
-  const saveToFirebase = async () => {
+  const saveToFirebase1 = async () => {
     setIsLoading(true);
     try {
       const menusRef = collection(db, "menus");
@@ -272,7 +272,68 @@ export default function DiningMenuPage(props) {
       setIsLoading(false);
     }
   };
-
+  const saveToFirebase = async () => {
+    setIsLoading(true);
+    try {
+      const menusRef = collection(db, "menus");
+  
+      // ✅ Sorted so range (firstDate → lastDate) clean aaye
+      const sortedData = [...data].sort((a, b) =>
+        String(a.date).localeCompare(String(b.date))
+      );
+  
+      let createdCount = 0;
+      let firstDate = null;
+      let lastDate = null;
+  
+      for (const entry of sortedData) {
+        // same duplicate check
+        const qy = query(
+          menusRef,
+          where("date", "==", entry.date),
+          where("hostelid", "==", entry.hostelid)
+        );
+        const qs = await getDocs(qy);
+  
+        if (!qs.empty) {
+          toast.warn(`Menu for ${entry.date} already exists. Skipping...`);
+          continue;
+        }
+  
+        const docId = `${entry.date}_${entry.hostelid}`;
+        await setDoc(doc(menusRef, docId), entry);
+  
+        // ✅ track new docs only
+        createdCount++;
+        if (!firstDate) firstDate = entry.date;
+        lastDate = entry.date;
+      }
+  
+      if (createdCount > 0) {
+        toast.success(`Data saved! (${createdCount} new menu(s))`);
+  
+        // 🔔 TRIGGER DOC – ye Cloud Function ko bolega “Excel upload hua”
+        await addDoc(collection(db, "menus_uploads"), {
+          hostelid: emp.hostelid,
+          createdCount,
+          firstDate,
+          lastDate,
+          createdAt: Timestamp.now(),
+        });
+      } else {
+        toast.info("No new menus were saved (all dates already existed).");
+      }
+  
+      getList(date, weekMode);
+      setFileName("No file chosen");
+    } catch (error) {
+      console.error("Error saving data: ", error);
+      toast.error("Upload failed");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
   const handleDownload = async () => {
     const response = await fetch(diningMenuFile);
     const blob = await response.blob();

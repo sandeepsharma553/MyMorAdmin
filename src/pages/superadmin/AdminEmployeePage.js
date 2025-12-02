@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import { MenuItem, Select, Checkbox, ListItemText } from "@mui/material";
 import {
   collection,
   getDocs,
@@ -24,9 +23,7 @@ import {
 import { useSelector } from "react-redux";
 import LocationPicker from "./LocationPicker";
 
-export default function AdminEmployeePage(props) {
-  const { navbarHeight } = props;
-
+export default function AdminEmployeePage({ navbarHeight }) {
   /* -------------------- State -------------------- */
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -48,7 +45,9 @@ export default function AdminEmployeePage(props) {
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   const initialForm = {
@@ -57,11 +56,8 @@ export default function AdminEmployeePage(props) {
     email: "",
     mobileNo: "",
     address: "",
-
-    // NEW: bind & save university
     universityId: "",
     university: "",
-
     hostelid: "",
     hostel: "",
     role: "admin",
@@ -69,8 +65,6 @@ export default function AdminEmployeePage(props) {
     isActive: true,
     domain: "",
     permissions: [],
-
-    // structured location fields
     countryCode: "",
     countryName: "",
     stateCode: "",
@@ -78,8 +72,6 @@ export default function AdminEmployeePage(props) {
     cityName: "",
     lat: null,
     lng: null,
-
-    // local-only
     image: null,
     imageUrl: "",
     password: "",
@@ -125,7 +117,7 @@ export default function AdminEmployeePage(props) {
     maintenance: "maintenance",
     bookingroom: "bookingroom",
     academicgroup: "academicgroup",
-    reportincedent: "reportincident", 
+    reportincedent: "reportincident",
     feedback: "feedback",
     wellbeing: "wellbeing",
     faqs: "faq",
@@ -135,10 +127,30 @@ export default function AdminEmployeePage(props) {
     uniclub: "uniclub",
   };
 
-  const LABEL_BY_KEY = useMemo(
-    () => Object.fromEntries(MENU_OPTIONS.map(({ key, label }) => [key, label])),
-    []
-  );
+  /* -------------------- Helpers -------------------- */
+
+  // Normalize old permissions formats (array/string/object/null) → clean array
+  const normalizePermissions = (raw) => {
+    if (Array.isArray(raw)) return raw;
+
+    if (!raw) return [];
+
+    if (typeof raw === "string") {
+      return raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+
+    if (typeof raw === "object") {
+      // e.g. { dashboard: true, event: false }
+      return Object.entries(raw)
+        .filter(([, value]) => !!value)
+        .map(([key]) => key);
+    }
+
+    return [];
+  };
 
   /* -------------------- Derived -------------------- */
   const filteredData = useMemo(
@@ -153,31 +165,69 @@ export default function AdminEmployeePage(props) {
 
   const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
   const paginatedData = useMemo(
-    () => filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    () =>
+      filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     [filteredData, currentPage]
   );
 
+  // 👉 Single activeUniId for filtering hostels
   const filteredHostels = useMemo(() => {
-    if (!selectedUniversityId) return [];
+    const activeUniId = form.universityId || selectedUniversityId;
+    if (!activeUniId) return [];
     return hostels.filter((h) => {
-      const one = h.universityId === selectedUniversityId;
-      const many = Array.isArray(h.uniIds) && h.uniIds.includes(selectedUniversityId);
+      const one = h.universityId === activeUniId;
+      const many =
+        Array.isArray(h.uniIds) && h.uniIds.includes(activeUniId);
       return (one || many) && h.active !== false;
     });
-  }, [hostels, selectedUniversityId]);
+  }, [hostels, form.universityId, selectedUniversityId]);
+
+  // 👉 In edit mode: show ALL menu options; otherwise, limit to hostel features
+  const visibleMenuOptions = useMemo(() => {
+    if (editingData) {
+      return MENU_OPTIONS;
+    }
+    return MENU_OPTIONS.filter(({ key }) => allowedMenuKeys.includes(key));
+  }, [editingData, allowedMenuKeys]);
+
+  const allPermissionsSelected = useMemo(() => {
+    if (!visibleMenuOptions.length) return false;
+    return visibleMenuOptions.every(({ key }) =>
+      (form.permissions || []).includes(key)
+    );
+  }, [visibleMenuOptions, form.permissions]);
+
+  const handlePermissionToggle = (key, checked) => {
+    setForm((prev) => {
+      const current = new Set(prev.permissions || []);
+      if (checked) current.add(key);
+      else current.delete(key);
+      return { ...prev, permissions: Array.from(current) };
+    });
+  };
+
+  const handleSelectAllPermissions = (checked) => {
+    setForm((prev) => {
+      const current = new Set(prev.permissions || []);
+      if (checked) {
+        visibleMenuOptions.forEach(({ key }) => current.add(key));
+      } else {
+        visibleMenuOptions.forEach(({ key }) => current.delete(key));
+      }
+      return { ...prev, permissions: Array.from(current) };
+    });
+  };
 
   /* -------------------- Effects -------------------- */
   useEffect(() => {
     getList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (modalOpen && form.countryName) {
       fetchUniversitiesByCountry(form.countryName);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalOpen]);
+  }, [modalOpen]); // eslint-disable-line
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -194,21 +244,22 @@ export default function AdminEmployeePage(props) {
         where("empType", "==", "hostel")
       );
       const empSnap = await getDocs(qEmp);
-      const superAdmins = empSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      const superAdmins = empSnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          // Ensure permissions is always a clean array
+          permissions: normalizePermissions(data.permissions),
+        };
+      });
       setList(superAdmins);
 
-      const [uniSnap, hostelSnap] = await Promise.all([
+      const [, hostelSnap] = await Promise.all([
         getDocs(collection(db, "university")),
         getDocs(collection(db, "hostel")),
       ]);
-
-      // Not loading all universities into state here (we fetch by country in the modal),
-      // but you can keep this if you later need it for the table.
-      // const uniArr = uniSnap.docs.map((d) => ({
-      //   id: d.id,
-      //   name: d.data().name,
-      //   domain: d.data().domain,
-      // }));
 
       const hostelArr = hostelSnap.docs.map((d) => {
         const data = d.data();
@@ -239,9 +290,15 @@ export default function AdminEmployeePage(props) {
     }
     setIsLoading(true);
     try {
-      const qy = query(collection(db, "university"), where("countryName", "==", countryName));
+      const qy = query(
+        collection(db, "university"),
+        where("countryName", "==", countryName)
+      );
       const uniSnap = await getDocs(qy);
-      const uniArr = uniSnap.docs.map((d) => ({ id: d.id, name: d.data().name }));
+      const uniArr = uniSnap.docs.map((d) => ({
+        id: d.id,
+        name: d.data().name,
+      }));
       if (mountedRef.current) setUniversities(uniArr);
     } catch (err) {
       console.error("fetchUniversitiesByCountry error:", err);
@@ -258,7 +315,8 @@ export default function AdminEmployeePage(props) {
     return EMAIL_REGEX.test((email || "").trim());
   };
 
-  const isHostelInactive = (hid) => hostels.find((h) => h.id === hid)?.active === false;
+  const isHostelInactive = (hid) =>
+    hostels.find((h) => h.id === hid)?.active === false;
 
   const handleHostelChange = (e) => {
     const selectedId = e.target.value;
@@ -268,17 +326,24 @@ export default function AdminEmployeePage(props) {
     const features = hostel?.features || {};
     setHostelFeatures(features);
 
-    const allowedKeys = [
+    let allowedKeys = [
       "dashboard",
       "setting",
-      'contact',
+      "contact",
       ...Object.entries(features)
         .filter(([, enabled]) => enabled)
         .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
         .filter(Boolean),
     ];
+
+    allowedKeys = Array.from(new Set(allowedKeys));
     setAllowedMenuKeys(allowedKeys);
-    setForm((prev) => ({ ...prev, permissions: [] }));
+
+    // New: in edit mode, keep existing permissions; in create, reset
+    setForm((prev) => ({
+      ...prev,
+      permissions: editingData ? prev.permissions || [] : [],
+    }));
   };
 
   /* -------------------- Handlers -------------------- */
@@ -304,7 +369,6 @@ export default function AdminEmployeePage(props) {
         return;
       }
 
-      // Upload image if selected
       let imageUrl = form.imageUrl || "";
       const isNewImage = form.image instanceof File;
       if (isNewImage) {
@@ -313,27 +377,22 @@ export default function AdminEmployeePage(props) {
         imageUrl = await getDownloadURL(sref);
       }
 
-      // Build payload (NOW includes universityId & university)
       const password = `${form.name?.trim?.() || "User"}321`;
       const baseData = {
         name: form.name?.trim() || "",
         email: (form.email || "").toLowerCase(),
         mobileNo: form.mobileNo || "",
         address: form.address || "",
-
         universityId: form.universityId || "",
         university: form.university || "",
-
         hostelid: form.hostelid || "",
         hostel: form.hostel || "",
-
         role: "admin",
         type: "admin",
         isActive: !!form.isActive,
         domain: form.domain || "",
         permissions: Array.isArray(form.permissions) ? form.permissions : [],
         empType: "hostel",
-        // structured location
         countryCode: form.countryCode || "",
         countryName: form.countryName || "",
         stateCode: form.stateCode || "",
@@ -341,45 +400,49 @@ export default function AdminEmployeePage(props) {
         cityName: form.cityName || "",
         lat: typeof form.lat === "number" ? form.lat : null,
         lng: typeof form.lng === "number" ? form.lng : null,
-
         uid,
         ...(imageUrl && { imageUrl }),
-      };
+      }
 
-      // temp app for auth user creation
       const tempApp = initializeApp(firebaseConfig, "employeeCreator");
       const tempAuth = getAuth(tempApp);
 
       if (editingData) {
-        // UPDATE
         const docRef = doc(db, "employees", form.id);
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) {
           toast.warning("Employee does not exist! Cannot update.");
-          try { await deleteApp(tempApp); } catch {}
+          try {
+            await deleteApp(tempApp);
+          } catch {}
           return;
         }
 
         await updateDoc(docRef, baseData);
 
         if (form.hostelid) {
-          await updateDoc(doc(db, "hostel", form.hostelid), { adminUID: form.id });
+          await updateDoc(doc(db, "hostel", form.hostelid), {
+            adminUID: form.id,
+          });
         }
 
         toast.success("Employee updated successfully");
       } else {
-        // CREATE (only if hostel has no admin)
         const hostelRef = doc(db, "hostel", form.hostelid);
         const hostelSnap = await getDoc(hostelRef);
         if (!hostelSnap.exists()) {
           toast.warn("Hostel not found.");
-          try { await deleteApp(tempApp); } catch {}
+          try {
+            await deleteApp(tempApp);
+          } catch {}
           return;
         }
         const hostelData = hostelSnap.data();
         if (hostelData.adminUID) {
           toast.warn("This hostel already has an assigned admin.");
-          try { await deleteApp(tempApp); } catch {}
+          try {
+            await deleteApp(tempApp);
+          } catch {}
           return;
         }
 
@@ -389,14 +452,18 @@ export default function AdminEmployeePage(props) {
           password
         );
         const user = userCredential.user;
-        await updateProfile(user, { displayName: baseData.name, photoURL: imageUrl || undefined });
+        await updateProfile(user, {
+          displayName: baseData.name,
+          photoURL: imageUrl || undefined,
+        });
 
         const employeeRef = doc(db, "employees", user.uid);
         await setDoc(employeeRef, { ...baseData, password });
 
-        await updateDoc(doc(db, "hostel", form.hostelid), { adminUID: user.uid });
+        await updateDoc(doc(db, "hostel", form.hostelid), {
+          adminUID: user.uid,
+        });
 
-        // optional: minimal "users" doc
         await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           firstname: baseData.name,
@@ -415,7 +482,9 @@ export default function AdminEmployeePage(props) {
         toast.success("Employee created successfully");
       }
 
-      try { await deleteApp(tempApp); } catch {}
+      try {
+        await deleteApp(tempApp);
+      } catch {}
 
       await getList();
       setModalOpen(false);
@@ -436,37 +505,6 @@ export default function AdminEmployeePage(props) {
     }
   };
 
-  const handleDelete = async () => {
-    if (!deleteData) return;
-    try {
-      const uidToDelete = form.id;
-      const response = await fetch(
-        "https://us-central1-mymor-one.cloudfunctions.net/deleteUserByUid",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ uid: uidToDelete }),
-        }
-      );
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error?.message || "Failed to delete user");
-
-      if (data.success) {
-        if (form.hostelid) {
-          await updateDoc(doc(db, "hostel", form.hostelid), { adminUID: null });
-        }
-        await deleteDoc(doc(db, "employees", form.id));
-        toast.success("Successfully deleted!");
-        await getList();
-      }
-    } catch (error) {
-      console.error("Error deleting document: ", error);
-      toast.error("Failed to delete");
-    }
-    setConfirmDeleteOpen(false);
-    setDelete(null);
-  };
-
   const handleDisable = async () => {
     if (!deleteData) return;
     try {
@@ -482,10 +520,15 @@ export default function AdminEmployeePage(props) {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to disable user");
 
-      await updateDoc(doc(db, "employees", form.id), { status: "disabled", isActive: false });
+      await updateDoc(doc(db, "employees", form.id), {
+        status: "disabled",
+        isActive: false,
+      });
 
       if (form.hostelid) {
-        await updateDoc(doc(db, "hostel", form.hostelid), { adminUID: null });
+        await updateDoc(doc(db, "hostel", form.hostelid), {
+          adminUID: null,
+        });
       }
 
       toast.success("Account disabled successfully!");
@@ -512,10 +555,15 @@ export default function AdminEmployeePage(props) {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to enable user");
 
-      await updateDoc(doc(db, "employees", form.id), { status: "active", isActive: true });
+      await updateDoc(doc(db, "employees", form.id), {
+        status: "active",
+        isActive: true,
+      });
 
       if (form.hostelid) {
-        await updateDoc(doc(db, "hostel", form.hostelid), { adminUID: form.id });
+        await updateDoc(doc(db, "hostel", form.hostelid), {
+          adminUID: form.id,
+        });
       }
 
       toast.success("Account enabled successfully!");
@@ -530,7 +578,10 @@ export default function AdminEmployeePage(props) {
 
   /* -------------------- Render -------------------- */
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
+    <main
+      className="flex-1 p-6 bg-gray-100 overflow-auto"
+      style={{ paddingTop: navbarHeight || 0 }}
+    >
       {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Hostel Employee</h1>
@@ -575,71 +626,142 @@ export default function AdminEmployeePage(props) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                {/* <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">University</th> */}
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Hostel</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Email</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Mobile No</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Password</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Location</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Image</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Hostel
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Name
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Email
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Mobile No
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Password
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Location
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Image
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="px-6 py-4 text-center text-gray-500">No matching users found.</td>
+                  <td
+                    colSpan="10"
+                    className="px-6 py-4 text-center text-gray-500"
+                  >
+                    No matching users found.
+                  </td>
                 </tr>
               ) : (
                 paginatedData.map((item) => (
                   <tr key={item.id}>
-                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.university || "—"}</td> */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.hostel}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.email}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.mobileNo}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.password}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.hostel}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {[item.cityName, item.stateName, item.countryName].filter(Boolean).join(", ") || "—"}
+                      {item.name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <span style={{ padding: "4px 8px", borderRadius: "12px", color: "#fff", backgroundColor: item.isActive ? "green" : "red", fontSize: 12 }}>
+                      {item.email}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.mobileNo}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.password}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {[
+                        item.cityName,
+                        item.stateName,
+                        item.countryName,
+                      ]
+                        .filter(Boolean)
+                        .join(", ") || "—"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <span
+                        style={{
+                          padding: "4px 8px",
+                          borderRadius: "12px",
+                          color: "#fff",
+                          backgroundColor: item.isActive ? "green" : "red",
+                          fontSize: 12,
+                        }}
+                      >
                         {item.isActive ? "Active" : "Inactive"}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item?.imageUrl ? <img src={item.imageUrl} width={80} height={80} alt="employee" /> : null}
+                      {item?.imageUrl ? (
+                        <img
+                          src={item.imageUrl}
+                          width={80}
+                          height={80}
+                          alt="employee"
+                        />
+                      ) : null}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button
                         disabled={isHostelInactive(item.hostelid)}
-                        className={`text-blue-600 hover:underline mr-3 ${isHostelInactive(item.hostelid) ? "opacity-40 cursor-not-allowed" : ""}`}
+                        className={`text-blue-600 hover:underline mr-3 ${
+                          isHostelInactive(item.hostelid)
+                            ? "opacity-40 cursor-not-allowed"
+                            : ""
+                        }`}
                         onClick={() => {
                           setEditing(item);
 
-                          // derive selected uni from employee (preferred) or fallback from hostel relation
+                          const savedPermissions = normalizePermissions(
+                            item.permissions
+                          );
+
                           const selectedHostelId = item.hostelid;
-                          const selectedHostelObj = hostels.find((h) => h.id === selectedHostelId);
+                          const selectedHostelObj = hostels.find(
+                            (h) => h.id === selectedHostelId
+                          );
+
                           const uniIdFromHostel =
                             item.universityId ||
                             selectedHostelObj?.universityId ||
-                            (Array.isArray(selectedHostelObj?.uniIds) ? selectedHostelObj.uniIds[0] : "");
+                            (Array.isArray(selectedHostelObj?.uniIds)
+                              ? selectedHostelObj.uniIds[0]
+                              : "");
 
                           setSelectedUniversityId(uniIdFromHostel || "");
                           setSelectedHostel(selectedHostelId);
 
                           const features = selectedHostelObj?.features || {};
-                          const allowedKeys = [
+                          let allowedKeys = [
                             "dashboard",
                             "setting",
-                            'contact',
+                            "contact",
                             ...Object.entries(features)
                               .filter(([, enabled]) => enabled)
-                              .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
+                              .map(
+                                ([feature]) => FEATURE_TO_MENU_KEY[feature]
+                              )
                               .filter(Boolean),
                           ];
+
+                          allowedKeys = Array.from(
+                            new Set([...allowedKeys, ...savedPermissions])
+                          );
+
                           setHostelFeatures(features);
                           setAllowedMenuKeys(allowedKeys);
 
@@ -647,22 +769,18 @@ export default function AdminEmployeePage(props) {
                             ...prev,
                             ...item,
                             id: item.id,
-                            universityId: item.universityId || uniIdFromHostel || "",
-                            university: item.university || "", // we’ll re-bind name below after we load unis
+                            universityId:
+                              item.universityId || uniIdFromHostel || "",
+                            university: item.university || "",
                             hostelid: selectedHostelId,
-                            hostel: selectedHostelObj?.name || item.hostel || "",
-                            permissions: item.permissions?.length ? item.permissions : [],
+                            hostel:
+                              selectedHostelObj?.name || item.hostel || "",
+                            permissions: savedPermissions,
                             image: null,
                           }));
 
-                          // make sure the universities for this country are loaded,
-                          // then bind the university name from the list (if missing)
                           if (item.countryName) {
-                            fetchUniversitiesByCountry(item.countryName).then(() => {
-                              if (item.university || !uniIdFromHostel) return;
-                              const u = universities.find((x) => x.id === uniIdFromHostel);
-                              if (u) setForm((p) => ({ ...p, university: u.name }));
-                            });
+                            fetchUniversitiesByCountry(item.countryName);
                           }
 
                           setModalOpen(true);
@@ -674,16 +792,32 @@ export default function AdminEmployeePage(props) {
                       {item.isActive ? (
                         <button
                           disabled={isHostelInactive(item.hostelid)}
-                          className={`text-red-600 hover:underline ${isHostelInactive(item.hostelid) ? "opacity-40 cursor-not-allowed" : ""}`}
-                          onClick={() => { setDelete(item); setForm(item); setConfirmDeleteOpen(true); }}
+                          className={`text-red-600 hover:underline ${
+                            isHostelInactive(item.hostelid)
+                              ? "opacity-40 cursor-not-allowed"
+                              : ""
+                          }`}
+                          onClick={() => {
+                            setDelete(item);
+                            setForm(item);
+                            setConfirmDeleteOpen(true);
+                          }}
                         >
                           Disable
                         </button>
                       ) : (
                         <button
                           disabled={isHostelInactive(item.hostelid)}
-                          className={`text-green-600 hover:underline ${isHostelInactive(item.hostelid) ? "opacity-40 cursor-not-allowed" : ""}`}
-                          onClick={() => { setDelete(item); setForm(item); handleEnable(); }}
+                          className={`text-green-600 hover:underline ${
+                            isHostelInactive(item.hostelid)
+                              ? "opacity-40 cursor-not-allowed"
+                              : ""
+                          }`}
+                          onClick={() => {
+                            setDelete(item);
+                            setForm(item);
+                            handleEnable();
+                          }}
                         >
                           Activate
                         </button>
@@ -699,10 +833,24 @@ export default function AdminEmployeePage(props) {
 
       {/* Pager */}
       <div className="flex justify-between items-center mt-4">
-        <p className="text-sm text-gray-600">Page {currentPage} of {totalPages}</p>
+        <p className="text-sm text-gray-600">
+          Page {currentPage} of {totalPages}
+        </p>
         <div className="space-x-2">
-          <button onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))} disabled={currentPage === 1} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Previous</button>
-          <button onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Next</button>
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Next
+          </button>
         </div>
       </div>
 
@@ -710,19 +858,54 @@ export default function AdminEmployeePage(props) {
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold mb-4">{editingData ? "Edit Employee" : "Create Employee"}</h2>
+            <h2 className="text-xl font-bold mb-4">
+              {editingData ? "Edit Employee" : "Create Employee"}
+            </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <input name="name" placeholder="Full Name" value={form.name} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-              <input name="email" placeholder="Email" value={form.email} disabled={!!editingData} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-              {form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((form.email || "").trim()) && (
-                <p className="text-red-500 text-sm mt-1">Invalid email format</p>
-              )}
-              <input name="mobileNo" placeholder="Mobile No" type="number" min={0} value={form.mobileNo} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
+              <input
+                name="name"
+                placeholder="Full Name"
+                value={form.name}
+                onChange={handleChange}
+                className="w-full border border-gray-300 p-2 rounded"
+                required
+              />
+              <input
+                name="email"
+                placeholder="Email"
+                value={form.email}
+                disabled={!!editingData}
+                onChange={handleChange}
+                className="w-full border border-gray-300 p-2 rounded"
+                required
+              />
+              {form.email &&
+                !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+                  (form.email || "").trim()
+                ) && (
+                  <p className="text-red-500 text-sm mt-1">
+                    Invalid email format
+                  </p>
+                )}
+              <input
+                name="mobileNo"
+                placeholder="Mobile No"
+                type="number"
+                min={0}
+                value={form.mobileNo}
+                onChange={handleChange}
+                className="w-full border border-gray-300 p-2 rounded"
+                required
+              />
 
               {/* Country → University → Hostel */}
               <LocationPicker
                 key={form.id || "new"}
-                value={{ countryCode: form.countryCode || "", stateCode: form.stateCode || "", cityName: form.cityName || "" }}
+                value={{
+                  countryCode: form.countryCode || "",
+                  stateCode: form.stateCode || "",
+                  cityName: form.cityName || "",
+                }}
                 onChange={(loc) => {
                   const next = {
                     countryCode: loc.country?.code || "",
@@ -742,7 +925,18 @@ export default function AdminEmployeePage(props) {
                       prev.cityName === next.cityName &&
                       prev.lat === next.lat &&
                       prev.lng === next.lng;
-                  return same ? prev : { ...prev, ...next, universityId: "", university: "", hostelid: "", hostel: "", domain: "", permissions: [] };
+                    return same
+                      ? prev
+                      : {
+                          ...prev,
+                          ...next,
+                          universityId: "",
+                          university: "",
+                          hostelid: "",
+                          hostel: "",
+                          domain: "",
+                          permissions: [],
+                        };
                   });
                   setSelectedUniversityId("");
                   setSelectedHostel("");
@@ -754,12 +948,19 @@ export default function AdminEmployeePage(props) {
 
               {/* University */}
               <select
-                value={selectedUniversityId}
+                value={form.universityId}
                 onChange={(e) => {
                   const uniId = e.target.value;
-                  const uniName = universities.find((u) => u.id === uniId)?.name || "";
+                  const uniName =
+                    universities.find((u) => u.id === uniId)?.name || "";
                   setSelectedUniversityId(uniId);
-                  setForm((prev) => ({ ...prev, universityId: uniId, university: uniName, hostelid: "", hostel: "" }));
+                  setForm((prev) => ({
+                    ...prev,
+                    universityId: uniId,
+                    university: uniName,
+                    hostelid: "",
+                    hostel: "",
+                  }));
                   setSelectedHostel("");
                   setAllowedMenuKeys([]);
                   setHostelFeatures({});
@@ -768,8 +969,16 @@ export default function AdminEmployeePage(props) {
                 required
                 disabled={!universities.length}
               >
-                <option value="">{universities.length ? "Select University" : "Select University"}</option>
-                {universities.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                <option value="">
+                  {universities.length
+                    ? "Select University"
+                    : "Select University"}
+                </option>
+                {universities.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
               </select>
 
               {/* Hostel */}
@@ -778,16 +987,24 @@ export default function AdminEmployeePage(props) {
                 value={form.hostelid}
                 onChange={(e) => {
                   const selectedHostelId = e.target.value;
-                  const selectedHostelObj = hostels.find((h) => h.id === selectedHostelId);
-                  setForm((prev) => ({ ...prev, hostelid: selectedHostelId, hostel: selectedHostelObj?.name || "" }));
+                  const selectedHostelObj = hostels.find(
+                    (h) => h.id === selectedHostelId
+                  );
+                  setForm((prev) => ({
+                    ...prev,
+                    hostelid: selectedHostelId,
+                    hostel: selectedHostelObj?.name || "",
+                  }));
                   setSelectedHostel(selectedHostelId);
                   handleHostelChange(e);
                 }}
                 className="w-full border border-gray-300 p-2 rounded"
                 required
-                disabled={!selectedUniversityId}
+                disabled={!form.universityId}
               >
-                <option value="">{selectedUniversityId ? "Select Hostel" : "Select Hostel"}</option>
+                <option value="">
+                  {form.universityId ? "Select Hostel" : "Select Hostel"}
+                </option>
                 {filteredHostels.map((h) => (
                   <option key={h.id} value={h.id} disabled={!h.active}>
                     {h.name} - {h.location} {!h.active ? " (Disabled)" : ""}
@@ -795,34 +1012,88 @@ export default function AdminEmployeePage(props) {
                 ))}
               </select>
 
-              <textarea name="address" placeholder="Address" value={form.address} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
+              <textarea
+                name="address"
+                placeholder="Address"
+                value={form.address}
+                onChange={handleChange}
+                className="w-full border border-gray-300 p-2 rounded"
+                required
+              />
 
-              <input name="domain" placeholder="Domain" value={form.domain} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
+              <input
+                name="domain"
+                placeholder="Domain"
+                value={form.domain}
+                onChange={handleChange}
+                className="w-full border border-gray-300 p-2 rounded"
+                required
+              />
 
               <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                 <label className="cursor-pointer">
-                  <input type="file" name="image" accept="image/*" className="hidden" onChange={handleChange} />
+                  <input
+                    type="file"
+                    name="image"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleChange}
+                  />
                   📁 Choose File
                 </label>
-                <span className="text-sm text-gray-600 truncate max-w-[150px]">{fileName}</span>
+                <span className="text-sm text-gray-600 truncate max-w-[150px]">
+                  {fileName}
+                </span>
               </div>
-              {form.imageUrl ? <img src={form.imageUrl} alt="Image Preview" width="150" /> : null}
+              {form.imageUrl ? (
+                <img src={form.imageUrl} alt="Image Preview" width="150" />
+              ) : null}
 
-              <Select
-                className="w-full border border-gray-300 p-2 rounded"
-                multiple
-                displayEmpty
-                value={form.permissions}
-                onChange={(e) => setForm((prev) => ({ ...prev, permissions: e.target.value }))}
-                renderValue={(selected) => selected.length ? selected.map((k) => LABEL_BY_KEY[k]).join(", ") : "Select Permissions"}
-              >
-                {MENU_OPTIONS.filter(({ key }) => allowedMenuKeys.includes(key)).map(({ key, label }) => (
-                  <MenuItem key={key} value={key}>
-                    <Checkbox checked={form.permissions.includes(key)} />
-                    <ListItemText primary={label} />
-                  </MenuItem>
-                ))}
-              </Select>
+              {/* Permissions – checkbox with Select All */}
+              <fieldset style={{ marginTop: "10px" }}>
+                <legend className="font-medium mb-2">Permissions</legend>
+
+                <div className="mb-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={allPermissionsSelected}
+                      onChange={(e) =>
+                        handleSelectAllPermissions(e.target.checked)
+                      }
+                    />
+                    <span>
+                      {allPermissionsSelected
+                        ? "Unselect all permissions"
+                        : "Select all permissions"}
+                    </span>
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  {visibleMenuOptions.length === 0 && (
+                    <p className="text-xs text-gray-500">
+                      No permissions available. Enable hostel features first.
+                    </p>
+                  )}
+
+                  {visibleMenuOptions.map(({ key, label }) => (
+                    <label
+                      key={key}
+                      className="flex items-center gap-2 text-sm bg-gray-50 px-2 py-1 rounded border border-gray-200"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={(form.permissions || []).includes(key)}
+                        onChange={(e) =>
+                          handlePermissionToggle(key, e.target.checked)
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
 
               <label className="flex items-center gap-3 cursor-pointer select-none">
                 <span className="text-sm font-medium">Status</span>
@@ -832,12 +1103,21 @@ export default function AdminEmployeePage(props) {
                   name="isActive"
                   className="sr-only peer"
                   checked={form.isActive}
-                  onChange={(e) => setForm((prev) => ({ ...prev, isActive: e.target.checked }))}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      isActive: e.target.checked,
+                    }))
+                  }
                 />
                 <div className="w-11 h-6 rounded-full bg-gray-300 peer-checked:bg-green-500 transition-colors relative">
                   <span className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5" />
                 </div>
-                <span className={`text-sm font-semibold ${form.isActive ? "text-green-600" : "text-red-500"}`}>
+                <span
+                  className={`text-sm font-semibold ${
+                    form.isActive ? "text-green-600" : "text-red-500"
+                  }`}
+                >
                   {form.isActive ? "Active" : "Inactive"}
                 </span>
               </label>
@@ -872,11 +1152,29 @@ export default function AdminEmployeePage(props) {
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
-            <h2 className="text-xl font-semibold mb-4 text-red-600">Disable Account</h2>
-            <p className="mb-4">Are you sure you want to disable <strong>{deleteData?.name}</strong>?</p>
+            <h2 className="text-xl font-semibold mb-4 text-red-600">
+              Disable Account
+            </h2>
+            <p className="mb-4">
+              Are you sure you want to disable{" "}
+              <strong>{deleteData?.name}</strong>?
+            </p>
             <div className="flex justify-end space-x-3">
-              <button onClick={() => { setConfirmDeleteOpen(false); setDelete(null); }} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
-              <button onClick={handleDisable} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Disable</button>
+              <button
+                onClick={() => {
+                  setConfirmDeleteOpen(false);
+                  setDelete(null);
+                }}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDisable}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Disable
+              </button>
             </div>
           </div>
         </div>

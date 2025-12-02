@@ -373,6 +373,7 @@ export default function AnnouncementPage(props) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isLoading) return;
     try {
       if (!editingData && (!form.postersFiles?.length && !form.posterUrls?.length)) {
         toast.error("Please choose at least one image");
@@ -1168,8 +1169,16 @@ export default function AnnouncementPage(props) {
                 >
                   Cancel
                 </button>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                  Save
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className={`px-4 py-2 rounded text-white ${isLoading
+                      ? 'bg-blue-300 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                >
+                  {isLoading ? 'Saving…' : 'Save'}
                 </button>
               </div>
             </form>

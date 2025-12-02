@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import { MenuItem, Select, Checkbox, ListItemText } from "@mui/material";
 import {
   collection,
   getDocs,
@@ -16,13 +15,7 @@ import {
 import {
   ref as dbRef,
   onValue,
-  set as rtdbSet,
-  push,
-  update as rtdbUpdate,
-  remove,
   off,
-  serverTimestamp,
-  get as rtdbGet,
   orderByChild,
   equalTo,
   query as rtdbQuery,
@@ -46,13 +39,11 @@ export default function UniclubEmployeePage(props) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([]);
   const [universities, setUniversities] = useState([]);
-  const [hostels, setHostels] = useState([]);
+  const [hostels, setHostels] = useState([]); // still kept for delete logic, even if not shown
   const [selectedUniversityId, setSelectedUniversityId] = useState("");
-  const [selectedHostel, setSelectedHostel] = useState("");
   const [hostelFeatures, setHostelFeatures] = useState({});
-  const [allowedMenuKeys, setAllowedMenuKeys] = useState([]);
+  const [allowedMenuKeys, setAllowedMenuKeys] = useState(["dashboard", "setting", "contact"]);
   const [uniclubs, setUniclub] = useState([]);
-  const[selectuniclubid,setSelectUniclubid]=useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [fileName, setFileName] = useState("No file chosen");
 
@@ -139,11 +130,6 @@ export default function UniclubEmployeePage(props) {
     uniclubsubgroup: "uniclubsubgroup",
   };
 
-  const LABEL_BY_KEY = useMemo(
-    () => Object.fromEntries(MENU_OPTIONS.map(({ key, label }) => [key, label])),
-    []
-  );
-
   /* -------------------- Derived -------------------- */
   const filteredData = useMemo(
     () =>
@@ -161,14 +147,16 @@ export default function UniclubEmployeePage(props) {
     [filteredData, currentPage]
   );
 
-  const filteredHostels = useMemo(() => {
-    if (!selectedUniversityId) return [];
-    return hostels.filter((h) => {
-      const one = h.universityId === selectedUniversityId;
-      const many = Array.isArray(h.uniIds) && h.uniIds.includes(selectedUniversityId);
-      return (one || many) && h.active !== false;
-    });
-  }, [hostels, selectedUniversityId]);
+  // visible menu options driven by allowed keys
+  const visibleMenuOptions = useMemo(
+    () => MENU_OPTIONS.filter(({ key }) => allowedMenuKeys.includes(key)),
+    [MENU_OPTIONS, allowedMenuKeys]
+  );
+
+  const allPermissionsSelected = useMemo(() => {
+    if (!visibleMenuOptions.length) return false;
+    return visibleMenuOptions.every(({ key }) => (form.permissions || []).includes(key));
+  }, [visibleMenuOptions, form.permissions]);
 
   /* -------------------- Effects -------------------- */
   useEffect(() => {
@@ -189,21 +177,31 @@ export default function UniclubEmployeePage(props) {
   // (Safety) When opening modal to edit, ensure uniclubs loaded for that university
   useEffect(() => {
     if (!modalOpen || !editingData) return;
-    const uniId = editingData.universityId || selectedUniversityId;
+    const uniId = editingData.universityId || selectedUniversityId || form.universityId;
     if (uniId) getClub(uniId);
-  }, [modalOpen, editingData, selectedUniversityId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [modalOpen, editingData, selectedUniversityId, form.universityId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-bind uniclub selection after uniclubs list arrives
+  // When unis / universityId / permissions change → recompute allowedMenuKeys
   useEffect(() => {
-    if (!modalOpen || !editingData) return;
-    if (!uniclubs.length) return;
-    setForm((prev) => {
-      if (prev.uniclubid && uniclubs.some((u) => u.id === prev.uniclubid)) return prev;
-      const found = uniclubs.find((u) => u.id === (editingData.uniclubid || ""));
-      if (found) return { ...prev, uniclubid: found.id, uniclub: found.name };
-      return prev;
-    });
-  }, [modalOpen, editingData, uniclubs]);
+    const uni = universities.find((u) => u.id === form.universityId);
+    const features = uni?.features || {};
+    setHostelFeatures(features);
+
+    const featureKeys = Object.entries(features)
+      .filter(([, enabled]) => enabled)
+      .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
+      .filter(Boolean);
+
+    const all = new Set([
+      "dashboard",
+      "setting",
+      "contact",
+      ...featureKeys,
+      ...(form.permissions || []),
+    ]);
+
+    setAllowedMenuKeys(Array.from(all));
+  }, [universities, form.universityId, form.permissions]);
 
   /* -------------------- Data Fetch -------------------- */
   const getList = async () => {
@@ -217,7 +215,6 @@ export default function UniclubEmployeePage(props) {
       );
       const empSnap = await getDocs(qEmp);
       const superAdmins = empSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      console.log("Fetched employees:", superAdmins);
       setList(superAdmins);
 
       const [uniSnap, hostelSnap] = await Promise.all([
@@ -274,7 +271,7 @@ export default function UniclubEmployeePage(props) {
   const getClub = (uniId) => {
     setIsLoading(true);
     const ref = rtdbQuery(dbRef(database, "uniclubs"), orderByChild("universityid"), equalTo(uniId));
-    const handler = async (snap) => {
+    const handler = (snap) => {
       const val = snap.val();
       const arr = val ? Object.entries(val).map(([id, v]) => ({ id, name: v.title })) : [];
       setUniclub(arr);
@@ -296,21 +293,41 @@ export default function UniclubEmployeePage(props) {
     const selectedId = e.target.value;
     setSelectedUniversityId(selectedId);
 
-    const uni = universities.find((h) => h.id === selectedId);
-    const features = uni?.features || {};
-    setHostelFeatures(features);
-    const allowedKeys = [
-      "dashboard",
-      "setting",
-      'contact',
-      ...Object.entries(features)
-        .filter(([, enabled]) => enabled)
-        .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
-        .filter(Boolean),
-    ];
-    setAllowedMenuKeys(allowedKeys);
-    setForm((prev) => ({ ...prev, permissions: [] }));
-    getClub(selectedId);
+    const uni = universities.find((u) => u.id === selectedId);
+    const uniName = uni?.name || "";
+
+    setForm((prev) => ({
+      ...prev,
+      universityId: selectedId,
+      university: uniName,
+      uniclubid: "",
+      uniclub: "",
+      permissions: [], // new uni → clear permissions
+    }));
+
+    setUniclub([]);
+    if (selectedId) getClub(selectedId);
+  };
+
+  const handlePermissionToggle = (key, checked) => {
+    setForm((prev) => {
+      const current = new Set(prev.permissions || []);
+      if (checked) current.add(key);
+      else current.delete(key);
+      return { ...prev, permissions: Array.from(current) };
+    });
+  };
+
+  const handleSelectAllPermissions = (checked) => {
+    setForm((prev) => {
+      const current = new Set(prev.permissions || []);
+      if (checked) {
+        visibleMenuOptions.forEach(({ key }) => current.add(key));
+      } else {
+        visibleMenuOptions.forEach(({ key }) => current.delete(key));
+      }
+      return { ...prev, permissions: Array.from(current) };
+    });
   };
 
   /* -------------------- Handlers -------------------- */
@@ -397,6 +414,7 @@ export default function UniclubEmployeePage(props) {
         await updateDoc(docRef, baseData);
         toast.success("Employee updated successfully");
       } else {
+        // 1) ensure university exists
         const uniRef = doc(db, "university", form.universityId);
         const uniSnap = await getDoc(uniRef);
         if (!uniSnap.exists()) {
@@ -406,27 +424,40 @@ export default function UniclubEmployeePage(props) {
           } catch {}
           return;
         }
-        const uniData = uniSnap.data();
-        if (uniData.adminUID) {
-          toast.warn("This university already has an assigned admin.");
+
+        // 2) Check if this UniClub already has an admin
+        const dupQ = query(
+          collection(db, "employees"),
+          where("uniclubid", "==", form.uniclubid || ""),
+          where("empType", "==", "uniclub"),
+          where("type", "==", "admin")
+        );
+        const dupSnap = await getDocs(dupQ);
+
+        if (!dupSnap.empty) {
+          toast.warn("This UniClub already has an assigned admin.");
           try {
             await deleteApp(tempApp);
           } catch {}
           return;
         }
 
+        // 3) Create auth user & employee doc
         const userCredential = await createUserWithEmailAndPassword(
           tempAuth,
           baseData.email,
           password
         );
         const user = userCredential.user;
-        await updateProfile(user, { displayName: baseData.name, photoURL: imageUrl || undefined });
+
+        await updateProfile(user, {
+          displayName: baseData.name,
+          photoURL: imageUrl || undefined,
+        });
 
         const employeeRef = doc(db, "employees", user.uid);
         await setDoc(employeeRef, { ...baseData, password });
 
-        await updateDoc(doc(db, "university", form.universityId), { adminUID: user.uid });
         await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           firstname: baseData.name,
@@ -455,9 +486,7 @@ export default function UniclubEmployeePage(props) {
       setForm(initialForm);
       setFileName("No file chosen");
       setSelectedUniversityId("");
-      setSelectUniclubid("");
-      setSelectedHostel("");
-      setAllowedMenuKeys([]);
+      setAllowedMenuKeys(["dashboard", "setting", "contact"]);
       setHostelFeatures({});
       setUniclub([]);
     } catch (error) {
@@ -564,7 +593,10 @@ export default function UniclubEmployeePage(props) {
 
   /* -------------------- Render -------------------- */
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
+    <main
+      className="flex-1 p-6 bg-gray-100 overflow-auto"
+      style={{ paddingTop: navbarHeight || 0 }}
+    >
       {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Uni Club Employee</h1>
@@ -575,9 +607,7 @@ export default function UniclubEmployeePage(props) {
             setForm(initialForm);
             setFileName("No file chosen");
             setSelectedUniversityId("");
-            setSelectUniclubid("");
-            setSelectedHostel("");
-            setAllowedMenuKeys([]);
+            setAllowedMenuKeys(["dashboard", "setting", "contact"]);
             setHostelFeatures({});
             setUniclub([]);
             setModalOpen(true);
@@ -611,34 +641,67 @@ export default function UniclubEmployeePage(props) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Uniclub</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Email</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Mobile No</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Password</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Location</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Image</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Uniclub
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Name
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Email
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Mobile No
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Password
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Location
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Image
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="px-6 py-4 text-center text-gray-500">
+                  <td
+                    colSpan="10"
+                    className="px-6 py-4 text-center text-gray-500"
+                  >
                     No matching users found.
                   </td>
                 </tr>
               ) : (
                 paginatedData.map((item) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.uniclub || "—"}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.email}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.mobileNo}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.password}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.uniclub || "—"}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {[item.cityName, item.stateName, item.countryName].filter(Boolean).join(", ") || "—"}
+                      {item.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.email}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.mobileNo}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.password}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {[item.cityName, item.stateName, item.countryName]
+                        .filter(Boolean)
+                        .join(", ") || "—"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <span
@@ -654,73 +717,56 @@ export default function UniclubEmployeePage(props) {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item?.imageUrl ? <img src={item.imageUrl} width={80} height={80} alt="employee" /> : null}
+                      {item?.imageUrl ? (
+                        <img
+                          src={item.imageUrl}
+                          width={80}
+                          height={80}
+                          alt="employee"
+                        />
+                      ) : null}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button
-                        disabled={isHostelInactive(item.hostelid)}
-                        className={`text-blue-600 hover:underline mr-3 ${
-                          isHostelInactive(item.hostelid) ? "opacity-40 cursor-not-allowed" : ""
-                        }`}
+                        className="text-blue-600 hover:underline mr-3"
                         onClick={() => {
-                          setEditing(item);
-                          const uniIdForClubs = item.universityId || uniIdFromHostel || "";
-                         
-                          const selectedHostelId = item.hostelid;
-                          const selectedHostelObj = hostels.find((h) => h.id === selectedHostelId);
-                          const uniIdFromHostel =
-                            item.universityId ||
-                            selectedHostelObj?.universityId ||
-                            (Array.isArray(selectedHostelObj?.uniIds) ? selectedHostelObj.uniIds[0] : "");
-                            setSelectUniclubid(item.uniclubid||"");
-                          setSelectedUniversityId(uniIdFromHostel || "");
-                          setSelectedHostel(selectedHostelId);
+                          const savedPermissions = Array.isArray(item.permissions)
+                            ? item.permissions
+                            : [];
 
-                          const features = selectedHostelObj?.features || {};
-                          const allowedKeys = [
-                            "dashboard",
-                            "setting",
-                            'contact',
-                            ...Object.entries(features)
-                              .filter(([, enabled]) => enabled)
-                              .map(([feature]) => FEATURE_TO_MENU_KEY[feature])
-                              .filter(Boolean),
-                          ];
-                          setHostelFeatures(features);
-                          setAllowedMenuKeys(allowedKeys);
+                          setEditing(item);
 
                           setForm((prev) => ({
                             ...prev,
                             ...item,
                             id: item.id,
-                            universityId: item.universityId || uniIdFromHostel || "",
-                            university: item.university || "",
-                            hostelid: selectedHostelId,
-                            hostel: selectedHostelObj?.name || item.hostel || "",
-                            permissions: item.permissions?.length ? item.permissions : [],
+                            permissions: savedPermissions,
                             image: null,
-                            // ensure uniclub fields are set for edit
-                            uniclubid: item.uniclubid || "",
-                            uniclub: item.uniclub || "",
                           }));
 
-                          // Load uniclubs for whichever university we resolved
-                         
-
-                          // make sure universities for this country are loaded,
-                          // then bind university name if needed
+                          setSelectedUniversityId(item.universityId || "");
                           if (item.countryName) {
-                            fetchUniversitiesByCountry(item.countryName).then(() => {
-                              if (item.university || !uniIdFromHostel) return;
-                              const u = universities.find((x) => x.id === uniIdFromHostel);
-                              if (u) setForm((p) => ({ ...p, university: u.name }));
-                            });
+                            fetchUniversitiesByCountry(item.countryName);
                           }
-                          if (uniIdForClubs) getClub(uniIdForClubs);
+                          if (item.universityId) {
+                            getClub(item.universityId);
+                          }
+
                           setModalOpen(true);
                         }}
                       >
                         Edit
+                      </button>
+
+                      <button
+                        className="text-red-600 hover:underline"
+                        onClick={() => {
+                          setForm(item);
+                          setDelete(item);
+                          setConfirmDeleteOpen(true);
+                        }}
+                      >
+                        Delete
                       </button>
                     </td>
                   </tr>
@@ -758,7 +804,9 @@ export default function UniclubEmployeePage(props) {
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold mb-4">{editingData ? "Edit Employee" : "Create Employee"}</h2>
+            <h2 className="text-xl font-bold mb-4">
+              {editingData ? "Edit Employee" : "Create Employee"}
+            </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <input
                 name="name"
@@ -777,9 +825,12 @@ export default function UniclubEmployeePage(props) {
                 className="w-full border border-gray-300 p-2 rounded"
                 required
               />
-              {form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((form.email || "").trim()) && (
-                <p className="text-red-500 text-sm mt-1">Invalid email format</p>
-              )}
+              {form.email &&
+                !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((form.email || "").trim()) && (
+                  <p className="text-red-500 text-sm mt-1">
+                    Invalid email format
+                  </p>
+                )}
               <input
                 name="mobileNo"
                 placeholder="Mobile No"
@@ -834,38 +885,17 @@ export default function UniclubEmployeePage(props) {
                         };
                   });
                   setSelectedUniversityId("");
-                  setSelectedHostel("");
-                  setAllowedMenuKeys([]);
+                  setAllowedMenuKeys(["dashboard", "setting", "contact"]);
                   setHostelFeatures({});
                   setUniclub([]);
                   fetchUniversitiesByCountry(loc?.country?.name || "");
-                  setSelectUniclubid("");
                 }}
               />
 
               {/* University */}
               <select
-                value={selectedUniversityId}
-                onChange={(e) => {
-                  const uniId = e.target.value;
-                  const uniName = universities.find((u) => u.id === uniId)?.name || "";
-                  setSelectedUniversityId(uniId);
-                  setForm((prev) => ({
-                    ...prev,
-                    universityId: uniId,
-                    university: uniName,
-                    hostelid: "",
-                    hostel: "",
-                    uniclubid: "",
-                    uniclub: "",
-                  }));
-                  setSelectedHostel("");
-                  setAllowedMenuKeys([]);
-                  setHostelFeatures({});
-                  setUniclub([]);
-                  handleUniChange(e);
-                  setSelectUniclubid("");
-                }}
+                value={form.universityId}
+                onChange={handleUniChange}
                 className="w-full border border-gray-300 p-2 rounded"
                 required
                 disabled={!universities.length}
@@ -882,18 +912,19 @@ export default function UniclubEmployeePage(props) {
 
               {/* Uniclub (bound by university) */}
               <select
-                value={selectuniclubid}
+                value={form.uniclubid}
                 onChange={(e) => {
                   const id = e.target.value;
                   const name = uniclubs.find((u) => u.id === id)?.name || "";
-                  setSelectUniclubid(id)
                   setForm((prev) => ({ ...prev, uniclubid: id, uniclub: name }));
                 }}
                 className="w-full border border-gray-300 p-2 rounded"
                 required
                 disabled={!uniclubs.length}
               >
-                <option value="">{uniclubs.length ? "Select Uniclub" : "Select Uniclub"}</option>
+                <option value="">
+                  {uniclubs.length ? "Select Uniclub" : "Select Uniclub"}
+                </option>
                 {uniclubs.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name}
@@ -921,30 +952,69 @@ export default function UniclubEmployeePage(props) {
 
               <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                 <label className="cursor-pointer">
-                  <input type="file" name="image" accept="image/*" className="hidden" onChange={handleChange} />
+                  <input
+                    type="file"
+                    name="image"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleChange}
+                  />
                   📁 Choose File
                 </label>
-                <span className="text-sm text-gray-600 truncate max-w-[150px]">{fileName}</span>
+                <span className="text-sm text-gray-600 truncate max-w-[150px]">
+                  {fileName}
+                </span>
               </div>
-              {form.imageUrl ? <img src={form.imageUrl} alt="Image Preview" width="150" /> : null}
+              {form.imageUrl ? (
+                <img src={form.imageUrl} alt="Image Preview" width="150" />
+              ) : null}
 
-              <Select
-                className="w-full border border-gray-300 p-2 rounded"
-                multiple
-                displayEmpty
-                value={form.permissions}
-                onChange={(e) => setForm((prev) => ({ ...prev, permissions: e.target.value }))}
-                renderValue={(selected) =>
-                  selected.length ? selected.map((k) => LABEL_BY_KEY[k]).join(", ") : "Select Permissions"
-                }
-              >
-                {MENU_OPTIONS.filter(({ key }) => allowedMenuKeys.includes(key)).map(({ key, label }) => (
-                  <MenuItem key={key} value={key}>
-                    <Checkbox checked={form.permissions.includes(key)} />
-                    <ListItemText primary={label} />
-                  </MenuItem>
-                ))}
-              </Select>
+              {/* Permissions – Checkbox list with Select All */}
+              <fieldset className="mt-3">
+                <legend className="font-medium mb-2">Permissions</legend>
+
+                {/* Select All */}
+                <div className="mb-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={allPermissionsSelected}
+                      onChange={(e) =>
+                        handleSelectAllPermissions(e.target.checked)
+                      }
+                    />
+                    <span>
+                      {allPermissionsSelected
+                        ? "Unselect all permissions"
+                        : "Select all permissions"}
+                    </span>
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  {visibleMenuOptions.length === 0 && (
+                    <p className="text-xs text-gray-500">
+                      No permissions available. Enable features first.
+                    </p>
+                  )}
+
+                  {visibleMenuOptions.map(({ key, label }) => (
+                    <label
+                      key={key}
+                      className="flex items-center gap-2 text-sm bg-gray-50 px-2 py-1 rounded border border-gray-200"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={(form.permissions || []).includes(key)}
+                        onChange={(e) =>
+                          handlePermissionToggle(key, e.target.checked)
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
 
               <label className="flex items-center gap-3 cursor-pointer select-none">
                 <span className="text-sm font-medium">Status</span>
@@ -954,12 +1024,21 @@ export default function UniclubEmployeePage(props) {
                   name="isActive"
                   className="sr-only peer"
                   checked={form.isActive}
-                  onChange={(e) => setForm((prev) => ({ ...prev, isActive: e.target.checked }))}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      isActive: e.target.checked,
+                    }))
+                  }
                 />
                 <div className="w-11 h-6 rounded-full bg-gray-300 peer-checked:bg-green-500 transition-colors relative">
                   <span className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5" />
                 </div>
-                <span className={`text-sm font-semibold ${form.isActive ? "text-green-600" : "text-red-500"}`}>
+                <span
+                  className={`text-sm font-semibold ${
+                    form.isActive ? "text-green-600" : "text-red-500"
+                  }`}
+                >
                   {form.isActive ? "Active" : "Inactive"}
                 </span>
               </label>
@@ -967,14 +1046,14 @@ export default function UniclubEmployeePage(props) {
               <div className="flex justify-end mt-6 space-x-3">
                 <button
                   type="button"
+                  disabled={isLoading}
                   onClick={() => {
                     setModalOpen(false);
                     setEditing(null);
                     setForm(initialForm);
                     setFileName("No file chosen");
                     setSelectedUniversityId("");
-                    setSelectedHostel("");
-                    setAllowedMenuKeys([]);
+                    setAllowedMenuKeys(["dashboard", "setting", "contact"]);
                     setHostelFeatures({});
                     setUniclub([]);
                   }}
@@ -991,13 +1070,16 @@ export default function UniclubEmployeePage(props) {
         </div>
       )}
 
-      {/* Disable confirm */}
+      {/* Delete confirm */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
-            <h2 className="text-xl font-semibold mb-4 text-red-600">Disable Account</h2>
+            <h2 className="text-xl font-semibold mb-4 text-red-600">
+              Delete Account
+            </h2>
             <p className="mb-4">
-              Are you sure you want to disable <strong>{deleteData?.name}</strong>?
+              Are you sure you want to delete{" "}
+              <strong>{deleteData?.name}</strong>?
             </p>
             <div className="flex justify-end space-x-3">
               <button
@@ -1009,8 +1091,11 @@ export default function UniclubEmployeePage(props) {
               >
                 Cancel
               </button>
-              <button onClick={handleDisable} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-                Disable
+              <button
+                onClick={handleDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete
               </button>
             </div>
           </div>
