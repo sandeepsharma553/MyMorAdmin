@@ -556,6 +556,10 @@ export default function UniclubPage({ navbarHeight }) {
 
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
   const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const truncateText = (text = "", max = 120) => {
+    if (!text) return "";
+    return text.length > max ? text.slice(0, max) + "…" : text;
+  };
   /* ---------- Render ---------- */
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto no-scrollbar" style={{ paddingTop: navbarHeight || 0 }}>
@@ -665,8 +669,8 @@ export default function UniclubPage({ navbarHeight }) {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.location || "-"}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{whenLabel}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500 whitespace-normal break-words max-w-xs">
-                        {item.desc}
+                      <td className="px-6 py-4 text-sm text-gray-500 whitespace-normal break-words max-w-xs" title={item.desc}>
+                      {truncateText(item.desc, 100)}
                       </td>
 
                       {/* 🆕 Requests count + modal trigger */}
