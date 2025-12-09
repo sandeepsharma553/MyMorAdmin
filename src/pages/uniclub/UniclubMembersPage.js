@@ -89,45 +89,9 @@ export default function UniclubMembersPage(props) {
   useEffect(() => {
     getList();
     getClubs();
+    fetchSubGroups();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // 🔁 Fetch sub-groups whenever selected club changes
-  // 🔁 Fetch sub-groups whenever selected club changes
-  useEffect(() => {
-    const fetchSubGroups = async () => {
-      if (!emp.uniclubid) {
-        setSubGroups([]);
-        return;
-      }
-      try {
-        const ref = dbRef(database, `uniclubsubgroup`);
-        const snap = await rtdbGet(ref);
-        const val = snap.val() || {};
-
-        const arr = Object.entries(val).map(([id, g]) => ({
-          id,
-          title: g.title || "Untitled Subgroup",
-          parentGroupId: g.parentGroupId || null,
-        }));
-        const filtered = arr.filter(x => String(x.parentGroupId || "") === String(emp?.uniclubid));
-        setSubGroups(filtered);
-      } catch (err) {
-        console.error("fetchSubGroups error:", err);
-        setSubGroups([]);
-      }
-    };
-
-    fetchSubGroups();
-  }, [emp.uniclubid, database]);
-
-
-  /**
-   * 🔄 getList:
-   *  1. RTDB: uniclubs/{emp.uniclubid}/members => uids + role/status
-   *  2. Firestore: users/{uid} => firstname, email, studentid, imageUrl, password etc.
-   *  3. Merge and show only those members.
-   */
   const getList = async () => {
     if (!emp?.uniclubid) {
       console.warn("emp.uniclubid missing");
@@ -199,7 +163,27 @@ export default function UniclubMembersPage(props) {
       setClubs([]);
     }
   };
-
+  const fetchSubGroups = async () => {
+    if (!emp.uniclubid) {
+      setSubGroups([]);
+      return;
+    }
+    try {
+      const ref = dbRef(database, `uniclubsubgroup`);
+      const snap = await rtdbGet(ref);
+      const val = snap.val() || {};
+      const arr = Object.entries(val).map(([id, g]) => ({
+        id,
+        title: g.title || "Untitled Subgroup",
+        parentGroupId: g.parentGroupId || null,
+      }));
+      const filtered = arr.filter(x => String(x.parentGroupId || "") === String(emp?.uniclubid));
+      setSubGroups(filtered);
+    } catch (err) {
+      console.error("fetchSubGroups error:", err);
+      setSubGroups([]);
+    }
+  };
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
     if (type === "file") {
@@ -395,7 +379,6 @@ export default function UniclubMembersPage(props) {
       setEditing(null);
       setForm(initialForm);
       setFileName("No file chosen");
-      setSubGroups([]);
     } catch (error) {
       console.error("Error saving data:", error);
       if (error?.code === "auth/email-already-in-use") {
@@ -473,7 +456,6 @@ export default function UniclubMembersPage(props) {
               ...initialForm,
               clubId: emp?.uniclubid || "",
             });
-            setSubGroups([]);
             setModalOpen(true);
           }}
           disabled={!emp?.uniclubid}
@@ -720,7 +702,6 @@ export default function UniclubMembersPage(props) {
                     setEditing(null);
                     setForm(initialForm);
                     setFileName("No file chosen");
-                    setSubGroups([]);
                   }}
                   className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
                 >

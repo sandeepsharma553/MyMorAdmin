@@ -19,6 +19,15 @@ import { ToastContainer, toast } from "react-toastify";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
+
+import MapLocationInput from "../../components/MapLocationInput";
+import { MapPin } from "lucide-react";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
+import Button from "@mui/material/Button";
+
 dayjs.extend(customParseFormat);
 
 /* ------------------------------------------------
@@ -28,9 +37,9 @@ const pad2 = (n) => String(n).padStart(2, "0");
 const toLocalInputValue = (ms) => {
   if (!ms) return "";
   const d = new Date(ms);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(
-    d.getMinutes()
-  )}`;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(
+    d.getHours()
+  )}:${pad2(d.getMinutes())}`;
 };
 const toDateInputValue = (ms) => {
   if (!ms) return "";
@@ -38,7 +47,11 @@ const toDateInputValue = (ms) => {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 const fromLocalInputValue = (str) => (str ? new Date(str).getTime() : 0);
-const parseTags = (s = "") => s.split(",").map((t) => t.trim()).filter(Boolean);
+const parseTags = (s = "") =>
+  s
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
 
 /* Safe answers renderer */
 const renderAnswers = (ans) => {
@@ -88,15 +101,11 @@ export default function UniclubSubgroup({ navbarHeight }) {
   const uid = useSelector((s) => s.auth?.user?.uid);
   const emp = useSelector((s) => s.auth?.employee);
   const user = useSelector((s) => s.auth?.user);
-  // const groupId = state?.groupId || params.get("groupId");
-  // const groupName = state?.groupName || params.get("groupName") || "Club";
+
   const groupId = emp.uniclubid;
   const groupName = emp.uniclub;
-  // basePath (nested under parent groupId if present)
-  const basePath = useMemo(
-    () => (groupId ? `uniclubsubgroup` : `uniclubsubgroup`),
-    [groupId]
-  );
+
+  const basePath = useMemo(() => `uniclubsubgroup`, [groupId]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
@@ -116,6 +125,8 @@ export default function UniclubSubgroup({ navbarHeight }) {
   const [category, setCategory] = useState([]);
   const [roles, setRoles] = useState([]);
   const [members, setMembers] = useState([]);
+
+  const [showMapModal, setShowMapModal] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -139,9 +150,6 @@ export default function UniclubSubgroup({ navbarHeight }) {
         : { key, direction: "asc" }
     );
 
-  // Auth
-
-
   // File input
   const [fileName, setFileName] = useState("No file chosen");
   const [previewUrl, setPreviewUrl] = useState("");
@@ -163,10 +171,13 @@ export default function UniclubSubgroup({ navbarHeight }) {
     imageUrl: "",
     privacyType: "",
     category: "",
-    tags: "",
+    tags: [],
+    tagInput: "",
     rules: "",
     joinQInput: "",
     joinQuestions: [],
+    joinQType: "short",
+    joinQOptions: "",
     allowEventsByMembers: false,
     pollsEnabled: false,
     sharedFilesEnabled: false,
@@ -183,6 +194,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
     memberId: "",
     roleId: "",
     role: "",
+    showPhone: false,
+    showEmail: false,
+    contacts: [{ name: "", phone: "", email: "" }],
   };
   const [form, setForm] = useState(initialForm);
 
@@ -199,10 +213,8 @@ export default function UniclubSubgroup({ navbarHeight }) {
     setCurrentPage(1);
   }, [filters, sortConfig]);
 
-  // Optional guard if groupId is required
   useEffect(() => {
     if (!groupId) {
-      // comment this out if you want to allow flat root mode
       // toast.error("Missing groupId — open this screen via a parent group.");
     }
   }, [groupId]);
@@ -256,12 +268,14 @@ export default function UniclubSubgroup({ navbarHeight }) {
           }
         })
       );
-      const filtered = withCounts.filter(x => String(x.parentGroupId || "") === String(groupId));
+
+      const filtered = withCounts.filter(
+        (x) => String(x.parentGroupId || "") === String(groupId)
+      );
       setList(filtered);
       setIsLoading(false);
     };
     onValue(ref, handler, { onlyOnce: false });
-    // best-effort cleanup on re-run
     return () => off(ref, "value", handler);
   };
 
@@ -354,6 +368,35 @@ export default function UniclubSubgroup({ navbarHeight }) {
     return true;
   };
 
+  const updateContactRow = (index, field, value) => {
+    setForm((prev) => {
+      const next = { ...prev };
+      const contacts = Array.isArray(next.contacts) ? [...next.contacts] : [];
+      contacts[index] = { ...contacts[index], [field]: value };
+      next.contacts = contacts;
+      return next;
+    });
+  };
+
+  const addContactRow = () => {
+    setForm((prev) => ({
+      ...prev,
+      contacts: [
+        ...(Array.isArray(prev.contacts) ? prev.contacts : []),
+        { name: "", phone: "", email: "" },
+      ],
+    }));
+  };
+
+  const removeContactRow = (index) => {
+    setForm((prev) => {
+      const contacts = Array.isArray(prev.contacts) ? [...prev.contacts] : [];
+      if (contacts.length <= 1) return prev;
+      contacts.splice(index, 1);
+      return { ...prev, contacts };
+    });
+  };
+
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!validate()) return;
@@ -376,7 +419,29 @@ export default function UniclubSubgroup({ navbarHeight }) {
         imageUrl = await getDownloadURL(storRef);
       }
 
-      const cleanedTags = parseTags(form.tags);
+      const cleanedTags = Array.isArray(form.tags)
+        ? form.tags.map((t) => t.trim()).filter(Boolean)
+        : parseTags(form.tags);
+
+      const safeString = (v) =>
+        typeof v === "string" ? v.trim() : v == null ? "" : String(v);
+
+      const creatorName = safeString(emp?.name || user?.displayName || "");
+      const creatorPhone = safeString(
+        emp?.phone || user?.phoneNumber || form.contactPhone
+      );
+      const creatorEmail = safeString(
+        user?.email || emp?.email || form.contactEmail
+      );
+
+      const cleanedContacts = (Array.isArray(form.contacts) ? form.contacts : [])
+        .map((c) => ({
+          name: safeString(c.name),
+          phone: safeString(c.phone),
+          email: safeString(c.email),
+        }))
+        .filter((c) => c.name || c.phone || c.email);
+
       const settingsPayload = {
         chatEnabled: !!form.enableChat,
         allowEventsByMembers: !!form.allowEventsByMembers,
@@ -398,9 +463,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
         desc: form.desc.trim(),
         website: form.website?.trim() || "",
         link: form.link?.trim() || "",
-        contactName: form.contactName?.trim() || "",
-        contactPhone: form.contactPhone?.trim() || "",
-        contactEmail: form.contactEmail?.trim() || "",
+        contactName: creatorName,
+        contactPhone: form.showPhone && creatorPhone ? creatorPhone : "",
+        contactEmail: form.showEmail && creatorEmail ? creatorEmail : "",
         date: startAtMs ? dayjs(startAtMs).format("dddd, MMMM D") : "",
         time: startAtMs ? dayjs(startAtMs).format("h:mm A") : "",
         startAt: startAtMs,
@@ -416,25 +481,41 @@ export default function UniclubSubgroup({ navbarHeight }) {
         tags: cleanedTags,
         role: "Admin",
         rules: form.rules?.trim() || "",
-        joinQuestions: (form.joinQuestions || []).map((s) => s.trim()).filter(Boolean),
+        joinQuestions: (form.joinQuestions || [])
+          .map((q, idx) => {
+            if (typeof q === "string") {
+              return {
+                id: `q${idx + 1}`,
+                question: q.trim(),
+                type: "short",
+                options: [],
+              };
+            }
+            return {
+              id: q.id || `q${idx + 1}`,
+              question: (q.question || "").trim(),
+              type: q.type || "short",
+              options: Array.isArray(q.options) ? q.options : [],
+            };
+          })
+          .filter((q) => q.question),
         category: form.category || "",
         settings: settingsPayload,
+        contacts: cleanedContacts.length ? cleanedContacts : undefined,
       };
 
       Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
-      // create vs update under nested basePath
       let clubId;
       if (editingData?.id) {
         clubId = editingData.id;
         await rtdbUpdate(dbRef(database, `${basePath}/${clubId}`), payload);
-        toast.success("Uniclub updated successfully!");
+        toast.success("Subgroup updated successfully!");
       } else {
         const newRef = push(dbRef(database, `${basePath}`));
         clubId = newRef.key;
         await rtdbSet(newRef, { ...payload, id: clubId });
 
-        // add creator as admin
         if (user?.uid) {
           await rtdbSet(dbRef(database, `${basePath}/${clubId}/members/${user.uid}`), {
             uid: user.uid,
@@ -445,31 +526,57 @@ export default function UniclubSubgroup({ navbarHeight }) {
             joinedAt: serverTimestamp(),
           });
         }
-        toast.success("Uniclub created successfully");
+        toast.success("Subgroup created successfully");
       }
 
       const base = `${basePath}/${clubId}`;
       if (form.successorUid && form.successorUid !== user?.uid) {
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/joinedAt`), serverTimestamp());
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/name`), form.successor.name);
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/photoURL`), form.successor.photoURL);
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/role`), "admin");
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/status`), "active");
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/uid`), form.successorUid);
+        await rtdbSet(
+          dbRef(database, `${base}/members/${form.successorUid}/joinedAt`),
+          serverTimestamp()
+        );
+        await rtdbSet(
+          dbRef(database, `${base}/members/${form.successorUid}/name`),
+          form.successor.name
+        );
+        await rtdbSet(
+          dbRef(database, `${base}/members/${form.successorUid}/photoURL`),
+          form.successor.photoURL
+        );
+        await rtdbSet(
+          dbRef(database, `${base}/members/${form.successorUid}/role`),
+          "admin"
+        );
+        await rtdbSet(
+          dbRef(database, `${base}/members/${form.successorUid}/status`),
+          "active"
+        );
+        await rtdbSet(
+          dbRef(database, `${base}/members/${form.successorUid}/uid`),
+          form.successorUid
+        );
         if (user?.uid) {
-          await rtdbSet(dbRef(database, `${base}/members/${user.uid}/role`), "moderator");
+          await rtdbSet(
+            dbRef(database, `${base}/members/${user.uid}/role`),
+            "moderator"
+          );
         }
         await rtdbSet(dbRef(database, `${base}/uid`), form.successorUid);
       }
 
       if (form.memberId && form.roleId) {
         await Promise.all([
-          rtdbSet(dbRef(database, `${base}/roles/${form.memberId}`), { roleId: form.roleId, roleName: form.role }),
-          rtdbSet(dbRef(database, `${base}/members/${form.memberId}/role`), form.role || "contributor"),
+          rtdbSet(dbRef(database, `${base}/roles/${form.memberId}`), {
+            roleId: form.roleId,
+            roleName: form.role,
+          }),
+          rtdbSet(
+            dbRef(database, `${base}/members/${form.memberId}/role`),
+            form.role || "contributor"
+          ),
         ]);
       }
 
-      // reset + refresh
       getList();
       setModalOpen(false);
       setEditing(null);
@@ -514,7 +621,6 @@ export default function UniclubSubgroup({ navbarHeight }) {
         remove(dbRef(database, `${base}/joinRequests/${req.uid}`)),
       ]);
 
-      // optimistic UI
       setRequests((prev) => prev.filter((r) => r.uid !== req.uid));
       setMembersList((prev) => {
         const without = prev.filter((m) => m.uid !== req.uid);
@@ -544,8 +650,12 @@ export default function UniclubSubgroup({ navbarHeight }) {
 
   /* ---------- Filter + Sort + Paginate ---------- */
   const filteredData = list.filter((g) => {
-    const titleOK = !filters.title || (g.title || "").toLowerCase().includes(filters.title.toLowerCase());
-    const descOK = !filters.desc || (g.desc || "").toLowerCase().includes(filters.desc.toLowerCase());
+    const titleOK =
+      !filters.title ||
+      (g.title || "").toLowerCase().includes(filters.title.toLowerCase());
+    const descOK =
+      !filters.desc ||
+      (g.desc || "").toLowerCase().includes(filters.desc.toLowerCase());
     return titleOK && descOK;
   });
 
@@ -558,11 +668,17 @@ export default function UniclubSubgroup({ navbarHeight }) {
   });
 
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
-  const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const paginatedData = sortedData.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   /* ---------- Render ---------- */
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto no-scrollbar" style={{ paddingTop: navbarHeight || 0 }}>
+    <main
+      className="flex-1 p-6 bg-gray-100 overflow-auto no-scrollbar"
+      style={{ paddingTop: navbarHeight || 0 }}
+    >
       {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">
@@ -593,7 +709,6 @@ export default function UniclubSubgroup({ navbarHeight }) {
               <tr>
                 {[
                   { key: "title", label: "Title" },
-                  // { key: "location", label: "Location" },
                   { key: "desc", label: "Description" },
                   { key: "when", label: "When", sortable: false },
                   { key: "requests", label: "Requests", sortable: false },
@@ -603,7 +718,10 @@ export default function UniclubSubgroup({ navbarHeight }) {
                   { key: "eventBookingsCol", label: "EventBookings", sortable: false },
                   { key: "actions", label: "Action", sortable: false },
                 ].map((col) => (
-                  <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
+                  <th
+                    key={col.key}
+                    className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none"
+                  >
                     {col.sortable === false ? (
                       <span>{col.label}</span>
                     ) : (
@@ -615,7 +733,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
                       >
                         <span>{col.label}</span>
                         {sortConfig.key === col.key && (
-                          <span className="text-gray-400">{sortConfig.direction === "asc" ? "▲" : "▼"}</span>
+                          <span className="text-gray-400">
+                            {sortConfig.direction === "asc" ? "▲" : "▼"}
+                          </span>
                         )}
                       </button>
                     )}
@@ -633,7 +753,6 @@ export default function UniclubSubgroup({ navbarHeight }) {
                     onChange={(e) => setFilterDebounced("title", e.target.value)}
                   />
                 </th>
-                {/* <th className="px-6 pb-3" /> */}
                 <th className="px-6 pb-3">
                   <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
@@ -655,8 +774,13 @@ export default function UniclubSubgroup({ navbarHeight }) {
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-8 text-center text-gray-500">
-                    {groupId ? "No subgroups yet. Create one." : "No groups found."}
+                  <td
+                    colSpan={10}
+                    className="px-6 py-8 text-center text-gray-500"
+                  >
+                    {groupId
+                      ? "No subgroups yet. Create one."
+                      : "No groups found."}
                   </td>
                 </tr>
               ) : (
@@ -664,25 +788,36 @@ export default function UniclubSubgroup({ navbarHeight }) {
                   const start = item.startAtMs || item.startAt;
                   const end = item.endAtMs || item.endAt;
                   const whenLabel = start
-                    ? `${dayjs(start).format("DD MMM, h:mm A")}${end ? ` – ${dayjs(end).format("DD MMM, h:mm A")}` : ""
-                    }`
+                    ? `${dayjs(start).format("DD MMM, h:mm A")}${
+                        end
+                          ? ` – ${dayjs(end).format("DD MMM, h:mm A")}`
+                          : ""
+                      }`
                     : item.date || item.time
-                      ? `${item.date || ""}${item.time ? ` • ${item.time}${item.endAt ? ` – ${item.endAt}` : ""}` : ""}`
-                      : "-";
+                    ? `${item.date || ""}${
+                        item.time
+                          ? ` • ${item.time}${
+                              item.endAt ? ` – ${item.endAt}` : ""
+                            }`
+                          : ""
+                      }`
+                    : "-";
 
                   return (
                     <tr key={item.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
-                      {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.location || "-"}</td> */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        {item.title}
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-500 whitespace-normal break-words max-w-xs">
                         {item.desc}
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{whenLabel}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        {whenLabel}
+                      </td>
 
-
+                      {/* Requests */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                             {item.requestsCount ?? 0}
@@ -704,9 +839,8 @@ export default function UniclubSubgroup({ navbarHeight }) {
                         </div>
                       </td>
 
-
+                      {/* Members */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                             {item.membersCount ?? 0}
@@ -745,7 +879,6 @@ export default function UniclubSubgroup({ navbarHeight }) {
                         >
                           <span> + Add</span>
                         </button>
-
                       </td>
 
                       {/* Events */}
@@ -754,7 +887,11 @@ export default function UniclubSubgroup({ navbarHeight }) {
                           className="text-blue-600 hover:underline"
                           onClick={() =>
                             navigate("/subgroupevent", {
-                              state: { groupId: item.id, subgroupId: item.id, groupName: item.title || "Club" },
+                              state: {
+                                groupId: item.id,
+                                subgroupId: item.id,
+                                groupName: item.title || "Club",
+                              },
                             })
                           }
                           title="Events"
@@ -769,7 +906,11 @@ export default function UniclubSubgroup({ navbarHeight }) {
                           className="text-blue-600 hover:underline"
                           onClick={() =>
                             navigate("/subgroupeventbooking", {
-                              state: { groupId: item.id, subgroupId: item.id, groupName: item.title || "Club" },
+                              state: {
+                                groupId: item.id,
+                                subgroupId: item.id,
+                                groupName: item.title || "Club",
+                              },
                             })
                           }
                           title="Event Bookings"
@@ -792,30 +933,72 @@ export default function UniclubSubgroup({ navbarHeight }) {
                                 imageUrl: item.image || "",
                                 startAtMs: item.startAtMs || item.startAt || 0,
                                 endAtMs: item.endAtMs || item.endAt || 0,
-                                tags: Array.isArray(item.tags) ? item.tags.join(", ") : item.tags || "",
+                                tags: Array.isArray(item.tags)
+                                  ? item.tags
+                                  : parseTags(item.tags || ""),
+                                tagInput: "",
                                 rules: item.rules || "",
                                 joinQInput: "",
-                                joinQuestions: Array.isArray(item.joinQuestions) ? item.joinQuestions : [],
+                                joinQType: "short",
+                                joinQOptions: "",
+                                joinQuestions: Array.isArray(item.joinQuestions)
+                                  ? item.joinQuestions.map((q, idx) =>
+                                      typeof q === "string"
+                                        ? {
+                                            id: `q${idx + 1}`,
+                                            question: q,
+                                            type: "short",
+                                            options: [],
+                                          }
+                                        : {
+                                            id: q.id || `q${idx + 1}`,
+                                            question: q.question || "",
+                                            type: q.type || "short",
+                                            options: Array.isArray(q.options)
+                                              ? q.options
+                                              : [],
+                                          }
+                                    )
+                                  : [],
                                 category: item.category || "",
                                 enableChat: !!item?.settings?.chatEnabled,
-                                allowEventsByMembers: !!item?.settings?.allowEventsByMembers,
+                                allowEventsByMembers:
+                                  !!item?.settings?.allowEventsByMembers,
                                 pollsEnabled: !!item?.settings?.pollsEnabled,
-                                sharedFilesEnabled: !!item?.settings?.sharedFilesEnabled,
-                                allowSubGroups: !!item?.settings?.allowSubGroups,
+                                sharedFilesEnabled:
+                                  !!item?.settings?.sharedFilesEnabled,
+                                allowSubGroups:
+                                  !!item?.settings?.allowSubGroups,
                                 allowNotifications:
-                                  item?.settings?.allowNotifications === false ? false : true,
-                                maxMembers: Number.isFinite(item?.settings?.maxMembers)
+                                  item?.settings?.allowNotifications === false
+                                    ? false
+                                    : true,
+                                maxMembers: Number.isFinite(
+                                  item?.settings?.maxMembers
+                                )
                                   ? String(item?.settings?.maxMembers)
                                   : "",
                                 paymentType: item?.settings?.paymentType || "free",
                                 paymentAmount:
-                                  item?.settings?.amount != null ? String(item?.settings?.amount) : "",
-                                memberValidFromMs: item?.settings?.memberValidFromMs || 0,
-                                memberValidToMs: item?.settings?.memberValidToMs || 0,
-                                successorUid: item?.ownership?.successorUid || "",
+                                  item?.settings?.amount != null
+                                    ? String(item?.settings?.amount)
+                                    : "",
+                                memberValidFromMs:
+                                  item?.settings?.memberValidFromMs || 0,
+                                memberValidToMs:
+                                  item?.settings?.memberValidToMs || 0,
+                                successorUid:
+                                  item?.ownership?.successorUid || "",
                                 memberId: "",
                                 roleId: "",
                                 role: "",
+                                contacts:
+                                  Array.isArray(item.contacts) &&
+                                  item.contacts.length > 0
+                                    ? item.contacts
+                                    : [{ name: "", phone: "", email: "" }],
+                                showPhone: !!item.contactPhone,
+                                showEmail: !!item.contactEmail,
                               });
                               setFileName("No file chosen");
                               setPreviewUrl(item.image || "");
@@ -858,7 +1041,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
             Previous
           </button>
           <button
-            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+            onClick={() =>
+              setCurrentPage((p) => Math.min(p + 1, totalPages))
+            }
             disabled={currentPage === totalPages}
             className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
           >
@@ -871,7 +1056,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold mb-4">{editingData ? "Edit subgroup" : "Add subgroup"}</h2>
+            <h2 className="text-xl font-bold mb-4">
+              {editingData ? "Edit subgroup" : "Add subgroup"}
+            </h2>
             <form onSubmit={handleAdd} className="space-y-4">
               <div className="space-y-4">
                 <input
@@ -879,7 +1066,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
                   placeholder="Title"
                   className="w-full border border-gray-300 p-2 rounded"
                   value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, title: e.target.value }))
+                  }
                   required
                 />
 
@@ -887,44 +1076,67 @@ export default function UniclubSubgroup({ navbarHeight }) {
                   placeholder="Description"
                   className="w-full border border-gray-300 p-2 rounded"
                   value={form.desc}
-                  onChange={(e) => setForm({ ...form, desc: e.target.value })}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, desc: e.target.value }))
+                  }
                   required
                 />
 
-                {/* Location */}
-                <input
-                  type="text"
-                  name="location"
-                  placeholder="Location"
-                  className="w-full border border-gray-300 p-2 rounded"
-                  value={form.location}
-                  onChange={handleChange}
-                />
+                {/* Location - same pattern as main uniclub */}
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Location
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      name="location"
+                      placeholder="Select on map"
+                      className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer"
+                      value={form.location}
+                      readOnly
+                      onClick={() => setShowMapModal(true)}
+                    />
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  </div>
+                </div>
 
                 {/* When */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">When</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    When
+                  </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
                       type="date"
                       className="w-full border border-gray-300 p-2 rounded"
-                      value={toLocalInputValue(form.startAtMs)}
-                      onChange={(e) =>
-                        setForm((p) => ({ ...p, startAtMs: fromLocalInputValue(e.target.value) }))
-                      }
+                      value={toDateInputValue(form.startAtMs)}
+                      onChange={(e) => {
+                        const ms = e.target.value
+                          ? new Date(e.target.value).getTime()
+                          : 0;
+                        setForm((p) => ({ ...p, startAtMs: ms }));
+                      }}
                     />
                     <input
                       type="date"
                       className="w-full border border-gray-300 p-2 rounded"
-                      value={toLocalInputValue(form.endAtMs)}
-                      onChange={(e) => setForm((p) => ({ ...p, endAtMs: fromLocalInputValue(e.target.value) }))}
+                      value={toDateInputValue(form.endAtMs)}
+                      onChange={(e) => {
+                        const ms = e.target.value
+                          ? new Date(e.target.value).getTime()
+                          : 0;
+                        setForm((p) => ({ ...p, endAtMs: ms }));
+                      }}
                     />
                   </div>
                 </div>
 
                 {/* Privacy */}
                 <section className="space-y-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Privacy Type</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Privacy Type
+                  </label>
                   <select
                     name="privacyType"
                     value={form.privacyType}
@@ -938,88 +1150,209 @@ export default function UniclubSubgroup({ navbarHeight }) {
                   </select>
                 </section>
 
-                {/* Category */}
-                {/* <section className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">Category</label>
-                  <select
-                    name="category"
-                    value={form.category}
-                    onChange={handleChange}
-                    className="w-full border border-gray-300 p-2 rounded"
-                    required
-                  >
-                    <option value="">Select Category</option>
-                    {category?.map((c) => (
-                      <option key={c.id} value={c.name}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </section> */}
-
-                {/* Club Meta */}
+                {/* Tags – same chip UX as main */}
                 <section className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Tags</label>
-                    <input
-                      type="text"
-                      className="w-full border border-gray-300 p-2 rounded"
-                      placeholder="football, weekend, beginners"
-                      value={form.tags}
-                      onChange={(e) => setForm((p) => ({ ...p, tags: e.target.value }))}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Rules &amp; Guidelines</label>
-                    <textarea
-                      className="w-full border border-gray-300 p-2 rounded"
-                      placeholder="Be respectful, no spam…"
-                      rows={3}
-                      value={form.rules}
-                      onChange={(e) => setForm((p) => ({ ...p, rules: e.target.value }))}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Join Questions</label>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Tags
+                    </label>
                     <div className="flex gap-2">
                       <input
                         type="text"
                         className="flex-1 border border-gray-300 p-2 rounded"
-                        placeholder="Add a question (press +)"
-                        value={form.joinQInput}
-                        onChange={(e) => setForm((p) => ({ ...p, joinQInput: e.target.value }))}
+                        placeholder="football"
+                        value={form.tagInput}
+                        onChange={(e) =>
+                          setForm((p) => ({ ...p, tagInput: e.target.value }))
+                        }
                       />
                       <button
                         type="button"
                         className="px-3 py-2 rounded bg-gray-800 text-white"
                         onClick={() => {
-                          const q = (form.joinQInput || "").trim();
-                          if (q) setForm((p) => ({ ...p, joinQuestions: [...p.joinQuestions, q], joinQInput: "" }));
+                          const t = (form.tagInput || "").trim();
+                          if (!t) return;
+                          setForm((p) => {
+                            if (p.tags?.includes(t)) {
+                              return { ...p, tagInput: "" };
+                            }
+                            return {
+                              ...p,
+                              tags: [...(p.tags || []), t],
+                              tagInput: "",
+                            };
+                          });
                         }}
                       >
                         +
                       </button>
                     </div>
-                    {form.joinQuestions?.length > 0 && (
+                    {form.tags?.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {form.joinQuestions.map((q, i) => (
+                        {form.tags.map((tag, i) => (
                           <span
                             key={i}
                             className="inline-flex items-center gap-2 bg-gray-100 border px-2 py-1 rounded-full text-sm"
                           >
-                            {q}
+                            {tag}
                             <button
                               type="button"
                               className="text-red-600"
                               onClick={() =>
-                                setForm((p) => ({ ...p, joinQuestions: p.joinQuestions.filter((_, idx) => idx !== i) }))
+                                setForm((p) => ({
+                                  ...p,
+                                  tags: p.tags.filter((_, idx) => idx !== i),
+                                }))
                               }
                             >
                               ×
                             </button>
                           </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Rules &amp; Guidelines
+                    </label>
+                    <textarea
+                      className="w-full border border-gray-300 p-2 rounded"
+                      placeholder="Be respectful, no spam…"
+                      rows={3}
+                      value={form.rules}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, rules: e.target.value }))
+                      }
+                    />
+                  </div>
+
+                  {/* Join Questions – same builder as main uniclub */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Join Questions
+                    </label>
+
+                    <div className="flex flex-col sm:flex-row gap-2 mt-1">
+                      {/* Type select */}
+                      <select
+                        className="border border-gray-300 p-2 rounded w-full sm:w-40"
+                        value={form.joinQType}
+                        onChange={(e) =>
+                          setForm((p) => ({ ...p, joinQType: e.target.value }))
+                        }
+                      >
+                        <option value="short">Short Answer</option>
+                        <option value="checkboxes">Checkboxes</option>
+                        <option value="dropdown">Dropdown</option>
+                      </select>
+
+                      {/* Question text */}
+                      <input
+                        type="text"
+                        className="flex-1 border border-gray-300 p-2 rounded"
+                        placeholder="Add a question"
+                        value={form.joinQInput}
+                        onChange={(e) =>
+                          setForm((p) => ({
+                            ...p,
+                            joinQInput: e.target.value,
+                          }))
+                        }
+                      />
+
+                      {/* Options input (only for checkbox / dropdown) */}
+                      {(form.joinQType === "checkboxes" ||
+                        form.joinQType === "dropdown") && (
+                        <input
+                          type="text"
+                          className="flex-1 border border-gray-300 p-2 rounded"
+                          placeholder="Options (comma separated)"
+                          value={form.joinQOptions}
+                          onChange={(e) =>
+                            setForm((p) => ({
+                              ...p,
+                              joinQOptions: e.target.value,
+                            }))
+                          }
+                        />
+                      )}
+
+                      <button
+                        type="button"
+                        className="px-3 py-2 rounded bg-gray-800 text-white whitespace-nowrap"
+                        onClick={() => {
+                          const qText = (form.joinQInput || "").trim();
+                          if (!qText) return;
+                          const type = form.joinQType || "short";
+                          const options =
+                            type === "short"
+                              ? []
+                              : (form.joinQOptions || "")
+                                  .split(",")
+                                  .map((o) => o.trim())
+                                  .filter(Boolean);
+
+                          setForm((p) => ({
+                            ...p,
+                            joinQuestions: [
+                              ...(p.joinQuestions || []),
+                              {
+                                id: `q${Date.now()}`,
+                                question: qText,
+                                type,
+                                options,
+                              },
+                            ],
+                            joinQInput: "",
+                            joinQOptions: "",
+                            joinQType: "short",
+                          }));
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {form.joinQuestions?.length > 0 && (
+                      <div className="mt-3 flex flex-col gap-2">
+                        {form.joinQuestions.map((q, i) => (
+                          <div
+                            key={q.id || i}
+                            className="inline-flex items-center justify-between bg-gray-50 border px-3 py-2 rounded text-sm"
+                          >
+                            <div className="flex flex-col">
+                              <span className="font-medium">
+                                {q.question}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                Type:{" "}
+                                {q.type === "short"
+                                  ? "Short Answer"
+                                  : q.type === "checkboxes"
+                                  ? "Checkboxes"
+                                  : "Dropdown"}
+                                {q.options && q.options.length
+                                  ? ` • Options: ${q.options.join(", ")}`
+                                  : ""}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="text-red-600 text-xs ml-3"
+                              onClick={() =>
+                                setForm((p) => ({
+                                  ...p,
+                                  joinQuestions: p.joinQuestions.filter(
+                                    (_, idx) => idx !== i
+                                  ),
+                                }))
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -1036,13 +1369,18 @@ export default function UniclubSubgroup({ navbarHeight }) {
                     ["enableChat", "Enable Chat"],
                     ["allowNotifications", "Allow Notifications to Members"],
                   ].map(([key, label]) => (
-                    <label key={key} className="flex items-center justify-between border rounded px-3 py-2">
+                    <label
+                      key={key}
+                      className="flex items-center justify-between border rounded px-3 py-2"
+                    >
                       <span className="text-sm">{label}</span>
                       <input
                         type="checkbox"
                         className="h-5 w-5"
                         checked={!!form[key]}
-                        onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.checked }))}
+                        onChange={(e) =>
+                          setForm((p) => ({ ...p, [key]: e.target.checked }))
+                        }
                       />
                     </label>
                   ))}
@@ -1050,14 +1388,18 @@ export default function UniclubSubgroup({ navbarHeight }) {
 
                 {/* Limits */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Max Members (optional)</label>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Max Members (optional)
+                  </label>
                   <input
                     type="number"
                     min="1"
                     className="w-full border border-gray-300 p-2 rounded"
                     placeholder="200"
                     value={form.maxMembers}
-                    onChange={(e) => setForm((p) => ({ ...p, maxMembers: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, maxMembers: e.target.value }))
+                    }
                   />
                 </div>
 
@@ -1065,7 +1407,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
                 <section className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="col-span-1">
-                      <label className="block text-sm font-medium text-gray-700">Payment Type</label>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Payment Type
+                      </label>
                       <select
                         name="paymentType"
                         value={form.paymentType}
@@ -1078,7 +1422,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
                     </div>
 
                     <div className="col-span-1">
-                      <label className="block text-sm font-medium text-gray-700">Amount</label>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Amount
+                      </label>
                       <input
                         type="number"
                         name="paymentAmount"
@@ -1095,26 +1441,34 @@ export default function UniclubSubgroup({ navbarHeight }) {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700">Membership Valid From</label>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Membership Valid From
+                      </label>
                       <input
                         type="date"
                         className="w-full border border-gray-300 p-2 rounded"
                         value={toDateInputValue(form.memberValidFromMs)}
                         onChange={(e) => {
-                          const ms = e.target.value ? new Date(e.target.value).getTime() : 0;
+                          const ms = e.target.value
+                            ? new Date(e.target.value).getTime()
+                            : 0;
                           setForm((p) => ({ ...p, memberValidFromMs: ms }));
                         }}
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700">Membership Valid To</label>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Membership Valid To
+                      </label>
                       <input
                         type="date"
                         className="w-full border border-gray-300 p-2 rounded"
                         value={toDateInputValue(form.memberValidToMs)}
                         onChange={(e) => {
-                          const ms = e.target.value ? new Date(e.target.value).getTime() : 0;
+                          const ms = e.target.value
+                            ? new Date(e.target.value).getTime()
+                            : 0;
                           setForm((p) => ({ ...p, memberValidToMs: ms }));
                         }}
                         required
@@ -1124,7 +1478,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
                 </section>
 
                 {/* Ownership Transfer */}
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ownership Transfer Contact</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Ownership Transfer Contact
+                </label>
                 <select
                   name="successorUid"
                   className="w-full border border-gray-300 p-2 rounded"
@@ -1151,7 +1507,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
                 <section className="space-y-2">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="col-span-1">
-                      <label className="block text-sm font-medium text-gray-700">Add Moderator</label>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Add Moderator
+                      </label>
                       <select
                         name="memberId"
                         className="w-full border border-gray-300 p-2 rounded"
@@ -1168,7 +1526,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
                     </div>
 
                     <div className="col-span-1">
-                      <label className="block text-sm font-medium text-gray-700">Assign Role</label>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Assign Role
+                      </label>
                       <select
                         name="roleId"
                         className="w-full border border-gray-300 p-2 rounded"
@@ -1196,7 +1556,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
 
                 {/* Links */}
                 <div>
-                  <h3 className="block text-sm font-medium text-gray-700">Links</h3>
+                  <h3 className="block text-sm font-medium text-gray-700">
+                    Links
+                  </h3>
                   <input
                     type="url"
                     name="website"
@@ -1217,35 +1579,143 @@ export default function UniclubSubgroup({ navbarHeight }) {
                   />
                 </div>
 
-                {/* Contact */}
-                <div>
-                  <h3 className="block text-sm font-medium text-gray-700">Contact</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <input
-                      type="text"
-                      name="contactName"
-                      placeholder="Contact name"
-                      className="w-full border border-gray-300 p-2 rounded"
-                      value={form.contactName}
-                      onChange={handleChange}
-                    />
-                    <input
-                      type="tel"
-                      name="contactPhone"
-                      placeholder="Phone"
-                      className="w-full border border-gray-300 p-2 rounded"
-                      value={form.contactPhone}
-                      onChange={handleChange}
-                    />
-                    <input
-                      type="email"
-                      name="contactEmail"
-                      placeholder="Email"
-                      className="w-full border border-gray-300 p-2 rounded"
-                      value={form.contactEmail}
-                      onChange={handleChange}
-                      autoCapitalize="none"
-                    />
+                {/* Contact – same pattern as main uniclub */}
+                <div className="space-y-3">
+                  <h3 className="block text-sm font-medium text-gray-700">
+                    Contact
+                  </h3>
+
+                  {/* Primary contact (creator) */}
+                  <div className="border rounded-lg p-3 bg-gray-50 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
+                      {user?.photoURL || emp?.imageUrl ? (
+                        <img
+                          src={user?.photoURL || emp?.imageUrl}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : null}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900">
+                        {emp?.name || user?.displayName || "Subgroup contact"}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        The primary contact is always the subgroup creator.
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-4 text-xs text-gray-600">
+                        <label className="inline-flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={form.showPhone}
+                            onChange={(e) =>
+                              setForm((p) => ({
+                                ...p,
+                                showPhone: e.target.checked,
+                              }))
+                            }
+                          />
+                          <span>
+                            Show phone
+                            {emp?.phone || user?.phoneNumber
+                              ? ` (${emp?.phone || user?.phoneNumber})`
+                              : ""}
+                          </span>
+                        </label>
+                        <label className="inline-flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={form.showEmail}
+                            onChange={(e) =>
+                              setForm((p) => ({
+                                ...p,
+                                showEmail: e.target.checked,
+                              }))
+                            }
+                          />
+                          <span>
+                            Show email
+                            {user?.email || emp?.email
+                              ? ` (${user?.email || emp?.email})`
+                              : ""}
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Additional contacts (committee etc.) */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">
+                        Additional contacts (optional)
+                      </span>
+                      <button
+                        type="button"
+                        className="text-xs px-2 py-1 rounded bg-gray-900 text-white"
+                        onClick={addContactRow}
+                      >
+                        + Add contact
+                      </button>
+                    </div>
+
+                    {Array.isArray(form.contacts) &&
+                    form.contacts.length > 0 ? (
+                      <div className="space-y-2">
+                        {form.contacts.map((c, idx) => (
+                          <div
+                            key={idx}
+                            className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-start"
+                          >
+                            <input
+                              type="text"
+                              placeholder="Name"
+                              className="w-full border border-gray-300 p-2 rounded"
+                              value={c.name}
+                              onChange={(e) =>
+                                updateContactRow(idx, "name", e.target.value)
+                              }
+                            />
+                            <input
+                              type="tel"
+                              placeholder="Phone"
+                              className="w-full border border-gray-300 p-2 rounded"
+                              value={c.phone}
+                              onChange={(e) =>
+                                updateContactRow(idx, "phone", e.target.value)
+                              }
+                            />
+                            <div className="flex gap-2">
+                              <input
+                                type="email"
+                                placeholder="Email"
+                                className="w-full border border-gray-300 p-2 rounded"
+                                value={c.email}
+                                onChange={(e) =>
+                                  updateContactRow(idx, "email", e.target.value)
+                                }
+                              />
+                              {form.contacts.length > 1 && (
+                                <button
+                                  type="button"
+                                  className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 border border-red-200 whitespace-nowrap"
+                                  onClick={() => removeContactRow(idx)}
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500">
+                        No extra contacts yet. Use “Add contact” for committee
+                        members.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -1263,10 +1733,16 @@ export default function UniclubSubgroup({ navbarHeight }) {
                       />
                       📁 Choose File
                     </label>
-                    <span className="text-sm text-gray-600 truncate max-w-[150px]">{fileName}</span>
+                    <span className="text-sm text-gray-600 truncate max-w-[150px]">
+                      {fileName}
+                    </span>
                   </div>
                   {(previewUrl || form.imageUrl) && (
-                    <img src={previewUrl || form.imageUrl} alt="Poster Preview" width="150" />
+                    <img
+                      src={previewUrl || form.imageUrl}
+                      alt="Poster Preview"
+                      width="150"
+                    />
                   )}
                 </section>
               </div>
@@ -1279,12 +1755,42 @@ export default function UniclubSubgroup({ navbarHeight }) {
                 >
                   Cancel
                 </button>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
+                <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                  Save
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Map modal for location */}
+      <Dialog
+        open={showMapModal}
+        onClose={() => setShowMapModal(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Pick a Location</DialogTitle>
+        <DialogContent dividers sx={{ overflow: "hidden" }}>
+          <MapLocationInput
+            value={form.location}
+            onChange={(val) => {
+              setForm((prev) => ({ ...prev, location: val.address }));
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowMapModal(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => setShowMapModal(false)}
+            disabled={!form.location}
+          >
+            Save location
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Requests modal */}
       {reqModalOpen && (
@@ -1292,7 +1798,8 @@ export default function UniclubSubgroup({ navbarHeight }) {
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">
-                Join Requests — {activeClubTitle} {requests.length ? `(${requests.length})` : ""}
+                Join Requests — {activeClubTitle}{" "}
+                {requests.length ? `(${requests.length})` : ""}
               </h3>
               <button
                 className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300"
@@ -1312,10 +1819,19 @@ export default function UniclubSubgroup({ navbarHeight }) {
             ) : (
               <ul className="space-y-3">
                 {requests.map((r) => (
-                  <li key={r.uid} className="border rounded p-3 flex items-start justify-between">
+                  <li
+                    key={r.uid}
+                    className="border rounded p-3 flex items-start justify-between"
+                  >
                     <div className="space-y-1">
-                      <div className="font-medium">{r.name || r.displayName || r.uid}</div>
-                      {r.answers && <div className="text-sm bg-gray-50 rounded p-2">{renderAnswers(r.answers)}</div>}
+                      <div className="font-medium">
+                        {r.name || r.displayName || r.uid}
+                      </div>
+                      {r.answers && (
+                        <div className="text-sm bg-gray-50 rounded p-2">
+                          {renderAnswers(r.answers)}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -1347,7 +1863,8 @@ export default function UniclubSubgroup({ navbarHeight }) {
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">
-                Members — {activeClubTitle} {membersList.length ? `(${membersList.length})` : ""}
+                Members — {activeClubTitle}{" "}
+                {membersList.length ? `(${membersList.length})` : ""}
               </h3>
               <button
                 className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300"
@@ -1367,21 +1884,33 @@ export default function UniclubSubgroup({ navbarHeight }) {
             ) : (
               <ul className="divide-y">
                 {membersList.map((m) => (
-                  <li key={m.uid} className="py-2 flex items-center justify-between">
+                  <li
+                    key={m.uid}
+                    className="py-2 flex items-center justify-between"
+                  >
                     <div className="flex items-center gap-3">
                       {m.photoURL ? (
-                        <img src={m.photoURL} alt="" className="w-8 h-8 rounded-full object-cover" />
+                        <img
+                          src={m.photoURL}
+                          alt=""
+                          className="w-8 h-8 rounded-full object-cover"
+                        />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-gray-200" />
                       )}
                       <div>
                         <div className="font-medium">{m.name || m.uid}</div>
-                        <div className="text-xs text-gray-500">{m.role || "member"}</div>
+                        <div className="text-xs text-gray-500">
+                          {m.role || "member"}
+                        </div>
                       </div>
                     </div>
                     <span
-                      className={`text-xs px-2 py-0.5 rounded ${m.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                        }`}
+                      className={`text-xs px-2 py-0.5 rounded ${
+                        m.status === "active"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
                     >
                       {m.status || "active"}
                     </span>
@@ -1397,9 +1926,12 @@ export default function UniclubSubgroup({ navbarHeight }) {
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
-            <h2 className="text-xl font-semibold mb-4 text-red-600">Delete uniclub</h2>
+            <h2 className="text-xl font-semibold mb-4 text-red-600">
+              Delete uniclub
+            </h2>
             <p className="mb-4">
-              Are you sure you want to delete <strong>{deleteData?.title}</strong>?
+              Are you sure you want to delete{" "}
+              <strong>{deleteData?.title}</strong>?
             </p>
             <div className="flex justify-end space-x-3">
               <button
@@ -1411,7 +1943,10 @@ export default function UniclubSubgroup({ navbarHeight }) {
               >
                 Cancel
               </button>
-              <button onClick={handleDelete} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+              <button
+                onClick={handleDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
                 Delete
               </button>
             </div>
