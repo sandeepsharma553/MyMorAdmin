@@ -36,8 +36,8 @@ export default function UniclubEventPage({ navbarHeight }) {
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
-  const [paymentlist, setPaymentList] = useState([ { name: 'General', id: 'General' },
-    { name: 'VIP', id: 'VIP' },]);
+  const [paymentlist, setPaymentList] = useState([{ name: 'General', id: 'General' },
+  { name: 'VIP', id: 'VIP' },]);
   const [category, setCategory] = useState([]);
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -154,7 +154,7 @@ export default function UniclubEventPage({ navbarHeight }) {
   const getList = async () => {
     setIsLoading(true);
     try {
-      const qEvents = query(collection(db, "discoverevents"),where("groupid", "==", groupId));
+      const qEvents = query(collection(db, "discoverevents"), where("groupid", "==", groupId));
       const snap = await getDocs(qEvents);
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       docs.sort((a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0));
@@ -858,11 +858,11 @@ export default function UniclubEventPage({ navbarHeight }) {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-4">
                 <input name="eventName" placeholder="Event Name" value={form.eventName} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-                <input name="shortDesc" placeholder="Short Description" value={form.shortDesc} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
+                {/* <input name="shortDesc" placeholder="Short Description" value={form.shortDesc} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required /> */}
 
                 <label className="block font-medium">Description</label>
                 <EditorPro value={form.eventDescriptionHtml} onChange={(html) => setForm((f) => ({ ...f, eventDescriptionHtml: html }))} placeholder="Describe your event…" />
-{/* 
+                {/* 
                 <select name="category" value={form.category} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required>
                   <option value="">Select Category</option>
                   {category?.map((item) => (
@@ -874,7 +874,7 @@ export default function UniclubEventPage({ navbarHeight }) {
 
                 <input name="tags" placeholder="Tags (comma separated)" value={form.tags} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
 
-                <label>Date Range</label>
+                <label>Event Display Range on App</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -914,11 +914,11 @@ export default function UniclubEventPage({ navbarHeight }) {
 
                 <input name="locationName" placeholder="Location Name" value={form.locationName} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
                 <input name="address" placeholder="Address / Room" value={form.address} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-{/* 
+
                 <div className="relative">
                   <input name="mapLocation" readOnly placeholder="Select on map" value={form.mapLocation} onClick={() => setShowMapModal(true)} className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer" />
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                </div> */}
+                </div>
 
                 {/* Posters */}
                 <div className="space-y-2">
@@ -1091,7 +1091,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                   </div>
                 )}
 
-                {/* <label className="block mb-2">
+                <label className="block mb-2">
                   <input type="checkbox" name="allowChat" checked={form.allowChat} onChange={handleChange} /> Allow Chat
                 </label>
                 <label className="block mb-2">
@@ -1113,7 +1113,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                   <input type="checkbox" name="boothOption" checked={form.boothOption} onChange={handleChange} /> Booth / Stall Option
                 </label>
                 <input name="vendorInfo" placeholder="Vendor Info" value={form.vendorInfo} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-                <input name="sponsorship" placeholder="Sponsorship Info" value={form.sponsorship} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" /> */}
+                <input name="sponsorship" placeholder="Sponsorship Info" value={form.sponsorship} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
               </div>
 
               <div className="flex justify-end mt-6 space-x-3">
@@ -1153,7 +1153,10 @@ export default function UniclubEventPage({ navbarHeight }) {
       <Dialog open={showMapModal} onClose={() => setShowMapModal(false)} maxWidth="md" fullWidth>
         <DialogTitle>Pick a Location</DialogTitle>
         <DialogContent dividers sx={{ overflow: "hidden" }}>
-          <MapLocationInput value={form.mapLocation} onChange={(val) => setForm({ ...form, mapLocation: val })} />
+          <MapLocationInput value={form.mapLocation} onChange={(val) => {
+            const coordsStr = `${val.lng.toFixed(6)},${val.lat.toFixed(6)}`;
+            setForm({ ...form, mapLocation: coordsStr })
+          }} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowMapModal(false)}>Cancel</Button>
