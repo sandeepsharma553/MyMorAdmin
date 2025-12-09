@@ -42,7 +42,7 @@ function AppWrapper() {
   //        const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
   //      // const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { type: 'module' })
   //       // .then((registration) => {
-         
+
   //       //     console.log('ServiceWorker registration successful with scope: ', registration.scope);
   //       // })
   //       // .catch((error) => {
@@ -98,9 +98,13 @@ function AppWrapper() {
   //   setupWebPush();
   // }, [isLoggedIn, user, employee]);
 
-  if (checking) return null;
-  
 
+  if (checking) return null;
+
+  const adminDefaultPath =
+    isLoggedIn && type === "admin" && employee?.uniclubid
+      ? "/uniclubdashboard"
+      : "/dashboard";
   return (
     <Routes>
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
@@ -122,7 +126,7 @@ function AppWrapper() {
 
       {isLoggedIn && type === "admin" && (
         <>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<Navigate to={adminDefaultPath} replace />} />
           <Route path="/*" element={<Layout><AdminRoutes /></Layout>} />
         </>
       )}

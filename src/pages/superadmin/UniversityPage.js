@@ -45,6 +45,7 @@ const DEFAULT_FEATURES = {
   social: false,
   uniclub: false,
   uniclubstudent: false,
+  uniclubmember:false,
   uniclubannouncement: false,
   uniclubevent: false,
   uniclubeventbooking: false,

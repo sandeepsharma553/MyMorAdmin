@@ -23,6 +23,7 @@ import MaintenanceCategoryPage from "../pages/admin/MaintenanceCategoryPage";
 import ReportSettingPage from "../pages/admin/ReportSettingPage";
 import UniclubPage from "../pages/uniclub/UniclubPage";
 import UniclubStudentPage from "../pages/uniclub/UniclubStudentPage";
+import UniclubMembersPage from "../pages/uniclub/UniclubMembersPage";
 import UniclubEventBookingPage from "../pages/uniclub/UniclubEventBooking";
 import UniclubEventPage from "../pages/uniclub/UniclubEvent";
 import UniclubAnnouncementPage from "../pages/uniclub/UniclubAnnouncement";
@@ -31,6 +32,7 @@ import SubgroupEventBooking from "../pages/uniclub/SubgroupEventBooking";
 import SubgroupAnnouncement from "../pages/uniclub/SubgroupAnnouncement";
 import SubgroupEvent from "../pages/uniclub/SubgroupEvent";
 import ContactPage from "../pages/ContactPage";
+import UniclubDashboardPage from "../pages/uniclub/UniclubDashboardPage";
 export default function AdminRoutes({ route }) {
 
   return (
@@ -38,6 +40,7 @@ export default function AdminRoutes({ route }) {
     <Routes>
       {/* <Route path="dashboard" element={<HomePage />} /> */}
       <Route path="/dashboard" element={<DashboardPage />} />
+      <Route path="/uniclubdashboard" element={<UniclubDashboardPage />} />
       <Route path="/diningmenu" element={<DiningMenuPage />} />
       <Route path="/cleaningschedule" element={<CleaningSchedulePage />} />
       <Route path="/tutorialSchedule" element={<TutorialSchedulePage />} />
@@ -61,6 +64,7 @@ export default function AdminRoutes({ route }) {
       <Route path="/reportsetting" element={<ReportSettingPage />} />
       <Route path="/uniclub" element={<UniclubPage />} />
       <Route path="/uniclubstudent" element={<UniclubStudentPage />} />
+      <Route path="/uniclubmember" element={<UniclubMembersPage />} />
       <Route path="/uniclubevent" element={<UniclubEventPage />} />
       <Route path="/uniclubeventbooking" element={<UniclubEventBookingPage />} />
       <Route path="/uniclubannouncement" element={<UniclubAnnouncementPage />} />
@@ -69,6 +73,7 @@ export default function AdminRoutes({ route }) {
       <Route path="/subgroupeventbooking" element={<SubgroupEventBooking />} />
       <Route path="/subgroupannouncement" element={<SubgroupAnnouncement />} />
       <Route path="/contact" element={<ContactPage />} />
+      
     </Routes>
   );
 }

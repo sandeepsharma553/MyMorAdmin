@@ -38,8 +38,16 @@ const LoginPage = ({ onLogin }) => {
   });
   const handleSubmit = async (values) => {
     try {
-      await dispatch(LoginAdmin(values));
+      const result = await dispatch(LoginAdmin(values)).unwrap();
+      const employee = result.employee;
+
+    if (employee?.uniclubid) {
+      // Uniclub admin
+      navigate("/uniclubdashboard", { replace: true });
+    } else {
+      // Hostel admin (ya normal admin)
       navigate("/dashboard", { replace: true });
+    }
     } catch (error) {
       showToastMessage(error.code || "Failed to login");
     }

@@ -917,7 +917,7 @@ export default function EventPage({ navbarHeight }) {
 
                 <input name="tags" placeholder="Tags (comma separated)" value={form.tags} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
 
-                <label>Date Range</label>
+                <label>Event Display Range on App</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -1196,7 +1196,9 @@ export default function EventPage({ navbarHeight }) {
       <Dialog open={showMapModal} onClose={() => setShowMapModal(false)} maxWidth="md" fullWidth>
         <DialogTitle>Pick a Location</DialogTitle>
         <DialogContent dividers sx={{ overflow: "hidden" }}>
-          <MapLocationInput value={form.mapLocation} onChange={(val) => setForm({ ...form, mapLocation: val })} />
+        <MapLocationInput value={form.mapLocation} onChange={(val) => {
+             const coordsStr = `${val.lng.toFixed(6)},${val.lat.toFixed(6)}`;
+            setForm({ ...form, mapLocation: coordsStr})}} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowMapModal(false)}>Cancel</Button>

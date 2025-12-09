@@ -906,7 +906,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                   <label className="block text-sm font-medium text-gray-700 mb-1">When</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
-                      type="datetime-local"
+                      type="date"
                       className="w-full border border-gray-300 p-2 rounded"
                       value={toLocalInputValue(form.startAtMs)}
                       onChange={(e) =>
@@ -914,7 +914,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                       }
                     />
                     <input
-                      type="datetime-local"
+                      type="date"
                       className="w-full border border-gray-300 p-2 rounded"
                       value={toLocalInputValue(form.endAtMs)}
                       onChange={(e) => setForm((p) => ({ ...p, endAtMs: fromLocalInputValue(e.target.value) }))}

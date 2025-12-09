@@ -143,10 +143,12 @@ const AuthSlice = createSlice({
       })
       .addCase(logoutAdmin.fulfilled, (state) => {
         state.isLoggedIn = false;
+        state.isLoading = false;
         state.user = null;
         state.employee = null;
         state.role = null;
         state.error = null;
+        state.type = null;
         localStorage.clear();
       });
   },

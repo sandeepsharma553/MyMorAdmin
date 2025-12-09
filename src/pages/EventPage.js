@@ -509,7 +509,9 @@ export default function EventPage(props) {
         <DialogContent dividers sx={{ overflow: "hidden" }}>
           <MapLocationInput
             value={form.mapLocation}
-            onChange={(val) => setForm({ ...form, mapLocation: val })}
+            onChange={(val) => {
+              const coordsStr = `${loc.lng.toFixed(6)},${loc.lat.toFixed(6)}`;
+              setForm({ ...form, mapLocation: coordsStr })}}
           />
         </DialogContent>
 

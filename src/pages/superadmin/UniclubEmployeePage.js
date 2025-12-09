@@ -84,6 +84,7 @@ export default function UniclubEmployeePage(props) {
     uniclubid: "",
     uniclub: "",
     empType: "uniclub",
+    originalEmail: "",
   };
 
   const [form, setForm] = useState(initialForm);
@@ -99,6 +100,7 @@ export default function UniclubEmployeePage(props) {
     { key: "setting", label: "Setting" },
     { key: "uniclub", label: "UniClub" },
     { key: "uniclubstudent", label: "UniclubStudent" },
+    { key: "uniclubmember", label: "UniclubMember" },
     { key: "uniclubsubgroup", label: "UniclubSubgroup" },
     { key: "contact", label: "Contact" },
   ];
@@ -124,6 +126,7 @@ export default function UniclubEmployeePage(props) {
     student: "student",
     uniclub: "uniclub",
     uniclubstudent: "uniclubstudent",
+    uniclubmember: "uniclubmember",
     uniclubannouncement: "uniclubannouncement",
     uniclubevent: "uniclubevent",
     uniclubeventbooking: "uniclubeventbooking",
@@ -399,21 +402,73 @@ export default function UniclubEmployeePage(props) {
       const tempApp = initializeApp(firebaseConfig, "employeeCreator");
       const tempAuth = getAuth(tempApp);
 
+      // if (editingData) {
+      //   // UPDATE
+      //   const docRef = doc(db, "employees", form.id);
+      //   const docSnap = await getDoc(docRef);
+      //   if (!docSnap.exists()) {
+      //     toast.warning("Employee does not exist! Cannot update.");
+      //     try {
+      //       await deleteApp(tempApp);
+      //     } catch {}
+      //     return;
+      //   }
+
+      //   await updateDoc(docRef, baseData);
+      //   toast.success("Employee updated successfully");
+      // } 
       if (editingData) {
-        // UPDATE
         const docRef = doc(db, "employees", form.id);
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) {
           toast.warning("Employee does not exist! Cannot update.");
-          try {
-            await deleteApp(tempApp);
-          } catch {}
+          try { await deleteApp(tempApp); } catch {}
           return;
         }
-
+      
+        const newEmail = baseData.email;
+        const oldEmail = form.originalEmail || editingData.email || "";
+      
+        // 🔹 1) Agar email change hui hai to Cloud Function se Auth email update karo
+        if (newEmail && oldEmail && newEmail !== oldEmail) {
+          try {
+            const resp = await fetch(
+              "https://us-central1-mymor-one.cloudfunctions.net/updateUserEmailByUid",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  uid: form.id,       
+                  newEmail,
+                }),
+              }
+            );
+            const data = await resp.json();
+            if (!resp.ok) {
+              throw new Error(data.error || "Failed to update auth email");
+            }
+          } catch (err) {
+            console.error("updateUserEmailByUid error:", err);
+            toast.error("Could not update login email. Please try again.");
+            try { await deleteApp(tempApp); } catch {}
+            return;
+          }
+      
+          // 🔹 2) Firestore users collection me bhi email update
+          try {
+            await updateDoc(doc(db, "users", form.id), { email: newEmail });
+          } catch (err) {
+            console.error("Update users email error:", err);
+            // non-blocking, sirf console/ toast
+          }
+        }
+      
+        // 🔹 3) Employees doc update (baaki fields)
         await updateDoc(docRef, baseData);
         toast.success("Employee updated successfully");
-      } else {
+      }
+      
+      else {
         // 1) ensure university exists
         const uniRef = doc(db, "university", form.universityId);
         const uniSnap = await getDoc(uniRef);
@@ -742,6 +797,7 @@ export default function UniclubEmployeePage(props) {
                             id: item.id,
                             permissions: savedPermissions,
                             image: null,
+                            originalEmail: item.email || "",
                           }));
 
                           setSelectedUniversityId(item.universityId || "");
@@ -820,7 +876,7 @@ export default function UniclubEmployeePage(props) {
                 name="email"
                 placeholder="Email"
                 value={form.email}
-                disabled={!!editingData}
+                // disabled={!!editingData}
                 onChange={handleChange}
                 className="w-full border border-gray-300 p-2 rounded"
                 required

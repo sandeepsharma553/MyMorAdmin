@@ -5,7 +5,7 @@ import {
   where,
   getDocs,
   orderBy,
-  limit,
+  limit, doc, getDoc
 } from "firebase/firestore";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -44,7 +44,6 @@ export default function DashboardPage(props) {
   const todayStr = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
   const uid = useSelector((state) => state.auth.user.uid);
   const emp = useSelector((state) => state.auth.employee);
-
   useEffect(() => {
     if (!emp.hostelid) return;
 
@@ -77,7 +76,6 @@ export default function DashboardPage(props) {
         console.error("Error loading maintenance:", e);
       }
     };
-
     const fetchTutorials = async () => {
       try {
         const q = query(
@@ -123,6 +121,7 @@ export default function DashboardPage(props) {
       }
     };
 
+
     const fetchReports = async () => {
       try {
         const q = query(
@@ -142,6 +141,7 @@ export default function DashboardPage(props) {
     fetchTutorials();
     fetchMenus();
     fetchReports();
+
   }, [emp.hostelid, todayStr]);
 
   const formatAgo = (ts) => {
@@ -154,7 +154,16 @@ export default function DashboardPage(props) {
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <div>
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+
+          {(emp?.university) && (
+            <p className="text-sm text-slate-500 mt-1">
+             {emp?.university}
+            </p>
+          )}
+        </div>
+
       </div>
 
       <div className="min-h-screen bg-slate-50 px-4 py-6 md:px-8">

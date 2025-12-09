@@ -17,7 +17,9 @@ import {
   Bell,
   UserPlus,
   Settings as SettingsIcon,
-  HelpCircle,Handshake,Layers
+  HelpCircle,
+  Handshake,
+  Layers,
 } from "lucide-react";
 import { useSelector } from "react-redux";
 
@@ -39,6 +41,7 @@ const hasPermission = (perm, key) =>
 /* ------------------------------- Sections ----------------------------- */
 const SECTIONS = [
   { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
+  { key: "uniclubdashboard", label: "Dashboard", Icon: LayoutDashboard },
   { key: "employee", label: "Employee", Icon: UserPlus },
   { key: "student", label: "Student", Icon: UserPlus },
   { key: "announcement", label: "Announcement", Icon: Bell },
@@ -57,13 +60,14 @@ const SECTIONS = [
   { key: "faq", label: "FAQs", Icon: HelpCircle },
   { key: "uniclub", label: "Uniclub", Icon: Handshake },
   { key: "uniclubstudent", label: "Student", Icon: UserPlus },
+  { key: "uniclubmember", label: "Member", Icon: UserPlus },
   { key: "uniclubannouncement", label: "Announcement", Icon: Bell },
   { key: "uniclubevent", label: "Event", Icon: Calendar },
   { key: "uniclubeventbooking", label: "Event Booking", Icon: Calendar },
   { key: "uniclubsubgroup", label: "Sub Group", Icon: Layers },
   { key: "setting", label: "Setting", Icon: SettingsIcon },
   { key: "contact", label: "Contact", Icon: HelpCircle },
-  
+ 
 ];
 
 /* -------------------------------- Badge ------------------------------- */
@@ -90,11 +94,7 @@ const safeParseInt = (x) => {
  * - legacy createdDate string
  */
 const extractCreatedMs = (docData) => {
-  const ts =
-    docData?.createdAt ??
-    docData?.created_on ??
-    docData?.created ??
-    null;
+  const ts = docData?.createdAt ?? docData?.created_on ?? docData?.created ?? null;
 
   // Firestore Timestamp
   if (ts?.toMillis) return ts.toMillis();
@@ -231,6 +231,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     statusIn: ["Pending"],
     preferZeroIfNoLastOpened: false,
   });
+
   const bookingBadge = useBadgeCount({
     adminUid,
     menuKey: "bookingroom",
@@ -239,6 +240,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     statusIn: ["Booked"],
     preferZeroIfNoLastOpened: false,
   });
+
   const eventBadge = useBadgeCount({
     adminUid,
     menuKey: "eventbooking",
@@ -276,6 +278,39 @@ function Sidebar({ onSectionClick, isLoading }) {
     }
   };
 
+  /* ---------- Dashboard vs Uniclub Dashboard logic ---------- */
+  const showUniDashboard =
+    !!employee?.uniclubid && hasPermission(perms, "dashboard");
+
+  const showHostelDashboard = !!employee?.hostelid && !showUniDashboard;
+
+  const visibleSections = useMemo(() => {
+    return SECTIONS.filter((s) => {
+      // Normal dashboard visibility
+      if (s.key === "dashboard" && !showHostelDashboard) return false;
+
+      // Uniclub dashboard visibility
+      if (s.key === "uniclubdashboard" && !showUniDashboard) return false;
+
+      // ---- Permissions check ----
+      if (!perms) return true;
+
+      // For uniclubdashboard, use "dashboard" permission
+      const permKey =
+        s.key === "uniclubdashboard" ? "dashboard" : s.key;
+
+      return hasPermission(perms, permKey);
+    });
+  }, [showHostelDashboard, showUniDashboard, perms]);
+
+  useEffect(() => {
+    if (showUniDashboard) {
+      setActiveSection("uniclubdashboard");
+    } else if (showHostelDashboard) {
+      setActiveSection("dashboard");
+    }
+  }, [showUniDashboard, showHostelDashboard]);
+
   return (
     <aside
       className="bg-gray-200 flex flex-col h-dvh shadow
@@ -301,31 +336,29 @@ function Sidebar({ onSectionClick, isLoading }) {
 
       {/* Menu */}
       <nav className="flex-1 min-h-0 overflow-y-auto px-2 custom-scroll">
-        {SECTIONS.filter(({ key }) => !perms || hasPermission(perms, key)).map(
-          ({ key, label, Icon }) => {
-            const isActive = activeSection === key;
-            const base =
-              "w-full flex items-center gap-2 p-2 mb-1 rounded-md text-left font-semibold";
-            const cls = isActive
-              ? `${base} bg-blue-200 border-b-2 border-blue-500 text-blue-800`
-              : `${base} hover:bg-gray-300`;
+        {visibleSections.map(({ key, label, Icon }) => {
+          const isActive = activeSection === key;
+          const base =
+            "w-full flex items-center gap-2 p-2 mb-1 rounded-md text-left font-semibold";
+          const cls = isActive
+            ? `${base} bg-blue-200 border-b-2 border-blue-500 text-blue-800`
+            : `${base} hover:bg-gray-300`;
 
-            let badgeValue = 0;
-            if (key === "maintenance") badgeValue = maintenanceBadge;
-            if (key === "reportincident") badgeValue = reportBadge;
-            if (key === "feedback") badgeValue = feedbackBadge;
-            if (key === "bookingroom") badgeValue = bookingBadge;
-            if (key === "eventbooking") badgeValue = eventBadge;
+          let badgeValue = 0;
+          if (key === "maintenance") badgeValue = maintenanceBadge;
+          if (key === "reportincident") badgeValue = reportBadge;
+          if (key === "feedback") badgeValue = feedbackBadge;
+          if (key === "bookingroom") badgeValue = bookingBadge;
+          if (key === "eventbooking") badgeValue = eventBadge;
 
-            return (
-              <button key={key} onClick={() => handleClick(key)} className={cls}>
-                <Icon size={20} />
-                <span>{label}</span>
-                <Badge value={badgeValue} />
-              </button>
-            );
-          }
-        )}
+          return (
+            <button key={key} onClick={() => handleClick(key)} className={cls}>
+              <Icon size={20} />
+              <span>{label}</span>
+              <Badge value={badgeValue} />
+            </button>
+          );
+        })}
       </nav>
 
       <br />

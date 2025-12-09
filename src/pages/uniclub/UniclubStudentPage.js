@@ -236,7 +236,7 @@ export default function UniclubStudentPage(props) {
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Student</h1>
+        <h1 className="text-2xl font-semibold">Committee </h1>
         <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {

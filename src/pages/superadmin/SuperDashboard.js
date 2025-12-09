@@ -86,7 +86,7 @@ export default function SuperDashboard(props) {
     });
   }, []);
 
-  if (loading) return <div>Loading…</div>;
+  // if (loading) return <div>Loading…</div>;
 
   return (
 
