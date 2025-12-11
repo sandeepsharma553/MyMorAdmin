@@ -148,9 +148,13 @@ export default function UniclubPage({ navbarHeight }) {
     id: 0,
     title: "",
     desc: "",
+    address: "",
     location: "",
     website: "",
     link: "",
+    links: [
+      { label: "", url: "" },
+    ],
     contactName: "",
     contactPhone: "",
     contactEmail: "",
@@ -165,8 +169,9 @@ export default function UniclubPage({ navbarHeight }) {
     rules: "",
     joinQInput: "",
     joinQuestions: [],
-    joinQType: "short",      // 👈 NEW: Short Answer | Checkboxes | Dropdown
-    joinQOptions: "",
+    joinQType: "short",
+    joinQOptionInput: "",
+    joinQOptionList: [],
     allowEventsByMembers: false,
     pollsEnabled: false,
     sharedFilesEnabled: false,
@@ -393,6 +398,34 @@ export default function UniclubPage({ navbarHeight }) {
       return { ...prev, contacts };
     });
   };
+  const updateLinkRow = (index, field, value) => {
+    setForm((prev) => {
+      const next = { ...prev };
+      const links = Array.isArray(next.links) ? [...next.links] : [];
+      links[index] = { ...links[index], [field]: value };
+      next.links = links;
+      return next;
+    });
+  };
+
+  const addLinkRow = () => {
+    setForm((prev) => ({
+      ...prev,
+      links: [
+        ...(Array.isArray(prev.links) ? prev.links : []),
+        { label: "", url: "" },
+      ],
+    }));
+  };
+
+  const removeLinkRow = (index) => {
+    setForm((prev) => {
+      const links = Array.isArray(prev.links) ? [...prev.links] : [];
+      if (links.length <= 1) return prev; // at least 1 row
+      links.splice(index, 1);
+      return { ...prev, links };
+    });
+  };
 
   const handleAdd = async (e) => {
     e.preventDefault();
@@ -451,6 +484,14 @@ export default function UniclubPage({ navbarHeight }) {
           email: safeString(c.email),
         }))
         .filter((c) => c.name || c.phone || c.email);
+
+      const cleanedLinks = (Array.isArray(form.links) ? form.links : [])
+        .map((l) => ({
+          label: safeString(l.label),
+          url: safeString(l.url),
+        }))
+        .filter((l) => l.url); // sirf jo actual URL wale rows hain
+
       const settingsPayload = {
         chatEnabled: !!form.enableChat,
         allowEventsByMembers: !!form.allowEventsByMembers,
@@ -464,13 +505,16 @@ export default function UniclubPage({ navbarHeight }) {
         memberValidFromMs: form.memberValidFromMs || 0,
         memberValidToMs: form.memberValidToMs || 0,
       };
-
+      const primaryLink = cleanedLinks[0];
+      const secondaryLink = cleanedLinks[1];
       const payload = {
         title: form.title.trim(),
         location: form.location.trim(),
+        address: form.address.trim(),
         desc: form.desc.trim(),
-        website: form.website?.trim() || "",
-        link: form.link?.trim() || "",
+        website: form.website?.trim() || primaryLink?.url || "",
+        link: form.link?.trim() || secondaryLink?.url || "",
+        links: cleanedLinks.length ? cleanedLinks : undefined,
         contactName: creatorName,
         contactPhone: form.showPhone && creatorPhone ? creatorPhone : "",
         contactEmail: form.showEmail && creatorEmail ? creatorEmail : "",
@@ -687,7 +731,7 @@ export default function UniclubPage({ navbarHeight }) {
               <tr>
                 {[
                   { key: "title", label: "Title" },
-                  { key: "location", label: "Location" },
+                  { key: "location", label: "Address" },
                   { key: "when", label: "When", sortable: false },
                   { key: "desc", label: "Description" },
                   // 🆕 two new columns for counts
@@ -763,7 +807,7 @@ export default function UniclubPage({ navbarHeight }) {
                   return (
                     <tr key={item.id}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.location || "-"}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.address || "-"}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{whenLabel}</td>
                       <td className="px-6 py-4 text-sm text-gray-500 whitespace-normal break-words max-w-xs" title={item.desc}>
                         {truncateText(item.desc, 100)}
@@ -880,7 +924,9 @@ export default function UniclubPage({ navbarHeight }) {
                                 // joinQuestions: Array.isArray(item.joinQuestions) ? item.joinQuestions : [],
 
                                 joinQType: "short",          // 👈 reset new-question type
-                                joinQOptions: "",            // 👈 reset new-question options
+                                joinQInput: "",
+                                joinQOptionInput: "",
+                                joinQOptionList: [],
                                 joinQuestions: Array.isArray(item.joinQuestions)
                                   ? item.joinQuestions.map((q, idx) =>
                                     typeof q === "string"
@@ -924,6 +970,31 @@ export default function UniclubPage({ navbarHeight }) {
                                     : [{ name: "", phone: "", email: "" }],
                                 showPhone: !!item.contactPhone,
                                 showEmail: !!item.contactEmail,
+                                links:
+                                  Array.isArray(item.links) && item.links.length > 0
+                                    ? item.links
+                                    : (
+                                      [
+                                        item.website
+                                          ? { label: "Website", url: item.website }
+                                          : null,
+                                        item.link
+                                          ? { label: "External", url: item.link }
+                                          : null,
+                                      ].filter(Boolean).length > 0
+                                        ? [
+                                          ...[
+                                            item.website
+                                              ? { label: "Website", url: item.website }
+                                              : null,
+                                            item.link
+                                              ? { label: "External", url: item.link }
+                                              : null,
+                                          ].filter(Boolean),
+                                        ]
+                                        : [{ label: "", url: "" }]
+                                    ),
+
 
                               });
                               setFileName("No file chosen");
@@ -999,7 +1070,14 @@ export default function UniclubPage({ navbarHeight }) {
                   onChange={(e) => setForm({ ...form, desc: e.target.value })}
                   required
                 />
-
+                <input
+                  type="text"
+                  placeholder="Address"
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={form.address}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
+                  required
+                />
                 {/* Location */}
                 <input
                   type="text"
@@ -1189,79 +1267,136 @@ export default function UniclubPage({ navbarHeight }) {
                     <label className="block text-sm font-medium text-gray-700">Join Questions</label>
 
                     {/* Builder row */}
-                    <div className="flex flex-col sm:flex-row gap-2 mt-1">
-                      {/* Type select */}
-                      <select
-                        className="border border-gray-300 p-2 rounded w-full sm:w-40"
-                        value={form.joinQType}
-                        onChange={(e) =>
-                          setForm((p) => ({ ...p, joinQType: e.target.value }))
-                        }
-                      >
-                        <option value="short">Short Answer</option>
-                        <option value="checkboxes">Checkboxes</option>
-                        <option value="dropdown">Dropdown</option>
-                      </select>
+                    <div className="flex flex-col gap-2 mt-1">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        {/* Type select */}
+                        <select
+                          className="border border-gray-300 p-2 rounded w-full sm:w-40"
+                          value={form.joinQType}
+                          onChange={(e) => {
+                            const newType = e.target.value;
+                            setForm((p) => ({
+                              ...p,
+                              joinQType: newType,
+                              ...(newType === "short"
+                                ? { joinQOptionList: [], joinQOptionInput: "" }
+                                : {}),
+                            }));
+                          }}
+                        >
+                          <option value="short">Short Answer</option>
+                          <option value="checkboxes">Checkboxes</option>
+                          <option value="dropdown">Dropdown</option>
+                        </select>
 
-                      {/* Question text */}
-                      <input
-                        type="text"
-                        className="flex-1 border border-gray-300 p-2 rounded"
-                        placeholder="Add a question"
-                        value={form.joinQInput}
-                        onChange={(e) =>
-                          setForm((p) => ({ ...p, joinQInput: e.target.value }))
-                        }
-                      />
-
-                      {/* Options input (only for checkbox / dropdown) */}
-                      {(form.joinQType === "checkboxes" || form.joinQType === "dropdown") && (
+                        {/* Question text */}
                         <input
                           type="text"
                           className="flex-1 border border-gray-300 p-2 rounded"
-                          placeholder="Options (comma separated)"
-                          value={form.joinQOptions}
+                          placeholder="Add a question"
+                          value={form.joinQInput}
                           onChange={(e) =>
-                            setForm((p) => ({ ...p, joinQOptions: e.target.value }))
+                            setForm((p) => ({ ...p, joinQInput: e.target.value }))
                           }
                         />
+
+                        {/* Add question button */}
+                        <button
+                          type="button"
+                          className="px-3 py-2 rounded bg-gray-800 text-white whitespace-nowrap"
+                          onClick={() => {
+                            const qText = (form.joinQInput || "").trim();
+                            if (!qText) return;
+
+                            const type = form.joinQType || "short";
+                            const options =
+                              type === "short" ? [] : (form.joinQOptionList || []);
+
+                            setForm((p) => ({
+                              ...p,
+                              joinQuestions: [
+                                ...(p.joinQuestions || []),
+                                {
+                                  id: `q${Date.now()}`,
+                                  question: qText,
+                                  type,
+                                  options,
+                                },
+                              ],
+                              // reset builder
+                              joinQInput: "",
+                              joinQType: "short",
+                              joinQOptionInput: "",
+                              joinQOptionList: [],
+                            }));
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      {/* Options builder – only for checkbox / dropdown */}
+                      {(form.joinQType === "checkboxes" || form.joinQType === "dropdown") && (
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              className="flex-1 border border-gray-300 p-2 rounded"
+                              placeholder="Add option"
+                              value={form.joinQOptionInput}
+                              onChange={(e) =>
+                                setForm((p) => ({ ...p, joinQOptionInput: e.target.value }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="px-3 py-2 rounded bg-gray-700 text-white whitespace-nowrap"
+                              onClick={() => {
+                                const opt = (form.joinQOptionInput || "").trim();
+                                if (!opt) return;
+                                setForm((p) => ({
+                                  ...p,
+                                  joinQOptionList: [
+                                    ...(p.joinQOptionList || []),
+                                    opt,
+                                  ],
+                                  joinQOptionInput: "",
+                                }));
+                              }}
+                            >
+                              Add option
+                            </button>
+                          </div>
+
+                          {/* Option chips */}
+                          {form.joinQOptionList?.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {form.joinQOptionList.map((opt, idx) => (
+                                <span
+                                  key={idx}
+                                  className="inline-flex items-center gap-2 bg-gray-100 border px-2 py-1 rounded-full text-xs"
+                                >
+                                  {opt}
+                                  <button
+                                    type="button"
+                                    className="text-red-500"
+                                    onClick={() =>
+                                      setForm((p) => ({
+                                        ...p,
+                                        joinQOptionList: p.joinQOptionList.filter(
+                                          (_, i) => i !== idx
+                                        ),
+                                      }))
+                                    }
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       )}
-
-                      <button
-                        type="button"
-                        className="px-3 py-2 rounded bg-gray-800 text-white whitespace-nowrap"
-                        onClick={() => {
-                          const qText = (form.joinQInput || "").trim();
-                          if (!qText) return;
-
-                          const type = form.joinQType || "short";
-                          const options =
-                            type === "short"
-                              ? []
-                              : (form.joinQOptions || "")
-                                .split(",")
-                                .map((o) => o.trim())
-                                .filter(Boolean);
-
-                          setForm((p) => ({
-                            ...p,
-                            joinQuestions: [
-                              ...(p.joinQuestions || []),
-                              {
-                                id: `q${Date.now()}`,
-                                question: qText,
-                                type,
-                                options,
-                              },
-                            ],
-                            joinQInput: "",
-                            joinQOptions: "",
-                            joinQType: "short",
-                          }));
-                        }}
-                      >
-                        +
-                      </button>
                     </div>
 
                     {/* List of questions */}
@@ -1478,27 +1613,61 @@ export default function UniclubPage({ navbarHeight }) {
                 </section>
 
                 {/* Links */}
-                <div>
-                  <h3 className="block text-sm font-medium text-gray-700">Links</h3>
-                  <input
-                    type="url"
-                    name="website"
-                    placeholder="Website (https://…)"
-                    className="w-full border border-gray-300 p-2 rounded mb-2"
-                    value={form.website}
-                    onChange={handleChange}
-                    autoCapitalize="none"
-                  />
-                  <input
-                    type="url"
-                    name="link"
-                    placeholder="External Link (Instagram/WhatsApp/Telegram/etc.)"
-                    className="w-full border border-gray-300 p-2 rounded"
-                    value={form.link}
-                    onChange={handleChange}
-                    autoCapitalize="none"
-                  />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="block text-sm font-medium text-gray-700">Links</h3>
+                    <button
+                      type="button"
+                      className="text-xs px-2 py-1 rounded bg-gray-900 text-white"
+                      onClick={addLinkRow}
+                    >
+                      + Add link
+                    </button>
+                  </div>
+
+                  {Array.isArray(form.links) && form.links.length > 0 ? (
+                    <div className="space-y-2">
+                      {form.links.map((l, idx) => (
+                        <div
+                          key={idx}
+                          className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-start"
+                        >
+                          <input
+                            type="text"
+                            placeholder="Label (e.g. Website, Instagram)"
+                            className="w-full border border-gray-300 p-2 rounded"
+                            value={l.label}
+                            onChange={(e) => updateLinkRow(idx, "label", e.target.value)}
+                          />
+                          <div className="sm:col-span-2 flex gap-2">
+                            <input
+                              type="url"
+                              placeholder="https://…"
+                              className="w-full border border-gray-300 p-2 rounded"
+                              value={l.url}
+                              onChange={(e) => updateLinkRow(idx, "url", e.target.value)}
+                              autoCapitalize="none"
+                            />
+                            {form.links.length > 1 && (
+                              <button
+                                type="button"
+                                className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 border border-red-200 whitespace-nowrap"
+                                onClick={() => removeLinkRow(idx)}
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">
+                      No links yet. Use “Add link” for website, socials, ticketing, etc.
+                    </p>
+                  )}
                 </div>
+
                 {/* Contact */}
                 <div className="space-y-3">
                   <h3 className="block text-sm font-medium text-gray-700">Contact</h3>

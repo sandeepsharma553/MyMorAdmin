@@ -13,7 +13,11 @@ import {
   Timestamp,
   writeBatch,
 } from "firebase/firestore";
-import { db, storage } from "../../firebase";
+import { db, storage, database } from "../../firebase";
+import {
+  ref as dbRef,
+  get as rtdbGet,
+} from "firebase/database";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -33,6 +37,7 @@ import "react-date-range/dist/theme/default.css";
 import { enUS } from "date-fns/locale";
 import { format } from "date-fns";
 import { useLocation, useSearchParams } from "react-router-dom";
+import { MenuItem, Select, Checkbox, ListItemText } from "@mui/material";
 
 export default function UniclubEventPage({ navbarHeight }) {
   const { state } = useLocation();
@@ -69,6 +74,8 @@ export default function UniclubEventPage({ navbarHeight }) {
   const [sortConfig, setSortConfig] = useState({ key: "start", direction: "asc" });
   const [filters, setFilters] = useState({ name: "", location: "" });
   const debounceRef = useRef(null);
+  const [clubs, setClubs] = useState([]);
+  const [subGroups, setSubGroups] = useState([]);
 
   const setFilterDebounced = (field, value) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -85,11 +92,10 @@ export default function UniclubEventPage({ navbarHeight }) {
         : { key, direction: "asc" }
     );
 
-  // ---------- NEW / UPDATED FORM SHAPE ----------
+  // ---------- FORM SHAPE ----------
   const initialFormData = {
     id: 0,
     eventName: "",
-    // shortDesc removed from UI intentionally
     eventDescriptionHtml: "",
     category: "",
     tags: "",
@@ -111,7 +117,7 @@ export default function UniclubEventPage({ navbarHeight }) {
     maxPurchaseTickets: "", // Max per-booking / per-user
     rsvpDeadline: "",
     priceType: "", // Free / Paid
-    prices: [], // legacy (we’ll keep but not use for new config)
+    prices: [], // legacy
     paymentLink: "",
     allowChat: false,
     allowReactions: false,
@@ -130,24 +136,25 @@ export default function UniclubEventPage({ navbarHeight }) {
     pinnedAt: null,
     pinnedOrder: null,
 
-    // NEW: Refund policy (for payment gateway later)
+    // Refund policy
     refundPolicy: "",
 
-    // NEW: tables / seating
+    // NEW: free ticket sale window
+    freeTicketStartDateTime: "",
+    freeTicketEndDateTime: "",
     hasTables: false,
-    tableType: "", // "Tables" | "Teams" | "Bus" | "Cabin"
+    tableType: "",
     tableCount: "",
     ticketsPerTable: "",
-
-    // NEW: advanced ticket types
+    // advanced ticket types (for Paid)
     ticketTypes: [],
 
-    // NEW: QR check-in flag (for future QR scan feature)
+    // QR check-in flag
     enableQrCheckIn: false,
 
-    // NEW: host club IDs (primary + co-hosts in future)
+    // host club IDs
     hostClubIds: [],
-    websiteLinks: [],   // instead of website: ""
+    websiteLinks: [],
     instagramLinks: [],
   };
 
@@ -175,9 +182,11 @@ export default function UniclubEventPage({ navbarHeight }) {
     getList();
     getCategory();
     getPaymentList();
+    getClubs();        // ⬅️ new
+    fetchSubGroups();
   }, []);
 
-  // Load bookings for hostel
+  // Load bookings
   useEffect(() => {
     (async () => {
       try {
@@ -223,7 +232,7 @@ export default function UniclubEventPage({ navbarHeight }) {
     setIsLoading(true);
     try {
       const qPay = query(collection(db, "punliceventpaymenttype"));
-      const snap = await getDocs(qPay);
+      await getDocs(qPay);
       // setPaymentList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } finally {
       setIsLoading(false);
@@ -238,6 +247,53 @@ export default function UniclubEventPage({ navbarHeight }) {
     } catch (e) {
       console.error(e);
       toast.error("Failed to load categories");
+    }
+  };
+  const getClubs = async () => {
+    try {
+      if (!emp?.uniclubid) {
+        setClubs([]);
+        return;
+      }
+
+      const ref = dbRef(database, "uniclubs");
+      const snap = await rtdbGet(ref);
+      const val = snap.val() || {};
+      const filtered = Object.entries(val)
+        .filter(([id, c]) => c.id === emp?.uniclubid)
+        .map(([id, c]) => ({
+          id, // RTDB key
+          title: c.title || "Unnamed Club",
+        }));
+
+      setClubs(filtered);
+    } catch (err) {
+      console.error("getClubs error:", err);
+      setClubs([]);
+    }
+  };
+
+  const fetchSubGroups = async () => {
+    if (!emp?.uniclubid) {
+      setSubGroups([]);
+      return;
+    }
+    try {
+      const ref = dbRef(database, "uniclubsubgroup");
+      const snap = await rtdbGet(ref);
+      const val = snap.val() || {};
+      const arr = Object.entries(val).map(([id, g]) => ({
+        id,
+        title: g.title || "Untitled Subgroup",
+        parentGroupId: g.parentGroupId || null,
+      }));
+      const filtered = arr.filter(
+        (x) => String(x.parentGroupId || "") === String(emp?.uniclubid)
+      );
+      setSubGroups(filtered);
+    } catch (err) {
+      console.error("fetchSubGroups error:", err);
+      setSubGroups([]);
     }
   };
 
@@ -273,10 +329,22 @@ export default function UniclubEventPage({ navbarHeight }) {
       if (isBlankHtml(form.eventDescriptionHtml))
         return toast.error("Please add a description");
 
+      // Event time validation
       const sMs = new Date(form.startDateTime).getTime();
       const eMs = new Date(form.endDateTime).getTime();
       if (Number.isNaN(sMs) || Number.isNaN(eMs) || eMs <= sMs)
         return toast.error("End date/time must be after start date/time.");
+
+      // Free ticket window validation (if both provided)
+      if (form.freeTicketStartDateTime && form.freeTicketEndDateTime) {
+        const fsMs = new Date(form.freeTicketStartDateTime).getTime();
+        const feMs = new Date(form.freeTicketEndDateTime).getTime();
+        if (!Number.isNaN(fsMs) && !Number.isNaN(feMs) && feMs <= fsMs) {
+          return toast.error(
+            "Free ticket end time must be after its start time."
+          );
+        }
+      }
 
       const capNum = parseInt(form.capacity, 10);
       const maxPerNum = parseInt(form.maxPurchaseTickets, 10);
@@ -288,7 +356,7 @@ export default function UniclubEventPage({ navbarHeight }) {
         );
 
       // Basic sanity checks for ticketTypes (optional, not blocking)
-      if (form.priceType === "Paid" && form.ticketTypes.length === 0) {
+      if (form.priceType === "Paid" && (form.ticketTypes || []).length === 0) {
         toast.warning(
           "You selected Paid event but no tickets are configured. Please add at least one ticket type."
         );
@@ -311,17 +379,30 @@ export default function UniclubEventPage({ navbarHeight }) {
       }
       const posters = [...(form.posters || []), ...uploaded];
 
+      // Ticket sanitisation (per ticket, for Paid)
       const ticketTypesSanitised = (form.ticketTypes || []).map((t, idx) => ({
         id: t.id || `ticket_${idx + 1}`,
         name: (t.name || "").trim(),
-        quantity: t.quantity === "" ? null : Number(t.quantity),
-        price: t.price === "" ? 0 : Number(t.price),
+        description: (t.description).toString().trim(),
+        price: t.price === "" || t.price == null ? 0 : Number(t.price),
         allowedGroupNote: (t.allowedGroupNote || "").trim(),
+        allowedGroups: Array.isArray(t.allowedGroups)
+          ? t.allowedGroups.map((g) => ({
+            id: g.id,
+            title: g.title,
+            type: g.type || "club",
+          }))
+          : [],
         passwordRequired: !!t.passwordRequired,
         password: t.passwordRequired ? (t.password || "").trim() : "",
-        maxCapacity: t.maxCapacity === "" ? null : Number(t.maxCapacity),
+        maxCapacity:
+          t.maxCapacity === "" || t.maxCapacity == null
+            ? null
+            : Number(t.maxCapacity),
         maxPurchasePerUser:
-          t.maxPurchasePerUser === "" ? null : Number(t.maxPurchasePerUser),
+          t.maxPurchasePerUser === "" || t.maxPurchasePerUser == null
+            ? null
+            : Number(t.maxPurchasePerUser),
         collectExtraInfo: !!t.collectExtraInfo,
         fields: {
           name: !!t.fields?.name,
@@ -333,13 +414,24 @@ export default function UniclubEventPage({ navbarHeight }) {
         },
         startDateTime: t.startDateTime || "",
         endDateTime: t.endDateTime || "",
+
+        // tables/pods per ticket
+        hasTables: !!t.hasTables,
+        tableType: t.hasTables ? t.tableType || "" : "",
+        tableCount:
+          t.hasTables && t.tableCount !== "" && t.tableCount != null
+            ? Number(t.tableCount)
+            : null,
+        ticketsPerTable:
+          t.hasTables && t.ticketsPerTable !== "" && t.ticketsPerTable != null
+            ? Number(t.ticketsPerTable)
+            : null,
       }));
 
       const eventData = {
         ...form,
         groupid: groupId,
         groupName: groupName || "",
-        // Keep old prices for compatibility, but we expect mobile to use ticketTypes going forward
         prices:
           form.priceType === "Free" || !form.priceType ? [] : form.prices || [],
         startDateTime: form.startDateTime,
@@ -356,25 +448,28 @@ export default function UniclubEventPage({ navbarHeight }) {
           ? null
           : Number(form.maxPurchaseTickets),
 
-        // New fields persisted
         refundPolicy: form.refundPolicy || "",
+        freeTicketStartDateTime: form.freeTicketStartDateTime || "",
+        freeTicketEndDateTime: form.freeTicketEndDateTime || "",
         hasTables: !!form.hasTables,
         tableType: form.hasTables ? form.tableType || "" : "",
-        tableCount: form.hasTables
-          ? form.tableCount === ""
-            ? null
-            : Number(form.tableCount)
-          : null,
-        ticketsPerTable: form.hasTables
-          ? form.ticketsPerTable === ""
-            ? null
-            : Number(form.ticketsPerTable)
-          : null,
+        tableCount:
+          form.hasTables && form.tableCount !== "" && form.tableCount != null
+            ? Number(form.tableCount)
+            : null,
+        ticketsPerTable:
+          form.hasTables &&
+            form.ticketsPerTable !== "" &&
+            form.ticketsPerTable != null
+            ? Number(form.ticketsPerTable)
+            : null,
+
         ticketTypes: ticketTypesSanitised,
         enableQrCheckIn: !!form.enableQrCheckIn,
-        hostClubIds: Array.isArray(form.hostClubIds) && form.hostClubIds.length
-          ? form.hostClubIds
-          : [groupId],
+        hostClubIds:
+          Array.isArray(form.hostClubIds) && form.hostClubIds.length
+            ? form.hostClubIds
+            : [groupId],
         websiteLinks: form.websiteLinks || [],
         instagramLinks: form.instagramLinks || [],
       };
@@ -401,6 +496,30 @@ export default function UniclubEventPage({ navbarHeight }) {
       console.error(err);
       toast.error("Save failed");
     }
+  };
+  const toggleTicketAllowedGroup = (ticketIndex, option) => {
+    setForm((prev) => {
+      const nextTickets = [...(prev.ticketTypes || [])];
+      const current = nextTickets[ticketIndex] || {};
+      const existing = Array.isArray(current.allowedGroups)
+        ? current.allowedGroups
+        : [];
+
+      const exists = existing.some(
+        (g) => g.id === option.id && g.type === option.type
+      );
+
+      const updated = exists
+        ? existing.filter((g) => !(g.id === option.id && g.type === option.type))
+        : [...existing, option];
+
+      nextTickets[ticketIndex] = {
+        ...current,
+        allowedGroups: updated,
+      };
+
+      return { ...prev, ticketTypes: nextTickets };
+    });
   };
 
   const handleDelete = async () => {
@@ -708,7 +827,7 @@ export default function UniclubEventPage({ navbarHeight }) {
   const defaultTicket = () => ({
     id: "",
     name: "",
-    quantity: "",
+    description: "",
     price: "",
     allowedGroupNote: "",
     passwordRequired: false,
@@ -726,6 +845,13 @@ export default function UniclubEventPage({ navbarHeight }) {
     },
     startDateTime: "",
     endDateTime: "",
+
+    // per ticket tables/pods
+    hasTables: false,
+    tableType: "",
+    tableCount: "",
+    ticketsPerTable: "",
+    allowedGroups: [],
   });
 
   const updateTicket = (index, patch) => {
@@ -776,8 +902,8 @@ export default function UniclubEventPage({ navbarHeight }) {
               key={k}
               onClick={() => setTimeFilter(k)}
               className={`px-3 py-1.5 rounded-full text-sm border ${active
-                  ? "bg-black text-white border-black"
-                  : "bg-white text-gray-700 border-gray-300"
+                ? "bg-black text-white border-black"
+                : "bg-white text-gray-700 border-gray-300"
                 }`}
             >
               {k[0].toUpperCase() + k.slice(1)}
@@ -1115,6 +1241,10 @@ export default function UniclubEventPage({ navbarHeight }) {
                             },
                             startDateTime: item.startDateTime || "",
                             endDateTime: item.endDateTime || "",
+                            freeTicketStartDateTime:
+                              item.freeTicketStartDateTime || "",
+                            freeTicketEndDateTime:
+                              item.freeTicketEndDateTime || "",
                             posterFiles: [],
                             posters: Array.isArray(item.posters)
                               ? item.posters
@@ -1132,8 +1262,12 @@ export default function UniclubEventPage({ navbarHeight }) {
                             hostClubIds: Array.isArray(item.hostClubIds)
                               ? item.hostClubIds
                               : [groupId],
-                            websiteLinks: Array.isArray(item.websiteLinks) ? item.websiteLinks : [],
-                            instagramLinks: Array.isArray(item.instagramLinks) ? item.instagramLinks : [],
+                            websiteLinks: Array.isArray(item.websiteLinks)
+                              ? item.websiteLinks
+                              : [],
+                            instagramLinks: Array.isArray(item.instagramLinks)
+                              ? item.instagramLinks
+                              : [],
                           }));
                           setRange([
                             { startDate, endDate, key: "selection" },
@@ -1179,8 +1313,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                   required
                 />
 
-                {/* Short Description removed as requested */}
-
+                {/* Description */}
                 <label className="block font-medium">Description</label>
                 <EditorPro
                   value={form.eventDescriptionHtml}
@@ -1397,81 +1530,9 @@ export default function UniclubEventPage({ navbarHeight }) {
 
                 {/* EVENT PAYMENT + CAPACITY */}
                 <div className="border border-gray-200 rounded-md p-3 space-y-3">
-                  <h3 className="font-semibold text-sm">
-                    Event Payment & Capacity
-                  </h3>
+                  <h3 className="font-semibold text-sm">Event Tickets</h3>
 
-                  <input
-                    name="capacity"
-                    placeholder="Max Capacity (total tickets / attendees)"
-                    value={form.capacity}
-                    onChange={handleChange}
-                    className="w-full border border-gray-300 p-2 rounded"
-                  />
-                  <input
-                    type="number"
-                    name="maxPurchaseTickets"
-                    min="1"
-                    placeholder="Max Purchase Tickets (per booking/user)"
-                    value={form.maxPurchaseTickets}
-                    onChange={handleChange}
-                    className="w-full border border-gray-300 p-2 rounded"
-                  />
-                  <p className="text-xs text-gray-500 -mt-1">
-                    Limit how many tickets one booking (or user) can purchase.
-                    Leave blank for no limit.
-                  </p>
-
-                  {/* Tables / seating */}
-                  <label className="block text-sm">
-                    <input
-                      type="checkbox"
-                      name="hasTables"
-                      checked={form.hasTables}
-                      onChange={handleChange}
-                      className="mr-2"
-                    />
-                    Does your event have tables / pods?
-                  </label>
-
-                  {form.hasTables && (
-                    <div className="space-y-2">
-                      <select
-                        name="tableType"
-                        value={form.tableType}
-                        onChange={handleChange}
-                        className="w-full border border-gray-300 p-2 rounded"
-                      >
-                        <option value="">Select type of table</option>
-                        <option value="Tables">Tables</option>
-                        <option value="Teams">Teams</option>
-                        <option value="Bus">Bus</option>
-                        <option value="Cabin">Cabin</option>
-                      </select>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        <input
-                          type="number"
-                          name="tableCount"
-                          min="0"
-                          placeholder="Number of tables / pods available"
-                          value={form.tableCount}
-                          onChange={handleChange}
-                          className="w-full border border-gray-300 p-2 rounded"
-                        />
-                        <input
-                          type="number"
-                          name="ticketsPerTable"
-                          min="0"
-                          placeholder="Number of tickets per table / pod"
-                          value={form.ticketsPerTable}
-                          onChange={handleChange}
-                          className="w-full border border-gray-300 p-2 rounded"
-                        />
-                      </div>
-                    </div>
-                  )}
-
+                  {/* Payment type selector – always visible */}
                   <select
                     name="priceType"
                     value={form.priceType}
@@ -1484,16 +1545,120 @@ export default function UniclubEventPage({ navbarHeight }) {
                     <option value="Paid">Paid</option>
                   </select>
 
-                  {/* Advanced Ticket Types */}
-                  {form.priceType && (
+                  {/* FREE EVENTS */}
+                  {form.priceType === "Free" && (
+                    <>
+                      <input
+                        name="capacity"
+                        placeholder="Max Capacity (total tickets / attendees)"
+                        value={form.capacity}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 p-2 rounded"
+                      />
+
+                      <input
+                        type="number"
+                        name="maxPurchaseTickets"
+                        min="1"
+                        placeholder="Max Purchase Tickets (per booking/user)"
+                        value={form.maxPurchaseTickets}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 p-2 rounded"
+                      />
+                      <p className="text-xs text-gray-500 -mt-1">
+                        Limit how many tickets one booking (or user) can purchase.
+                        Leave blank for no limit.
+                      </p>
+
+                      {/* Free ticket sale window */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            Ticket Start Time
+                          </label>
+                          <input
+                            type="datetime-local"
+                            name="freeTicketStartDateTime"
+                            value={form.freeTicketStartDateTime}
+                            onChange={handleChange}
+                            className="border border-gray-300 p-2 rounded w-full"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            Ticket End Time
+                          </label>
+                          <input
+                            type="datetime-local"
+                            name="freeTicketEndDateTime"
+                            value={form.freeTicketEndDateTime}
+                            onChange={handleChange}
+                            className="border border-gray-300 p-2 rounded w-full"
+                          />
+                        </div>
+                      </div>
+
+                      {/* 🔹 FREE EVENT: Tables / Pods at event level */}
+                      <div className="space-y-2 mt-3">
+                        <label className="block text-sm">
+                          <input
+                            type="checkbox"
+                            name="hasTables"
+                            checked={form.hasTables}
+                            onChange={handleChange}
+                            className="mr-2"
+                          />
+                          {/* Text exactly the way you want */}
+                          Does this ticket have Tables / Pods?
+                        </label>
+
+                        {form.hasTables && (
+                          <div className="space-y-2">
+                            <select
+                              name="tableType"
+                              value={form.tableType}
+                              onChange={handleChange}
+                              className="w-full border border-gray-300 p-2 rounded"
+                            >
+                              <option value="">Select type of table</option>
+                              <option value="Tables">Table</option>
+                              <option value="Teams">Team</option>
+                              <option value="Bus">Bus</option>
+                              <option value="Cabin">Cabin</option>
+                            </select>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              <input
+                                type="number"
+                                name="tableCount"
+                                min="0"
+                                placeholder="Number of tables / pods available"
+                                value={form.tableCount}
+                                onChange={handleChange}
+                                className="w-full border border-gray-300 p-2 rounded"
+                              />
+                              <input
+                                type="number"
+                                name="ticketsPerTable"
+                                min="0"
+                                placeholder="Number of tickets per table / pod"
+                                value={form.ticketsPerTable}
+                                onChange={handleChange}
+                                className="w-full border border-gray-300 p-2 rounded"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+
+                  {/* PAID EVENTS: ticket builder */}
+                  {form.priceType === "Paid" && (
                     <div className="mt-3 space-y-2">
                       <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-sm">
-                          Tickets
-                          {form.priceType === "Free"
-                            ? " (price can be 0)"
-                            : ""}
-                        </h4>
+                        <h4 className="font-semibold text-sm">Tickets</h4>
                         <button
                           type="button"
                           onClick={() =>
@@ -1551,14 +1716,13 @@ export default function UniclubEventPage({ navbarHeight }) {
                               className="border border-gray-300 p-2 rounded"
                               required
                             />
+
                             <input
-                              type="number"
-                              min="0"
-                              placeholder="Quantity (available)"
-                              value={t.quantity || ""}
+                              placeholder="Description"
+                              value={t.description || ""}
                               onChange={(e) =>
                                 updateTicket(index, {
-                                  quantity: e.target.value,
+                                  description: e.target.value,
                                 })
                               }
                               className="border border-gray-300 p-2 rounded"
@@ -1569,19 +1733,15 @@ export default function UniclubEventPage({ navbarHeight }) {
                             <input
                               type="number"
                               min="0"
-                              placeholder={
-                                form.priceType === "Free"
-                                  ? "Price (0 for free ticket)"
-                                  : "Price"
-                              }
+                              placeholder="Price"
                               value={t.price || ""}
                               onChange={(e) =>
                                 updateTicket(index, { price: e.target.value })
                               }
                               className="border border-gray-300 p-2 rounded"
                             />
-                            <input
-                              placeholder="Which sub group / main group can buy? (note)"
+                            {/* <input
+                              placeholder="Which group/sub-group can buy? (note)"
                               value={t.allowedGroupNote || ""}
                               onChange={(e) =>
                                 updateTicket(index, {
@@ -1589,7 +1749,95 @@ export default function UniclubEventPage({ navbarHeight }) {
                                 })
                               }
                               className="border border-gray-300 p-2 rounded"
-                            />
+                            /> */}
+                            {/* Which club / sub-group can buy */}
+                            <div className="space-y-1">
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Which club / sub-group can buy?
+                              </label>
+
+                              {(() => {
+                                const selectedKeys = (t.allowedGroups || []).map(
+                                  (g) => `${g.type}:${g.id}`
+                                );
+
+                                const OPTIONS = [
+                                  ...clubs.map((c) => ({
+                                    key: `club:${c.id}`,
+                                    id: c.id,
+                                    title: c.title || "Unnamed Club",
+                                    type: "club",
+                                  })),
+                                  ...subGroups.map((g) => ({
+                                    key: `subgroup:${g.id}`,
+                                    id: g.id,
+                                    title: g.title || "Untitled Sub-group",
+                                    type: "subgroup",
+                                  })),
+                                ];
+
+                                const getLabelFromKey = (key) => {
+                                  const item = OPTIONS.find((o) => o.key === key);
+                                  if (!item) return null;
+                                  const suffix = item.type === "club" ? " (Club)" : " (Sub-group)";
+                                  return `${item.title}${suffix}`;
+                                };
+
+                                return (
+                                  <Select
+                                    multiple
+                                    displayEmpty
+                                    value={selectedKeys}
+                                    onChange={(e) => {
+                                      const value = e.target.value; // array of keys: ["club:123", "subgroup:456"]
+                                      const nextAllowed = value.map((k) => {
+                                        const [type, id] = k.split(":");
+                                        if (type === "club") {
+                                          const c = clubs.find((c) => c.id === id);
+                                          return {
+                                            id,
+                                            title: c?.title || "Unnamed Club",
+                                            type: "club",
+                                          };
+                                        } else {
+                                          const g = subGroups.find((g) => g.id === id);
+                                          return {
+                                            id,
+                                            title: g?.title || "Untitled Sub-group",
+                                            type: "subgroup",
+                                          };
+                                        }
+                                      });
+
+                                      updateTicket(index, { allowedGroups: nextAllowed });
+                                    }}
+                                    renderValue={(selected) => {
+                                      if (!selected || selected.length === 0)
+                                        return "Select club / sub-group";
+                                      return selected
+                                        .map((k) => getLabelFromKey(k))
+                                        .filter(Boolean)
+                                        .join(", ");
+                                    }}
+                                    className="w-full text-sm"
+                                    size="small"
+                                  >
+                                    {OPTIONS.map((opt) => (
+                                      <MenuItem key={opt.key} value={opt.key}>
+                                        <Checkbox checked={selectedKeys.indexOf(opt.key) > -1} />
+                                        <ListItemText
+                                          primary={
+                                            opt.title +
+                                            (opt.type === "club" ? " (Club)" : " (Sub-group)")
+                                          }
+                                        />
+                                      </MenuItem>
+                                    ))}
+                                  </Select>
+                                );
+                              })()}
+                            </div>
+
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -1680,7 +1928,9 @@ export default function UniclubEventPage({ navbarHeight }) {
                                 className="border border-gray-300 p-2 rounded w-full"
                               />
                             )}
+                          </div>
 
+                          <div className="space-y-2">
                             <label className="text-sm">
                               <input
                                 type="checkbox"
@@ -1724,10 +1974,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                                     type="checkbox"
                                     checked={t.fields?.number ?? true}
                                     onChange={() =>
-                                      updateTicketFieldCheckbox(
-                                        index,
-                                        "number"
-                                      )
+                                      updateTicketFieldCheckbox(index, "number")
                                     }
                                     className="mr-1"
                                   />
@@ -1761,20 +2008,70 @@ export default function UniclubEventPage({ navbarHeight }) {
                                   />
                                   Degree (Optional)
                                 </label>
-                                {/* <label>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* TABLE / POD OPTIONS PER TICKET */}
+                          <div className="space-y-2 pt-3 border-t border-gray-300">
+                            <label className="text-sm font-medium">
+                              <input
+                                type="checkbox"
+                                checked={t.hasTables || false}
+                                onChange={(e) =>
+                                  updateTicket(index, {
+                                    hasTables: e.target.checked,
+                                  })
+                                }
+                                className="mr-2"
+                              />
+                              Does this ticket have Tables / Pods?
+                            </label>
+
+                            {t.hasTables && (
+                              <div className="space-y-2">
+                                <select
+                                  value={t.tableType || ""}
+                                  onChange={(e) =>
+                                    updateTicket(index, {
+                                      tableType: e.target.value,
+                                    })
+                                  }
+                                  className="w-full border border-gray-300 p-2 rounded"
+                                >
+                                  <option value="">Select type of table</option>
+                                  <option value="Tables">Table</option>
+                                  <option value="Teams">Team</option>
+                                  <option value="Bus">Bus</option>
+                                  <option value="Cabin">Cabin</option>
+                                </select>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                   <input
-                                    type="checkbox"
-                                    checked={t.fields?.studyYear ?? false}
-                                    onChange={() =>
-                                      updateTicketFieldCheckbox(
-                                        index,
-                                        "studyYear"
-                                      )
+                                    type="number"
+                                    min="0"
+                                    placeholder="Number of tables/pods available"
+                                    value={t.tableCount || ""}
+                                    onChange={(e) =>
+                                      updateTicket(index, {
+                                        tableCount: e.target.value,
+                                      })
                                     }
-                                    className="mr-1"
+                                    className="border border-gray-300 p-2 rounded"
                                   />
-                                  Study Year (Optional)
-                                </label> */}
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    placeholder="Tickets per table/pod"
+                                    value={t.ticketsPerTable || ""}
+                                    onChange={(e) =>
+                                      updateTicket(index, {
+                                        ticketsPerTable: e.target.value,
+                                      })
+                                    }
+                                    className="border border-gray-300 p-2 rounded"
+                                  />
+                                </div>
                               </div>
                             )}
                           </div>
@@ -1784,85 +2081,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                   )}
                 </div>
 
-                {/* Social / interactions */}
-                {/* <label className="block mb-2">
-                  <input
-                    type="checkbox"
-                    name="allowChat"
-                    checked={form.allowChat}
-                    onChange={handleChange}
-                    className="mr-2"
-                  />
-                  Allow Chat
-                </label>
-                <label className="block mb-2">
-                  <input
-                    type="checkbox"
-                    name="allowReactions"
-                    checked={form.allowReactions}
-                    onChange={handleChange}
-                    className="mr-2"
-                  />
-                  Allow Reactions
-                </label> */}
-
-                {/* QR check-in */}
-                {/* <label className="block mb-2">
-                  <input
-                    type="checkbox"
-                    name="enableQrCheckIn"
-                    checked={form.enableQrCheckIn}
-                    onChange={handleChange}
-                    className="mr-2"
-                  />
-                  Enable QR code check-in (scan to mark attendance)
-                </label>
-
-                <input
-                  name="challenges"
-                  placeholder="Event Challenges / Polls"
-                  value={form.challenges}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 p-2 rounded"
-                /> */}
-
-                {/* <select
-                  name="visibility"
-                  value={form.visibility}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 p-2 rounded"
-                >
-                  <option value="Public">Public</option>
-                  <option value="Friends">Friends Only</option>
-                  <option value="Invite">Invite Only</option>
-                  <option value="Campus">Campus Only</option>
-                </select> */}
-
-                {/* Hosts & co-hosts */}
-                {/* <input
-                  name="cohosts"
-                  placeholder="Co-host clubs (names, comma separated)"
-                  value={form.cohosts}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 p-2 rounded"
-                /> */}
-                {/* hostClubIds stored in Firestore for future multi-host logic */}
-
-                {/* Links & info (already existed) */}
-                {/* <input
-                  name="website"
-                  placeholder="Website"
-                  value={form.website}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 p-2 rounded"
-                />
-                <input
-                  name="instagram"
-                  placeholder="Instagram Link"
-                  value={form.instagram}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 p-2 rounded"
-                /> */}
+                {/* LINKS & EXTRA INFO */}
                 <div className="space-y-2">
                   <label className="block font-medium">Website Links</label>
 
@@ -1906,8 +2125,9 @@ export default function UniclubEventPage({ navbarHeight }) {
                     + Add website link
                   </button>
                 </div>
+
                 <div className="space-y-2">
-                  <label className="block font-medium">Instagram Links</label>
+                  <label className="block font-medium">Social Media links</label>
 
                   {(form.instagramLinks || []).map((link, index) => (
                     <div key={index} className="flex gap-2">
@@ -1919,7 +2139,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                           setForm({ ...form, instagramLinks: newArr });
                         }}
                         className="flex-1 border border-gray-300 p-2 rounded"
-                        placeholder={`Instagram link ${index + 1}`}
+                        placeholder={`Social Media link ${index + 1}`}
                       />
 
                       <button
@@ -1946,7 +2166,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                     }
                     className="text-sm text-blue-600 hover:underline"
                   >
-                    + Add Instagram link
+                    + Add Social Media link
                   </button>
                 </div>
 
@@ -1957,17 +2177,6 @@ export default function UniclubEventPage({ navbarHeight }) {
                   onChange={handleChange}
                   className="w-full border border-gray-300 p-2 rounded"
                 />
-
-                {/* <label className="block mb-2">
-                  <input
-                    type="checkbox"
-                    name="boothOption"
-                    checked={form.boothOption}
-                    onChange={handleChange}
-                    className="mr-2"
-                  />
-                  Booth / Stall Option
-                </label> */}
 
                 <input
                   name="vendorInfo"
@@ -1988,7 +2197,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                 <label className="block font-medium">Refund Policy</label>
                 <textarea
                   name="refundPolicy"
-                  placeholder="Add your refund / cancellation policy (used when payment gateway is integrated)"
+                  placeholder="Add your refund / cancellation policy"
                   value={form.refundPolicy}
                   onChange={handleChange}
                   className="w-full border border-gray-300 p-2 rounded text-sm min-h-[80px]"
@@ -2089,7 +2298,13 @@ export default function UniclubEventPage({ navbarHeight }) {
                     const rows =
                       bookingsByEvent[bookingModal.event?.id] || [];
                     const csv = [
-                      ["userName", "userEmail", "totalPrice", "timestamp", "ticketsJSON"],
+                      [
+                        "userName",
+                        "userEmail",
+                        "totalPrice",
+                        "timestamp",
+                        "ticketsJSON",
+                      ],
                       ...rows.map((b) => [
                         (b.userName || "").replaceAll(",", " "),
                         b.userEmail || "",
@@ -2388,8 +2603,8 @@ export default function UniclubEventPage({ navbarHeight }) {
                     <div className="flex items-center gap-2">
                       <button
                         className={`px-3 py-1 rounded border ${canPrev
-                            ? "bg-white hover:bg-gray-50"
-                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          ? "bg-white hover:bg-gray-50"
+                          : "bg-gray-100 text-gray-400 cursor-not-allowed"
                           }`}
                         onClick={() =>
                           canPrev &&
@@ -2404,8 +2619,8 @@ export default function UniclubEventPage({ navbarHeight }) {
                       </button>
                       <button
                         className={`px-3 py-1 rounded border ${canNext
-                            ? "bg-white hover:bg-gray-50"
-                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          ? "bg-white hover:bg-gray-50"
+                          : "bg-gray-100 text-gray-400 cursor-not-allowed"
                           }`}
                         onClick={() =>
                           canNext &&

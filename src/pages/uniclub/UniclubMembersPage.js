@@ -60,8 +60,8 @@ export default function UniclubMembersPage(props) {
 
     // NEW FIELDS
     paymentMethod: "",
-    clubId: "",
-    subGroupId: "",
+    clubid: "",
+    subGroupid: "",
 
     // image kept for future use (no UI now)
     image: null,
@@ -141,7 +141,7 @@ export default function UniclubMembersPage(props) {
   // 🔄 getClubs: load all clubs for this university (to pick which club to add member into)
   const getClubs = async () => {
     try {
-      if (!emp?.universityId) {
+      if (!emp?.uniclubid) {
         setClubs([]);
         return;
       }
@@ -149,9 +149,8 @@ export default function UniclubMembersPage(props) {
       const ref = dbRef(database, "uniclubs");
       const snap = await rtdbGet(ref);
       const val = snap.val() || {};
-
       const filtered = Object.entries(val)
-        .filter(([id, c]) => c.universityid === emp.universityId)
+        .filter(([id, c]) => c.id === emp?.uniclubid)
         .map(([id, c]) => ({
           id,
           title: c.title || "Unnamed Club",
@@ -210,17 +209,6 @@ export default function UniclubMembersPage(props) {
     return await getDownloadURL(sRef);
   };
 
-  /**
-   * 🧩 handleSubmit:
-   *  - if editing:
-   *      update Firestore user
-   *      update RTDB member (name/photo/paymentMethod)
-   *  - else (create):
-   *      create Auth user
-   *      create Firestore user doc
-   *      add to RTDB: uniclubs/{form.clubId}/members/{uid}
-   *      optionally: uniclubs/{form.clubId}/subgroups/{form.subGroupId}/members/{uid}
-   */
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -229,7 +217,7 @@ export default function UniclubMembersPage(props) {
       return;
     }
 
-    if (!form.clubId) {
+    if (!form.clubid) {
       toast.error("Please select a club");
       return;
     }
@@ -346,7 +334,7 @@ export default function UniclubMembersPage(props) {
           // 🔗 Add as member in the SELECTED club in RTDB
           const memberRef = dbRef(
             database,
-            `uniclubs/${form.clubId}/members/${newUser.uid}`
+            `uniclubs/${form.clubid}/members/${newUser.uid}`
           );
           await rtdbSet(memberRef, {
             uid: newUser.uid,
@@ -359,8 +347,8 @@ export default function UniclubMembersPage(props) {
           });
 
           // 🔗 Also add to chosen sub-group (optional)
-          if (form.subGroupId) {
-            await rtdbSet(dbRef(database, `${'uniclubsubgroup'}/${form.subGroupId}/members/${newUser.uid}`), {
+          if (form.subGroupid) {
+            await rtdbSet(dbRef(database, `${'uniclubsubgroup'}/${form.subGroupid}/members/${newUser.uid}`), {
               uid: newUser.uid,
               name: form.firstname,
               photoURL: finalImageUrl || "",
@@ -389,12 +377,6 @@ export default function UniclubMembersPage(props) {
     }
   };
 
-  /**
-   * ❌ handleDelete:
-   *  - delete Auth (via your cloud function)
-   *  - delete Firestore user doc
-   *  - remove from RTDB uniclubs/{emp.uniclubid}/members/{uid}
-   */
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
@@ -454,7 +436,7 @@ export default function UniclubMembersPage(props) {
             setEditing(null);
             setForm({
               ...initialForm,
-              clubId: emp?.uniclubid || "",
+              clubid: emp?.uniclubid || "",
             });
             setModalOpen(true);
           }}
@@ -659,8 +641,8 @@ export default function UniclubMembersPage(props) {
                   Select Club
                 </label>
                 <select
-                  name="clubId"
-                  value={form.clubId}
+                  name="clubid"
+                  value={form.clubid}
                   onChange={handleChange}
                   className="w-full border border-gray-300 p-2 rounded"
                   required
@@ -680,8 +662,8 @@ export default function UniclubMembersPage(props) {
                   Select Sub-Group (optional)
                 </label>
                 <select
-                  name="subGroupId"
-                  value={form.subGroupId}
+                  name="subGroupid"
+                  value={form.subGroupid}
                   onChange={handleChange}
                   className="w-full border border-gray-300 p-2 rounded"
                 >
