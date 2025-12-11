@@ -1018,16 +1018,20 @@ export default function UniclubPage({ navbarHeight }) {
                     <input
                       type="date"
                       className="w-full border border-gray-300 p-2 rounded"
-                      value={toLocalInputValue(form.startAtMs)}
-                      onChange={(e) =>
-                        setForm((p) => ({ ...p, startAtMs: fromLocalInputValue(e.target.value) }))
-                      }
+                      value={toDateInputValue(form.startAtMs)}
+                      onChange={(e) => {
+                        const ms = e.target.value ? new Date(e.target.value).getTime() : 0;
+                        setForm((p) => ({ ...p, startAtMs: ms }));
+                      }}
                     />
                     <input
                       type="date"
                       className="w-full border border-gray-300 p-2 rounded"
-                      value={toLocalInputValue(form.endAtMs)}
-                      onChange={(e) => setForm((p) => ({ ...p, endAtMs: fromLocalInputValue(e.target.value) }))}
+                      value={toDateInputValue(form.endAtMs)}
+                      onChange={(e) => {
+                        const ms = e.target.value ? new Date(e.target.value).getTime() : 0;
+                        setForm((p) => ({ ...p, endAtMs: ms }));
+                      }}
                     />
                   </div>
                 </div>
