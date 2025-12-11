@@ -37,6 +37,7 @@ const DEFAULT_FEATURES = {
   room:false,
   social: false,
   uniclub: false,
+  explore:false,
 };
 
 const pageSize = 10;

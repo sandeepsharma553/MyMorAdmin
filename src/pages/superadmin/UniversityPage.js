@@ -50,6 +50,7 @@ const DEFAULT_FEATURES = {
   uniclubevent: false,
   uniclubeventbooking: false,
   uniclubsubgroup: false,
+  explore:false
 };
 
 const initialForm = {
