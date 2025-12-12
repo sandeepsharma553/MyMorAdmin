@@ -17,8 +17,11 @@ export default function SubgroupAnnouncement(props) {
   const { navbarHeight } = props;
   const { state } = useLocation();
   const [params] = useSearchParams();
-  const groupId = state?.groupId || params.get("groupId");
-  const groupName = state?.groupName || params.get("groupName") || "Club";
+  const uid = useSelector((state) => state.auth.user.uid);
+  const user = useSelector((state) => state.auth.user);
+  const emp = useSelector((state) => state.auth.employee);
+  // const groupId = state?.groupId || params.get("groupId");
+  // const groupName = state?.groupName || params.get("groupName") || "Club";
   const navigate = useNavigate();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
@@ -29,9 +32,6 @@ export default function SubgroupAnnouncement(props) {
   const [currentPage, setCurrentPage] = useState(1);
   const [fileName, setFileName] = useState('No file chosen');
 
-  const uid = useSelector((state) => state.auth.user.uid);
-  const user = useSelector((state) => state.auth.user);
-  const emp = useSelector((state) => state.auth.employee);
 
   const [visiblePoll, setVisiblePoll] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -66,6 +66,55 @@ export default function SubgroupAnnouncement(props) {
   const [listDateRange, setListDateRange] = useState(null); // { startDate: Date, endDate: Date }
   const [showListPicker, setShowListPicker] = useState(false);
   const listPickerRef = useRef(null);
+
+  const isBlank = (v) => v === null || v === undefined || String(v).trim() === "";
+
+  const stateGroupId = state?.groupId;
+  const stateGroupName = state?.groupName;
+
+  const paramGroupId = params.get("groupId");
+  const paramGroupName = params.get("groupName");
+
+  // 1) First preference: state → params → employee
+  const resolvedGroupId = !isBlank(stateGroupId)
+    ? stateGroupId
+    : !isBlank(paramGroupId)
+      ? paramGroupId
+      : (emp?.uniclubid || "");
+
+  const resolvedGroupNameFallback = !isBlank(stateGroupName)
+    ? stateGroupName
+    : !isBlank(paramGroupName)
+      ? paramGroupName
+      : (emp?.uniclub || "Club");
+
+  // If groupName still unknown but groupId exists, we will fetch title from RTDB
+  const [groupNameResolved, setGroupNameResolved] = useState(resolvedGroupNameFallback);
+
+  const groupId = resolvedGroupId;
+  const groupName = groupNameResolved;
+
+
+  useEffect(() => {
+    if (!groupId) return;
+
+    // if we already have a good name, no need to fetch
+    if (!isBlank(groupNameResolved) && groupNameResolved !== "Club") return;
+
+    // RTDB: uniclubsubgroup/{groupId}  OR query based on your schema
+    const refPath = dbRef(database, `uniclubsubgroup/${groupId}`);
+
+    const cb = (snap) => {
+      const val = snap.val();
+      const title = val?.title || val?.name || "";
+      if (!isBlank(title)) setGroupNameResolved(title);
+      else setGroupNameResolved(emp?.uniclub || "Club");
+    };
+
+    onValue(refPath, cb, { onlyOnce: true });
+    return () => off(refPath, "value", cb);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId]);
 
   // Close header calendar on outside click
   useEffect(() => {
@@ -560,28 +609,18 @@ export default function SubgroupAnnouncement(props) {
   // ===== Render =====
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
-      {!groupId && (
-        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-          <div className="font-medium mb-1">Missing group context</div>
-          <div className="text-sm text-gray-700">
-            Open this page from a Uniclub row, or append <code>?groupId=...&groupName=...</code> in the URL.
-          </div>
-          <div className="mt-3">
-            <Link to="/uniclub" className="px-3 py-1.5 rounded bg-gray-200 hover:bg-gray-300 text-sm">
-              ← Back to Uniclub
-            </Link>
-          </div>
+      {state?.groupId && (
+        <div className="flex justify-between items-center mb-3">
+          <button
+            onClick={() => navigate("/uniclubsubgroup")}
+            className="flex items-center gap-2 text-gray-700 hover:text-black"
+          >
+            <span className="text-xl">←</span>
+            <span className="text-lg font-semibold">Back Sub Group</span>
+          </button>
         </div>
       )}
-      <div className="flex justify-between items-center mb-3">
-        <button
-          onClick={() => navigate("/uniclubsubgroup")}
-          className="flex items-center gap-2 text-gray-700 hover:text-black"
-        >
-          <span className="text-xl">←</span>
-          <span className="text-lg font-semibold">Back Sub Group</span>
-        </button>
-      </div>
+
       <div className="flex justify-between items-center mb-3">
         <h1 className="text-2xl font-semibold">Announcements — {groupName}</h1>
         <button

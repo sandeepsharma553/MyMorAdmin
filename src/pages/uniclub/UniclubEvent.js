@@ -2202,6 +2202,50 @@ export default function UniclubEventPage({ navbarHeight }) {
                   onChange={handleChange}
                   className="w-full border border-gray-300 p-2 rounded text-sm min-h-[80px]"
                 />
+                {/* HOST CLUBS (multi-host within same university) */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Host club(s)
+                  </label>
+
+                  <Select
+                    multiple
+                    displayEmpty
+                    size="small"
+                    className="w-full text-sm"
+                    value={form.hostClubIds || []}
+                    onChange={(e) => {
+                      const value = e.target.value || [];
+                      // ensure at least 1 host – fallback to current club if they clear everything
+                      const next = value.length ? value : [groupId];
+                      setForm((prev) => ({ ...prev, hostClubIds: next }));
+                    }}
+                    renderValue={(selected) => {
+                      if (!selected || selected.length === 0) {
+                        return "Select host club(s)";
+                      }
+                      const labels = selected
+                        .map((id) => clubs.find((c) => c.id === id)?.title || id)
+                        .filter(Boolean);
+                      return labels.join(", ");
+                    }}
+                  >
+                    {clubs.map((c) => (
+                      <MenuItem key={c.id} value={c.id}>
+                        <Checkbox
+                          checked={(form.hostClubIds || []).includes(c.id)}
+                        />
+                        <ListItemText primary={c.title} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+
+                  <p className="text-[11px] text-gray-500">
+                    Select 1 or more clubs from the same university. The first one can be treated
+                    as the “primary” host in the app UI.
+                  </p>
+                </div>
+
               </div>
 
               <div className="flex justify-end mt-6 space-x-3">

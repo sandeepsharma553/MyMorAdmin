@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { collection, addDoc, getDocs, updateDoc, doc, setDoc, deleteDoc, query, where, getDoc, Timestamp, orderBy } from "firebase/firestore";
@@ -19,7 +19,7 @@ export default function UniclubStudentPage(props) {
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState('No file chosen');
-
+  const [allowedMenuKeys, setAllowedMenuKeys] = useState(["dashboard", "setting", "contact"]);
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
 
@@ -32,7 +32,8 @@ export default function UniclubStudentPage(props) {
     studentid: '',
     image: null,
     imageUrl: '',
-    password: '', // for display column (if you really need to store it)
+    password: '',
+    permissions: [],
   };
 
   const [form, setForm] = useState(initialForm);
@@ -48,9 +49,23 @@ export default function UniclubStudentPage(props) {
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   );
+  const MENU_OPTIONS = [
+    { key: "dashboard", label: "Dashboard" },
+    { key: "uniclub", label: "UniClub" },
+    { key: "uniclubannouncement", label: "Announcement" },
+    { key: "uniclubevent", label: "Event" },
+    { key: "uniclubeventbooking", label: "Event Booking" },
+    { key: "uniclubsubgroup", label: "Sub Group" },
+    { key: "subgroupannouncement", label: "Subgroup Announcement" },
+    { key: "subgroupevent", label: "Subgroup Event" },
+    { key: "subgroupeventbooking", label: "Subgroup Event Booking" },
+    { key: "contact", label: "Contact" },
+    // { key: "setting", label: "Setting" },
 
+  ];
   useEffect(() => {
     getList();
+
   }, []);
 
   const getList = async () => {
@@ -65,7 +80,6 @@ export default function UniclubStudentPage(props) {
       const rows = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(u => u.firstname !== emp.name);
-
       setList(rows);
     } catch (err) {
       console.error('getList error:', err);
@@ -74,6 +88,7 @@ export default function UniclubStudentPage(props) {
       setIsLoading(false);
     }
   };
+
 
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
@@ -137,8 +152,29 @@ export default function UniclubStudentPage(props) {
           uid: form.id,
           password: docSnap.data()?.password || '',
         };
-
+        const employeeData = {
+          name: form.firstname,
+          email: form.email,
+          mobileNo: form.mobileNo,
+          address: form.address,
+          designation: '',
+          department: '',
+          role: 'student',
+          isActive: true,
+          hostelid: '',
+          uid,
+          ...(finalImageUrl && { finalImageUrl }),
+          type: 'admin',
+          universityid: emp?.universityId || "",
+          university: emp?.university || "",
+          uniclub: emp?.uniclub,
+          uniclubid: emp?.uniclubid,
+          createdby: uid,
+          createddate: new Date(),
+          permissions: Array.isArray(form.permissions) ? form.permissions : [],
+        };
         await updateDoc(docRef, updated);
+        await updateDoc(doc(db, 'employees', form.id), employeeData);
         toast.success('Student updated successfully');
       } else {
         // ---- CREATE ----
@@ -172,7 +208,7 @@ export default function UniclubStudentPage(props) {
             createdby: uid,
             createddate: new Date(),
             imageUrl: finalImageUrl || '',
-            password, // (again: storing plain text is unsafe)
+            password,
             uid: user.uid,
             mobileNo: form.mobileNo || '',
             address: form.address || '',
@@ -180,6 +216,29 @@ export default function UniclubStudentPage(props) {
           };
 
           await setDoc(doc(db, "users", user.uid), userData);
+          const employeeData = {
+            name: form.firstname,
+            email: form.email,
+            mobileNo: form.mobileNo,
+            address: form.address,
+            designation: '',
+            department: '',
+            role: 'student',
+            isActive: true,
+            hostelid: '',
+            uid,
+            password,
+            ...(finalImageUrl && { finalImageUrl }),
+            type: 'admin',
+            universityid: emp?.universityId || "",
+            university: emp?.university || "",
+            uniclub: emp?.uniclub,
+            uniclubid: emp?.uniclubid,
+            createdby: uid,
+            createddate: new Date(),
+            permissions: Array.isArray(form.permissions) ? form.permissions : [],
+          };
+          await setDoc(doc(db, "employees", user.uid), employeeData);
           toast.success('Student created successfully');
         } finally {
           // Cleanup the temporary app to avoid duplicate-app errors on hot reloads
@@ -221,6 +280,8 @@ export default function UniclubStudentPage(props) {
 
       if (data.success) {
         await deleteDoc(doc(db, 'users', targetUid)); // correct collection
+        await deleteDoc(doc(db, "employees", targetUid));
+
         toast.success('Successfully deleted!');
         await getList();
       }
@@ -231,6 +292,34 @@ export default function UniclubStudentPage(props) {
       setConfirmDeleteOpen(false);
       setDelete(null);
     }
+  };
+  const visibleMenuOptions = useMemo(() => MENU_OPTIONS, []);
+
+
+  const allPermissionsSelected = useMemo(() => {
+    if (!visibleMenuOptions.length) return false;
+    return visibleMenuOptions.every(({ key }) => (form.permissions || []).includes(key));
+  }, [visibleMenuOptions, form.permissions]);
+
+  const handlePermissionToggle = (key, checked) => {
+    setForm((prev) => {
+      const current = new Set(prev.permissions || []);
+      if (checked) current.add(key);
+      else current.delete(key);
+      return { ...prev, permissions: Array.from(current) };
+    });
+  };
+
+  const handleSelectAllPermissions = (checked) => {
+    setForm((prev) => {
+      const current = new Set(prev.permissions || []);
+      if (checked) {
+        visibleMenuOptions.forEach(({ key }) => current.add(key));
+      } else {
+        visibleMenuOptions.forEach(({ key }) => current.delete(key));
+      }
+      return { ...prev, permissions: Array.from(current) };
+    });
   };
 
   return (
@@ -301,14 +390,25 @@ export default function UniclubStudentPage(props) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button
                         className="text-blue-600 hover:underline mr-3"
-                        onClick={() => {
+                        onClick={async () => {
                           setEditing(item);
+                          let empPerms = [];
+                          try {
+                            const empSnap = await getDoc(doc(db, "employees", item.id));
+                            if (empSnap.exists()) {
+                              const ed = empSnap.data();
+                              empPerms = Array.isArray(ed.permissions) ? ed.permissions : [];
+                            }
+                          } catch (e) {
+                            console.error("load employee permissions error:", e);
+                          }
                           setForm({
                             ...initialForm,
                             ...item,
                             image: null,          // clear file
                             imageUrl: item.imageUrl || '',
                             id: item.id,          // ensure id set
+                            permissions: empPerms.length ? empPerms : (Array.isArray(item.permissions) ? item.permissions : []),
                           });
                           setFileName('No file chosen');
                           setModalOpen(true);
@@ -411,7 +511,51 @@ export default function UniclubStudentPage(props) {
                 className="w-full border border-gray-300 p-2 rounded"
                 required
               />
+              <fieldset className="mt-3">
+                <legend className="font-medium mb-2">Permissions</legend>
 
+                {/* Select All */}
+                <div className="mb-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={allPermissionsSelected}
+                      onChange={(e) =>
+                        handleSelectAllPermissions(e.target.checked)
+                      }
+                    />
+                    <span>
+                      {allPermissionsSelected
+                        ? "Unselect all permissions"
+                        : "Select all permissions"}
+                    </span>
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  {visibleMenuOptions.length === 0 && (
+                    <p className="text-xs text-gray-500">
+                      No permissions available. Enable features first.
+                    </p>
+                  )}
+
+                  {visibleMenuOptions.map(({ key, label }) => (
+                    <label
+                      key={key}
+                      className="flex items-center gap-2 text-sm bg-gray-50 px-2 py-1 rounded border border-gray-200"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={(form.permissions || []).includes(key)}
+                        onChange={(e) =>
+                          handlePermissionToggle(key, e.target.checked)
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                 <label className="cursor-pointer">
                   <input

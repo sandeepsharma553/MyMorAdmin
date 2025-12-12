@@ -64,10 +64,11 @@ const SECTIONS = [
   { key: "uniclubannouncement", label: "Announcement", Icon: Bell },
   { key: "uniclubevent", label: "Event", Icon: Calendar },
   { key: "uniclubeventbooking", label: "Event Booking", Icon: Calendar },
+  { key: "uniclubsubgroup", label: "Sub Group", Icon: Layers },
   { key: "subgroupannouncement", label: "Announcement", Icon: Bell },
   { key: "subgroupevent", label: "Event", Icon: Calendar },
   { key: "subgroupeventbooking", label: "Event Booking", Icon: Calendar },
-  { key: "uniclubsubgroup", label: "Sub Group", Icon: Layers },
+
   { key: "setting", label: "Setting", Icon: SettingsIcon },
   { key: "contact", label: "Contact", Icon: HelpCircle },
  

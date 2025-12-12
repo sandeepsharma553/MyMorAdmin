@@ -9,7 +9,8 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import { db } from "../../firebase";
+import { db,database } from "../../firebase";
+import { ref as dbRef, query as datquery, onValue, off, } from 'firebase/database';
 import { useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
 // Small, reusable pager
 const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
@@ -40,8 +41,8 @@ const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
         <div className="flex items-center gap-2">
           <button
             className={`px-3 py-1 rounded border ${canPrev
-                ? "bg-white hover:bg-gray-50"
-                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+              ? "bg-white hover:bg-gray-50"
+              : "bg-gray-100 text-gray-400 cursor-not-allowed"
               }`}
             onClick={() => canPrev && setPage((p) => p - 1)}
             disabled={!canPrev}
@@ -50,8 +51,8 @@ const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
           </button>
           <button
             className={`px-3 py-1 rounded border ${canNext
-                ? "bg-white hover:bg-gray-50"
-                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+              ? "bg-white hover:bg-gray-50"
+              : "bg-gray-100 text-gray-400 cursor-not-allowed"
               }`}
             onClick={() => canNext && setPage((p) => p + 1)}
             disabled={!canNext}
@@ -71,8 +72,8 @@ export default function SubgroupEventBooking() {
   const [bookings, setBookings] = useState([]);
   const { state } = useLocation();
   const [params] = useSearchParams();
-  const groupId = state?.groupId || params.get("groupId");
-  const groupName = state?.groupName || params.get("groupName") || "Club";
+  // const groupId = state?.groupId || params.get("groupId");
+  // const groupName = state?.groupName || params.get("groupName") || "Club";
   // table state
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -86,6 +87,56 @@ export default function SubgroupEventBooking() {
       setPage(1);
     }, 250);
   };
+
+
+  const isBlank = (v) => v === null || v === undefined || String(v).trim() === "";
+
+  const stateGroupId = state?.groupId;
+  const stateGroupName = state?.groupName;
+
+  const paramGroupId = params.get("groupId");
+  const paramGroupName = params.get("groupName");
+
+  // 1) First preference: state → params → employee
+  const resolvedGroupId = !isBlank(stateGroupId)
+    ? stateGroupId
+    : !isBlank(paramGroupId)
+      ? paramGroupId
+      : (emp?.uniclubid || "");
+
+  const resolvedGroupNameFallback = !isBlank(stateGroupName)
+    ? stateGroupName
+    : !isBlank(paramGroupName)
+      ? paramGroupName
+      : (emp?.uniclub || "Club");
+
+  // If groupName still unknown but groupId exists, we will fetch title from RTDB
+  const [groupNameResolved, setGroupNameResolved] = useState(resolvedGroupNameFallback);
+
+  const groupId = resolvedGroupId;
+  const groupName = groupNameResolved;
+
+
+  useEffect(() => {
+    if (!groupId) return;
+
+    // if we already have a good name, no need to fetch
+    if (!isBlank(groupNameResolved) && groupNameResolved !== "Club") return;
+
+    // RTDB: uniclubsubgroup/{groupId}  OR query based on your schema
+    const refPath = dbRef(database, `uniclubsubgroup/${groupId}`);
+
+    const cb = (snap) => {
+      const val = snap.val();
+      const title = val?.title || val?.name || "";
+      if (!isBlank(title)) setGroupNameResolved(title);
+      else setGroupNameResolved(emp?.uniclub || "Club");
+    };
+
+    onValue(refPath, cb, { onlyOnce: true });
+    return () => off(refPath, "value", cb);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId]);
 
   useEffect(() => {
     (async () => {
@@ -168,15 +219,17 @@ export default function SubgroupEventBooking() {
 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
-      <div className="flex justify-between items-center mb-3">
-        <button
-          onClick={() => navigate("/uniclubsubgroup")}
-          className="flex items-center gap-2 text-gray-700 hover:text-black"
-        >
-          <span className="text-xl">←</span>
-          <span className="text-lg font-semibold">Back Sub Group</span>
-        </button>
-      </div>
+      {state?.groupId && (
+        <div className="flex justify-between items-center mb-3">
+          <button
+            onClick={() => navigate("/uniclubsubgroup")}
+            className="flex items-center gap-2 text-gray-700 hover:text-black"
+          >
+            <span className="text-xl">←</span>
+            <span className="text-lg font-semibold">Back Sub Group</span>
+          </button>
+        </div>
+      )}
       <div className="flex justify-between items-center mb-3">
         <h1 className="text-2xl font-semibold">Event Bookings</h1>
       </div>
