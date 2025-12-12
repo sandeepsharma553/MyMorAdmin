@@ -30,6 +30,7 @@
     "firebase": "^11.8.1",
     "firebase-tools": "^14.3.0",
     "formik": "^2.4.6",
+    "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.507.0",
     "mapbox-gl": "^3.15.0",
     "react": "^19.0.0",

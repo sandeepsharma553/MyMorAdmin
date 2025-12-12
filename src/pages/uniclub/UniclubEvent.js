@@ -14,10 +14,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db, storage, database } from "../../firebase";
-import {
-  ref as dbRef,
-  get as rtdbGet,
-} from "firebase/database";
+import { ref as dbRef, get as rtdbGet } from "firebase/database";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -39,6 +36,9 @@ import { format } from "date-fns";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { MenuItem, Select, Checkbox, ListItemText } from "@mui/material";
 
+// ✅ QR scanner (web)
+import { Html5Qrcode } from "html5-qrcode";
+
 export default function UniclubEventPage({ navbarHeight }) {
   const { state } = useLocation();
   const [params] = useSearchParams();
@@ -53,6 +53,14 @@ export default function UniclubEventPage({ navbarHeight }) {
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
+  // ✅ Scan modal
+  const [scanModal, setScanModal] = useState({ open: false, event: null });
+  const [scanResult, setScanResult] = useState(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanStatus, setScanStatus] = useState(null); // {ok:boolean,msg:string}
+  const qrInstanceRef = useRef(null);
+  const qrContainerRef = useRef(null);
+  const [qrReady, setQrReady] = useState(false);
   const [paymentlist, setPaymentList] = useState([
     { name: "General", id: "General" },
     { name: "VIP", id: "VIP" },
@@ -113,11 +121,11 @@ export default function UniclubEventPage({ navbarHeight }) {
     promoVideo: "",
     theme: "",
     rsvp: false,
-    capacity: "", // Max capacity for the whole event
-    maxPurchaseTickets: "", // Max per-booking / per-user
+    capacity: "",
+    maxPurchaseTickets: "",
     rsvpDeadline: "",
-    priceType: "", // Free / Paid
-    prices: [], // legacy
+    priceType: "",
+    prices: [],
     paymentLink: "",
     allowChat: false,
     allowReactions: false,
@@ -136,23 +144,16 @@ export default function UniclubEventPage({ navbarHeight }) {
     pinnedAt: null,
     pinnedOrder: null,
 
-    // Refund policy
     refundPolicy: "",
-
-    // NEW: free ticket sale window
     freeTicketStartDateTime: "",
     freeTicketEndDateTime: "",
     hasTables: false,
     tableType: "",
     tableCount: "",
     ticketsPerTable: "",
-    // advanced ticket types (for Paid)
     ticketTypes: [],
-
-    // QR check-in flag
     enableQrCheckIn: false,
 
-    // host club IDs
     hostClubIds: [],
     websiteLinks: [],
     instagramLinks: [],
@@ -167,7 +168,7 @@ export default function UniclubEventPage({ navbarHeight }) {
     event: null,
     page: 1,
     pageSize: 10,
-    sort: { key: "timestamp", dir: "desc" }, // 'userName' | 'userEmail' | 'totalPrice' | 'timestamp'
+    sort: { key: "timestamp", dir: "desc" },
     q: "",
   });
 
@@ -182,20 +183,25 @@ export default function UniclubEventPage({ navbarHeight }) {
     getList();
     getCategory();
     getPaymentList();
-    getClubs();        // ⬅️ new
+    getClubs();
     fetchSubGroups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load bookings
+  // ✅ Load bookings (group filter + grouping FIX)
   useEffect(() => {
     (async () => {
       try {
-        const qB = query(collection(db, "discovereventbookings"));
+        const qB = query(
+          collection(db, "discovereventbookings"),
+          where("groupid", "==", groupId)
+        );
         const snap = await getDocs(qB);
+
         const grouped = {};
         snap.docs.forEach((d) => {
           const b = { id: d.id, ...d.data() };
-          const key = b.eventId || "__unknown__";
+          const key = b.eventDocId || b.eventId || "__unknown__"; // ✅ FIX
           if (!grouped[key]) grouped[key] = [];
           grouped[key].push(b);
         });
@@ -205,7 +211,7 @@ export default function UniclubEventPage({ navbarHeight }) {
         toast.error("Failed to load bookings");
       }
     })();
-  }, []);
+  }, [groupId]);
 
   const getList = async () => {
     setIsLoading(true);
@@ -233,7 +239,6 @@ export default function UniclubEventPage({ navbarHeight }) {
     try {
       const qPay = query(collection(db, "punliceventpaymenttype"));
       await getDocs(qPay);
-      // setPaymentList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } finally {
       setIsLoading(false);
     }
@@ -249,23 +254,22 @@ export default function UniclubEventPage({ navbarHeight }) {
       toast.error("Failed to load categories");
     }
   };
+
   const getClubs = async () => {
     try {
       if (!emp?.uniclubid) {
         setClubs([]);
         return;
       }
-
       const ref = dbRef(database, "uniclubs");
       const snap = await rtdbGet(ref);
       const val = snap.val() || {};
       const filtered = Object.entries(val)
         .filter(([id, c]) => c.id === emp?.uniclubid)
         .map(([id, c]) => ({
-          id, // RTDB key
+          id,
           title: c.title || "Unnamed Club",
         }));
-
       setClubs(filtered);
     } catch (err) {
       console.error("getClubs error:", err);
@@ -312,10 +316,7 @@ export default function UniclubEventPage({ navbarHeight }) {
 
   const isBlankHtml = (html) => {
     if (!html) return true;
-    const text = html
-      .replace(/<[^>]*>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .trim();
+    const text = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
     return text.length === 0;
   };
 
@@ -324,25 +325,19 @@ export default function UniclubEventPage({ navbarHeight }) {
     try {
       const hasPoster =
         (form.posters?.length || 0) > 0 || (form.posterFiles?.length || 0) > 0;
-      if (!editingData && !hasPoster)
-        return toast.error("Please add at least one poster");
-      if (isBlankHtml(form.eventDescriptionHtml))
-        return toast.error("Please add a description");
+      if (!editingData && !hasPoster) return toast.error("Please add at least one poster");
+      if (isBlankHtml(form.eventDescriptionHtml)) return toast.error("Please add a description");
 
-      // Event time validation
       const sMs = new Date(form.startDateTime).getTime();
       const eMs = new Date(form.endDateTime).getTime();
       if (Number.isNaN(sMs) || Number.isNaN(eMs) || eMs <= sMs)
         return toast.error("End date/time must be after start date/time.");
 
-      // Free ticket window validation (if both provided)
       if (form.freeTicketStartDateTime && form.freeTicketEndDateTime) {
         const fsMs = new Date(form.freeTicketStartDateTime).getTime();
         const feMs = new Date(form.freeTicketEndDateTime).getTime();
         if (!Number.isNaN(fsMs) && !Number.isNaN(feMs) && feMs <= fsMs) {
-          return toast.error(
-            "Free ticket end time must be after its start time."
-          );
+          return toast.error("Free ticket end time must be after its start time.");
         }
       }
 
@@ -351,15 +346,10 @@ export default function UniclubEventPage({ navbarHeight }) {
       if (!Number.isNaN(maxPerNum) && maxPerNum < 1)
         return toast.error("Max purchase tickets must be at least 1.");
       if (!Number.isNaN(capNum) && !Number.isNaN(maxPerNum) && maxPerNum > capNum)
-        return toast.error(
-          "Max purchase tickets cannot be greater than Max Capacity."
-        );
+        return toast.error("Max purchase tickets cannot be greater than Max Capacity.");
 
-      // Basic sanity checks for ticketTypes (optional, not blocking)
       if (form.priceType === "Paid" && (form.ticketTypes || []).length === 0) {
-        toast.warning(
-          "You selected Paid event but no tickets are configured. Please add at least one ticket type."
-        );
+        toast.warning("You selected Paid event but no tickets are configured. Please add at least one ticket type.");
       }
 
       // upload new posters
@@ -379,11 +369,10 @@ export default function UniclubEventPage({ navbarHeight }) {
       }
       const posters = [...(form.posters || []), ...uploaded];
 
-      // Ticket sanitisation (per ticket, for Paid)
       const ticketTypesSanitised = (form.ticketTypes || []).map((t, idx) => ({
         id: t.id || `ticket_${idx + 1}`,
         name: (t.name || "").trim(),
-        description: (t.description).toString().trim(),
+        description: (t.description || "").toString().trim(),
         price: t.price === "" || t.price == null ? 0 : Number(t.price),
         allowedGroupNote: (t.allowedGroupNote || "").trim(),
         allowedGroups: Array.isArray(t.allowedGroups)
@@ -395,10 +384,7 @@ export default function UniclubEventPage({ navbarHeight }) {
           : [],
         passwordRequired: !!t.passwordRequired,
         password: t.passwordRequired ? (t.password || "").trim() : "",
-        maxCapacity:
-          t.maxCapacity === "" || t.maxCapacity == null
-            ? null
-            : Number(t.maxCapacity),
+        maxCapacity: t.maxCapacity === "" || t.maxCapacity == null ? null : Number(t.maxCapacity),
         maxPurchasePerUser:
           t.maxPurchasePerUser === "" || t.maxPurchasePerUser == null
             ? null
@@ -414,14 +400,10 @@ export default function UniclubEventPage({ navbarHeight }) {
         },
         startDateTime: t.startDateTime || "",
         endDateTime: t.endDateTime || "",
-
-        // tables/pods per ticket
         hasTables: !!t.hasTables,
         tableType: t.hasTables ? t.tableType || "" : "",
         tableCount:
-          t.hasTables && t.tableCount !== "" && t.tableCount != null
-            ? Number(t.tableCount)
-            : null,
+          t.hasTables && t.tableCount !== "" && t.tableCount != null ? Number(t.tableCount) : null,
         ticketsPerTable:
           t.hasTables && t.ticketsPerTable !== "" && t.ticketsPerTable != null
             ? Number(t.ticketsPerTable)
@@ -432,8 +414,7 @@ export default function UniclubEventPage({ navbarHeight }) {
         ...form,
         groupid: groupId,
         groupName: groupName || "",
-        prices:
-          form.priceType === "Free" || !form.priceType ? [] : form.prices || [],
+        prices: form.priceType === "Free" || !form.priceType ? [] : form.prices || [],
         startDateTime: form.startDateTime,
         endDateTime: form.endDateTime,
         posters,
@@ -441,9 +422,7 @@ export default function UniclubEventPage({ navbarHeight }) {
         uid,
         isPinned: !!form.isPinned,
         pinnedAt: form.isPinned ? form.pinnedAt || Timestamp.now() : null,
-        pinnedOrder: Number.isFinite(Number(form.pinnedOrder))
-          ? Number(form.pinnedOrder)
-          : null,
+        pinnedOrder: Number.isFinite(Number(form.pinnedOrder)) ? Number(form.pinnedOrder) : null,
         maxPurchaseTickets: Number.isNaN(Number(form.maxPurchaseTickets))
           ? null
           : Number(form.maxPurchaseTickets),
@@ -458,18 +437,14 @@ export default function UniclubEventPage({ navbarHeight }) {
             ? Number(form.tableCount)
             : null,
         ticketsPerTable:
-          form.hasTables &&
-            form.ticketsPerTable !== "" &&
-            form.ticketsPerTable != null
+          form.hasTables && form.ticketsPerTable !== "" && form.ticketsPerTable != null
             ? Number(form.ticketsPerTable)
             : null,
 
         ticketTypes: ticketTypesSanitised,
         enableQrCheckIn: !!form.enableQrCheckIn,
         hostClubIds:
-          Array.isArray(form.hostClubIds) && form.hostClubIds.length
-            ? form.hostClubIds
-            : [groupId],
+          Array.isArray(form.hostClubIds) && form.hostClubIds.length ? form.hostClubIds : [groupId],
         websiteLinks: form.websiteLinks || [],
         instagramLinks: form.instagramLinks || [],
       };
@@ -480,8 +455,7 @@ export default function UniclubEventPage({ navbarHeight }) {
       if (editingData) {
         const ref = doc(db, "discoverevents", editingData.id);
         const snap = await getDoc(ref);
-        if (!snap.exists())
-          return toast.warning("Event does not exist! Cannot update.");
+        if (!snap.exists()) return toast.warning("Event does not exist! Cannot update.");
         await updateDoc(ref, eventData);
         toast.success("Event updated successfully");
       } else {
@@ -497,44 +471,6 @@ export default function UniclubEventPage({ navbarHeight }) {
       toast.error("Save failed");
     }
   };
-  const toggleTicketAllowedGroup = (ticketIndex, option) => {
-    setForm((prev) => {
-      const nextTickets = [...(prev.ticketTypes || [])];
-      const current = nextTickets[ticketIndex] || {};
-      const existing = Array.isArray(current.allowedGroups)
-        ? current.allowedGroups
-        : [];
-
-      const exists = existing.some(
-        (g) => g.id === option.id && g.type === option.type
-      );
-
-      const updated = exists
-        ? existing.filter((g) => !(g.id === option.id && g.type === option.type))
-        : [...existing, option];
-
-      nextTickets[ticketIndex] = {
-        ...current,
-        allowedGroups: updated,
-      };
-
-      return { ...prev, ticketTypes: nextTickets };
-    });
-  };
-
-  const handleDelete = async () => {
-    if (!deleteData?.id) return;
-    try {
-      await deleteDoc(doc(db, "discoverevents", deleteData.id));
-      toast.success("Successfully deleted!");
-      getList();
-    } catch (e) {
-      console.error(e);
-      toast.error("Delete failed");
-    }
-    setConfirmDeleteOpen(false);
-    setDelete(null);
-  };
 
   const toMillis = (val) => {
     if (!val) return null;
@@ -544,41 +480,20 @@ export default function UniclubEventPage({ navbarHeight }) {
     return Number.isNaN(ms) ? null : ms;
   };
 
-  const formatDateTime = (ts) => {
-    const ms = toMillis(ts);
-    if (!ms) return "—";
-    return dayjs(ms).format("YYYY-MM-DD hh:mm A");
-  };
-
   // windows + classification
   function getEventWindowMillis(item) {
     const s1 = toMillis(item.startDateTime);
     const e1 = toMillis(item.endDateTime);
     if (s1 || e1) return { start: s1 ?? e1, end: e1 ?? s1, source: "dateTime" };
+
     const sd = toMillis(item?.date?.startDate);
     const ed = toMillis(item?.date?.endDate);
     if (sd || ed) {
       const start = sd ? new Date(sd) : ed ? new Date(ed) : null;
       const end = ed ? new Date(ed) : sd ? new Date(sd) : null;
       if (start && end) {
-        const dayStart = new Date(
-          start.getFullYear(),
-          start.getMonth(),
-          start.getDate(),
-          0,
-          0,
-          0,
-          0
-        ).getTime();
-        const dayEnd = new Date(
-          end.getFullYear(),
-          end.getMonth(),
-          end.getDate(),
-          23,
-          59,
-          59,
-          999
-        ).getTime();
+        const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0).getTime();
+        const dayEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999).getTime();
         return { start: dayStart, end: dayEnd, source: "dateOnly" };
       }
     }
@@ -595,8 +510,7 @@ export default function UniclubEventPage({ navbarHeight }) {
   }
 
   // pin helpers
-  const eNumber = (v) =>
-    v === "" || v === null || v === undefined ? NaN : Number(v);
+  const eNumber = (v) => (v === "" || v === null || v === undefined ? NaN : Number(v));
   const getPinnedSorted = () =>
     [...list].filter((e) => e.isPinned).sort((a, b) => {
       const ao = Number.isFinite(eNumber(a.pinnedOrder)) ? a.pinnedOrder : 1e9;
@@ -653,8 +567,7 @@ export default function UniclubEventPage({ navbarHeight }) {
       const ref = doc(db, "discoverevents", item.id);
       if (makePinned) {
         const currentPinned = getPinnedSorted();
-        const nextOrder =
-          (currentPinned[currentPinned.length - 1]?.pinnedOrder || 0) + 1;
+        const nextOrder = (currentPinned[currentPinned.length - 1]?.pinnedOrder || 0) + 1;
         await updateDoc(ref, {
           isPinned: true,
           pinnedAt: Timestamp.now(),
@@ -678,11 +591,10 @@ export default function UniclubEventPage({ navbarHeight }) {
 
   // ----- helper lines for compact time/date in table -----
   const SHOW_ALL_DAY_FOR_DATE_ONLY = true;
-  const toMilli = toMillis;
 
   function getTimeLine(item) {
-    const s = toMilli(item.startDateTime);
-    const e = toMilli(item.endDateTime);
+    const s = toMillis(item.startDateTime);
+    const e = toMillis(item.endDateTime);
     if (s || e) {
       const st = s ? dayjs(s).format("hh:mm A") : "";
       const et = e ? dayjs(e).format("hh:mm A") : "";
@@ -692,15 +604,15 @@ export default function UniclubEventPage({ navbarHeight }) {
   }
 
   function getDateLine(item) {
-    let s = toMilli(item.startDateTime) ?? toMilli(item?.date?.startDate);
-    let e = toMilli(item.endDateTime) ?? toMilli(item?.date?.endDate);
+    let s = toMillis(item.startDateTime) ?? toMillis(item?.date?.startDate);
+    let e = toMillis(item.endDateTime) ?? toMillis(item?.date?.endDate);
 
     if (!s && !e) return "—";
     if (!s) s = e;
     if (!e) e = s;
 
-    const sd = dayjs(s),
-      ed = dayjs(e);
+    const sd = dayjs(s);
+    const ed = dayjs(e);
     const sameMonth = sd.month() === ed.month() && sd.year() === ed.year();
     const sameYear = sd.year() === ed.year();
 
@@ -708,27 +620,19 @@ export default function UniclubEventPage({ navbarHeight }) {
     const needYear = !sameYear || sd.year() !== dayjs().year();
 
     if (sameMonth) {
-      return `${sd.format("D")}–${ed.format("D")} ${monLower(sd)}${needYear ? " " + sd.format("YYYY") : ""
-        }`;
+      return `${sd.format("D")}–${ed.format("D")} ${monLower(sd)}${needYear ? " " + sd.format("YYYY") : ""}`;
     }
     if (sameYear) {
-      return `${sd.format("D")} ${monLower(sd)}–${ed.format("D")} ${monLower(
-        ed
-      )}${needYear ? " " + sd.format("YYYY") : ""}`;
+      return `${sd.format("D")} ${monLower(sd)}–${ed.format("D")} ${monLower(ed)}${needYear ? " " + sd.format("YYYY") : ""}`;
     }
-    return `${sd.format("D MMM YYYY")}–${ed.format("D MMM YYYY")}`.replace(
-      /MMM/g,
-      (m) => m.toLowerCase()
-    );
+    return `${sd.format("D MMM YYYY")}–${ed.format("D MMM YYYY")}`.replace(/MMM/g, (m) => m.toLowerCase());
   }
 
   // ---- list filtering/sorting (with calendar header filter) ----
-  const dayStart = (d) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
-  const dayEnd = (d) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+  const dayEnd = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
   const overlaps = (evStartMs, evEndMs, fStart, fEnd) => {
-    if (!fStart || !fEnd) return true; // no active filter
+    if (!fStart || !fEnd) return true;
     const fs = dayStart(fStart);
     const fe = dayEnd(fEnd);
     return evStartMs <= fe && evEndMs >= fs;
@@ -739,27 +643,19 @@ export default function UniclubEventPage({ navbarHeight }) {
     categoryFilter === "All"
       ? timeFiltered
       : timeFiltered.filter((ev) => (ev.category || "") === categoryFilter);
-  const pinFiltered = showPinnedOnly
-    ? catFiltered.filter((ev) => !!ev.isPinned)
-    : catFiltered;
+  const pinFiltered = showPinnedOnly ? catFiltered.filter((ev) => !!ev.isPinned) : catFiltered;
 
   const filtered = pinFiltered.filter((ev) => {
     const nameOK =
-      !filters.name ||
-      (ev.eventName || "").toLowerCase().includes(filters.name.toLowerCase());
+      !filters.name || (ev.eventName || "").toLowerCase().includes(filters.name.toLowerCase());
     const locOK =
       !filters.location ||
-      (ev.locationName || "").toLowerCase().includes(
-        filters.location.toLowerCase()
-      );
+      (ev.locationName || "").toLowerCase().includes(filters.location.toLowerCase());
 
     const { start, end } = getEventWindowMillis(ev);
     const fStart = filterRange?.[0]?.startDate;
     const fEnd = filterRange?.[0]?.endDate;
-    const rangeOK =
-      start == null && end == null
-        ? true
-        : overlaps(start ?? 0, end ?? 0, fStart, fEnd);
+    const rangeOK = start == null && end == null ? true : overlaps(start ?? 0, end ?? 0, fStart, fEnd);
 
     return nameOK && locOK && rangeOK;
   });
@@ -778,12 +674,8 @@ export default function UniclubEventPage({ navbarHeight }) {
     if (ap !== bp) return bp - ap;
 
     if (ap === 1 && bp === 1) {
-      const ao = Number.isFinite(eNumber(a.pinnedOrder))
-        ? a.pinnedOrder
-        : 1e9;
-      const bo = Number.isFinite(eNumber(b.pinnedOrder))
-        ? b.pinnedOrder
-        : 1e9;
+      const ao = Number.isFinite(eNumber(a.pinnedOrder)) ? a.pinnedOrder : 1e9;
+      const bo = Number.isFinite(eNumber(b.pinnedOrder)) ? b.pinnedOrder : 1e9;
       if (ao !== bo) return ao - bo;
       const aPA = toMillis(a.pinnedAt) ?? 0;
       const bPA = toMillis(b.pinnedAt) ?? 0;
@@ -793,17 +685,9 @@ export default function UniclubEventPage({ navbarHeight }) {
     const dir = sortConfig.direction === "asc" ? 1 : -1;
     const va = getSortVal(a, sortConfig.key);
     const vb = getSortVal(b, sortConfig.key);
-    if (typeof va === "number" && typeof vb === "number")
-      return (va - vb) * dir;
+    if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
     return String(va).localeCompare(String(vb)) * dir;
   });
-
-  const categoryOptions = [
-    "All",
-    ...Array.from(
-      new Set((category || []).map((c) => c.name).filter(Boolean))
-    ),
-  ];
 
   const handleRangeChange = (item) => {
     const selected = item.selection;
@@ -845,8 +729,6 @@ export default function UniclubEventPage({ navbarHeight }) {
     },
     startDateTime: "",
     endDateTime: "",
-
-    // per ticket tables/pods
     hasTables: false,
     tableType: "",
     tableCount: "",
@@ -867,23 +749,151 @@ export default function UniclubEventPage({ navbarHeight }) {
       const next = [...(prev.ticketTypes || [])];
       const current = next[index] || {};
       const fields = current.fields || {};
-      next[index] = {
-        ...current,
-        fields: { ...fields, [field]: !fields[field] },
-      };
+      next[index] = { ...current, fields: { ...fields, [field]: !fields[field] } };
       return { ...prev, ticketTypes: next };
     });
   };
 
+  const handleDelete = async () => {
+    if (!deleteData?.id) return;
+    try {
+      await deleteDoc(doc(db, "discoverevents", deleteData.id));
+      toast.success("Successfully deleted!");
+      getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Delete failed");
+    }
+    setConfirmDeleteOpen(false);
+    setDelete(null);
+  };
+
+  // ✅ QR verify & check-in
+  const handleVerifyAndCheckIn = async (payloadRaw) => {
+    try {
+      const ev = scanModal.event;
+      if (!ev?.id) return setScanStatus({ ok: false, msg: "Event missing." });
+
+      let bookingId = payloadRaw;
+
+      try {
+        const j = JSON.parse(payloadRaw);
+        bookingId = j?.bid || j?.bookingId || j?.id || payloadRaw;
+      } catch { }
+
+      if (!bookingId) {
+        setScanStatus({ ok: false, msg: "Invalid QR payload." });
+        return;
+      }
+
+      const bRef = doc(db, "discovereventbookings", bookingId);
+      const bSnap = await getDoc(bRef);
+
+      if (!bSnap.exists()) {
+        setScanStatus({ ok: false, msg: "Booking not found." });
+        return;
+      }
+
+      const b = { id: bSnap.id, ...bSnap.data() };
+      const bookedEventId = b.eventDocId || b.eventId;
+
+      if (String(bookedEventId) !== String(ev.id)) {
+        setScanStatus({ ok: false, msg: "Wrong event ticket." });
+        return;
+      }
+
+      if (b.checkInStatus === "checked_in") {
+        setScanStatus({ ok: true, msg: "Already checked-in ✅" });
+        return;
+      }
+
+      await updateDoc(bRef, {
+        checkInStatus: "checked_in",
+        checkedInAt: Timestamp.now(),
+        checkedInBy: uid,
+        checkedInByName: emp?.name || emp?.email || "",
+      });
+
+      setScanStatus({ ok: true, msg: "Verified & checked-in ✅" });
+    } catch (e) {
+      console.error(e);
+      setScanStatus({ ok: false, msg: "Check-in failed." });
+    }
+  };
+
+  // ✅ Start/stop scanner when modal opens/closes
+  useEffect(() => {
+    if (!scanModal.open) {
+      setQrReady(false);
+      return;
+    }
+    // wait 1 paint so Dialog content mounts
+    const raf = requestAnimationFrame(() => setQrReady(true));
+    return () => cancelAnimationFrame(raf);
+  }, [scanModal.open]);
+  useEffect(() => {
+    const start = async () => {
+      if (!scanModal.open || !qrReady) return;
+
+      const el = qrContainerRef.current;
+      if (!el) return;
+
+      setScanStatus(null);
+      setScanResult(null);
+
+      // ensure container has an id (Html5Qrcode needs an element id)
+      if (!el.id) el.id = "mymor-qr-reader";
+
+      try {
+        if (qrInstanceRef.current) {
+          await qrInstanceRef.current.stop();
+          await qrInstanceRef.current.clear();
+        }
+      } catch { }
+
+      qrInstanceRef.current = new Html5Qrcode(el.id);
+
+      try {
+        await qrInstanceRef.current.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 260, height: 260 } },
+          async (decodedText) => {
+            if (scanBusy) return;
+            setScanBusy(true);
+            setScanResult(decodedText);
+            await handleVerifyAndCheckIn(decodedText);
+            setScanBusy(false);
+          },
+          () => { }
+        );
+      } catch (err) {
+        console.error("QR start error", err);
+        setScanStatus({ ok: false, msg: "Camera access denied or scanner failed." });
+      }
+    };
+
+    start();
+
+    return () => {
+      (async () => {
+        try {
+          if (qrInstanceRef.current) {
+            await qrInstanceRef.current.stop();
+            await qrInstanceRef.current.clear();
+          }
+        } catch { }
+      })();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanModal.open, qrReady]);
+
   return (
-    <main
-      className="flex-1 p-6 bg-gray-100 overflow-auto"
-      style={{ paddingTop: navbarHeight || 0 }}
-    >
+    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Event</h1>
         <button
-          className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+          className=
+          "px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
             setForm(initialFormData);
@@ -901,9 +911,7 @@ export default function UniclubEventPage({ navbarHeight }) {
             <button
               key={k}
               onClick={() => setTimeFilter(k)}
-              className={`px-3 py-1.5 rounded-full text-sm border ${active
-                ? "bg-black text-white border-black"
-                : "bg-white text-gray-700 border-gray-300"
+              className={`px-3 py-1.5 rounded-full text-sm border ${active ? "bg-black text-white border-black" : "bg-white text-gray-700 border-gray-300"
                 }`}
             >
               {k[0].toUpperCase() + k.slice(1)}
@@ -912,11 +920,7 @@ export default function UniclubEventPage({ navbarHeight }) {
         })}
 
         <label className="ml-1 text-sm flex items-center gap-2 border border-gray-300 rounded-full px-3 py-1 bg-white">
-          <input
-            type="checkbox"
-            checked={showPinnedOnly}
-            onChange={(e) => setShowPinnedOnly(e.target.checked)}
-          />
+          <input type="checkbox" checked={showPinnedOnly} onChange={(e) => setShowPinnedOnly(e.target.checked)} />
           Show pinned only
         </label>
 
@@ -926,11 +930,7 @@ export default function UniclubEventPage({ navbarHeight }) {
       </div>
 
       <h2 className="text-xl font-semibold mb-2">
-        {timeFilter === "past"
-          ? "Past Events"
-          : timeFilter === "future"
-            ? "Upcoming Events"
-            : "Happening Now"}
+        {timeFilter === "past" ? "Past Events" : timeFilter === "future" ? "Upcoming Events" : "Happening Now"}
       </h2>
 
       <div className="overflow-x-auto bg-white rounded shadow">
@@ -951,10 +951,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                   { key: "pin", label: "Pin", sortable: false },
                   { key: "actions", label: "Actions", sortable: false },
                 ].map((col) => (
-                  <th
-                    key={col.key}
-                    className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none"
-                  >
+                  <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
                     {col.sortable === false ? (
                       <span>{col.label}</span>
                     ) : (
@@ -966,9 +963,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                       >
                         <span>{col.label}</span>
                         {sortConfig.key === col.key && (
-                          <span className="text-gray-400">
-                            {sortConfig.direction === "asc" ? "▲" : "▼"}
-                          </span>
+                          <span className="text-gray-400">{sortConfig.direction === "asc" ? "▲" : "▼"}</span>
                         )}
                       </button>
                     )}
@@ -982,9 +977,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                     className="w-full border border-gray-300 p-1 rounded text-sm"
                     placeholder="Search name"
                     defaultValue={filters.name}
-                    onChange={(e) =>
-                      setFilterDebounced("name", e.target.value)
-                    }
+                    onChange={(e) => setFilterDebounced("name", e.target.value)}
                   />
                 </th>
 
@@ -993,20 +986,13 @@ export default function UniclubEventPage({ navbarHeight }) {
                   <button
                     type="button"
                     className="w-full border border-gray-300 rounded text-sm px-2 py-1 text-left bg-white hover:bg-gray-50"
-                    onClick={() =>
-                      setShowFilterPicker((v) => !v)
-                    }
+                    onClick={() => setShowFilterPicker((v) => !v)}
                     title="Filter by date range"
                   >
                     {(() => {
                       const s = filterRange?.[0]?.startDate;
                       const e = filterRange?.[0]?.endDate;
-                      if (s && e) {
-                        return `${format(
-                          s,
-                          "MMM dd, yyyy"
-                        )} – ${format(e, "MMM dd, yyyy")}`;
-                      }
+                      if (s && e) return `${format(s, "MMM dd, yyyy")} – ${format(e, "MMM dd, yyyy")}`;
                       return "Any date";
                     })()}
                   </button>
@@ -1020,8 +1006,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                       <DateRange
                         ranges={[
                           {
-                            startDate:
-                              filterRange?.[0]?.startDate ?? new Date(),
+                            startDate: filterRange?.[0]?.startDate ?? new Date(),
                             endDate: filterRange?.[0]?.endDate ?? new Date(),
                             key: "selection",
                           },
@@ -1039,13 +1024,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                           type="button"
                           className="text-sm px-3 py-1 rounded border hover:bg-white"
                           onClick={() => {
-                            setFilterRange([
-                              {
-                                startDate: null,
-                                endDate: null,
-                                key: "selection",
-                              },
-                            ]);
+                            setFilterRange([{ startDate: null, endDate: null, key: "selection" }]);
                             setShowFilterPicker(false);
                           }}
                         >
@@ -1068,9 +1047,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                     className="w-full border border-gray-300 p-1 rounded text-sm"
                     placeholder="Search location"
                     defaultValue={filters.location}
-                    onChange={(e) =>
-                      setFilterDebounced("location", e.target.value)
-                    }
+                    onChange={(e) => setFilterDebounced("location", e.target.value)}
                   />
                 </th>
                 <th className="px-6 pb-3" />
@@ -1082,31 +1059,24 @@ export default function UniclubEventPage({ navbarHeight }) {
             <tbody className="divide-y divide-gray-200">
               {sorted.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan="8"
-                    className="px-6 py-10 text-center text-gray-500"
-                  >
+                  <td colSpan="8" className="px-6 py-10 text-center text-gray-500">
                     No events to show for this filter.
                   </td>
                 </tr>
               ) : (
                 sorted.map((item) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {item.eventName}
-                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.eventName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {getTimeLine(item)} <br />
                       {getDateLine(item)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {item.locationName}
-                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.locationName}</td>
 
                     {/* Bookings column */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {(() => {
-                        const arr = bookingsByEvent[item.eventName] || [];
+                        const arr = bookingsByEvent[item.id] || [];
                         const count = arr.length;
                         return (
                           <div className="flex items-center gap-2">
@@ -1138,18 +1108,10 @@ export default function UniclubEventPage({ navbarHeight }) {
 
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {item.posters?.[0]?.url ? (
-                        <img
-                          src={item.posters[0].url}
-                          alt=""
-                          width={80}
-                          height={80}
-                          className="rounded"
-                        />
+                        <img src={item.posters[0].url} alt="" width={80} height={80} className="rounded" />
                       ) : null}
                       {item.posters?.length > 1 && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          +{item.posters.length - 1} more
-                        </div>
+                        <div className="text-xs text-gray-500 mt-1">+{item.posters.length - 1} more</div>
                       )}
                     </td>
 
@@ -1162,9 +1124,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                           onClick={() => togglePin(item, !item.isPinned)}
                           className={`text-lg leading-none ${item.isPinned ? "text-yellow-500" : "text-gray-300"
                             } hover:opacity-80`}
-                          aria-label={
-                            item.isPinned ? "Unpin event" : "Pin event"
-                          }
+                          aria-label={item.isPinned ? "Unpin event" : "Pin event"}
                         >
                           {item.isPinned ? "★" : "☆"}
                         </button>
@@ -1174,42 +1134,22 @@ export default function UniclubEventPage({ navbarHeight }) {
                             <input
                               type="number"
                               min={1}
-                              value={
-                                Number.isFinite(item.pinnedOrder)
-                                  ? item.pinnedOrder
-                                  : 1
-                              }
+                              value={Number.isFinite(item.pinnedOrder) ? item.pinnedOrder : 1}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setList((prev) =>
-                                  prev.map((ev) =>
-                                    ev.id === item.id
-                                      ? { ...ev, pinnedOrder: Number(val) }
-                                      : ev
-                                  )
+                                  prev.map((ev) => (ev.id === item.id ? { ...ev, pinnedOrder: Number(val) } : ev))
                                 );
                               }}
-                              onBlur={(e) =>
-                                applyPinOrder(item, e.target.value)
-                              }
+                              onBlur={(e) => applyPinOrder(item, e.target.value)}
                               className="w-12 px-2 py-1 border rounded text-sm text-center"
                               title="Pinned order (1 = top)"
                             />
                             <div className="flex flex-col gap-1">
-                              <button
-                                type="button"
-                                className="border rounded px-1 leading-none"
-                                title="Move up"
-                                onClick={() => movePin(item, -1)}
-                              >
+                              <button type="button" className="border rounded px-1 leading-none" title="Move up" onClick={() => movePin(item, -1)}>
                                 ↑
                               </button>
-                              <button
-                                type="button"
-                                className="border rounded px-1 leading-none"
-                                title="Move down"
-                                onClick={() => movePin(item, 1)}
-                              >
+                              <button type="button" className="border rounded px-1 leading-none" title="Move down" onClick={() => movePin(item, 1)}>
                                 ↓
                               </button>
                             </div>
@@ -1218,11 +1158,23 @@ export default function UniclubEventPage({ navbarHeight }) {
                       </div>
                     </td>
 
+                    {/* Actions */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <button
+                        className="text-green-700 hover:underline mr-3"
+                        onClick={() => setScanModal({ open: true, event: item })}
+                        disabled={!item.enableQrCheckIn}
+                        title={item.enableQrCheckIn ? "Scan tickets for this event" : "QR check-in disabled"}
+                        style={!item.enableQrCheckIn ? { opacity: 0.4, cursor: "not-allowed" } : {}}
+                      >
+                        Scan QR
+                      </button>
+
                       <button
                         className="text-blue-600 hover:underline mr-3"
                         onClick={() => {
                           setEditing(item);
+
                           const startDate = item.date?.startDate?.seconds
                             ? new Date(item.date.startDate.seconds * 1000)
                             : new Date(item.date?.startDate || new Date());
@@ -1241,42 +1193,25 @@ export default function UniclubEventPage({ navbarHeight }) {
                             },
                             startDateTime: item.startDateTime || "",
                             endDateTime: item.endDateTime || "",
-                            freeTicketStartDateTime:
-                              item.freeTicketStartDateTime || "",
-                            freeTicketEndDateTime:
-                              item.freeTicketEndDateTime || "",
+                            freeTicketStartDateTime: item.freeTicketStartDateTime || "",
+                            freeTicketEndDateTime: item.freeTicketEndDateTime || "",
                             posterFiles: [],
-                            posters: Array.isArray(item.posters)
-                              ? item.posters
-                              : [],
-                            eventDescriptionHtml:
-                              item.eventDescriptionHtml ||
-                              item.eventDescription ||
-                              "",
-                            pinnedOrder: Number.isFinite(item.pinnedOrder)
-                              ? item.pinnedOrder
-                              : null,
-                            ticketTypes: Array.isArray(item.ticketTypes)
-                              ? item.ticketTypes
-                              : [],
-                            hostClubIds: Array.isArray(item.hostClubIds)
-                              ? item.hostClubIds
-                              : [groupId],
-                            websiteLinks: Array.isArray(item.websiteLinks)
-                              ? item.websiteLinks
-                              : [],
-                            instagramLinks: Array.isArray(item.instagramLinks)
-                              ? item.instagramLinks
-                              : [],
+                            posters: Array.isArray(item.posters) ? item.posters : [],
+                            eventDescriptionHtml: item.eventDescriptionHtml || item.eventDescription || "",
+                            pinnedOrder: Number.isFinite(item.pinnedOrder) ? item.pinnedOrder : null,
+                            ticketTypes: Array.isArray(item.ticketTypes) ? item.ticketTypes : [],
+                            hostClubIds: Array.isArray(item.hostClubIds) ? item.hostClubIds : [groupId],
+                            websiteLinks: Array.isArray(item.websiteLinks) ? item.websiteLinks : [],
+                            instagramLinks: Array.isArray(item.instagramLinks) ? item.instagramLinks : [],
                           }));
-                          setRange([
-                            { startDate, endDate, key: "selection" },
-                          ]);
+
+                          setRange([{ startDate, endDate, key: "selection" }]);
                           setModalOpen(true);
                         }}
                       >
                         Edit
                       </button>
+
                       <button
                         className="text-red-600 hover:underline"
                         onClick={() => {
@@ -1295,13 +1230,45 @@ export default function UniclubEventPage({ navbarHeight }) {
         )}
       </div>
 
+      {/* ✅ QR SCAN MODAL */}
+      <Dialog
+        open={scanModal.open}
+        onClose={() => setScanModal({ open: false, event: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Scan QR — {scanModal.event?.eventName || "Event"}
+        </DialogTitle>
+        <DialogContent dividers>
+          <div className="space-y-3">
+            <div ref={qrContainerRef} id="mymor-qr-reader" style={{ width: "100%", borderRadius: 12, overflow: "hidden" }} />
+
+            {scanResult && (
+              <div className="text-xs text-gray-500 break-all">
+                <div className="font-semibold text-gray-700 mb-1">Last scan:</div>
+                {scanResult}
+              </div>
+            )}
+
+            {scanStatus && (
+              <div className={`text-sm font-semibold ${scanStatus.ok ? "text-green-700" : "text-red-700"}`}>
+                {scanStatus.msg}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setScanModal({ open: false, event: null })}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Create/Edit Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold mb-4">
-              {editingData ? "Edit Event" : "Create Event"}
-            </h2>
+            <h2 className="text-xl font-bold mb-4">{editingData ? "Edit Event" : "Create Event"}</h2>
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-4">
                 <input
@@ -1313,13 +1280,10 @@ export default function UniclubEventPage({ navbarHeight }) {
                   required
                 />
 
-                {/* Description */}
                 <label className="block font-medium">Description</label>
                 <EditorPro
                   value={form.eventDescriptionHtml}
-                  onChange={(html) =>
-                    setForm((f) => ({ ...f, eventDescriptionHtml: html }))
-                  }
+                  onChange={(html) => setForm((f) => ({ ...f, eventDescriptionHtml: html }))}
                   placeholder="Describe your event…"
                 />
 
@@ -1332,22 +1296,14 @@ export default function UniclubEventPage({ navbarHeight }) {
                 />
 
                 {/* Event Display Range on App */}
-                <label className="block font-medium">
-                  Event Display Range on App
-                </label>
+                <label className="block font-medium">Event Display Range on App</label>
                 <div className="relative">
                   <input
                     type="text"
                     readOnly
                     value={
                       form.date?.startDate && form.date?.endDate
-                        ? `${format(
-                          new Date(form.date.startDate),
-                          "MMM dd, yyyy"
-                        )} - ${format(
-                          new Date(form.date.endDate),
-                          "MMM dd, yyyy"
-                        )}`
+                        ? `${format(new Date(form.date.startDate), "MMM dd, yyyy")} - ${format(new Date(form.date.endDate), "MMM dd, yyyy")}`
                         : ""
                     }
                     onClick={() => setShowPicker(!showPicker)}
@@ -1376,9 +1332,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                 </div>
 
                 {/* Event actual start/end */}
-                <label className="block font-medium mt-2">
-                  Event Start Date & Time
-                </label>
+                <label className="block font-medium mt-2">Event Start Date & Time</label>
                 <input
                   type="datetime-local"
                   name="startDateTime"
@@ -1388,9 +1342,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                   required
                 />
 
-                <label className="block font-medium">
-                  Event End Date & Time
-                </label>
+                <label className="block font-medium">Event End Date & Time</label>
                 <input
                   type="datetime-local"
                   name="endDateTime"
@@ -1432,9 +1384,7 @@ export default function UniclubEventPage({ navbarHeight }) {
 
                 {/* Posters */}
                 <div className="space-y-2">
-                  <label className="block font-medium">
-                    Posters (you can add multiple)
-                  </label>
+                  <label className="block font-medium">Posters (you can add multiple)</label>
                   <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                     <label className="cursor-pointer">
                       <input
@@ -1447,19 +1397,14 @@ export default function UniclubEventPage({ navbarHeight }) {
                           if (!files.length) return;
                           setForm((prev) => ({
                             ...prev,
-                            posterFiles: [
-                              ...(prev.posterFiles || []),
-                              ...files,
-                            ],
+                            posterFiles: [...(prev.posterFiles || []), ...files],
                           }));
                         }}
                       />
                       📁 Choose Posters
                     </label>
                     <span className="text-sm text-gray-600">
-                      {form.posterFiles?.length
-                        ? `${form.posterFiles.length} selected`
-                        : "No files selected"}
+                      {form.posterFiles?.length ? `${form.posterFiles.length} selected` : "No files selected"}
                     </span>
                   </div>
 
@@ -1467,11 +1412,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                     <div className="mt-2 grid grid-cols-3 md:grid-cols-4 gap-2">
                       {form.posterFiles.map((f, i) => (
                         <div key={`${f.name}-${i}`} className="relative">
-                          <img
-                            src={URL.createObjectURL(f)}
-                            alt={f.name}
-                            className="w-full h-24 object-cover rounded"
-                          />
+                          <img src={URL.createObjectURL(f)} alt={f.name} className="w-full h-24 object-cover rounded" />
                           <button
                             type="button"
                             className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
@@ -1493,20 +1434,11 @@ export default function UniclubEventPage({ navbarHeight }) {
 
                   {!!form.posters?.length && (
                     <>
-                      <div className="text-sm text-gray-500 mt-3">
-                        Already saved
-                      </div>
+                      <div className="text-sm text-gray-500 mt-3">Already saved</div>
                       <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
                         {form.posters.map((img, i) => (
-                          <div
-                            key={`${img.url}-${i}`}
-                            className="relative"
-                          >
-                            <img
-                              src={img.url}
-                              alt={img.name || `poster-${i}`}
-                              className="w-full h-24 object-cover rounded"
-                            />
+                          <div key={`${img.url}-${i}`} className="relative">
+                            <img src={img.url} alt={img.name || `poster-${i}`} className="w-full h-24 object-cover rounded" />
                             <button
                               type="button"
                               className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
@@ -1532,7 +1464,6 @@ export default function UniclubEventPage({ navbarHeight }) {
                 <div className="border border-gray-200 rounded-md p-3 space-y-3">
                   <h3 className="font-semibold text-sm">Event Tickets</h3>
 
-                  {/* Payment type selector – always visible */}
                   <select
                     name="priceType"
                     value={form.priceType}
@@ -1544,6 +1475,18 @@ export default function UniclubEventPage({ navbarHeight }) {
                     <option value="Free">Free</option>
                     <option value="Paid">Paid</option>
                   </select>
+
+                  {/* QR check-in flag */}
+                  <label className="text-sm">
+                    <input
+                      type="checkbox"
+                      name="enableQrCheckIn"
+                      checked={!!form.enableQrCheckIn}
+                      onChange={handleChange}
+                      className="mr-2"
+                    />
+                    Enable QR check-in
+                  </label>
 
                   {/* FREE EVENTS */}
                   {form.priceType === "Free" && (
@@ -1566,16 +1509,12 @@ export default function UniclubEventPage({ navbarHeight }) {
                         className="w-full border border-gray-300 p-2 rounded"
                       />
                       <p className="text-xs text-gray-500 -mt-1">
-                        Limit how many tickets one booking (or user) can purchase.
-                        Leave blank for no limit.
+                        Limit how many tickets one booking (or user) can purchase. Leave blank for no limit.
                       </p>
 
-                      {/* Free ticket sale window */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">
-                            Ticket Start Time
-                          </label>
+                          <label className="block text-xs text-gray-600 mb-1">Ticket Start Time</label>
                           <input
                             type="datetime-local"
                             name="freeTicketStartDateTime"
@@ -1585,9 +1524,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">
-                            Ticket End Time
-                          </label>
+                          <label className="block text-xs text-gray-600 mb-1">Ticket End Time</label>
                           <input
                             type="datetime-local"
                             name="freeTicketEndDateTime"
@@ -1598,7 +1535,6 @@ export default function UniclubEventPage({ navbarHeight }) {
                         </div>
                       </div>
 
-                      {/* 🔹 FREE EVENT: Tables / Pods at event level */}
                       <div className="space-y-2 mt-3">
                         <label className="block text-sm">
                           <input
@@ -1608,7 +1544,6 @@ export default function UniclubEventPage({ navbarHeight }) {
                             onChange={handleChange}
                             className="mr-2"
                           />
-                          {/* Text exactly the way you want */}
                           Does this ticket have Tables / Pods?
                         </label>
 
@@ -1653,7 +1588,6 @@ export default function UniclubEventPage({ navbarHeight }) {
                     </>
                   )}
 
-
                   {/* PAID EVENTS: ticket builder */}
                   {form.priceType === "Paid" && (
                     <div className="mt-3 space-y-2">
@@ -1664,10 +1598,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                           onClick={() =>
                             setForm((prev) => ({
                               ...prev,
-                              ticketTypes: [
-                                ...(prev.ticketTypes || []),
-                                defaultTicket(),
-                              ],
+                              ticketTypes: [...(prev.ticketTypes || []), defaultTicket()],
                             }))
                           }
                           className="text-sm px-2 py-1 border rounded hover:bg-gray-50"
@@ -1677,9 +1608,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                       </div>
 
                       {(form.ticketTypes || []).length === 0 && (
-                        <p className="text-xs text-gray-500">
-                          No tickets added yet.
-                        </p>
+                        <p className="text-xs text-gray-500">No tickets added yet.</p>
                       )}
 
                       {(form.ticketTypes || []).map((t, index) => (
@@ -1688,9 +1617,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                           className="border border-gray-200 rounded-md p-3 space-y-2 bg-gray-50"
                         >
                           <div className="flex justify-between items-center">
-                            <span className="text-xs font-medium text-gray-600">
-                              Ticket {index + 1}
-                            </span>
+                            <span className="text-xs font-medium text-gray-600">Ticket {index + 1}</span>
                             <button
                               type="button"
                               className="text-xs text-red-600 hover:underline"
@@ -1710,9 +1637,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                             <input
                               placeholder="Ticket Name (e.g. General, VIP)"
                               value={t.name || ""}
-                              onChange={(e) =>
-                                updateTicket(index, { name: e.target.value })
-                              }
+                              onChange={(e) => updateTicket(index, { name: e.target.value })}
                               className="border border-gray-300 p-2 rounded"
                               required
                             />
@@ -1720,11 +1645,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                             <input
                               placeholder="Description"
                               value={t.description || ""}
-                              onChange={(e) =>
-                                updateTicket(index, {
-                                  description: e.target.value,
-                                })
-                              }
+                              onChange={(e) => updateTicket(index, { description: e.target.value })}
                               className="border border-gray-300 p-2 rounded"
                             />
                           </div>
@@ -1735,21 +1656,10 @@ export default function UniclubEventPage({ navbarHeight }) {
                               min="0"
                               placeholder="Price"
                               value={t.price || ""}
-                              onChange={(e) =>
-                                updateTicket(index, { price: e.target.value })
-                              }
+                              onChange={(e) => updateTicket(index, { price: e.target.value })}
                               className="border border-gray-300 p-2 rounded"
                             />
-                            {/* <input
-                              placeholder="Which group/sub-group can buy? (note)"
-                              value={t.allowedGroupNote || ""}
-                              onChange={(e) =>
-                                updateTicket(index, {
-                                  allowedGroupNote: e.target.value,
-                                })
-                              }
-                              className="border border-gray-300 p-2 rounded"
-                            /> */}
+
                             {/* Which club / sub-group can buy */}
                             <div className="space-y-1">
                               <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -1757,9 +1667,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                               </label>
 
                               {(() => {
-                                const selectedKeys = (t.allowedGroups || []).map(
-                                  (g) => `${g.type}:${g.id}`
-                                );
+                                const selectedKeys = (t.allowedGroups || []).map((g) => `${g.type}:${g.id}`);
 
                                 const OPTIONS = [
                                   ...clubs.map((c) => ({
@@ -1789,35 +1697,22 @@ export default function UniclubEventPage({ navbarHeight }) {
                                     displayEmpty
                                     value={selectedKeys}
                                     onChange={(e) => {
-                                      const value = e.target.value; // array of keys: ["club:123", "subgroup:456"]
+                                      const value = e.target.value;
                                       const nextAllowed = value.map((k) => {
                                         const [type, id] = k.split(":");
                                         if (type === "club") {
                                           const c = clubs.find((c) => c.id === id);
-                                          return {
-                                            id,
-                                            title: c?.title || "Unnamed Club",
-                                            type: "club",
-                                          };
+                                          return { id, title: c?.title || "Unnamed Club", type: "club" };
                                         } else {
                                           const g = subGroups.find((g) => g.id === id);
-                                          return {
-                                            id,
-                                            title: g?.title || "Untitled Sub-group",
-                                            type: "subgroup",
-                                          };
+                                          return { id, title: g?.title || "Untitled Sub-group", type: "subgroup" };
                                         }
                                       });
-
                                       updateTicket(index, { allowedGroups: nextAllowed });
                                     }}
                                     renderValue={(selected) => {
-                                      if (!selected || selected.length === 0)
-                                        return "Select club / sub-group";
-                                      return selected
-                                        .map((k) => getLabelFromKey(k))
-                                        .filter(Boolean)
-                                        .join(", ");
+                                      if (!selected || selected.length === 0) return "Select club / sub-group";
+                                      return selected.map((k) => getLabelFromKey(k)).filter(Boolean).join(", ");
                                     }}
                                     className="w-full text-sm"
                                     size="small"
@@ -1827,8 +1722,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                                         <Checkbox checked={selectedKeys.indexOf(opt.key) > -1} />
                                         <ListItemText
                                           primary={
-                                            opt.title +
-                                            (opt.type === "club" ? " (Club)" : " (Sub-group)")
+                                            opt.title + (opt.type === "club" ? " (Club)" : " (Sub-group)")
                                           }
                                         />
                                       </MenuItem>
@@ -1837,7 +1731,6 @@ export default function UniclubEventPage({ navbarHeight }) {
                                 );
                               })()}
                             </div>
-
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -1846,11 +1739,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                               min="0"
                               placeholder="Ticket Max Capacity (override event capacity)"
                               value={t.maxCapacity || ""}
-                              onChange={(e) =>
-                                updateTicket(index, {
-                                  maxCapacity: e.target.value,
-                                })
-                              }
+                              onChange={(e) => updateTicket(index, { maxCapacity: e.target.value })}
                               className="border border-gray-300 p-2 rounded"
                             />
                             <input
@@ -1858,60 +1747,38 @@ export default function UniclubEventPage({ navbarHeight }) {
                               min="0"
                               placeholder="Ticket Max Purchase per user"
                               value={t.maxPurchasePerUser || ""}
-                              onChange={(e) =>
-                                updateTicket(index, {
-                                  maxPurchasePerUser: e.target.value,
-                                })
-                              }
+                              onChange={(e) => updateTicket(index, { maxPurchasePerUser: e.target.value })}
                               className="border border-gray-300 p-2 rounded"
                             />
                           </div>
 
-                          {/* Advanced ticket timing */}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-xs text-gray-600 mb-1">
-                                Ticket Start Time
-                              </label>
+                              <label className="block text-xs text-gray-600 mb-1">Ticket Start Time</label>
                               <input
                                 type="datetime-local"
                                 value={t.startDateTime || ""}
-                                onChange={(e) =>
-                                  updateTicket(index, {
-                                    startDateTime: e.target.value,
-                                  })
-                                }
+                                onChange={(e) => updateTicket(index, { startDateTime: e.target.value })}
                                 className="border border-gray-300 p-2 rounded w-full"
                               />
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-600 mb-1">
-                                Ticket End Time
-                              </label>
+                              <label className="block text-xs text-gray-600 mb-1">Ticket End Time</label>
                               <input
                                 type="datetime-local"
                                 value={t.endDateTime || ""}
-                                onChange={(e) =>
-                                  updateTicket(index, {
-                                    endDateTime: e.target.value,
-                                  })
-                                }
+                                onChange={(e) => updateTicket(index, { endDateTime: e.target.value })}
                                 className="border border-gray-300 p-2 rounded w-full"
                               />
                             </div>
                           </div>
 
-                          {/* Password + extra info */}
                           <div className="space-y-2">
                             <label className="text-sm">
                               <input
                                 type="checkbox"
                                 checked={!!t.passwordRequired}
-                                onChange={(e) =>
-                                  updateTicket(index, {
-                                    passwordRequired: e.target.checked,
-                                  })
-                                }
+                                onChange={(e) => updateTicket(index, { passwordRequired: e.target.checked })}
                                 className="mr-2"
                               />
                               Add Password for special members to buy
@@ -1920,11 +1787,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                               <input
                                 placeholder="Ticket password"
                                 value={t.password || ""}
-                                onChange={(e) =>
-                                  updateTicket(index, {
-                                    password: e.target.value,
-                                  })
-                                }
+                                onChange={(e) => updateTicket(index, { password: e.target.value })}
                                 className="border border-gray-300 p-2 rounded w-full"
                               />
                             )}
@@ -1935,11 +1798,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                               <input
                                 type="checkbox"
                                 checked={!!t.collectExtraInfo}
-                                onChange={(e) =>
-                                  updateTicket(index, {
-                                    collectExtraInfo: e.target.checked,
-                                  })
-                                }
+                                onChange={(e) => updateTicket(index, { collectExtraInfo: e.target.checked })}
                                 className="mr-2"
                               />
                               Collect extra information for ticketholders
@@ -1947,82 +1806,27 @@ export default function UniclubEventPage({ navbarHeight }) {
 
                             {t.collectExtraInfo && (
                               <div className="grid grid-cols-2 gap-2 text-xs">
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={t.fields?.name ?? true}
-                                    onChange={() =>
-                                      updateTicketFieldCheckbox(index, "name")
-                                    }
-                                    className="mr-1"
-                                  />
-                                  Name
-                                </label>
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={t.fields?.email ?? true}
-                                    onChange={() =>
-                                      updateTicketFieldCheckbox(index, "email")
-                                    }
-                                    className="mr-1"
-                                  />
-                                  Email
-                                </label>
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={t.fields?.number ?? true}
-                                    onChange={() =>
-                                      updateTicketFieldCheckbox(index, "number")
-                                    }
-                                    className="mr-1"
-                                  />
-                                  Number
-                                </label>
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={t.fields?.studentId ?? false}
-                                    onChange={() =>
-                                      updateTicketFieldCheckbox(
-                                        index,
-                                        "studentId"
-                                      )
-                                    }
-                                    className="mr-1"
-                                  />
-                                  Student ID (Optional)
-                                </label>
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={t.fields?.degree ?? false}
-                                    onChange={() =>
-                                      updateTicketFieldCheckbox(
-                                        index,
-                                        "degree"
-                                      )
-                                    }
-                                    className="mr-1"
-                                  />
-                                  Degree (Optional)
-                                </label>
+                                {["name", "email", "number", "studentId", "degree"].map((field) => (
+                                  <label key={field}>
+                                    <input
+                                      type="checkbox"
+                                      checked={t.fields?.[field] ?? (field === "name" || field === "email" || field === "number")}
+                                      onChange={() => updateTicketFieldCheckbox(index, field)}
+                                      className="mr-1"
+                                    />
+                                    {field}
+                                  </label>
+                                ))}
                               </div>
                             )}
                           </div>
 
-                          {/* TABLE / POD OPTIONS PER TICKET */}
                           <div className="space-y-2 pt-3 border-t border-gray-300">
                             <label className="text-sm font-medium">
                               <input
                                 type="checkbox"
                                 checked={t.hasTables || false}
-                                onChange={(e) =>
-                                  updateTicket(index, {
-                                    hasTables: e.target.checked,
-                                  })
-                                }
+                                onChange={(e) => updateTicket(index, { hasTables: e.target.checked })}
                                 className="mr-2"
                               />
                               Does this ticket have Tables / Pods?
@@ -2032,11 +1836,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                               <div className="space-y-2">
                                 <select
                                   value={t.tableType || ""}
-                                  onChange={(e) =>
-                                    updateTicket(index, {
-                                      tableType: e.target.value,
-                                    })
-                                  }
+                                  onChange={(e) => updateTicket(index, { tableType: e.target.value })}
                                   className="w-full border border-gray-300 p-2 rounded"
                                 >
                                   <option value="">Select type of table</option>
@@ -2052,11 +1852,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                                     min="0"
                                     placeholder="Number of tables/pods available"
                                     value={t.tableCount || ""}
-                                    onChange={(e) =>
-                                      updateTicket(index, {
-                                        tableCount: e.target.value,
-                                      })
-                                    }
+                                    onChange={(e) => updateTicket(index, { tableCount: e.target.value })}
                                     className="border border-gray-300 p-2 rounded"
                                   />
                                   <input
@@ -2064,11 +1860,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                                     min="0"
                                     placeholder="Tickets per table/pod"
                                     value={t.ticketsPerTable || ""}
-                                    onChange={(e) =>
-                                      updateTicket(index, {
-                                        ticketsPerTable: e.target.value,
-                                      })
-                                    }
+                                    onChange={(e) => updateTicket(index, { ticketsPerTable: e.target.value })}
                                     className="border border-gray-300 p-2 rounded"
                                   />
                                 </div>
@@ -2081,118 +1873,6 @@ export default function UniclubEventPage({ navbarHeight }) {
                   )}
                 </div>
 
-                {/* LINKS & EXTRA INFO */}
-                <div className="space-y-2">
-                  <label className="block font-medium">Website Links</label>
-
-                  {(form.websiteLinks || []).map((link, index) => (
-                    <div key={index} className="flex gap-2">
-                      <input
-                        value={link}
-                        onChange={(e) => {
-                          const newArr = [...form.websiteLinks];
-                          newArr[index] = e.target.value;
-                          setForm({ ...form, websiteLinks: newArr });
-                        }}
-                        className="flex-1 border border-gray-300 p-2 rounded"
-                        placeholder={`Website link ${index + 1}`}
-                      />
-
-                      <button
-                        type="button"
-                        className="text-red-600 text-sm"
-                        onClick={() => {
-                          const newArr = [...form.websiteLinks];
-                          newArr.splice(index, 1);
-                          setForm({ ...form, websiteLinks: newArr });
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setForm((p) => ({
-                        ...p,
-                        websiteLinks: [...(p.websiteLinks || []), ""],
-                      }))
-                    }
-                    className="text-sm text-blue-600 hover:underline"
-                  >
-                    + Add website link
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block font-medium">Social Media links</label>
-
-                  {(form.instagramLinks || []).map((link, index) => (
-                    <div key={index} className="flex gap-2">
-                      <input
-                        value={link}
-                        onChange={(e) => {
-                          const newArr = [...form.instagramLinks];
-                          newArr[index] = e.target.value;
-                          setForm({ ...form, instagramLinks: newArr });
-                        }}
-                        className="flex-1 border border-gray-300 p-2 rounded"
-                        placeholder={`Social Media link ${index + 1}`}
-                      />
-
-                      <button
-                        type="button"
-                        className="text-red-600 text-sm"
-                        onClick={() => {
-                          const newArr = [...form.instagramLinks];
-                          newArr.splice(index, 1);
-                          setForm({ ...form, instagramLinks: newArr });
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setForm((p) => ({
-                        ...p,
-                        instagramLinks: [...(p.instagramLinks || []), ""],
-                      }))
-                    }
-                    className="text-sm text-blue-600 hover:underline"
-                  >
-                    + Add Social Media link
-                  </button>
-                </div>
-
-                <input
-                  name="rules"
-                  placeholder="Event Rules"
-                  value={form.rules}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 p-2 rounded"
-                />
-
-                <input
-                  name="vendorInfo"
-                  placeholder="Vendor Info"
-                  value={form.vendorInfo}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 p-2 rounded"
-                />
-                <input
-                  name="sponsorship"
-                  placeholder="Sponsorship Info"
-                  value={form.sponsorship}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 p-2 rounded"
-                />
-
                 {/* Refund Policy */}
                 <label className="block font-medium">Refund Policy</label>
                 <textarea
@@ -2202,11 +1882,10 @@ export default function UniclubEventPage({ navbarHeight }) {
                   onChange={handleChange}
                   className="w-full border border-gray-300 p-2 rounded text-sm min-h-[80px]"
                 />
-                {/* HOST CLUBS (multi-host within same university) */}
+
+                {/* HOST CLUBS */}
                 <div className="space-y-1">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Host club(s)
-                  </label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Host club(s)</label>
 
                   <Select
                     multiple
@@ -2216,14 +1895,11 @@ export default function UniclubEventPage({ navbarHeight }) {
                     value={form.hostClubIds || []}
                     onChange={(e) => {
                       const value = e.target.value || [];
-                      // ensure at least 1 host – fallback to current club if they clear everything
                       const next = value.length ? value : [groupId];
                       setForm((prev) => ({ ...prev, hostClubIds: next }));
                     }}
                     renderValue={(selected) => {
-                      if (!selected || selected.length === 0) {
-                        return "Select host club(s)";
-                      }
+                      if (!selected || selected.length === 0) return "Select host club(s)";
                       const labels = selected
                         .map((id) => clubs.find((c) => c.id === id)?.title || id)
                         .filter(Boolean);
@@ -2232,20 +1908,16 @@ export default function UniclubEventPage({ navbarHeight }) {
                   >
                     {clubs.map((c) => (
                       <MenuItem key={c.id} value={c.id}>
-                        <Checkbox
-                          checked={(form.hostClubIds || []).includes(c.id)}
-                        />
+                        <Checkbox checked={(form.hostClubIds || []).includes(c.id)} />
                         <ListItemText primary={c.title} />
                       </MenuItem>
                     ))}
                   </Select>
 
                   <p className="text-[11px] text-gray-500">
-                    Select 1 or more clubs from the same university. The first one can be treated
-                    as the “primary” host in the app UI.
+                    Select 1 or more clubs from the same university. The first one can be treated as the “primary” host in the app UI.
                   </p>
                 </div>
-
               </div>
 
               <div className="flex justify-end mt-6 space-x-3">
@@ -2269,12 +1941,9 @@ export default function UniclubEventPage({ navbarHeight }) {
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
-            <h2 className="text-xl font-semibold mb-4 text-red-600">
-              Delete Event
-            </h2>
+            <h2 className="text-xl font-semibold mb-4 text-red-600">Delete Event</h2>
             <p className="mb-4">
-              Are you sure you want to delete{" "}
-              <strong>{deleteData?.eventName}</strong>?
+              Are you sure you want to delete <strong>{deleteData?.eventName}</strong>?
             </p>
             <div className="flex justify-end space-x-3">
               <button
@@ -2286,10 +1955,7 @@ export default function UniclubEventPage({ navbarHeight }) {
               >
                 Cancel
               </button>
-              <button
-                onClick={handleDelete}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-              >
+              <button onClick={handleDelete} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
                 Delete
               </button>
             </div>
@@ -2298,12 +1964,7 @@ export default function UniclubEventPage({ navbarHeight }) {
       )}
 
       {/* Map modal */}
-      <Dialog
-        open={showMapModal}
-        onClose={() => setShowMapModal(false)}
-        maxWidth="md"
-        fullWidth
-      >
+      <Dialog open={showMapModal} onClose={() => setShowMapModal(false)} maxWidth="md" fullWidth>
         <DialogTitle>Pick a Location</DialogTitle>
         <DialogContent dividers sx={{ overflow: "hidden" }}>
           <MapLocationInput
@@ -2316,11 +1977,7 @@ export default function UniclubEventPage({ navbarHeight }) {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowMapModal(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={() => setShowMapModal(false)}
-            disabled={!form.mapLocation}
-          >
+          <Button variant="contained" onClick={() => setShowMapModal(false)} disabled={!form.mapLocation}>
             Save location
           </Button>
         </DialogActions>
@@ -2331,49 +1988,30 @@ export default function UniclubEventPage({ navbarHeight }) {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
           <div className="bg-white w-full max-w-3xl max-h-[85vh] rounded-lg shadow-lg flex flex-col">
             <div className="px-5 py-4 border-b flex items-center justify-between gap-2">
-              <h3 className="text-lg font-semibold">
-                Bookings — {bookingModal.event?.eventName || "Event"}
-              </h3>
+              <h3 className="text-lg font-semibold">Bookings — {bookingModal.event?.eventName || "Event"}</h3>
               <div className="flex items-center gap-2">
-                {/* Export CSV */}
                 <button
                   className="text-sm px-2 py-1 border rounded hover:bg-gray-50"
                   onClick={() => {
-                    const rows =
-                      bookingsByEvent[bookingModal.event?.id] || [];
+                    const rows = bookingsByEvent[bookingModal.event?.id] || [];
                     const csv = [
-                      [
-                        "userName",
-                        "userEmail",
-                        "totalPrice",
-                        "timestamp",
-                        "ticketsJSON",
-                      ],
+                      ["userName", "userEmail", "totalPrice", "timestamp", "ticketsJSON"],
                       ...rows.map((b) => [
                         (b.userName || "").replaceAll(",", " "),
                         b.userEmail || "",
                         String(b.totalPrice ?? ""),
-                        b.timestamp
-                          ? dayjs(toMillis(b.timestamp)).format(
-                            "YYYY-MM-DD HH:mm"
-                          )
-                          : "",
+                        b.timestamp ? dayjs(toMillis(b.timestamp)).format("YYYY-MM-DD HH:mm") : "",
                         JSON.stringify(b.tickets || {}),
                       ]),
                     ]
                       .map((r) => r.join(","))
                       .join("\n");
-                    const blob = new Blob([csv], {
-                      type: "text/csv;charset=utf-8;",
-                    });
+
+                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = `${(
-                      bookingModal.event?.eventName || "event"
-                    )
-                      .replace(/\s+/g, "_")
-                      .toLowerCase()}_bookings.csv`;
+                    a.download = `${(bookingModal.event?.eventName || "event").replace(/\s+/g, "_").toLowerCase()}_bookings.csv`;
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
@@ -2381,31 +2019,18 @@ export default function UniclubEventPage({ navbarHeight }) {
                   Export CSV
                 </button>
 
-                <button
-                  className="text-gray-600 hover:text-black"
-                  onClick={() =>
-                    setBookingModal((p) => ({ ...p, open: false }))
-                  }
-                  aria-label="Close"
-                >
+                <button className="text-gray-600 hover:text-black" onClick={() => setBookingModal((p) => ({ ...p, open: false }))} aria-label="Close">
                   ✕
                 </button>
               </div>
             </div>
 
-            {/* Controls */}
             <div className="px-5 py-3 border-b flex items-center gap-3">
               <input
                 className="border rounded px-3 py-1.5 text-sm w-60"
                 placeholder="Search name/email"
                 value={bookingModal.q}
-                onChange={(e) =>
-                  setBookingModal((p) => ({
-                    ...p,
-                    q: e.target.value,
-                    page: 1,
-                  }))
-                }
+                onChange={(e) => setBookingModal((p) => ({ ...p, q: e.target.value, page: 1 }))}
               />
 
               <div className="ml-auto flex items-center gap-2">
@@ -2413,13 +2038,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                 <select
                   className="border rounded px-2 py-1 text-sm"
                   value={bookingModal.pageSize}
-                  onChange={(e) =>
-                    setBookingModal((p) => ({
-                      ...p,
-                      pageSize: Number(e.target.value),
-                      page: 1,
-                    }))
-                  }
+                  onChange={(e) => setBookingModal((p) => ({ ...p, pageSize: Number(e.target.value), page: 1 }))}
                 >
                   {[5, 10, 20, 50, 100].map((n) => (
                     <option key={n} value={n}>
@@ -2430,7 +2049,6 @@ export default function UniclubEventPage({ navbarHeight }) {
               </div>
             </div>
 
-            {/* Table */}
             <div className="overflow-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -2442,10 +2060,7 @@ export default function UniclubEventPage({ navbarHeight }) {
                       { key: "totalPrice", label: "Total Price" },
                       { key: "timestamp", label: "Booked At" },
                     ].map((c) => (
-                      <th
-                        key={c.key}
-                        className="px-5 py-3 text-left text-sm font-medium text-gray-600"
-                      >
+                      <th key={c.key} className="px-5 py-3 text-left text-sm font-medium text-gray-600">
                         {c.sortable === false ? (
                           <span>{c.label}</span>
                         ) : (
@@ -2454,30 +2069,14 @@ export default function UniclubEventPage({ navbarHeight }) {
                             onClick={() =>
                               setBookingModal((p) =>
                                 p.sort.key === c.key
-                                  ? {
-                                    ...p,
-                                    sort: {
-                                      key: c.key,
-                                      dir:
-                                        p.sort.dir === "asc"
-                                          ? "desc"
-                                          : "asc",
-                                    },
-                                  }
-                                  : {
-                                    ...p,
-                                    sort: { key: c.key, dir: "asc" },
-                                  }
+                                  ? { ...p, sort: { key: c.key, dir: p.sort.dir === "asc" ? "desc" : "asc" } }
+                                  : { ...p, sort: { key: c.key, dir: "asc" } }
                               )
                             }
                           >
                             <span>{c.label}</span>
                             {bookingModal.sort.key === c.key && (
-                              <span className="text-gray-400">
-                                {bookingModal.sort.dir === "asc"
-                                  ? "▲"
-                                  : "▼"}
-                              </span>
+                              <span className="text-gray-400">{bookingModal.sort.dir === "asc" ? "▲" : "▼"}</span>
                             )}
                           </button>
                         )}
@@ -2485,76 +2084,43 @@ export default function UniclubEventPage({ navbarHeight }) {
                     ))}
                   </tr>
                 </thead>
+
                 <tbody className="divide-y divide-gray-200">
                   {(() => {
-                    const rows =
-                      bookingsByEvent[bookingModal.event?.eventName] || [];
-
-                    // filter
-                    const q = (bookingModal.q || "")
-                      .trim()
-                      .toLowerCase();
-                    const filtered = q
+                    const rows = bookingsByEvent[bookingModal.event?.id] || [];
+                    const q = (bookingModal.q || "").trim().toLowerCase();
+                    const filteredRows = q
                       ? rows.filter(
                         (b) =>
-                          (b.userName || "")
-                            .toLowerCase()
-                            .includes(q) ||
-                          (b.userEmail || "")
-                            .toLowerCase()
-                            .includes(q)
+                          (b.userName || "").toLowerCase().includes(q) ||
+                          (b.userEmail || "").toLowerCase().includes(q)
                       )
                       : rows;
 
-                    // sort
-                    const dir =
-                      bookingModal.sort.dir === "asc" ? 1 : -1;
-                    const sortedRows = [...filtered].sort((a, b) => {
+                    const dir = bookingModal.sort.dir === "asc" ? 1 : -1;
+                    const sortedRows = [...filteredRows].sort((a, b) => {
                       const key = bookingModal.sort.key;
                       switch (key) {
                         case "userName":
-                          return (
-                            (a.userName || "").localeCompare(
-                              b.userName || ""
-                            ) * dir
-                          );
+                          return (a.userName || "").localeCompare(b.userName || "") * dir;
                         case "userEmail":
-                          return (
-                            (a.userEmail || "").localeCompare(
-                              b.userEmail || ""
-                            ) * dir
-                          );
+                          return (a.userEmail || "").localeCompare(b.userEmail || "") * dir;
                         case "totalPrice":
-                          return (
-                            (Number(a.totalPrice || 0) -
-                              Number(b.totalPrice || 0)) * dir
-                          );
+                          return (Number(a.totalPrice || 0) - Number(b.totalPrice || 0)) * dir;
                         case "timestamp":
                         default:
-                          return (
-                            ((toMillis(a.timestamp) ?? 0) -
-                              (toMillis(b.timestamp) ?? 0)) * dir
-                          );
+                          return ((toMillis(a.timestamp) ?? 0) - (toMillis(b.timestamp) ?? 0)) * dir;
                       }
                     });
 
-                    // paginate
                     const total = sortedRows.length;
-                    const start =
-                      (bookingModal.page - 1) *
-                      bookingModal.pageSize;
-                    const pageRows = sortedRows.slice(
-                      start,
-                      start + bookingModal.pageSize
-                    );
+                    const start = (bookingModal.page - 1) * bookingModal.pageSize;
+                    const pageRows = sortedRows.slice(start, start + bookingModal.pageSize);
 
                     if (pageRows.length === 0) {
                       return (
                         <tr>
-                          <td
-                            colSpan={5}
-                            className="px-5 py-10 text-center text-gray-500"
-                          >
+                          <td colSpan={5} className="px-5 py-10 text-center text-gray-500">
                             No bookings found.
                           </td>
                         </tr>
@@ -2565,46 +2131,29 @@ export default function UniclubEventPage({ navbarHeight }) {
                       <tr key={b.id}>
                         <td className="px-5 py-3 text-sm text-gray-700">
                           <div className="flex items-center gap-2">
-                            {b.userPhotoURL ? (
-                              <img
-                                src={b.userPhotoURL}
-                                alt=""
-                                className="w-8 h-8 rounded-full"
-                              />
-                            ) : null}
+                            {b.userPhotoURL ? <img src={b.userPhotoURL} alt="" className="w-8 h-8 rounded-full" /> : null}
                             <span>{b.userName || "—"}</span>
                           </div>
                         </td>
+                        <td className="px-5 py-3 text-sm text-gray-700">{b.userEmail || "—"}</td>
                         <td className="px-5 py-3 text-sm text-gray-700">
-                          {b.userEmail || "—"}
-                        </td>
-                        <td className="px-5 py-3 text-sm text-gray-700">
-                          {b.tickets &&
-                            Object.keys(b.tickets).length ? (
+                          {b.tickets && Object.keys(b.tickets).length ? (
                             <ul className="space-y-0.5">
-                              {Object.entries(b.tickets).map(
-                                ([type, count]) => (
-                                  <li key={type}>
-                                    {type}: <strong>{count}</strong>
-                                  </li>
-                                )
-                              )}
+                              {Object.entries(b.tickets).map(([type, count]) => (
+                                <li key={type}>
+                                  {type}: <strong>{count}</strong>
+                                </li>
+                              ))}
                             </ul>
                           ) : (
                             "—"
                           )}
                         </td>
                         <td className="px-5 py-3 text-sm text-gray-700">
-                          {typeof b.totalPrice === "number"
-                            ? `$${b.totalPrice}`
-                            : b.totalPrice || "—"}
+                          {typeof b.totalPrice === "number" ? `$${b.totalPrice}` : b.totalPrice || "—"}
                         </td>
                         <td className="px-5 py-3 text-sm text-gray-700">
-                          {b.timestamp
-                            ? dayjs(
-                              toMillis(b.timestamp)
-                            ).format("MMM DD, YYYY hh:mm A")
-                            : "—"}
+                          {b.timestamp ? dayjs(toMillis(b.timestamp)).format("MMM DD, YYYY hh:mm A") : "—"}
                         </td>
                       </tr>
                     ));
@@ -2613,32 +2162,23 @@ export default function UniclubEventPage({ navbarHeight }) {
               </table>
             </div>
 
-            {/* Pager */}
             <div className="px-5 py-3 border-t flex items-center justify-between">
               {(() => {
-                const rows =
-                  bookingsByEvent[bookingModal.event?.id] || [];
-                const q = (bookingModal.q || "")
-                  .trim()
-                  .toLowerCase();
-                const filtered = q
+                const rows = bookingsByEvent[bookingModal.event?.id] || [];
+                const q = (bookingModal.q || "").trim().toLowerCase();
+                const filteredRows = q
                   ? rows.filter(
                     (b) =>
-                      (b.userName || "")
-                        .toLowerCase()
-                        .includes(q) ||
-                      (b.userEmail || "")
-                        .toLowerCase()
-                        .includes(q)
+                      (b.userName || "").toLowerCase().includes(q) ||
+                      (b.userEmail || "").toLowerCase().includes(q)
                   )
                   : rows;
-                const total = filtered.length;
-                const totalPages = Math.max(
-                  1,
-                  Math.ceil(total / bookingModal.pageSize)
-                );
+
+                const total = filteredRows.length;
+                const totalPages = Math.max(1, Math.ceil(total / bookingModal.pageSize));
                 const canPrev = bookingModal.page > 1;
                 const canNext = bookingModal.page < totalPages;
+
                 return (
                   <>
                     <span className="text-sm text-gray-600">
@@ -2646,33 +2186,17 @@ export default function UniclubEventPage({ navbarHeight }) {
                     </span>
                     <div className="flex items-center gap-2">
                       <button
-                        className={`px-3 py-1 rounded border ${canPrev
-                          ? "bg-white hover:bg-gray-50"
-                          : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        className={`px-3 py-1 rounded border ${canPrev ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"
                           }`}
-                        onClick={() =>
-                          canPrev &&
-                          setBookingModal((p) => ({
-                            ...p,
-                            page: p.page - 1,
-                          }))
-                        }
+                        onClick={() => canPrev && setBookingModal((p) => ({ ...p, page: p.page - 1 }))}
                         disabled={!canPrev}
                       >
                         Prev
                       </button>
                       <button
-                        className={`px-3 py-1 rounded border ${canNext
-                          ? "bg-white hover:bg-gray-50"
-                          : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        className={`px-3 py-1 rounded border ${canNext ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"
                           }`}
-                        onClick={() =>
-                          canNext &&
-                          setBookingModal((p) => ({
-                            ...p,
-                            page: p.page + 1,
-                          }))
-                        }
+                        onClick={() => canNext && setBookingModal((p) => ({ ...p, page: p.page + 1 }))}
                         disabled={!canNext}
                       >
                         Next

@@ -1,10 +1,20 @@
+/* eslint-disable */
 import React, { useState, useEffect, useRef } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
-  query, where, getDoc, Timestamp, writeBatch,
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  doc,
+  deleteDoc,
+  query,
+  where,
+  getDoc,
+  Timestamp,
+  writeBatch,
 } from "firebase/firestore";
 import { db, storage, database } from "../../firebase";
-import { ref as dbRef, query as datquery, onValue, off, } from 'firebase/database';
+import { ref as dbRef, get as rtdbGet } from "firebase/database";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -23,140 +33,140 @@ import "react-date-range/dist/styles.css";
 import "react-date-range/dist/theme/default.css";
 import { enUS } from "date-fns/locale";
 import { format } from "date-fns";
-import { useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
-export default function SubgroupEvent({ navbarHeight }) {
-  const navigate = useNavigate();
+import { useLocation, useSearchParams } from "react-router-dom";
+import { MenuItem, Select, Checkbox, ListItemText } from "@mui/material";
+
+/**
+ * ✅ SubGroupEventPage
+ * - Same Create/Edit form as UniclubEventPage
+ * - Supports ticket builder + allowedGroups (club/subgroup) multiselect
+ * - Supports free ticket window, tables/pods (event-level & per-ticket)
+ * - Supports refundPolicy, websiteLinks/instagramLinks, hostClubIds
+ * - Supports pinning + bookings modal
+ *
+ * Assumptions:
+ * - Events are stored in Firestore collection: "discoverevents"
+ * - Subgroup id (optional) is passed as:
+ *    - URL query: ?subGroupId=xxx OR ?subgroupId=xxx
+ *    - OR via location.state.subGroupId
+ * - If subgroup id is present, list filters by subgroupId as well.
+ * - Bookings collection: "discovereventbookings" and each booking has eventId = event doc id
+ */
+
+export default function SubGroupEventPage({ navbarHeight }) {
   const { state } = useLocation();
   const [params] = useSearchParams();
-  // const groupId = state?.groupId || params.get("groupId");
-  // const groupName = state?.groupName || params.get("groupName") || "Club";
+
+  const uid = useSelector((s) => s.auth.user.uid);
+  const emp = useSelector((s) => s.auth.employee);
+
+  const groupId = emp?.uniclubid;
+  const groupName = emp?.uniclub;
+
+  // subgroup context (optional)
+  const subGroupId =
+    params.get("subGroupId") ||
+    params.get("subgroupId") ||
+    state?.subGroupId ||
+    state?.subgroupId ||
+    "";
+  const subGroupName = state?.subGroupName || state?.subgroupName || "";
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
-  const [paymentlist, setPaymentList] = useState([{ name: 'General', id: 'General' },
-  { name: 'VIP', id: 'VIP' },]);
   const [category, setCategory] = useState([]);
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const [range, setRange] = useState([{ startDate: new Date(), endDate: new Date(), key: "selection" }]);
+  // calendar range for event display range
+  const [range, setRange] = useState([
+    { startDate: new Date(), endDate: new Date(), key: "selection" },
+  ]);
   const [showPicker, setShowPicker] = useState(false);
   const pickerRef = useRef();
 
+  // filters/sorting
   const [showMapModal, setShowMapModal] = useState(false);
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
-  const [timeFilter, setTimeFilter] = useState("current"); // 'past' | 'current' | 'future'
+  const [timeFilter, setTimeFilter] = useState("current"); // past | current | future
   const [categoryFilter, setCategoryFilter] = useState("All");
-
   const [sortConfig, setSortConfig] = useState({ key: "start", direction: "asc" });
   const [filters, setFilters] = useState({ name: "", location: "" });
   const debounceRef = useRef(null);
+
+  // clubs + subgroups for allowedGroups + host club selection
+  const [clubs, setClubs] = useState([]);
+  const [subGroups, setSubGroups] = useState([]);
+
   const setFilterDebounced = (field, value) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setFilters((p) => ({ ...p, [field]: value })), 250);
+    debounceRef.current = setTimeout(
+      () => setFilters((p) => ({ ...p, [field]: value })),
+      250
+    );
   };
+
   const onSort = (key) =>
-    setSortConfig((p) => (p.key === key ? { key, direction: p.direction === "asc" ? "desc" : "asc" } : { key, direction: "asc" }));
+    setSortConfig((p) =>
+      p.key === key
+        ? { key, direction: p.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: "asc" }
+    );
 
-  const uid = useSelector((s) => s.auth.user.uid);
-  const emp = useSelector((s) => s.auth.employee);
-
-
-  const isBlank = (v) => v === null || v === undefined || String(v).trim() === "";
-
-  const stateGroupId = state?.groupId;
-  const stateGroupName = state?.groupName;
-
-  const paramGroupId = params.get("groupId");
-  const paramGroupName = params.get("groupName");
-
-  // 1) First preference: state → params → employee
-  const resolvedGroupId = !isBlank(stateGroupId)
-    ? stateGroupId
-    : !isBlank(paramGroupId)
-      ? paramGroupId
-      : (emp?.uniclubid || "");
-
-  const resolvedGroupNameFallback = !isBlank(stateGroupName)
-    ? stateGroupName
-    : !isBlank(paramGroupName)
-      ? paramGroupName
-      : (emp?.uniclub || "Club");
-
-  // If groupName still unknown but groupId exists, we will fetch title from RTDB
-  const [groupNameResolved, setGroupNameResolved] = useState(resolvedGroupNameFallback);
-
-  const groupId = resolvedGroupId;
-  const groupName = groupNameResolved;
-
-
-  useEffect(() => {
-    if (!groupId) return;
-
-    // if we already have a good name, no need to fetch
-    if (!isBlank(groupNameResolved) && groupNameResolved !== "Club") return;
-
-    // RTDB: uniclubsubgroup/{groupId}  OR query based on your schema
-    const refPath = dbRef(database, `uniclubsubgroup/${groupId}`);
-
-    const cb = (snap) => {
-      const val = snap.val();
-      const title = val?.title || val?.name || "";
-      if (!isBlank(title)) setGroupNameResolved(title);
-      else setGroupNameResolved(emp?.uniclub || "Club");
-    };
-
-    onValue(refPath, cb, { onlyOnce: true });
-    return () => off(refPath, "value", cb);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId]);
-
+  // ---------- FORM SHAPE ----------
   const initialFormData = {
     id: 0,
     eventName: "",
-    shortDesc: "",
     eventDescriptionHtml: "",
     category: "",
     tags: "",
     date: "",
     startDateTime: "",
     endDateTime: "",
-    isRecurring: false,
-    frequency: "",
     locationName: "",
     address: "",
     mapLocation: "",
-    onlineLink: "",
     posters: [],
     posterFiles: [],
-    promoVideo: "",
-    theme: "",
-    rsvp: false,
+
+    // tickets & capacity
+    priceType: "", // Free | Paid
     capacity: "",
     maxPurchaseTickets: "",
-    rsvpDeadline: "",
-    priceType: "",
-    prices: [],
-    paymentLink: "",
-    allowChat: false,
-    allowReactions: false,
-    challenges: "",
-    visibility: "Public",
-    cohosts: "",
-    website: "",
-    instagram: "",
-    rules: "",
-    boothOption: false,
-    vendorInfo: "",
-    sponsorship: "",
-    interestedCount: 0,
-    hostelid: "",
+    freeTicketStartDateTime: "",
+    freeTicketEndDateTime: "",
+
+    // event-level tables/pods
+    hasTables: false,
+    tableType: "",
+    tableCount: "",
+    ticketsPerTable: "",
+
+    // paid ticket builder
+    ticketTypes: [],
+
+    // qr checkin
+    enableQrCheckIn: false,
+
+    // multi-host clubs
+    hostClubIds: [],
+
+    // links arrays
+    websiteLinks: [],
+    instagramLinks: [],
+
+    // policy
+    refundPolicy: "",
+
+    // pin
     isPinned: false,
     pinnedAt: null,
     pinnedOrder: null,
   };
+
   const [form, setForm] = useState(initialFormData);
 
   // --- BOOKINGS ---
@@ -166,26 +176,30 @@ export default function SubgroupEvent({ navbarHeight }) {
     event: null,
     page: 1,
     pageSize: 10,
-    sort: { key: "timestamp", dir: "desc" }, // 'userName' | 'userEmail' | 'totalPrice' | 'timestamp'
+    sort: { key: "timestamp", dir: "desc" },
     q: "",
   });
 
-  // --- List header date-range filter (calendar) ---
-  const [filterRange, setFilterRange] = useState([{ startDate: null, endDate: null, key: "selection" }]);
+  // --- List header date-range filter ---
+  const [filterRange, setFilterRange] = useState([
+    { startDate: null, endDate: null, key: "selection" },
+  ]);
   const [showFilterPicker, setShowFilterPicker] = useState(false);
   const filterPickerRef = useRef(null);
 
+  // load initial data
   useEffect(() => {
     getList();
     getCategory();
-    getPaymentList();
-  }, []);
+    getClubs(); // uni-based
+    fetchSubGroups(); // for allowedGroups filter + selection
+  }, [groupId, subGroupId]);
 
-  // Load bookings for hostel
+  // Load bookings (grouped by eventId)
   useEffect(() => {
     (async () => {
       try {
-        const qB = query(collection(db, "subgroupeventbookings"));
+        const qB = query(collection(db, "discovereventbookings"));
         const snap = await getDocs(qB);
         const grouped = {};
         snap.docs.forEach((d) => {
@@ -202,28 +216,34 @@ export default function SubgroupEvent({ navbarHeight }) {
     })();
   }, []);
 
+  // ---------- DATA ----------
   const getList = async () => {
     setIsLoading(true);
     try {
-      const qEvents = query(collection(db, "subgroupevents"), where("groupid", "==", groupId));
+      if (!groupId) {
+        setList([]);
+        return;
+      }
+
+      const base = [
+        where("groupid", "==", groupId),
+      ];
+
+      // If this page is for a subgroup context, filter by subgroupId too.
+      // (If your field name differs, adjust here.)
+      if (subGroupId) base.push(where("subGroupId", "==", subGroupId));
+
+      const qEvents = query(collection(db, "discoverevents"), ...base);
       const snap = await getDocs(qEvents);
+
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      docs.sort((a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0));
+      docs.sort(
+        (a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0)
+      );
       setList(docs);
     } catch (e) {
       console.error(e);
       toast.error("Failed to load events");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const getPaymentList = async () => {
-    setIsLoading(true);
-    try {
-      const qPay = query(collection(db, "punliceventpaymenttype"));
-      const snap = await getDocs(qPay);
-      // setPaymentList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } finally {
       setIsLoading(false);
     }
@@ -240,6 +260,72 @@ export default function SubgroupEvent({ navbarHeight }) {
     }
   };
 
+  // ✅ University-based clubs fetch (for multi-host + allowedGroups)
+  const getClubs = async () => {
+    try {
+      const uniId = emp?.universityid || emp?.universityId;
+      if (!uniId) {
+        setClubs(groupId ? [{ id: groupId, title: groupName || "Current Club" }] : []);
+        return;
+      }
+
+      const ref = dbRef(database, "uniclubs");
+      const snap = await rtdbGet(ref);
+      const val = snap.val() || {};
+
+      const filtered = Object.entries(val)
+        .map(([id, c]) => ({
+          id, // RTDB key
+          title: c?.title || "Unnamed Club",
+          uni:
+            c?.universityid ??
+            c?.universityId ??
+            c?.uniId ??
+            c?.university?.id ??
+            null,
+        }))
+        .filter((c) => String(c.uni || "") === String(uniId));
+
+      const hasCurrent = filtered.some((c) => String(c.id) === String(groupId));
+      const withCurrent = hasCurrent
+        ? filtered
+        : groupId
+          ? [{ id: groupId, title: groupName || "Current Club" }, ...filtered]
+          : filtered;
+
+      setClubs(withCurrent);
+    } catch (err) {
+      console.error("getClubs error:", err);
+      setClubs(groupId ? [{ id: groupId, title: groupName || "Current Club" }] : []);
+    }
+  };
+
+  // ✅ subgroups under current club (used in allowedGroups selector)
+  const fetchSubGroups = async () => {
+    if (!emp?.uniclubid) {
+      setSubGroups([]);
+      return;
+    }
+    try {
+      const ref = dbRef(database, "uniclubsubgroup");
+      const snap = await rtdbGet(ref);
+      const val = snap.val() || {};
+      const arr = Object.entries(val).map(([id, g]) => ({
+        id,
+        title: g.title || "Untitled Subgroup",
+        parentGroupId: g.parentGroupId || null,
+      }));
+      const filtered = arr.filter(
+        (x) => String(x.parentGroupId || "") === String(emp?.uniclubid)
+      );
+      setSubGroups(filtered);
+    } catch (err) {
+      console.error("fetchSubGroups error:", err);
+      setSubGroups([]);
+    }
+  };
+
+  // ---------- HELPERS ----------
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setForm((f) => ({ ...f, [name]: type === "checkbox" ? checked : value }));
@@ -259,101 +345,12 @@ export default function SubgroupEvent({ navbarHeight }) {
     return text.length === 0;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const hasPoster = (form.posters?.length || 0) > 0 || (form.posterFiles?.length || 0) > 0;
-      if (!editingData && !hasPoster) return toast.error("Please add at least one poster");
-      if (isBlankHtml(form.eventDescriptionHtml)) return toast.error("Please add a description");
-
-      const sMs = new Date(form.startDateTime).getTime();
-      const eMs = new Date(form.endDateTime).getTime();
-      if (Number.isNaN(sMs) || Number.isNaN(eMs) || eMs <= sMs) return toast.error("End date/time must be after start date/time.");
-
-      const capNum = parseInt(form.capacity, 10);
-      const maxPerNum = parseInt(form.maxPurchaseTickets, 10);
-      if (!Number.isNaN(maxPerNum) && maxPerNum < 1) return toast.error("Max purchase tickets must be at least 1.");
-      if (!Number.isNaN(capNum) && !Number.isNaN(maxPerNum) && maxPerNum > capNum)
-        return toast.error("Max purchase tickets cannot be greater than Max Capacity.");
-
-      // upload new posters
-      let uploaded = [];
-      if (form.posterFiles?.length) {
-        const uploads = form.posterFiles.map(async (file) => {
-          const path = uniquePath(`public_event_posters/${emp.id}/${form.eventName || "subgroupevents"}`, file);
-          const sRef = storageRef(storage, path);
-          await uploadBytes(sRef, file);
-          const url = await getDownloadURL(sRef);
-          return { url, name: file.name };
-        });
-        uploaded = await Promise.all(uploads);
-      }
-      const posters = [...(form.posters || []), ...uploaded];
-
-      const eventData = {
-        ...form,
-        groupid: groupId,
-        groupName: groupName || '',
-        prices: form.priceType === "Free" ? [] : form.prices,
-        startDateTime: form.startDateTime,//Timestamp.fromDate(new Date(form.startDateTime)),
-        endDateTime: form.endDateTime, //? Timestamp.fromDate(new Date(form.endDateTime)) : null,
-        posters,
-        imageUrl: emp?.imageUrl ?? null,
-        uid,
-        isPinned: !!form.isPinned,
-        pinnedAt: form.isPinned ? form.pinnedAt || Timestamp.now() : null,
-        pinnedOrder: Number.isFinite(Number(form.pinnedOrder)) ? Number(form.pinnedOrder) : null,
-        maxPurchaseTickets: Number.isNaN(Number(form.maxPurchaseTickets)) ? null : Number(form.maxPurchaseTickets),
-      };
-      delete eventData.id;
-      delete eventData.posterFiles;
-
-      if (editingData) {
-        const ref = doc(db, "subgroupevents", editingData.id);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) return toast.warning("Event does not exist! Cannot update.");
-        await updateDoc(ref, eventData);
-        toast.success("Event updated successfully");
-      } else {
-        await addDoc(collection(db, "subgroupevents"), eventData);
-        toast.success("Event created successfully");
-      }
-      await getList();
-      setModalOpen(false);
-      setEditing(null);
-      setForm(initialFormData);
-    } catch (err) {
-      console.error(err);
-      toast.error("Save failed");
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteData?.id) return;
-    try {
-      await deleteDoc(doc(db, "subgroupevents", deleteData.id));
-      toast.success("Successfully deleted!");
-      getList();
-    } catch (e) {
-      console.error(e);
-      toast.error("Delete failed");
-    }
-    setConfirmDeleteOpen(false);
-    setDelete(null);
-  };
-
   const toMillis = (val) => {
     if (!val) return null;
     if (typeof val === "object" && val.seconds != null) return val.seconds * 1000;
     if (val?.toDate) return val.toDate().getTime();
     const ms = new Date(val).getTime();
     return Number.isNaN(ms) ? null : ms;
-  };
-
-  const formatDateTime = (ts) => {
-    const ms = toMillis(ts);
-    if (!ms) return "—";
-    return dayjs(ms).format("YYYY-MM-DD hh:mm A");
   };
 
   // windows + classification
@@ -364,11 +361,27 @@ export default function SubgroupEvent({ navbarHeight }) {
     const sd = toMillis(item?.date?.startDate);
     const ed = toMillis(item?.date?.endDate);
     if (sd || ed) {
-      const start = sd ? new Date(sd) : (ed ? new Date(ed) : null);
-      const end = ed ? new Date(ed) : (sd ? new Date(sd) : null);
+      const start = sd ? new Date(sd) : ed ? new Date(ed) : null;
+      const end = ed ? new Date(ed) : sd ? new Date(sd) : null;
       if (start && end) {
-        const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0).getTime();
-        const dayEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999).getTime();
+        const dayStart = new Date(
+          start.getFullYear(),
+          start.getMonth(),
+          start.getDate(),
+          0,
+          0,
+          0,
+          0
+        ).getTime();
+        const dayEnd = new Date(
+          end.getFullYear(),
+          end.getMonth(),
+          end.getDate(),
+          23,
+          59,
+          59,
+          999
+        ).getTime();
         return { start: dayStart, end: dayEnd, source: "dateOnly" };
       }
     }
@@ -401,7 +414,8 @@ export default function SubgroupEvent({ navbarHeight }) {
     const batch = writeBatch(db);
     pinned.forEach((ev, i) => {
       const order = i + 1;
-      if (ev.pinnedOrder !== order) batch.update(doc(db, "subgroupevents", ev.id), { pinnedOrder: order });
+      if (ev.pinnedOrder !== order)
+        batch.update(doc(db, "discoverevents", ev.id), { pinnedOrder: order });
     });
     await batch.commit();
     await getList();
@@ -415,8 +429,8 @@ export default function SubgroupEvent({ navbarHeight }) {
     const a = pinned[idx];
     const b = pinned[swapIdx];
     const batch = writeBatch(db);
-    batch.update(doc(db, "subgroupevents", a.id), { pinnedOrder: b.pinnedOrder });
-    batch.update(doc(db, "subgroupevents", b.id), { pinnedOrder: a.pinnedOrder });
+    batch.update(doc(db, "discoverevents", a.id), { pinnedOrder: b.pinnedOrder });
+    batch.update(doc(db, "discoverevents", b.id), { pinnedOrder: a.pinnedOrder });
     await batch.commit();
     await getList();
   };
@@ -429,20 +443,30 @@ export default function SubgroupEvent({ navbarHeight }) {
     const sequence = [...pinned];
     sequence.splice(newOrder - 1, 0, { ...item });
     const batch = writeBatch(db);
-    sequence.forEach((ev, i) => batch.update(doc(db, "subgroupevents", ev.id), { pinnedOrder: i + 1 }));
+    sequence.forEach((ev, i) =>
+      batch.update(doc(db, "discoverevents", ev.id), { pinnedOrder: i + 1 })
+    );
     await batch.commit();
     await getList();
   };
 
   const togglePin = async (item, makePinned) => {
     try {
-      const ref = doc(db, "subgroupevents", item.id);
+      const ref = doc(db, "discoverevents", item.id);
       if (makePinned) {
         const currentPinned = getPinnedSorted();
         const nextOrder = (currentPinned[currentPinned.length - 1]?.pinnedOrder || 0) + 1;
-        await updateDoc(ref, { isPinned: true, pinnedAt: Timestamp.now(), pinnedOrder: nextOrder });
+        await updateDoc(ref, {
+          isPinned: true,
+          pinnedAt: Timestamp.now(),
+          pinnedOrder: nextOrder,
+        });
       } else {
-        await updateDoc(ref, { isPinned: false, pinnedAt: null, pinnedOrder: null });
+        await updateDoc(ref, {
+          isPinned: false,
+          pinnedAt: null,
+          pinnedOrder: null,
+        });
         await renumberPinned();
       }
       toast.success(makePinned ? "Pinned" : "Unpinned");
@@ -453,30 +477,30 @@ export default function SubgroupEvent({ navbarHeight }) {
     }
   };
 
-  // ----- helper lines for compact time/date in table -----
+  // compact lines for table
   const SHOW_ALL_DAY_FOR_DATE_ONLY = true;
-  const toMilli = toMillis;
 
   function getTimeLine(item) {
-    const s = toMilli(item.startDateTime);
-    const e = toMilli(item.endDateTime);
+    const s = toMillis(item.startDateTime);
+    const e = toMillis(item.endDateTime);
     if (s || e) {
       const st = s ? dayjs(s).format("hh:mm A") : "";
       const et = e ? dayjs(e).format("hh:mm A") : "";
-      return st && et ? `${st} to ${et}` : (st || et || "");
+      return st && et ? `${st} to ${et}` : st || et || "";
     }
     return SHOW_ALL_DAY_FOR_DATE_ONLY ? "All day" : "";
   }
 
   function getDateLine(item) {
-    let s = toMilli(item.startDateTime) ?? toMilli(item?.date?.startDate);
-    let e = toMilli(item.endDateTime) ?? toMilli(item?.date?.endDate);
+    let s = toMillis(item.startDateTime) ?? toMillis(item?.date?.startDate);
+    let e = toMillis(item.endDateTime) ?? toMillis(item?.date?.endDate);
 
     if (!s && !e) return "—";
     if (!s) s = e;
     if (!e) e = s;
 
-    const sd = dayjs(s), ed = dayjs(e);
+    const sd = dayjs(s),
+      ed = dayjs(e);
     const sameMonth = sd.month() === ed.month() && sd.year() === ed.year();
     const sameYear = sd.year() === ed.year();
 
@@ -484,36 +508,51 @@ export default function SubgroupEvent({ navbarHeight }) {
     const needYear = !sameYear || sd.year() !== dayjs().year();
 
     if (sameMonth) {
-      return `${sd.format("D")}–${ed.format("D")} ${monLower(sd)}${needYear ? " " + sd.format("YYYY") : ""}`;
+      return `${sd.format("D")}–${ed.format("D")} ${monLower(sd)}${
+        needYear ? " " + sd.format("YYYY") : ""
+      }`;
     }
     if (sameYear) {
-      return `${sd.format("D")} ${monLower(sd)}–${ed.format("D")} ${monLower(ed)}${needYear ? " " + sd.format("YYYY") : ""}`;
+      return `${sd.format("D")} ${monLower(sd)}–${ed.format("D")} ${monLower(ed)}${
+        needYear ? " " + sd.format("YYYY") : ""
+      }`;
     }
-    return `${sd.format("D MMM YYYY")}–${ed.format("D MMM YYYY")}`.replace(/MMM/g, (m) => m.toLowerCase());
+    return `${sd.format("D MMM YYYY")}–${ed.format("D MMM YYYY")}`.replace(/MMM/g, (m) =>
+      m.toLowerCase()
+    );
   }
 
-  // ---- list filtering/sorting (with calendar header filter) ----
-  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
-  const dayEnd = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+  // date range overlaps helper
+  const dayStart = (d) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+  const dayEnd = (d) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
   const overlaps = (evStartMs, evEndMs, fStart, fEnd) => {
-    if (!fStart || !fEnd) return true; // no active filter
+    if (!fStart || !fEnd) return true;
     const fs = dayStart(fStart);
     const fe = dayEnd(fEnd);
     return evStartMs <= fe && evEndMs >= fs;
   };
 
+  // filtering
   const timeFiltered = list.filter((ev) => classifyEvent(ev) === timeFilter);
-  const catFiltered = categoryFilter === "All" ? timeFiltered : timeFiltered.filter((ev) => (ev.category || "") === categoryFilter);
+  const catFiltered =
+    categoryFilter === "All"
+      ? timeFiltered
+      : timeFiltered.filter((ev) => (ev.category || "") === categoryFilter);
   const pinFiltered = showPinnedOnly ? catFiltered.filter((ev) => !!ev.isPinned) : catFiltered;
 
   const filtered = pinFiltered.filter((ev) => {
-    const nameOK = !filters.name || (ev.eventName || "").toLowerCase().includes(filters.name.toLowerCase());
-    const locOK = !filters.location || (ev.locationName || "").toLowerCase().includes(filters.location.toLowerCase());
+    const nameOK =
+      !filters.name || (ev.eventName || "").toLowerCase().includes(filters.name.toLowerCase());
+    const locOK =
+      !filters.location ||
+      (ev.locationName || "").toLowerCase().includes(filters.location.toLowerCase());
 
     const { start, end } = getEventWindowMillis(ev);
     const fStart = filterRange?.[0]?.startDate;
     const fEnd = filterRange?.[0]?.endDate;
-    const rangeOK = (start == null && end == null) ? true : overlaps(start ?? 0, end ?? 0, fStart, fEnd);
+    const rangeOK = start == null && end == null ? true : overlaps(start ?? 0, end ?? 0, fStart, fEnd);
 
     return nameOK && locOK && rangeOK;
   });
@@ -547,36 +586,257 @@ export default function SubgroupEvent({ navbarHeight }) {
     return String(va).localeCompare(String(vb)) * dir;
   });
 
-  const categoryOptions = ["All", ...Array.from(new Set((category || []).map((c) => c.name).filter(Boolean)))];
-
   const handleRangeChange = (item) => {
     const selected = item.selection;
     setRange([selected]);
-    const bothSelected = selected.startDate && selected.endDate && selected.startDate.getTime() !== selected.endDate.getTime();
+    const bothSelected =
+      selected.startDate &&
+      selected.endDate &&
+      selected.startDate.getTime() !== selected.endDate.getTime();
     if (bothSelected) {
       setForm((prev) => ({
         ...prev,
-        date: { startDate: selected.startDate.toISOString(), endDate: selected.endDate.toISOString() },
+        date: {
+          startDate: selected.startDate.toISOString(),
+          endDate: selected.endDate.toISOString(),
+        },
       }));
       setShowPicker(false);
     }
   };
 
+  // ticket helpers
+  const defaultTicket = () => ({
+    id: "",
+    name: "",
+    description: "",
+    price: "",
+    allowedGroupNote: "",
+    passwordRequired: false,
+    password: "",
+    maxCapacity: "",
+    maxPurchasePerUser: "",
+    collectExtraInfo: false,
+    fields: {
+      name: true,
+      email: true,
+      number: true,
+      studentId: false,
+      degree: false,
+      studyYear: false,
+    },
+    startDateTime: "",
+    endDateTime: "",
+
+    hasTables: false,
+    tableType: "",
+    tableCount: "",
+    ticketsPerTable: "",
+
+    allowedGroups: [], // ✅ club/subgroup selector
+  });
+
+  const updateTicket = (index, patch) => {
+    setForm((prev) => {
+      const next = [...(prev.ticketTypes || [])];
+      next[index] = { ...next[index], ...patch };
+      return { ...prev, ticketTypes: next };
+    });
+  };
+
+  const updateTicketFieldCheckbox = (index, field) => {
+    setForm((prev) => {
+      const next = [...(prev.ticketTypes || [])];
+      const current = next[index] || {};
+      const fields = current.fields || {};
+      next[index] = { ...current, fields: { ...fields, [field]: !fields[field] } };
+      return { ...prev, ticketTypes: next };
+    });
+  };
+
+  // ---------- SUBMIT ----------
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const hasPoster = (form.posters?.length || 0) > 0 || (form.posterFiles?.length || 0) > 0;
+      if (!editingData && !hasPoster) return toast.error("Please add at least one poster");
+      if (isBlankHtml(form.eventDescriptionHtml)) return toast.error("Please add a description");
+
+      // Event time validation
+      const sMs = new Date(form.startDateTime).getTime();
+      const eMs = new Date(form.endDateTime).getTime();
+      if (Number.isNaN(sMs) || Number.isNaN(eMs) || eMs <= sMs)
+        return toast.error("End date/time must be after start date/time.");
+
+      // Free ticket window validation
+      if (form.freeTicketStartDateTime && form.freeTicketEndDateTime) {
+        const fsMs = new Date(form.freeTicketStartDateTime).getTime();
+        const feMs = new Date(form.freeTicketEndDateTime).getTime();
+        if (!Number.isNaN(fsMs) && !Number.isNaN(feMs) && feMs <= fsMs) {
+          return toast.error("Free ticket end time must be after its start time.");
+        }
+      }
+
+      const capNum = parseInt(form.capacity, 10);
+      const maxPerNum = parseInt(form.maxPurchaseTickets, 10);
+      if (!Number.isNaN(maxPerNum) && maxPerNum < 1)
+        return toast.error("Max purchase tickets must be at least 1.");
+      if (!Number.isNaN(capNum) && !Number.isNaN(maxPerNum) && maxPerNum > capNum)
+        return toast.error("Max purchase tickets cannot be greater than Max Capacity.");
+
+      if (form.priceType === "Paid" && (form.ticketTypes || []).length === 0) {
+        toast.warning("You selected Paid event but no tickets are configured. Please add at least one ticket type.");
+      }
+
+      // upload new posters
+      let uploaded = [];
+      if (form.posterFiles?.length) {
+        const uploads = form.posterFiles.map(async (file) => {
+          const path = uniquePath(
+            `public_event_posters/${emp?.id || "emp"}/${form.eventName || "subgroup_events"}`,
+            file
+          );
+          const sRef = storageRef(storage, path);
+          await uploadBytes(sRef, file);
+          const url = await getDownloadURL(sRef);
+          return { url, name: file.name };
+        });
+        uploaded = await Promise.all(uploads);
+      }
+      const posters = [...(form.posters || []), ...uploaded];
+
+      // ticket sanitisation
+      const ticketTypesSanitised = (form.ticketTypes || []).map((t, idx) => ({
+        id: t.id || `ticket_${idx + 1}`,
+        name: (t.name || "").trim(),
+        description: (t.description ?? "").toString().trim(),
+        price: t.price === "" || t.price == null ? 0 : Number(t.price),
+        allowedGroupNote: (t.allowedGroupNote || "").trim(),
+        allowedGroups: Array.isArray(t.allowedGroups)
+          ? t.allowedGroups.map((g) => ({ id: g.id, title: g.title, type: g.type || "club" }))
+          : [],
+        passwordRequired: !!t.passwordRequired,
+        password: t.passwordRequired ? (t.password || "").trim() : "",
+        maxCapacity: t.maxCapacity === "" || t.maxCapacity == null ? null : Number(t.maxCapacity),
+        maxPurchasePerUser:
+          t.maxPurchasePerUser === "" || t.maxPurchasePerUser == null ? null : Number(t.maxPurchasePerUser),
+        collectExtraInfo: !!t.collectExtraInfo,
+        fields: {
+          name: !!t.fields?.name,
+          email: !!t.fields?.email,
+          number: !!t.fields?.number,
+          studentId: !!t.fields?.studentId,
+          degree: !!t.fields?.degree,
+          studyYear: !!t.fields?.studyYear,
+        },
+        startDateTime: t.startDateTime || "",
+        endDateTime: t.endDateTime || "",
+
+        hasTables: !!t.hasTables,
+        tableType: t.hasTables ? t.tableType || "" : "",
+        tableCount:
+          t.hasTables && t.tableCount !== "" && t.tableCount != null ? Number(t.tableCount) : null,
+        ticketsPerTable:
+          t.hasTables && t.ticketsPerTable !== "" && t.ticketsPerTable != null
+            ? Number(t.ticketsPerTable)
+            : null,
+      }));
+
+      const eventData = {
+        ...form,
+
+        // base club info
+        groupid: groupId,
+        groupName: groupName || "",
+        uid,
+
+        // subgroup context (optional)
+        subGroupId: subGroupId || "",
+        subGroupName: subGroupName || "",
+
+        posters,
+        imageUrl: emp?.imageUrl ?? null,
+
+        isPinned: !!form.isPinned,
+        pinnedAt: form.isPinned ? form.pinnedAt || Timestamp.now() : null,
+        pinnedOrder: Number.isFinite(Number(form.pinnedOrder)) ? Number(form.pinnedOrder) : null,
+
+        maxPurchaseTickets: Number.isNaN(Number(form.maxPurchaseTickets)) ? null : Number(form.maxPurchaseTickets),
+
+        refundPolicy: form.refundPolicy || "",
+        freeTicketStartDateTime: form.freeTicketStartDateTime || "",
+        freeTicketEndDateTime: form.freeTicketEndDateTime || "",
+
+        hasTables: !!form.hasTables,
+        tableType: form.hasTables ? form.tableType || "" : "",
+        tableCount:
+          form.hasTables && form.tableCount !== "" && form.tableCount != null ? Number(form.tableCount) : null,
+        ticketsPerTable:
+          form.hasTables && form.ticketsPerTable !== "" && form.ticketsPerTable != null
+            ? Number(form.ticketsPerTable)
+            : null,
+
+        ticketTypes: ticketTypesSanitised,
+        enableQrCheckIn: !!form.enableQrCheckIn,
+
+        hostClubIds:
+          Array.isArray(form.hostClubIds) && form.hostClubIds.length ? form.hostClubIds : groupId ? [groupId] : [],
+
+        websiteLinks: form.websiteLinks || [],
+        instagramLinks: form.instagramLinks || [],
+      };
+
+      delete eventData.id;
+      delete eventData.posterFiles;
+
+      if (editingData) {
+        const ref = doc(db, "discoverevents", editingData.id);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return toast.warning("Event does not exist! Cannot update.");
+        await updateDoc(ref, eventData);
+        toast.success("Event updated successfully");
+      } else {
+        await addDoc(collection(db, "discoverevents"), eventData);
+        toast.success("Event created successfully");
+      }
+
+      await getList();
+      setModalOpen(false);
+      setEditing(null);
+      setForm(initialFormData);
+    } catch (err) {
+      console.error(err);
+      toast.error("Save failed");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteData?.id) return;
+    try {
+      await deleteDoc(doc(db, "discoverevents", deleteData.id));
+      toast.success("Successfully deleted!");
+      getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Delete failed");
+    }
+    setConfirmDeleteOpen(false);
+    setDelete(null);
+  };
+
+  // ---------- UI ----------
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
-      {state?.groupId && (
-        <div className="flex justify-between items-center mb-3">
-          <button
-            onClick={() => navigate("/uniclubsubgroup")}
-            className="flex items-center gap-2 text-gray-700 hover:text-black"
-          >
-            <span className="text-xl">←</span>
-            <span className="text-lg font-semibold">Back Sub Group</span>
-          </button>
-        </div>
-      )}
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Event</h1>
+        <div>
+          <h1 className="text-2xl font-semibold">Sub-group Events</h1>
+          {!!subGroupId && (
+            <div className="text-xs text-gray-500 mt-1">
+              Sub-group: <span className="font-medium">{subGroupName || subGroupId}</span>
+            </div>
+          )}
+        </div>
+
         <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
@@ -596,7 +856,9 @@ export default function SubgroupEvent({ navbarHeight }) {
             <button
               key={k}
               onClick={() => setTimeFilter(k)}
-              className={`px-3 py-1.5 rounded-full text-sm border ${active ? "bg-black text-white border-black" : "bg-white text-gray-700 border-gray-300"}`}
+              className={`px-3 py-1.5 rounded-full text-sm border ${
+                active ? "bg-black text-white border-black" : "bg-white text-gray-700 border-gray-300"
+              }`}
             >
               {k[0].toUpperCase() + k.slice(1)}
             </button>
@@ -626,7 +888,6 @@ export default function SubgroupEvent({ navbarHeight }) {
               <tr>
                 {[
                   { key: "name", label: "Event" },
-                  // { key: "category", label: "Category" },
                   { key: "start", label: "Event Date" },
                   { key: "location", label: "Location" },
                   { key: "bookings", label: "Bookings", sortable: false },
@@ -663,22 +924,8 @@ export default function SubgroupEvent({ navbarHeight }) {
                     onChange={(e) => setFilterDebounced("name", e.target.value)}
                   />
                 </th>
-                {/* <th className="px-6 pb-3">
-                  <select
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                    title="Filter by category"
-                  >
-                    {categoryOptions.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt === "All" ? "All" : opt}
-                      </option>
-                    ))}
-                  </select>
-                </th> */}
 
-                {/* DATE RANGE FILTER (calendar popover) */}
+                {/* DATE RANGE FILTER */}
                 <th className="px-6 pb-3 relative">
                   <button
                     type="button"
@@ -689,9 +936,7 @@ export default function SubgroupEvent({ navbarHeight }) {
                     {(() => {
                       const s = filterRange?.[0]?.startDate;
                       const e = filterRange?.[0]?.endDate;
-                      if (s && e) {
-                        return `${format(s, "MMM dd, yyyy")} – ${format(e, "MMM dd, yyyy")}`;
-                      }
+                      if (s && e) return `${format(s, "MMM dd, yyyy")} – ${format(e, "MMM dd, yyyy")}`;
                       return "Any date";
                     })()}
                   </button>
@@ -758,23 +1003,26 @@ export default function SubgroupEvent({ navbarHeight }) {
             <tbody className="divide-y divide-gray-200">
               {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-6 py-10 text-center text-gray-500">No events to show for this filter.</td>
+                  <td colSpan="8" className="px-6 py-10 text-center text-gray-500">
+                    No events to show for this filter.
+                  </td>
                 </tr>
               ) : (
                 sorted.map((item) => (
                   <tr key={item.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.eventName}</td>
-                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.category || "—"}</td> */}
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {getTimeLine(item)} <br />
                       {getDateLine(item)}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.locationName}</td>
 
-                    {/* Bookings column */}
+                    {/* Bookings column ✅ uses event doc id */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {(() => {
-                        const arr = bookingsByEvent[item.eventName] || [];
+                        const arr = bookingsByEvent[item.id] || [];
                         const count = arr.length;
                         return (
                           <div className="flex items-center gap-2">
@@ -820,7 +1068,9 @@ export default function SubgroupEvent({ navbarHeight }) {
                           type="button"
                           title={item.isPinned ? "Unpin" : "Pin"}
                           onClick={() => togglePin(item, !item.isPinned)}
-                          className={`text-lg leading-none ${item.isPinned ? "text-yellow-500" : "text-gray-300"} hover:opacity-80`}
+                          className={`text-lg leading-none ${
+                            item.isPinned ? "text-yellow-500" : "text-gray-300"
+                          } hover:opacity-80`}
                           aria-label={item.isPinned ? "Unpin event" : "Pin event"}
                         >
                           {item.isPinned ? "★" : "☆"}
@@ -870,30 +1120,41 @@ export default function SubgroupEvent({ navbarHeight }) {
                         className="text-blue-600 hover:underline mr-3"
                         onClick={() => {
                           setEditing(item);
+
                           const startDate = item.date?.startDate?.seconds
                             ? new Date(item.date.startDate.seconds * 1000)
                             : new Date(item.date?.startDate || new Date());
                           const endDate = item.date?.endDate?.seconds
                             ? new Date(item.date.endDate.seconds * 1000)
                             : new Date(item.date?.endDate || new Date());
+
                           setForm((prev) => ({
                             ...prev,
+                            ...initialFormData,
                             ...item,
                             id: item.id,
                             date: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
                             startDateTime: item.startDateTime || "",
                             endDateTime: item.endDateTime || "",
+                            freeTicketStartDateTime: item.freeTicketStartDateTime || "",
+                            freeTicketEndDateTime: item.freeTicketEndDateTime || "",
                             posterFiles: [],
                             posters: Array.isArray(item.posters) ? item.posters : [],
                             eventDescriptionHtml: item.eventDescriptionHtml || item.eventDescription || "",
                             pinnedOrder: Number.isFinite(item.pinnedOrder) ? item.pinnedOrder : null,
+                            ticketTypes: Array.isArray(item.ticketTypes) ? item.ticketTypes : [],
+                            hostClubIds: Array.isArray(item.hostClubIds) ? item.hostClubIds : groupId ? [groupId] : [],
+                            websiteLinks: Array.isArray(item.websiteLinks) ? item.websiteLinks : [],
+                            instagramLinks: Array.isArray(item.instagramLinks) ? item.instagramLinks : [],
                           }));
+
                           setRange([{ startDate, endDate, key: "selection" }]);
                           setModalOpen(true);
                         }}
                       >
                         Edit
                       </button>
+
                       <button
                         className="text-red-600 hover:underline"
                         onClick={() => {
@@ -917,70 +1178,123 @@ export default function SubgroupEvent({ navbarHeight }) {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-bold mb-4">{editingData ? "Edit Event" : "Create Event"}</h2>
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-4">
-                <input name="eventName" placeholder="Event Name" value={form.eventName} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-                <input name="shortDesc" placeholder="Short Description" value={form.shortDesc} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
+                <input
+                  name="eventName"
+                  placeholder="Event Name"
+                  value={form.eventName}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
 
+                {/* Description */}
                 <label className="block font-medium">Description</label>
-                <EditorPro value={form.eventDescriptionHtml} onChange={(html) => setForm((f) => ({ ...f, eventDescriptionHtml: html }))} placeholder="Describe your event…" />
-                {/* 
-                <select name="category" value={form.category} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required>
-                  <option value="">Select Category</option>
-                  {category?.map((item) => (
-                    <option key={item.id} value={item.name}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select> */}
+                <EditorPro
+                  value={form.eventDescriptionHtml}
+                  onChange={(html) => setForm((f) => ({ ...f, eventDescriptionHtml: html }))}
+                  placeholder="Describe your event…"
+                />
 
-                <input name="tags" placeholder="Tags (comma separated)" value={form.tags} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
+                <input
+                  name="tags"
+                  placeholder="Tags (comma separated)"
+                  value={form.tags}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                />
 
-                <label>Date Range</label>
+                {/* Event Display Range */}
+                <label className="block font-medium">Event Display Range on App</label>
                 <div className="relative">
                   <input
                     type="text"
                     readOnly
                     value={
                       form.date?.startDate && form.date?.endDate
-                        ? `${format(new Date(form.date.startDate), "MMM dd, yyyy")} - ${format(new Date(form.date.endDate), "MMM dd, yyyy")}`
+                        ? `${format(new Date(form.date.startDate), "MMM dd, yyyy")} - ${format(
+                            new Date(form.date.endDate),
+                            "MMM dd, yyyy"
+                          )}`
                         : ""
                     }
                     onClick={() => setShowPicker(!showPicker)}
                     className="w-full border border-gray-300 p-2 rounded"
                   />
                   {showPicker && (
-                    <div ref={pickerRef} style={{ position: "absolute", top: 50, zIndex: 1000, boxShadow: "0px 2px 10px rgba(0,0,0,0.2)" }}>
-                      <DateRange editableDateInputs onChange={handleRangeChange} moveRangeOnFirstSelection={false} ranges={range} minDate={new Date()} locale={enUS} />
+                    <div
+                      ref={pickerRef}
+                      style={{
+                        position: "absolute",
+                        top: 50,
+                        zIndex: 1000,
+                        boxShadow: "0px 2px 10px rgba(0,0,0,0.2)",
+                      }}
+                    >
+                      <DateRange
+                        editableDateInputs
+                        onChange={handleRangeChange}
+                        moveRangeOnFirstSelection={false}
+                        ranges={range}
+                        minDate={new Date()}
+                        locale={enUS}
+                      />
                     </div>
                   )}
                 </div>
 
-                <label>Start Date Time</label>
-                <input type="datetime-local" name="startDateTime" value={form.startDateTime} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-                <label>End Date Time</label>
-                <input type="datetime-local" name="endDateTime" value={form.endDateTime} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
+                {/* Event actual start/end */}
+                <label className="block font-medium mt-2">Event Start Date & Time</label>
+                <input
+                  type="datetime-local"
+                  name="startDateTime"
+                  value={form.startDateTime}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
 
-                {/* <label className="block mb-2">
-                  <input type="checkbox" name="isRecurring" checked={form.isRecurring} onChange={handleChange} /> Recurring Event?
-                </label>
-                {form.isRecurring && (
-                  <select name="frequency" value={form.frequency} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded">
-                    <option value="">Select Frequency</option>
-                    <option value="Daily">Daily</option>
-                    <option value="Weekly">Weekly</option>
-                    <option value="Monthly">Monthly</option>
-                    <option value="Custom">Custom</option>
-                  </select>
-                )} */}
+                <label className="block font-medium">Event End Date & Time</label>
+                <input
+                  type="datetime-local"
+                  name="endDateTime"
+                  value={form.endDateTime}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
 
-                <input name="locationName" placeholder="Location Name" value={form.locationName} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-                <input name="address" placeholder="Address / Room" value={form.address} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required />
-                {/* 
+                {/* Location + Mapbox */}
+                <input
+                  name="locationName"
+                  placeholder="Location Name"
+                  value={form.locationName}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
+                <input
+                  name="address"
+                  placeholder="Address / Room"
+                  value={form.address}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
+
                 <div className="relative">
-                  <input name="mapLocation" readOnly placeholder="Select on map" value={form.mapLocation} onClick={() => setShowMapModal(true)} className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer" />
+                  <input
+                    name="mapLocation"
+                    readOnly
+                    placeholder="Select on map"
+                    value={form.mapLocation}
+                    onClick={() => setShowMapModal(true)}
+                    className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer"
+                  />
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                </div> */}
+                </div>
 
                 {/* Posters */}
                 <div className="space-y-2">
@@ -995,15 +1309,20 @@ export default function SubgroupEvent({ navbarHeight }) {
                         onChange={(e) => {
                           const files = Array.from(e.target.files || []);
                           if (!files.length) return;
-                          setForm((prev) => ({ ...prev, posterFiles: [...prev.posterFiles, ...files] }));
+                          setForm((prev) => ({
+                            ...prev,
+                            posterFiles: [...(prev.posterFiles || []), ...files],
+                          }));
                         }}
                       />
                       📁 Choose Posters
                     </label>
-                    <span className="text-sm text-gray-600">{form.posterFiles.length ? `${form.posterFiles.length} selected` : "No files selected"}</span>
+                    <span className="text-sm text-gray-600">
+                      {form.posterFiles?.length ? `${form.posterFiles.length} selected` : "No files selected"}
+                    </span>
                   </div>
 
-                  {!!form.posterFiles.length && (
+                  {!!form.posterFiles?.length && (
                     <div className="mt-2 grid grid-cols-3 md:grid-cols-4 gap-2">
                       {form.posterFiles.map((f, i) => (
                         <div key={`${f.name}-${i}`} className="relative">
@@ -1027,13 +1346,17 @@ export default function SubgroupEvent({ navbarHeight }) {
                     </div>
                   )}
 
-                  {!!form.posters.length && (
+                  {!!form.posters?.length && (
                     <>
                       <div className="text-sm text-gray-500 mt-3">Already saved</div>
                       <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
                         {form.posters.map((img, i) => (
                           <div key={`${img.url}-${i}`} className="relative">
-                            <img src={img.url} alt={img.name || `poster-${i}`} className="w-full h-24 object-cover rounded" />
+                            <img
+                              src={img.url}
+                              alt={img.name || `poster-${i}`}
+                              className="w-full h-24 object-cover rounded"
+                            />
                             <button
                               type="button"
                               className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
@@ -1055,131 +1378,604 @@ export default function SubgroupEvent({ navbarHeight }) {
                   )}
                 </div>
 
-                {/* <label className="block mb-2">
-                  <input type="checkbox" name="rsvp" checked={form.rsvp} onChange={handleChange} /> RSVP Required?
-                </label> */}
-                <input name="capacity" placeholder="Max Capacity" value={form.capacity} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-                <input
-                  type="number"
-                  name="maxPurchaseTickets"
-                  min="1"
-                  placeholder="Max Purchase Tickets (per booking/user)"
-                  value={form.maxPurchaseTickets}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 p-2 rounded"
-                />
-                <p className="text-xs text-gray-500 -mt-1">Limit how many tickets one booking (or user) can purchase. Leave blank for no limit.</p>
-                {/* <input type="datetime-local" name="rsvpDeadline" value={form.rsvpDeadline} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" /> */}
+                {/* EVENT PAYMENT + CAPACITY */}
+                <div className="border border-gray-200 rounded-md p-3 space-y-3">
+                  <h3 className="font-semibold text-sm">Event Tickets</h3>
 
-                <select name="priceType" value={form.priceType} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" required>
-                  <option value="">Select Payment Type</option>
-                  <option value="Free">Free</option>
-                  <option value="Paid">Paid</option>
-                  {/* <option value="MultiPrice">Multi Price</option>
-                  <option value="MultiPriceTimer">Multi Price Timer</option> */}
-                </select>
+                  <select
+                    name="priceType"
+                    value={form.priceType}
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 p-2 rounded"
+                    required
+                  >
+                    <option value="">Select Payment Type</option>
+                    <option value="Free">Free</option>
+                    <option value="Paid">Paid</option>
+                  </select>
 
-                {form.priceType !== "Free" && form.priceType !== "" && (
-                  <div>
-                    <h2 className="font-semibold">Pricing Options</h2>
-                    {form.prices.map((price, index) => (
-                      <div key={index} className="flex gap-2 mb-2">
-                        {form.priceType === "Paid" && (
-                          <select
-                            value={price.type}
-                            onChange={(e) => {
-                              const updated = [...form.prices];
-                              updated[index].type = e.target.value;
-                              setForm({ ...form, prices: updated });
-                            }}
-                            className="w-full border border-gray-300 p-2 rounded"
-                            required
-                          >
-                            <option value="">Select Type</option>
-                            {paymentlist.map((it) => (
-                              <option key={it.id} value={it.name}>
-                                {it.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        {form.priceType === "MultiPriceTimer" && (
-                          <select
-                            value={price.type}
-                            onChange={(e) => {
-                              const updated = [...form.prices];
-                              updated[index].type = e.target.value;
-                              setForm({ ...form, prices: updated });
-                            }}
-                            className="w-full border border-gray-300 p-2 rounded"
-                            required
-                          >
-                            <option value="">Select Type</option>
-                            <option value="First Day">First Day</option>
-                            <option value="Second Day">Second Day</option>
-                            <option value="Third Day">Third Day</option>
-                          </select>
-                        )}
-                        <input
-                          placeholder="Amount"
-                          type="number"
-                          value={price.amount}
-                          onChange={(e) => {
-                            const updated = [...form.prices];
-                            updated[index].amount = e.target.value;
-                            setForm({ ...form, prices: updated });
-                          }}
-                          className="border p-2 w-1/3"
-                        />
-                        <input
-                          type="datetime-local"
-                          value={price.validUntil || ""}
-                          onChange={(e) => {
-                            const updated = [...form.prices];
-                            updated[index].validUntil = e.target.value;
-                            setForm({ ...form, prices: updated });
-                          }}
-                          className="border p-2 w-1/3"
-                        />
+                  {/* FREE */}
+                  {form.priceType === "Free" && (
+                    <>
+                      <input
+                        name="capacity"
+                        placeholder="Max Capacity (total tickets / attendees)"
+                        value={form.capacity}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 p-2 rounded"
+                      />
+
+                      <input
+                        type="number"
+                        name="maxPurchaseTickets"
+                        min="1"
+                        placeholder="Max Purchase Tickets (per booking/user)"
+                        value={form.maxPurchaseTickets}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 p-2 rounded"
+                      />
+                      <p className="text-xs text-gray-500 -mt-1">
+                        Limit how many tickets one booking (or user) can purchase. Leave blank for no limit.
+                      </p>
+
+                      {/* Free ticket sale window */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Ticket Start Time</label>
+                          <input
+                            type="datetime-local"
+                            name="freeTicketStartDateTime"
+                            value={form.freeTicketStartDateTime}
+                            onChange={handleChange}
+                            className="border border-gray-300 p-2 rounded w-full"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Ticket End Time</label>
+                          <input
+                            type="datetime-local"
+                            name="freeTicketEndDateTime"
+                            value={form.freeTicketEndDateTime}
+                            onChange={handleChange}
+                            className="border border-gray-300 p-2 rounded w-full"
+                          />
+                        </div>
                       </div>
+
+                      {/* Tables/Pods event-level */}
+                      <div className="space-y-2 mt-3">
+                        <label className="block text-sm">
+                          <input
+                            type="checkbox"
+                            name="hasTables"
+                            checked={form.hasTables}
+                            onChange={handleChange}
+                            className="mr-2"
+                          />
+                          Does this ticket have Tables / Pods?
+                        </label>
+
+                        {form.hasTables && (
+                          <div className="space-y-2">
+                            <select
+                              name="tableType"
+                              value={form.tableType}
+                              onChange={handleChange}
+                              className="w-full border border-gray-300 p-2 rounded"
+                            >
+                              <option value="">Select type of table</option>
+                              <option value="Tables">Table</option>
+                              <option value="Teams">Team</option>
+                              <option value="Bus">Bus</option>
+                              <option value="Cabin">Cabin</option>
+                            </select>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              <input
+                                type="number"
+                                name="tableCount"
+                                min="0"
+                                placeholder="Number of tables / pods available"
+                                value={form.tableCount}
+                                onChange={handleChange}
+                                className="w-full border border-gray-300 p-2 rounded"
+                              />
+                              <input
+                                type="number"
+                                name="ticketsPerTable"
+                                min="0"
+                                placeholder="Number of tickets per table / pod"
+                                value={form.ticketsPerTable}
+                                onChange={handleChange}
+                                className="w-full border border-gray-300 p-2 rounded"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {/* PAID */}
+                  {form.priceType === "Paid" && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-sm">Tickets</h4>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((prev) => ({
+                              ...prev,
+                              ticketTypes: [...(prev.ticketTypes || []), defaultTicket()],
+                            }))
+                          }
+                          className="text-sm px-2 py-1 border rounded hover:bg-gray-50"
+                        >
+                          + Add Ticket
+                        </button>
+                      </div>
+
+                      {(form.ticketTypes || []).length === 0 && (
+                        <p className="text-xs text-gray-500">No tickets added yet.</p>
+                      )}
+
+                      {(form.ticketTypes || []).map((t, index) => (
+                        <div key={index} className="border border-gray-200 rounded-md p-3 space-y-2 bg-gray-50">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-medium text-gray-600">Ticket {index + 1}</span>
+                            <button
+                              type="button"
+                              className="text-xs text-red-600 hover:underline"
+                              onClick={() =>
+                                setForm((prev) => {
+                                  const next = [...(prev.ticketTypes || [])];
+                                  next.splice(index, 1);
+                                  return { ...prev, ticketTypes: next };
+                                })
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <input
+                              placeholder="Ticket Name (e.g. General, VIP)"
+                              value={t.name || ""}
+                              onChange={(e) => updateTicket(index, { name: e.target.value })}
+                              className="border border-gray-300 p-2 rounded"
+                              required
+                            />
+                            <input
+                              placeholder="Description"
+                              value={t.description || ""}
+                              onChange={(e) => updateTicket(index, { description: e.target.value })}
+                              className="border border-gray-300 p-2 rounded"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="Price"
+                              value={t.price || ""}
+                              onChange={(e) => updateTicket(index, { price: e.target.value })}
+                              className="border border-gray-300 p-2 rounded"
+                            />
+
+                            {/* Which club / sub-group can buy */}
+                            <div className="space-y-1">
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Which club / sub-group can buy?
+                              </label>
+
+                              {(() => {
+                                const selectedKeys = (t.allowedGroups || []).map((g) => `${g.type}:${g.id}`);
+
+                                const OPTIONS = [
+                                  ...clubs.map((c) => ({
+                                    key: `club:${c.id}`,
+                                    id: c.id,
+                                    title: c.title || "Unnamed Club",
+                                    type: "club",
+                                  })),
+                                  ...subGroups.map((g) => ({
+                                    key: `subgroup:${g.id}`,
+                                    id: g.id,
+                                    title: g.title || "Untitled Sub-group",
+                                    type: "subgroup",
+                                  })),
+                                ];
+
+                                const getLabelFromKey = (key) => {
+                                  const item = OPTIONS.find((o) => o.key === key);
+                                  if (!item) return null;
+                                  const suffix = item.type === "club" ? " (Club)" : " (Sub-group)";
+                                  return `${item.title}${suffix}`;
+                                };
+
+                                return (
+                                  <Select
+                                    multiple
+                                    displayEmpty
+                                    size="small"
+                                    value={selectedKeys}
+                                    onChange={(e) => {
+                                      const value = Array.isArray(e.target.value) ? e.target.value : [];
+
+                                      const nextAllowed = value.map((k) => {
+                                        const [type, id] = k.split(":");
+                                        if (type === "club") {
+                                          const c = clubs.find((c) => c.id === id);
+                                          return { id, title: c?.title || "Unnamed Club", type: "club" };
+                                        } else {
+                                          const g = subGroups.find((g) => g.id === id);
+                                          return { id, title: g?.title || "Untitled Sub-group", type: "subgroup" };
+                                        }
+                                      });
+
+                                      updateTicket(index, { allowedGroups: nextAllowed });
+                                    }}
+                                    renderValue={(selected) => {
+                                      if (!selected || selected.length === 0) return "Select club / sub-group";
+                                      return selected.map((k) => getLabelFromKey(k)).filter(Boolean).join(", ");
+                                    }}
+                                    className="w-full text-sm"
+                                  >
+                                    {OPTIONS.map((opt) => (
+                                      <MenuItem key={opt.key} value={opt.key}>
+                                        <Checkbox checked={selectedKeys.indexOf(opt.key) > -1} />
+                                        <ListItemText
+                                          primary={
+                                            opt.title + (opt.type === "club" ? " (Club)" : " (Sub-group)")
+                                          }
+                                        />
+                                      </MenuItem>
+                                    ))}
+                                  </Select>
+                                );
+                              })()}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="Ticket Max Capacity (override event capacity)"
+                              value={t.maxCapacity || ""}
+                              onChange={(e) => updateTicket(index, { maxCapacity: e.target.value })}
+                              className="border border-gray-300 p-2 rounded"
+                            />
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="Ticket Max Purchase per user"
+                              value={t.maxPurchasePerUser || ""}
+                              onChange={(e) => updateTicket(index, { maxPurchasePerUser: e.target.value })}
+                              className="border border-gray-300 p-2 rounded"
+                            />
+                          </div>
+
+                          {/* Advanced ticket timing */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">Ticket Start Time</label>
+                              <input
+                                type="datetime-local"
+                                value={t.startDateTime || ""}
+                                onChange={(e) => updateTicket(index, { startDateTime: e.target.value })}
+                                className="border border-gray-300 p-2 rounded w-full"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">Ticket End Time</label>
+                              <input
+                                type="datetime-local"
+                                value={t.endDateTime || ""}
+                                onChange={(e) => updateTicket(index, { endDateTime: e.target.value })}
+                                className="border border-gray-300 p-2 rounded w-full"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Password + extra info */}
+                          <div className="space-y-2">
+                            <label className="text-sm">
+                              <input
+                                type="checkbox"
+                                checked={!!t.passwordRequired}
+                                onChange={(e) => updateTicket(index, { passwordRequired: e.target.checked })}
+                                className="mr-2"
+                              />
+                              Add Password for special members to buy
+                            </label>
+                            {t.passwordRequired && (
+                              <input
+                                placeholder="Ticket password"
+                                value={t.password || ""}
+                                onChange={(e) => updateTicket(index, { password: e.target.value })}
+                                className="border border-gray-300 p-2 rounded w-full"
+                              />
+                            )}
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-sm">
+                              <input
+                                type="checkbox"
+                                checked={!!t.collectExtraInfo}
+                                onChange={(e) => updateTicket(index, { collectExtraInfo: e.target.checked })}
+                                className="mr-2"
+                              />
+                              Collect extra information for ticketholders
+                            </label>
+
+                            {t.collectExtraInfo && (
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    checked={t.fields?.name ?? true}
+                                    onChange={() => updateTicketFieldCheckbox(index, "name")}
+                                    className="mr-1"
+                                  />
+                                  Name
+                                </label>
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    checked={t.fields?.email ?? true}
+                                    onChange={() => updateTicketFieldCheckbox(index, "email")}
+                                    className="mr-1"
+                                  />
+                                  Email
+                                </label>
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    checked={t.fields?.number ?? true}
+                                    onChange={() => updateTicketFieldCheckbox(index, "number")}
+                                    className="mr-1"
+                                  />
+                                  Number
+                                </label>
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    checked={t.fields?.studentId ?? false}
+                                    onChange={() => updateTicketFieldCheckbox(index, "studentId")}
+                                    className="mr-1"
+                                  />
+                                  Student ID (Optional)
+                                </label>
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    checked={t.fields?.degree ?? false}
+                                    onChange={() => updateTicketFieldCheckbox(index, "degree")}
+                                    className="mr-1"
+                                  />
+                                  Degree (Optional)
+                                </label>
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    checked={t.fields?.studyYear ?? false}
+                                    onChange={() => updateTicketFieldCheckbox(index, "studyYear")}
+                                    className="mr-1"
+                                  />
+                                  Study Year (Optional)
+                                </label>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* TABLE / POD per ticket */}
+                          <div className="space-y-2 pt-3 border-t border-gray-300">
+                            <label className="text-sm font-medium">
+                              <input
+                                type="checkbox"
+                                checked={t.hasTables || false}
+                                onChange={(e) => updateTicket(index, { hasTables: e.target.checked })}
+                                className="mr-2"
+                              />
+                              Does this ticket have Tables / Pods?
+                            </label>
+
+                            {t.hasTables && (
+                              <div className="space-y-2">
+                                <select
+                                  value={t.tableType || ""}
+                                  onChange={(e) => updateTicket(index, { tableType: e.target.value })}
+                                  className="w-full border border-gray-300 p-2 rounded"
+                                >
+                                  <option value="">Select type of table</option>
+                                  <option value="Tables">Table</option>
+                                  <option value="Teams">Team</option>
+                                  <option value="Bus">Bus</option>
+                                  <option value="Cabin">Cabin</option>
+                                </select>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    placeholder="Number of tables/pods available"
+                                    value={t.tableCount || ""}
+                                    onChange={(e) => updateTicket(index, { tableCount: e.target.value })}
+                                    className="border border-gray-300 p-2 rounded"
+                                  />
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    placeholder="Tickets per table/pod"
+                                    value={t.ticketsPerTable || ""}
+                                    onChange={(e) => updateTicket(index, { ticketsPerTable: e.target.value })}
+                                    className="border border-gray-300 p-2 rounded"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Website links */}
+                <div className="space-y-2">
+                  <label className="block font-medium">Website Links</label>
+
+                  {(form.websiteLinks || []).map((link, index) => (
+                    <div key={index} className="flex gap-2">
+                      <input
+                        value={link}
+                        onChange={(e) => {
+                          const newArr = [...form.websiteLinks];
+                          newArr[index] = e.target.value;
+                          setForm({ ...form, websiteLinks: newArr });
+                        }}
+                        className="flex-1 border border-gray-300 p-2 rounded"
+                        placeholder={`Website link ${index + 1}`}
+                      />
+
+                      <button
+                        type="button"
+                        className="text-red-600 text-sm"
+                        onClick={() => {
+                          const newArr = [...form.websiteLinks];
+                          newArr.splice(index, 1);
+                          setForm({ ...form, websiteLinks: newArr });
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => setForm((p) => ({ ...p, websiteLinks: [...(p.websiteLinks || []), ""] }))}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    + Add website link
+                  </button>
+                </div>
+
+                {/* Social links */}
+                <div className="space-y-2">
+                  <label className="block font-medium">Social Media links</label>
+
+                  {(form.instagramLinks || []).map((link, index) => (
+                    <div key={index} className="flex gap-2">
+                      <input
+                        value={link}
+                        onChange={(e) => {
+                          const newArr = [...form.instagramLinks];
+                          newArr[index] = e.target.value;
+                          setForm({ ...form, instagramLinks: newArr });
+                        }}
+                        className="flex-1 border border-gray-300 p-2 rounded"
+                        placeholder={`Social Media link ${index + 1}`}
+                      />
+
+                      <button
+                        type="button"
+                        className="text-red-600 text-sm"
+                        onClick={() => {
+                          const newArr = [...form.instagramLinks];
+                          newArr.splice(index, 1);
+                          setForm({ ...form, instagramLinks: newArr });
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => setForm((p) => ({ ...p, instagramLinks: [...(p.instagramLinks || []), ""] }))}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    + Add Social Media link
+                  </button>
+                </div>
+
+                {/* Refund Policy */}
+                <label className="block font-medium">Refund Policy</label>
+                <textarea
+                  name="refundPolicy"
+                  placeholder="Add your refund / cancellation policy"
+                  value={form.refundPolicy}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded text-sm min-h-[80px]"
+                />
+
+                {/* Host clubs */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Host club(s)</label>
+
+                  <Select
+                    multiple
+                    displayEmpty
+                    size="small"
+                    className="w-full text-sm"
+                    value={form.hostClubIds || []}
+                    onChange={(e) => {
+                      const value = Array.isArray(e.target.value) ? e.target.value : [];
+                      const next = value.length ? value : groupId ? [groupId] : [];
+                      setForm((prev) => ({ ...prev, hostClubIds: next }));
+                    }}
+                    renderValue={(selected) => {
+                      if (!selected || selected.length === 0) return "Select host club(s)";
+                      const labels = selected
+                        .map((id) => clubs.find((c) => c.id === id)?.title || id)
+                        .filter(Boolean);
+                      return labels.join(", ");
+                    }}
+                  >
+                    {clubs.map((c) => (
+                      <MenuItem key={c.id} value={c.id}>
+                        <Checkbox checked={(form.hostClubIds || []).includes(c.id)} />
+                        <ListItemText primary={c.title} />
+                      </MenuItem>
                     ))}
-                    <button
-                      type="button"
-                      onClick={() => setForm((f) => ({ ...f, prices: [...f.prices, { type: "", amount: "", validUntil: "" }] }))}
-                      className="bg-gray-300 px-3 py-1 rounded"
-                    >
-                      + Add Price
-                    </button>
-                  </div>
-                )}
+                  </Select>
 
-                {/* <label className="block mb-2">
-                  <input type="checkbox" name="allowChat" checked={form.allowChat} onChange={handleChange} /> Allow Chat
-                </label>
-                <label className="block mb-2">
-                  <input type="checkbox" name="allowReactions" checked={form.allowReactions} onChange={handleChange} /> Allow Reactions
-                </label>
+                  <p className="text-[11px] text-gray-500">
+                    Select 1 or more clubs from the same university. The first one can be treated as the “primary” host
+                    in the app UI.
+                  </p>
+                </div>
 
-                <input name="challenges" placeholder="Event Challenges / Polls" value={form.challenges} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-                <select name="visibility" value={form.visibility} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded">
-                  <option value="Public">Public</option>
-                  <option value="Friends">Friends Only</option>
-                  <option value="Invite">Invite Only</option>
-                  <option value="Campus">Campus Only</option>
-                </select>
-                <input name="cohosts" placeholder="Co-hosts" value={form.cohosts} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-                <input name="website" placeholder="Website" value={form.website} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-                <input name="instagram" placeholder="Instagram Link" value={form.instagram} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-                <input name="rules" placeholder="Event Rules" value={form.rules} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-                <label className="block mb-2">
-                  <input type="checkbox" name="boothOption" checked={form.boothOption} onChange={handleChange} /> Booth / Stall Option
-                </label>
-                <input name="vendorInfo" placeholder="Vendor Info" value={form.vendorInfo} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" />
-                <input name="sponsorship" placeholder="Sponsorship Info" value={form.sponsorship} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded" /> */}
+                {/* QR Check-in */}
+                <div className="space-y-1 pt-2">
+                  <label className="text-sm">
+                    <input
+                      type="checkbox"
+                      name="enableQrCheckIn"
+                      checked={!!form.enableQrCheckIn}
+                      onChange={handleChange}
+                      className="mr-2"
+                    />
+                    Enable QR Check-in for this event
+                  </label>
+                  <p className="text-[11px] text-gray-500">
+                    If enabled, admins can scan QR to verify which student attended.
+                  </p>
+                </div>
               </div>
 
               <div className="flex justify-end mt-6 space-x-3">
-                <button onClick={() => setModalOpen(false)} type="button" className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
+                <button
+                  onClick={() => setModalOpen(false)}
+                  type="button"
+                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                >
                   Cancel
                 </button>
                 <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
@@ -1200,7 +1996,13 @@ export default function SubgroupEvent({ navbarHeight }) {
               Are you sure you want to delete <strong>{deleteData?.eventName}</strong>?
             </p>
             <div className="flex justify-end space-x-3">
-              <button onClick={() => { setConfirmDeleteOpen(false); setDelete(null); }} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
+              <button
+                onClick={() => {
+                  setConfirmDeleteOpen(false);
+                  setDelete(null);
+                }}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
                 Cancel
               </button>
               <button onClick={handleDelete} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
@@ -1215,7 +2017,13 @@ export default function SubgroupEvent({ navbarHeight }) {
       <Dialog open={showMapModal} onClose={() => setShowMapModal(false)} maxWidth="md" fullWidth>
         <DialogTitle>Pick a Location</DialogTitle>
         <DialogContent dividers sx={{ overflow: "hidden" }}>
-          <MapLocationInput value={form.mapLocation} onChange={(val) => setForm({ ...form, mapLocation: val })} />
+          <MapLocationInput
+            value={form.mapLocation}
+            onChange={(val) => {
+              const coordsStr = `${val.lng.toFixed(6)},${val.lat.toFixed(6)}`;
+              setForm({ ...form, mapLocation: coordsStr });
+            }}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowMapModal(false)}>Cancel</Button>
@@ -1230,9 +2038,7 @@ export default function SubgroupEvent({ navbarHeight }) {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
           <div className="bg-white w-full max-w-3xl max-h-[85vh] rounded-lg shadow-lg flex flex-col">
             <div className="px-5 py-4 border-b flex items-center justify-between gap-2">
-              <h3 className="text-lg font-semibold">
-                Bookings — {bookingModal.event?.eventName || "Event"}
-              </h3>
+              <h3 className="text-lg font-semibold">Bookings — {bookingModal.event?.eventName || "Event"}</h3>
               <div className="flex items-center gap-2">
                 {/* Export CSV */}
                 <button
@@ -1241,19 +2047,23 @@ export default function SubgroupEvent({ navbarHeight }) {
                     const rows = bookingsByEvent[bookingModal.event?.id] || [];
                     const csv = [
                       ["userName", "userEmail", "totalPrice", "timestamp", "ticketsJSON"],
-                      ...rows.map(b => [
+                      ...rows.map((b) => [
                         (b.userName || "").replaceAll(",", " "),
-                        (b.userEmail || ""),
+                        b.userEmail || "",
                         String(b.totalPrice ?? ""),
                         b.timestamp ? dayjs(toMillis(b.timestamp)).format("YYYY-MM-DD HH:mm") : "",
-                        JSON.stringify(b.tickets || {})
-                      ])
-                    ].map(r => r.join(",")).join("\n");
+                        JSON.stringify(b.tickets || {}),
+                      ]),
+                    ]
+                      .map((r) => r.join(","))
+                      .join("\n");
                     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = `${(bookingModal.event?.eventName || "event").replace(/\s+/g, "_")}_bookings.csv`;
+                    a.download = `${(bookingModal.event?.eventName || "event")
+                      .replace(/\s+/g, "_")
+                      .toLowerCase()}_bookings.csv`;
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
@@ -1287,7 +2097,11 @@ export default function SubgroupEvent({ navbarHeight }) {
                   value={bookingModal.pageSize}
                   onChange={(e) => setBookingModal((p) => ({ ...p, pageSize: Number(e.target.value), page: 1 }))}
                 >
-                  {[5, 10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                  {[5, 10, 20, 50, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -1330,31 +2144,33 @@ export default function SubgroupEvent({ navbarHeight }) {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {(() => {
-                    const rows = bookingsByEvent[bookingModal.event?.eventName] || [];
+                    const rows = bookingsByEvent[bookingModal.event?.id] || [];
 
-                    // filter
                     const q = (bookingModal.q || "").trim().toLowerCase();
-                    const filtered = q
-                      ? rows.filter(b =>
-                        (b.userName || "").toLowerCase().includes(q) ||
-                        (b.userEmail || "").toLowerCase().includes(q)
-                      )
+                    const filteredRows = q
+                      ? rows.filter(
+                          (b) =>
+                            (b.userName || "").toLowerCase().includes(q) ||
+                            (b.userEmail || "").toLowerCase().includes(q)
+                        )
                       : rows;
 
-                    // sort
                     const dir = bookingModal.sort.dir === "asc" ? 1 : -1;
-                    const sortedRows = [...filtered].sort((a, b) => {
+                    const sortedRows = [...filteredRows].sort((a, b) => {
                       const key = bookingModal.sort.key;
                       switch (key) {
-                        case "userName": return ((a.userName || "").localeCompare(b.userName || "")) * dir;
-                        case "userEmail": return ((a.userEmail || "").localeCompare(b.userEmail || "")) * dir;
-                        case "totalPrice": return ((Number(a.totalPrice || 0) - Number(b.totalPrice || 0)) * dir);
+                        case "userName":
+                          return (a.userName || "").localeCompare(b.userName || "") * dir;
+                        case "userEmail":
+                          return (a.userEmail || "").localeCompare(b.userEmail || "") * dir;
+                        case "totalPrice":
+                          return (Number(a.totalPrice || 0) - Number(b.totalPrice || 0)) * dir;
                         case "timestamp":
-                        default: return (((toMillis(a.timestamp) ?? 0) - (toMillis(b.timestamp) ?? 0)) * dir);
+                        default:
+                          return ((toMillis(a.timestamp) ?? 0) - (toMillis(b.timestamp) ?? 0)) * dir;
                       }
                     });
 
-                    // paginate
                     const total = sortedRows.length;
                     const start = (bookingModal.page - 1) * bookingModal.pageSize;
                     const pageRows = sortedRows.slice(start, start + bookingModal.pageSize);
@@ -1382,13 +2198,17 @@ export default function SubgroupEvent({ navbarHeight }) {
                           {b.tickets && Object.keys(b.tickets).length ? (
                             <ul className="space-y-0.5">
                               {Object.entries(b.tickets).map(([type, count]) => (
-                                <li key={type}>{type}: <strong>{count}</strong></li>
+                                <li key={type}>
+                                  {type}: <strong>{count}</strong>
+                                </li>
                               ))}
                             </ul>
-                          ) : "—"}
+                          ) : (
+                            "—"
+                          )}
                         </td>
                         <td className="px-5 py-3 text-sm text-gray-700">
-                          {typeof b.totalPrice === "number" ? `$${b.totalPrice}` : (b.totalPrice || "—")}
+                          {typeof b.totalPrice === "number" ? `$${b.totalPrice}` : b.totalPrice || "—"}
                         </td>
                         <td className="px-5 py-3 text-sm text-gray-700">
                           {b.timestamp ? dayjs(toMillis(b.timestamp)).format("MMM DD, YYYY hh:mm A") : "—"}
@@ -1405,16 +2225,19 @@ export default function SubgroupEvent({ navbarHeight }) {
               {(() => {
                 const rows = bookingsByEvent[bookingModal.event?.id] || [];
                 const q = (bookingModal.q || "").trim().toLowerCase();
-                const filtered = q
-                  ? rows.filter(b =>
-                    (b.userName || "").toLowerCase().includes(q) ||
-                    (b.userEmail || "").toLowerCase().includes(q)
-                  )
+                const filteredRows = q
+                  ? rows.filter(
+                      (b) =>
+                        (b.userName || "").toLowerCase().includes(q) ||
+                        (b.userEmail || "").toLowerCase().includes(q)
+                    )
                   : rows;
-                const total = filtered.length;
+
+                const total = filteredRows.length;
                 const totalPages = Math.max(1, Math.ceil(total / bookingModal.pageSize));
                 const canPrev = bookingModal.page > 1;
                 const canNext = bookingModal.page < totalPages;
+
                 return (
                   <>
                     <span className="text-sm text-gray-600">
@@ -1422,14 +2245,18 @@ export default function SubgroupEvent({ navbarHeight }) {
                     </span>
                     <div className="flex items-center gap-2">
                       <button
-                        className={`px-3 py-1 rounded border ${canPrev ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
+                        className={`px-3 py-1 rounded border ${
+                          canPrev ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        }`}
                         onClick={() => canPrev && setBookingModal((p) => ({ ...p, page: p.page - 1 }))}
                         disabled={!canPrev}
                       >
                         Prev
                       </button>
                       <button
-                        className={`px-3 py-1 rounded border ${canNext ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
+                        className={`px-3 py-1 rounded border ${
+                          canNext ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        }`}
                         onClick={() => canNext && setBookingModal((p) => ({ ...p, page: p.page + 1 }))}
                         disabled={!canNext}
                       >
