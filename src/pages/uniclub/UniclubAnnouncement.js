@@ -806,7 +806,7 @@ export default function UniclubAnnouncementPage(props) {
                 ) : (
                   paginatedData.map((item, i) => (
                     <tr key={i}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title} - {item.role}</td>
                       <td className="px-6 py-4 text-sm text-gray-700">
                         <div className="flex-shrink">{item.shortdesc}</div>
                       </td>

@@ -28,7 +28,11 @@ import {
   remove as rtdbRemove,
   serverTimestamp,
 } from "firebase/database";
-import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  updateProfile,
+} from "firebase/auth";
 import { useSelector } from "react-redux";
 
 export default function UniclubMembersPage(props) {
@@ -49,6 +53,12 @@ export default function UniclubMembersPage(props) {
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
 
+  // ✅ membership ticker
+  const [nowTs, setNowTs] = useState(Date.now());
+
+  const DEFAULT_MEMBERSHIP_DAYS = 30;
+  const dayMs = 24 * 60 * 60 * 1000;
+
   const initialForm = {
     id: "",
     firstname: "",
@@ -63,6 +73,9 @@ export default function UniclubMembersPage(props) {
     clubid: "",
     subGroupid: "",
 
+    // ✅ membership duration for new join / renew
+    membershipDays: 30,
+
     // image kept for future use (no UI now)
     image: null,
     imageUrl: "",
@@ -72,7 +85,7 @@ export default function UniclubMembersPage(props) {
 
   const pageSize = 10;
 
-  // 🔍 Filter only current-club members by name/email (still using emp.uniclubid for listing)
+  // 🔍 Filter only current-club members by name/email
   const filteredData = list.filter(
     (item) =>
       (item.firstname || "")
@@ -86,12 +99,47 @@ export default function UniclubMembersPage(props) {
     currentPage * pageSize
   );
 
+  // ✅ countdown timer tick
+  useEffect(() => {
+    const t = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   useEffect(() => {
     getList();
     getClubs();
     fetchSubGroups();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const formatDate = (ms) => {
+    if (!ms) return "-";
+    return new Date(Number(ms)).toLocaleDateString();
+  };
+
+  const formatRemaining = (endAt, status) => {
+    if (!endAt) return "-";
+    if (status === "revoked") return "Revoked";
+
+    const diff = Number(endAt) - nowTs;
+    if (diff <= 0) return "Expired";
+
+    const sec = Math.floor(diff / 1000);
+    const d = Math.floor(sec / 86400);
+    const h = Math.floor((sec % 86400) / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    return `${h}h ${m}m ${s}s`;
+  };
+
+  const isExpired = (endAt, status) => {
+    if (status === "revoked") return false;
+    if (!endAt) return false;
+    return Number(endAt) - nowTs <= 0;
+  };
+
   const getList = async () => {
     if (!emp?.uniclubid) {
       console.warn("emp.uniclubid missing");
@@ -122,8 +170,15 @@ export default function UniclubMembersPage(props) {
           return {
             id: d.id,
             ...data,
+
+            // existing
             role: rtdbMember.role || "member",
             status: rtdbMember.status || "active",
+
+            // ✅ membership fields
+            membershipStartAt: rtdbMember.membershipStartAt || null,
+            membershipEndAt: rtdbMember.membershipEndAt || null,
+            revokedAt: rtdbMember.revokedAt || null,
           };
         })
       );
@@ -162,6 +217,7 @@ export default function UniclubMembersPage(props) {
       setClubs([]);
     }
   };
+
   const fetchSubGroups = async () => {
     if (!emp.uniclubid) {
       setSubGroups([]);
@@ -176,13 +232,16 @@ export default function UniclubMembersPage(props) {
         title: g.title || "Untitled Subgroup",
         parentGroupId: g.parentGroupId || null,
       }));
-      const filtered = arr.filter(x => String(x.parentGroupId || "") === String(emp?.uniclubid));
+      const filtered = arr.filter(
+        (x) => String(x.parentGroupId || "") === String(emp?.uniclubid)
+      );
       setSubGroups(filtered);
     } catch (err) {
       console.error("fetchSubGroups error:", err);
       setSubGroups([]);
     }
   };
+
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
     if (type === "file") {
@@ -190,7 +249,10 @@ export default function UniclubMembersPage(props) {
       setForm({ ...form, [name]: file });
       setFileName(file ? file.name : "No file chosen");
     } else {
-      setForm({ ...form, [name]: value });
+      setForm({
+        ...form,
+        [name]: name === "membershipDays" ? Number(value) : value,
+      });
     }
   };
 
@@ -207,6 +269,68 @@ export default function UniclubMembersPage(props) {
     );
     await uploadBytes(sRef, imageFile);
     return await getDownloadURL(sRef);
+  };
+
+  // ✅ revoke membership
+  const revokeMembership = async (memberUid) => {
+    try {
+      if (!emp?.uniclubid) return;
+      const memberRef = dbRef(
+        database,
+        `uniclubs/${emp.uniclubid}/members/${memberUid}`
+      );
+      const snap = await rtdbGet(memberRef);
+      if (!snap.exists()) return;
+
+      const old = snap.val() || {};
+      const now = Date.now();
+
+      await rtdbSet(memberRef, {
+        ...old,
+        status: "revoked",
+        revokedAt: now,
+        membershipEndAt: now, // end immediately
+      });
+
+      toast.success("Membership revoked");
+      await getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to revoke membership");
+    }
+  };
+
+  // ✅ re-activate membership (join again)
+  const reactivateMembership = async (memberUid, days = DEFAULT_MEMBERSHIP_DAYS) => {
+    try {
+      if (!emp?.uniclubid) return;
+      const memberRef = dbRef(
+        database,
+        `uniclubs/${emp.uniclubid}/members/${memberUid}`
+      );
+      const snap = await rtdbGet(memberRef);
+      if (!snap.exists()) return;
+
+      const old = snap.val() || {};
+      const now = Date.now();
+      const endAt = now + Number(days || DEFAULT_MEMBERSHIP_DAYS) * dayMs;
+
+      await rtdbSet(memberRef, {
+        ...old,
+        status: "active",
+        revokedAt: null,
+        membershipStartAt: now,
+        membershipEndAt: endAt,
+        // keep joinedAt if already exists else set
+        joinedAt: old.joinedAt || now,
+      });
+
+      toast.success("Membership re-activated");
+      await getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to re-activate membership");
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -228,7 +352,6 @@ export default function UniclubMembersPage(props) {
         return;
       }
 
-      // handle image upload (currently no UI, but kept for future)
       let finalImageUrl = form.imageUrl || "";
       const uploadedUrl = await uploadImageIfNeeded(form.image);
       if (uploadedUrl) finalImageUrl = uploadedUrl;
@@ -248,7 +371,7 @@ export default function UniclubMembersPage(props) {
           firstname: form.firstname,
           lastname: form.lastname || "",
           username: form.firstname,
-          email: form.email, // (disabled in UI)
+          email: form.email,
           universityid: emp?.universityId || "",
           university: emp?.university || "",
           livingtype: "university",
@@ -280,6 +403,11 @@ export default function UniclubMembersPage(props) {
               name: form.firstname,
               photoURL: finalImageUrl || old.photoURL || "",
               paymentMethod: form.paymentMethod || old.paymentMethod || "",
+              // ✅ keep membership fields unchanged on normal update
+              membershipStartAt: old.membershipStartAt || null,
+              membershipEndAt: old.membershipEndAt || null,
+              revokedAt: old.revokedAt || null,
+              status: old.status || "active",
             });
           }
         }
@@ -289,7 +417,6 @@ export default function UniclubMembersPage(props) {
         // ---------- CREATE NEW STUDENT ----------
         const password = `${form.firstname}321`; // demo only
 
-        // temp app for creating user without affecting current admin auth
         const tempApp = initializeApp(firebaseConfig, "userCreator");
         try {
           const tempAuth = getAuth(tempApp);
@@ -331,6 +458,10 @@ export default function UniclubMembersPage(props) {
           // Firestore user
           await setDoc(doc(db, "users", newUser.uid), userData);
 
+          // ✅ membership dates
+          const startAt = Date.now();
+          const endAt = startAt + Number(form.membershipDays || DEFAULT_MEMBERSHIP_DAYS) * dayMs;
+
           // 🔗 Add as member in the SELECTED club in RTDB
           const memberRef = dbRef(
             database,
@@ -343,17 +474,29 @@ export default function UniclubMembersPage(props) {
             role: "member",
             status: "active",
             paymentMethod: form.paymentMethod || "",
+            // keep old joinedAt for history field, but store numeric too
             joinedAt: serverTimestamp(),
+
+            // ✅ for countdown
+            membershipStartAt: startAt,
+            membershipEndAt: endAt,
+            revokedAt: null,
           });
 
           // 🔗 Also add to chosen sub-group (optional)
           if (form.subGroupid) {
-            await rtdbSet(dbRef(database, `${'uniclubsubgroup'}/${form.subGroupid}/members/${newUser.uid}`), {
-              uid: newUser.uid,
-              name: form.firstname,
-              photoURL: finalImageUrl || "",
-              joinedAt: serverTimestamp(),
-            });
+            await rtdbSet(
+              dbRef(
+                database,
+                `${"uniclubsubgroup"}/${form.subGroupid}/members/${newUser.uid}`
+              ),
+              {
+                uid: newUser.uid,
+                name: form.firstname,
+                photoURL: finalImageUrl || "",
+                joinedAt: serverTimestamp(),
+              }
+            );
           }
 
           toast.success("Student created & added to club");
@@ -437,6 +580,7 @@ export default function UniclubMembersPage(props) {
             setForm({
               ...initialForm,
               clubid: emp?.uniclubid || "",
+              membershipDays: 30,
             });
             setModalOpen(true);
           }}
@@ -486,41 +630,88 @@ export default function UniclubMembersPage(props) {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
                   Password
                 </th>
+
+                {/* ✅ NEW */}
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Membership Period
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Countdown
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Membership
+                </th>
               </tr>
             </thead>
+
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
                   <td
-                    colSpan="6"
+                    colSpan="9"
                     className="px-6 py-4 text-center text-gray-500"
                   >
                     No matching members found.
                   </td>
                 </tr>
               ) : (
-                paginatedData.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {item.firstname}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.email}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.mobileNo}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.studentid}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.degree}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.password}
-                    </td>
-                  </tr>
-                ))
+                paginatedData.map((item) => {
+                  const expired = isExpired(item.membershipEndAt, item.status);
+
+                  return (
+                    <tr key={item.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        {item.firstname}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {item.email}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {item.mobileNo}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {item.studentid}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {item.degree}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {item.password}
+                      </td>
+
+                      {/* ✅ Membership Period */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDate(item.membershipStartAt)} -{" "}
+                        {formatDate(item.membershipEndAt)}
+                      </td>
+
+                      {/* ✅ Countdown */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        {formatRemaining(item.membershipEndAt, item.status)}
+                      </td>
+
+                      {/* ✅ Action */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {(item.status === "revoked" || expired) ? (
+                          <button
+                            className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700"
+                            onClick={() => reactivateMembership(item.id)}
+                            title={expired ? "Expired - re-activate to renew" : "Re-activate"}
+                          >
+                            Re-Activate
+                          </button>
+                        ) : (
+                          <button
+                            className="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700"
+                            onClick={() => revokeMembership(item.id)}
+                          >
+                            Revoke
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -542,7 +733,9 @@ export default function UniclubMembersPage(props) {
           </button>
           <button
             onClick={() =>
-              setCurrentPage((p) => Math.min(p + 1, Math.max(totalPages || 1, 1)))
+              setCurrentPage((p) =>
+                Math.min(p + 1, Math.max(totalPages || 1, 1))
+              )
             }
             disabled={currentPage === totalPages || totalPages === 0}
             className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
@@ -559,6 +752,7 @@ export default function UniclubMembersPage(props) {
             <h2 className="text-xl font-bold mb-4">
               {editingData ? "Update Student" : "Create Student & Add to Club"}
             </h2>
+
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Name */}
               <input
@@ -581,9 +775,7 @@ export default function UniclubMembersPage(props) {
                 required
               />
               {form.email && !isEmailValid(form.email) && (
-                <p className="text-red-500 text-sm mt-1">
-                  Invalid email format
-                </p>
+                <p className="text-red-500 text-sm mt-1">Invalid email format</p>
               )}
 
               {/* Mobile */}
@@ -634,6 +826,26 @@ export default function UniclubMembersPage(props) {
                   <option value="Bank Transfer">Bank Transfer</option>
                 </select>
               </div>
+
+              {/* ✅ Membership Duration */}
+              {!editingData && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Membership Duration
+                  </label>
+                  <select
+                    name="membershipDays"
+                    value={form.membershipDays}
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 p-2 rounded"
+                  >
+                    <option value={7}>7 days</option>
+                    <option value={30}>30 days</option>
+                    <option value={90}>90 days</option>
+                    <option value={365}>365 days</option>
+                  </select>
+                </div>
+              )}
 
               {/* Select Club */}
               <div>

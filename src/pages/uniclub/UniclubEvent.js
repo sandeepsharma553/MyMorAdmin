@@ -486,6 +486,7 @@ export default function UniclubEventPage({ navbarHeight }) {
           Array.isArray(form.hostClubIds) && form.hostClubIds.length ? form.hostClubIds : [groupId],
         websiteLinks: form.websiteLinks || [],
         instagramLinks: form.instagramLinks || [],
+        role:'admin'
       };
 
       delete eventData.id;
@@ -937,6 +938,7 @@ export default function UniclubEventPage({ navbarHeight }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanModal.open, qrReady]);
+  const isCreator = (item) => String(item?.groupid || "") === String(emp?.uniclubid || "");
 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
@@ -1117,7 +1119,7 @@ export default function UniclubEventPage({ navbarHeight }) {
               ) : (
                 sorted.map((item) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.eventName}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.eventName} - {item.role}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {getTimeLine(item)} <br />
                       {getDateLine(item)}
@@ -1251,7 +1253,9 @@ export default function UniclubEventPage({ navbarHeight }) {
                             eventDescriptionHtml: item.eventDescriptionHtml || item.eventDescription || "",
                             pinnedOrder: Number.isFinite(item.pinnedOrder) ? item.pinnedOrder : null,
                             ticketTypes: Array.isArray(item.ticketTypes) ? item.ticketTypes : [],
-                            hostClubIds: Array.isArray(item.hostClubIds) ? item.hostClubIds : [groupId],
+                            hostClubIds: Array.isArray(item.hostClubIds) && item.hostClubIds.length
+                              ? item.hostClubIds
+                              : [item.groupid || groupId],
                             websiteLinks: Array.isArray(item.websiteLinks) ? item.websiteLinks : [],
                             instagramLinks: Array.isArray(item.instagramLinks) ? item.instagramLinks : [],
                           }));
@@ -1935,40 +1939,66 @@ export default function UniclubEventPage({ navbarHeight }) {
                 />
 
                 {/* HOST CLUBS */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Host club(s)</label>
+                {/* HOST CLUBS */}
+                {(() => {
+                  const creator = String(editingData?.groupid || form?.groupid || "") === String(emp?.uniclubid || "");
+                  const selectedHosts = form.hostClubIds || [];
 
-                  <Select
-                    multiple
-                    displayEmpty
-                    size="small"
-                    className="w-full text-sm"
-                    value={form.hostClubIds || []}
-                    onChange={(e) => {
-                      const value = e.target.value || [];
-                      const next = value.length ? value : [groupId];
-                      setForm((prev) => ({ ...prev, hostClubIds: next }));
-                    }}
-                    renderValue={(selected) => {
-                      if (!selected || selected.length === 0) return "Select host club(s)";
-                      const labels = selected
-                        .map((id) => clubs.find((c) => c.id === id)?.title || id)
-                        .filter(Boolean);
-                      return labels.join(", ");
-                    }}
-                  >
-                    {clubs.map((c) => (
-                      <MenuItem key={c.id} value={c.id}>
-                        <Checkbox checked={(form.hostClubIds || []).includes(c.id)} />
-                        <ListItemText primary={c.title} />
-                      </MenuItem>
-                    ))}
-                  </Select>
+                  return (
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Host club(s)</label>
 
-                  <p className="text-[11px] text-gray-500">
-                    Select 1 or more clubs from the same university. The first one can be treated as the “primary” host in the app UI.
-                  </p>
-                </div>
+                      {/* ✅ Non-creator: show read-only text only */}
+                      {!creator ? (
+                        <div className="border border-gray-200 rounded p-2 bg-gray-50 text-sm text-gray-700">
+                          {selectedHosts.length
+                            ? selectedHosts
+                              .map((id) => clubs.find((c) => c.id === id)?.title || id)
+                              .join(", ")
+                            : "—"}
+                          <div className="text-[11px] text-gray-500 mt-1">
+                            Only the event creator can change host clubs.
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {/* ✅ Creator: can edit */}
+                          <Select
+                            multiple
+                            displayEmpty
+                            size="small"
+                            className="w-full text-sm"
+                            value={selectedHosts}
+                            onChange={(e) => {
+                              const value = e.target.value || [];
+                              const next = value.length ? value : [groupId];
+                              setForm((prev) => ({ ...prev, hostClubIds: next }));
+                            }}
+                            renderValue={(selected) => {
+                              if (!selected || selected.length === 0) return "Select host club(s)";
+                              const labels = selected
+                                .map((id) => clubs.find((c) => c.id === id)?.title || id)
+                                .filter(Boolean);
+                              return labels.join(", ");
+                            }}
+                          >
+                            {clubs.map((c) => (
+                              <MenuItem key={c.id} value={c.id}>
+                                <Checkbox checked={selectedHosts.includes(c.id)} />
+                                <ListItemText primary={c.title} />
+                              </MenuItem>
+                            ))}
+                          </Select>
+
+                          <p className="text-[11px] text-gray-500">
+                            Select 1 or more clubs from the same university. Only the creator can edit host clubs.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
+
               </div>
 
               <div className="flex justify-end mt-6 space-x-3">
