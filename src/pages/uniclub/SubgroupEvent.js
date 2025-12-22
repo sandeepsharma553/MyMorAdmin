@@ -36,51 +36,75 @@ import { format } from "date-fns";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { MenuItem, Select, Checkbox, ListItemText } from "@mui/material";
 
+// ✅ QR scanner (web)
+import { Html5Qrcode } from "html5-qrcode";
+
 export default function SubgroupEventPage({ navbarHeight }) {
   const { state } = useLocation();
   const [params] = useSearchParams();
 
   const uid = useSelector((s) => s.auth.user.uid);
   const emp = useSelector((s) => s.auth.employee);
+  const isBlank = (v) => v === null || v === undefined || String(v).trim() === "";
+  const stateGroupId = state?.groupId;
+  const stateGroupName = state?.groupName;
 
-  const groupId = emp?.uniclubid;
-  const groupName = emp?.uniclub;
+  const paramGroupId = params.get("groupId");
+  const paramGroupName = params.get("groupName");
 
-  // subgroup context (optional)
-  const subGroupId =
-    params.get("subGroupId") ||
-    params.get("subgroupId") ||
-    state?.subGroupId ||
-    state?.subgroupId ||
-    "";
-  const subGroupName = state?.subGroupName || state?.subgroupName || "";
+  // 1) First preference: state → params → employee
+  const resolvedGroupId = !isBlank(stateGroupId)
+    ? stateGroupId
+    : !isBlank(paramGroupId)
+      ? paramGroupId
+      : (emp?.uniclubid || "");
+
+  const resolvedGroupNameFallback = !isBlank(stateGroupName)
+    ? stateGroupName
+    : !isBlank(paramGroupName)
+      ? paramGroupName
+      : (emp?.uniclub || "Club");
+
+  // If groupName still unknown but groupId exists, we will fetch title from RTDB
+  const [groupNameResolved, setGroupNameResolved] = useState(resolvedGroupNameFallback);
+
+  const groupId = resolvedGroupId;
+  const groupName = groupNameResolved;
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
+  // ✅ Scan modal
+  const [scanModal, setScanModal] = useState({ open: false, event: null });
+  const [scanResult, setScanResult] = useState(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanStatus, setScanStatus] = useState(null); // {ok:boolean,msg:string}
+  const qrInstanceRef = useRef(null);
+  const qrContainerRef = useRef(null);
+  const [qrReady, setQrReady] = useState(false);
+  const [paymentlist, setPaymentList] = useState([
+    { name: "General", id: "General" },
+    { name: "VIP", id: "VIP" },
+  ]);
   const [category, setCategory] = useState([]);
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // calendar range for event display range
   const [range, setRange] = useState([
     { startDate: new Date(), endDate: new Date(), key: "selection" },
   ]);
   const [showPicker, setShowPicker] = useState(false);
   const pickerRef = useRef();
 
-  // filters/sorting
   const [showMapModal, setShowMapModal] = useState(false);
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
-  const [timeFilter, setTimeFilter] = useState("current"); // past | current | future
+  const [timeFilter, setTimeFilter] = useState("current"); // 'past' | 'current' | 'future'
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [sortConfig, setSortConfig] = useState({ key: "start", direction: "asc" });
   const [filters, setFilters] = useState({ name: "", location: "" });
   const debounceRef = useRef(null);
-
-  // clubs + subgroups for allowedGroups + host club selection
   const [clubs, setClubs] = useState([]);
   const [subGroups, setSubGroups] = useState([]);
 
@@ -109,45 +133,53 @@ export default function SubgroupEventPage({ navbarHeight }) {
     date: "",
     startDateTime: "",
     endDateTime: "",
+    isRecurring: false,
+    frequency: "",
     locationName: "",
     address: "",
     mapLocation: "",
+    onlineLink: "",
     posters: [],
     posterFiles: [],
-
-    // tickets & capacity
-    priceType: "", // Free | Paid
+    promoVideo: "",
+    theme: "",
+    rsvp: false,
     capacity: "",
     maxPurchaseTickets: "",
+    rsvpDeadline: "",
+    priceType: "",
+    prices: [],
+    paymentLink: "",
+    allowChat: false,
+    allowReactions: false,
+    challenges: "",
+    visibility: "Public",
+    cohosts: "",
+    website: "",
+    instagram: "",
+    rules: "",
+    boothOption: false,
+    vendorInfo: "",
+    sponsorship: "",
+    interestedCount: 0,
+    hostelid: "",
+    isPinned: false,
+    pinnedAt: null,
+    pinnedOrder: null,
+
+    refundPolicy: "",
     freeTicketStartDateTime: "",
     freeTicketEndDateTime: "",
-
-    // event-level tables/pods
     hasTables: false,
     tableType: "",
     tableCount: "",
     ticketsPerTable: "",
-
-    // paid ticket builder
     ticketTypes: [],
-
-    // qr checkin
     enableQrCheckIn: false,
 
-    // multi-host clubs
     hostClubIds: [],
-
-    // links arrays
     websiteLinks: [],
     instagramLinks: [],
-
-    // policy
-    refundPolicy: "",
-
-    // pin
-    isPinned: false,
-    pinnedAt: null,
-    pinnedOrder: null,
   };
 
   const [form, setForm] = useState(initialFormData);
@@ -163,31 +195,36 @@ export default function SubgroupEventPage({ navbarHeight }) {
     q: "",
   });
 
-  // --- List header date-range filter ---
+  // --- List header date-range filter (calendar) ---
   const [filterRange, setFilterRange] = useState([
     { startDate: null, endDate: null, key: "selection" },
   ]);
   const [showFilterPicker, setShowFilterPicker] = useState(false);
   const filterPickerRef = useRef(null);
 
-  // load initial data
   useEffect(() => {
     getList();
     getCategory();
-    getClubs(); // uni-based
-    fetchSubGroups(); // for allowedGroups filter + selection
-  }, [groupId, subGroupId]);
+    getPaymentList();
+    getClubs();
+    fetchSubGroups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Load bookings (grouped by eventId)
+  // ✅ Load bookings (group filter + grouping FIX)
   useEffect(() => {
     (async () => {
       try {
-        const qB = query(collection(db, "discovereventbookings"));
+        const qB = query(
+          collection(db, "subgroupeventbookings"),
+          where("groupid", "==", groupId)
+        );
         const snap = await getDocs(qB);
+
         const grouped = {};
         snap.docs.forEach((d) => {
           const b = { id: d.id, ...d.data() };
-          const key = b.eventId || "__unknown__";
+          const key = b.eventDocId || b.eventId || "__unknown__"; // ✅ FIX
           if (!grouped[key]) grouped[key] = [];
           grouped[key].push(b);
         });
@@ -197,28 +234,55 @@ export default function SubgroupEventPage({ navbarHeight }) {
         toast.error("Failed to load bookings");
       }
     })();
-  }, []);
+  }, [groupId]);
 
-  // ---------- DATA ----------
   const getList = async () => {
     setIsLoading(true);
     try {
-      if (!groupId) {
-        setList([]);
-        return;
-      }
+      // ✅ New: events where this club is a host
+      const qHost = query(
+        collection(db, "subgroupevents"),
+        where("hostClubIds", "array-contains", emp?.uniclubid)
+      );
 
-      const base = [
-        where("groupid", "==", groupId),
-      ];
+      // ✅ Old fallback: (purane events jisme hostClubIds nahi tha)
+      const qOld = query(
+        collection(db, "subgroupevents"),
+        where("groupid", "==", groupId)
+      );
 
-      // If this page is for a subgroup context, filter by subgroupId too.
-      // (If your field name differs, adjust here.)
-      if (subGroupId) base.push(where("subGroupId", "==", subGroupId));
+      // const [snapHost, snapOld] = await Promise.all([getDocs(qHost), getDocs(qOld)]);
+      const [snapHost] = await Promise.all([getDocs(qHost)]);
 
-      const qEvents = query(collection(db, "subgroupevents"), ...base);
+      // ✅ Merge unique by id
+      const map = new Map();
+      snapHost.docs.forEach((d) => map.set(d.id, { id: d.id, ...d.data() }));
+      // snapOld.docs.forEach((d) => map.set(d.id, { id: d.id, ...d.data() }));
+
+      const docs = Array.from(map.values());
+
+      // sort same as before
+      docs.sort(
+        (a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0)
+      );
+
+      setList(docs);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load events");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getList1 = async () => {
+    setIsLoading(true);
+    try {
+      const qEvents = query(
+        collection(db, "subgroupevents"),
+        where("groupid", "==", groupId)
+      );
       const snap = await getDocs(qEvents);
-
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       docs.sort(
         (a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0)
@@ -227,6 +291,16 @@ export default function SubgroupEventPage({ navbarHeight }) {
     } catch (e) {
       console.error(e);
       toast.error("Failed to load events");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getPaymentList = async () => {
+    setIsLoading(true);
+    try {
+      const qPay = query(collection(db, "punliceventpaymenttype"));
+      await getDocs(qPay);
     } finally {
       setIsLoading(false);
     }
@@ -243,47 +317,28 @@ export default function SubgroupEventPage({ navbarHeight }) {
     }
   };
 
-  // ✅ University-based clubs fetch (for multi-host + allowedGroups)
   const getClubs = async () => {
     try {
-      const uniId = emp?.universityid || emp?.universityId;
-      if (!uniId) {
-        setClubs(groupId ? [{ id: groupId, title: groupName || "Current Club" }] : []);
+      if (!emp?.uniclubid) {
+        setClubs([]);
         return;
       }
-
       const ref = dbRef(database, "uniclubs");
       const snap = await rtdbGet(ref);
       const val = snap.val() || {};
-
       const filtered = Object.entries(val)
+        .filter(([id, c]) => c.universityid === emp?.universityId)
         .map(([id, c]) => ({
-          id, // RTDB key
-          title: c?.title || "Unnamed Club",
-          uni:
-            c?.universityid ??
-            c?.universityId ??
-            c?.uniId ??
-            c?.university?.id ??
-            null,
-        }))
-        .filter((c) => String(c.uni || "") === String(uniId));
-
-      const hasCurrent = filtered.some((c) => String(c.id) === String(groupId));
-      const withCurrent = hasCurrent
-        ? filtered
-        : groupId
-          ? [{ id: groupId, title: groupName || "Current Club" }, ...filtered]
-          : filtered;
-
-      setClubs(withCurrent);
+          id,
+          title: c.title || "Unnamed Club",
+        }));
+      setClubs(filtered);
     } catch (err) {
       console.error("getClubs error:", err);
-      setClubs(groupId ? [{ id: groupId, title: groupName || "Current Club" }] : []);
+      setClubs([]);
     }
   };
 
-  // ✅ subgroups under current club (used in allowedGroups selector)
   const fetchSubGroups = async () => {
     if (!emp?.uniclubid) {
       setSubGroups([]);
@@ -308,7 +363,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
     }
   };
 
-  // ---------- HELPERS ----------
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setForm((f) => ({ ...f, [name]: type === "checkbox" ? checked : value }));
@@ -328,53 +382,203 @@ export default function SubgroupEventPage({ navbarHeight }) {
     return text.length === 0;
   };
 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const hasPoster =
+        (form.posters?.length || 0) > 0 || (form.posterFiles?.length || 0) > 0;
+      if (!editingData && !hasPoster) return toast.error("Please add at least one poster");
+      if (isBlankHtml(form.eventDescriptionHtml)) return toast.error("Please add a description");
+
+      const sMs = new Date(form.startDateTime).getTime();
+      const eMs = new Date(form.endDateTime).getTime();
+      if (Number.isNaN(sMs) || Number.isNaN(eMs) || eMs <= sMs)
+        return toast.error("End date/time must be after start date/time.");
+
+      if (form.freeTicketStartDateTime && form.freeTicketEndDateTime) {
+        const fsMs = new Date(form.freeTicketStartDateTime).getTime();
+        const feMs = new Date(form.freeTicketEndDateTime).getTime();
+        if (!Number.isNaN(fsMs) && !Number.isNaN(feMs) && feMs <= fsMs) {
+          return toast.error("Free ticket end time must be after its start time.");
+        }
+      }
+
+      const capNum = parseInt(form.capacity, 10);
+      const maxPerNum = parseInt(form.maxPurchaseTickets, 10);
+      if (!Number.isNaN(maxPerNum) && maxPerNum < 1)
+        return toast.error("Max purchase tickets must be at least 1.");
+      if (!Number.isNaN(capNum) && !Number.isNaN(maxPerNum) && maxPerNum > capNum)
+        return toast.error("Max purchase tickets cannot be greater than Max Capacity.");
+
+      if (form.priceType === "Paid" && (form.ticketTypes || []).length === 0) {
+        toast.warning("You selected Paid event but no tickets are configured. Please add at least one ticket type.");
+      }
+
+      // upload new posters
+      let uploaded = [];
+      if (form.posterFiles?.length) {
+        const uploads = form.posterFiles.map(async (file) => {
+          const path = uniquePath(
+            `public_event_posters/${emp.id}/${form.eventName || "subgroupevents"}`,
+            file
+          );
+          const sRef = storageRef(storage, path);
+          await uploadBytes(sRef, file);
+          const url = await getDownloadURL(sRef);
+          return { url, name: file.name };
+        });
+        uploaded = await Promise.all(uploads);
+      }
+      const posters = [...(form.posters || []), ...uploaded];
+
+      const ticketTypesSanitised = (form.ticketTypes || []).map((t, idx) => ({
+        id: t.id || `ticket_${idx + 1}`,
+        name: (t.name || "").trim(),
+        description: (t.description || "").toString().trim(),
+        price: t.price === "" || t.price == null ? 0 : Number(t.price),
+        allowedGroupNote: (t.allowedGroupNote || "").trim(),
+        allowedGroups: Array.isArray(t.allowedGroups)
+          ? t.allowedGroups.map((g) => ({
+            id: g.id,
+            title: g.title,
+            type: g.type || "club",
+          }))
+          : [],
+        passwordRequired: !!t.passwordRequired,
+        password: t.passwordRequired ? (t.password || "").trim() : "",
+        maxCapacity: t.maxCapacity === "" || t.maxCapacity == null ? null : Number(t.maxCapacity),
+        maxPurchasePerUser:
+          t.maxPurchasePerUser === "" || t.maxPurchasePerUser == null
+            ? null
+            : Number(t.maxPurchasePerUser),
+        collectExtraInfo: !!t.collectExtraInfo,
+        fields: {
+          name: !!t.fields?.name,
+          email: !!t.fields?.email,
+          number: !!t.fields?.number,
+          studentId: !!t.fields?.studentId,
+          degree: !!t.fields?.degree,
+          studyYear: !!t.fields?.studyYear,
+        },
+        startDateTime: t.startDateTime || "",
+        endDateTime: t.endDateTime || "",
+        hasTables: !!t.hasTables,
+        tableType: t.hasTables ? t.tableType || "" : "",
+        tableCount:
+          t.hasTables && t.tableCount !== "" && t.tableCount != null ? Number(t.tableCount) : null,
+        ticketsPerTable:
+          t.hasTables && t.ticketsPerTable !== "" && t.ticketsPerTable != null
+            ? Number(t.ticketsPerTable)
+            : null,
+      }));
+
+      const eventData = {
+        ...form,
+        groupid: groupId,
+        groupName: groupName || "",
+        prices: form.priceType === "Free" || !form.priceType ? [] : form.prices || [],
+        startDateTime: form.startDateTime,
+        endDateTime: form.endDateTime,
+        posters,
+        imageUrl: emp?.imageUrl ?? null,
+        uid,
+        isPinned: !!form.isPinned,
+        pinnedAt: form.isPinned ? form.pinnedAt || Timestamp.now() : null,
+        pinnedOrder: Number.isFinite(Number(form.pinnedOrder)) ? Number(form.pinnedOrder) : null,
+        maxPurchaseTickets: Number.isNaN(Number(form.maxPurchaseTickets))
+          ? null
+          : Number(form.maxPurchaseTickets),
+
+        refundPolicy: form.refundPolicy || "",
+        freeTicketStartDateTime: form.freeTicketStartDateTime || "",
+        freeTicketEndDateTime: form.freeTicketEndDateTime || "",
+        hasTables: !!form.hasTables,
+        tableType: form.hasTables ? form.tableType || "" : "",
+        tableCount:
+          form.hasTables && form.tableCount !== "" && form.tableCount != null
+            ? Number(form.tableCount)
+            : null,
+        ticketsPerTable:
+          form.hasTables && form.ticketsPerTable !== "" && form.ticketsPerTable != null
+            ? Number(form.ticketsPerTable)
+            : null,
+
+        ticketTypes: ticketTypesSanitised,
+        enableQrCheckIn: !!form.enableQrCheckIn,
+        hostClubIds:
+          Array.isArray(form.hostClubIds) && form.hostClubIds.length ? form.hostClubIds : [groupId],
+        websiteLinks: form.websiteLinks || [],
+        instagramLinks: form.instagramLinks || [],
+        role: 'admin'
+      };
+
+      delete eventData.id;
+      delete eventData.posterFiles;
+
+      if (editingData) {
+        const ref = doc(db, "subgroupevents", editingData.id);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return toast.warning("Event does not exist! Cannot update.");
+        await updateDoc(ref, eventData);
+        toast.success("Event updated successfully");
+      } else {
+        await addDoc(collection(db, "subgroupevents"), eventData);
+        toast.success("Event created successfully");
+      }
+      await getList();
+      setModalOpen(false);
+      setEditing(null);
+      setForm(initialFormData);
+    } catch (err) {
+      console.error(err);
+      toast.error("Save failed");
+    }
+  };
+
+  // ✅ Robust millis converter (works for ISO string, Date, Timestamp, {seconds})
   const toMillis = (val) => {
     if (!val) return null;
-    if (typeof val === "object" && val.seconds != null) return val.seconds * 1000;
-    if (val?.toDate) return val.toDate().getTime();
-    const ms = new Date(val).getTime();
+    if (typeof val === "object" && val.seconds != null) return val.seconds * 1000; // Firestore timestamp object
+    if (val?.toDate) return val.toDate().getTime(); // Firestore Timestamp
+    if (val instanceof Date) return val.getTime();
+    const ms = new Date(val).getTime(); // ISO string
     return Number.isNaN(ms) ? null : ms;
   };
 
-  // windows + classification
+  // ✅ NEW: use "date.startDate/endDate" FIRST (image wala), then fallback to startDateTime/endDateTime
   function getEventWindowMillis(item) {
+    // 1) ✅ Primary: Display Range on App (date range)
+    const sd = toMillis(item?.date?.startDate);
+    const ed = toMillis(item?.date?.endDate);
+
+    if (sd || ed) {
+      const startMs = sd ?? ed;
+      const endMs = ed ?? sd;
+
+      // normalize to full-day window
+      const s = new Date(startMs);
+      const e = new Date(endMs);
+      const dayStartMs = new Date(s.getFullYear(), s.getMonth(), s.getDate(), 0, 0, 0, 0).getTime();
+      const dayEndMs = new Date(e.getFullYear(), e.getMonth(), e.getDate(), 23, 59, 59, 999).getTime();
+
+      return { start: dayStartMs, end: dayEndMs, source: "displayRange" };
+    }
+
+    // 2) fallback: actual event start/end datetime
     const s1 = toMillis(item.startDateTime);
     const e1 = toMillis(item.endDateTime);
     if (s1 || e1) return { start: s1 ?? e1, end: e1 ?? s1, source: "dateTime" };
-    const sd = toMillis(item?.date?.startDate);
-    const ed = toMillis(item?.date?.endDate);
-    if (sd || ed) {
-      const start = sd ? new Date(sd) : ed ? new Date(ed) : null;
-      const end = ed ? new Date(ed) : sd ? new Date(sd) : null;
-      if (start && end) {
-        const dayStart = new Date(
-          start.getFullYear(),
-          start.getMonth(),
-          start.getDate(),
-          0,
-          0,
-          0,
-          0
-        ).getTime();
-        const dayEnd = new Date(
-          end.getFullYear(),
-          end.getMonth(),
-          end.getDate(),
-          23,
-          59,
-          59,
-          999
-        ).getTime();
-        return { start: dayStart, end: dayEnd, source: "dateOnly" };
-      }
-    }
+
     return { start: null, end: null, source: "none" };
   }
 
   function classifyEvent(item) {
     const now = Date.now();
     const { start, end } = getEventWindowMillis(item);
+
     if (start == null && end == null) return "current";
+
+    // ✅ important: current means overlap with today/now
     if (start != null && now < start) return "future";
     if (end != null && now > end) return "past";
     return "current";
@@ -460,7 +664,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
     }
   };
 
-  // compact lines for table
+  // ----- helper lines for compact time/date in table -----
   const SHOW_ALL_DAY_FOR_DATE_ONLY = true;
 
   function getTimeLine(item) {
@@ -482,8 +686,8 @@ export default function SubgroupEventPage({ navbarHeight }) {
     if (!s) s = e;
     if (!e) e = s;
 
-    const sd = dayjs(s),
-      ed = dayjs(e);
+    const sd = dayjs(s);
+    const ed = dayjs(e);
     const sameMonth = sd.month() === ed.month() && sd.year() === ed.year();
     const sameYear = sd.year() === ed.year();
 
@@ -491,25 +695,17 @@ export default function SubgroupEventPage({ navbarHeight }) {
     const needYear = !sameYear || sd.year() !== dayjs().year();
 
     if (sameMonth) {
-      return `${sd.format("D")}–${ed.format("D")} ${monLower(sd)}${
-        needYear ? " " + sd.format("YYYY") : ""
-      }`;
+      return `${sd.format("D")}–${ed.format("D")} ${monLower(sd)}${needYear ? " " + sd.format("YYYY") : ""}`;
     }
     if (sameYear) {
-      return `${sd.format("D")} ${monLower(sd)}–${ed.format("D")} ${monLower(ed)}${
-        needYear ? " " + sd.format("YYYY") : ""
-      }`;
+      return `${sd.format("D")} ${monLower(sd)}–${ed.format("D")} ${monLower(ed)}${needYear ? " " + sd.format("YYYY") : ""}`;
     }
-    return `${sd.format("D MMM YYYY")}–${ed.format("D MMM YYYY")}`.replace(/MMM/g, (m) =>
-      m.toLowerCase()
-    );
+    return `${sd.format("D MMM YYYY")}–${ed.format("D MMM YYYY")}`.replace(/MMM/g, (m) => m.toLowerCase());
   }
 
-  // date range overlaps helper
-  const dayStart = (d) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
-  const dayEnd = (d) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+  // ---- list filtering/sorting (with calendar header filter) ----
+  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+  const dayEnd = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
   const overlaps = (evStartMs, evEndMs, fStart, fEnd) => {
     if (!fStart || !fEnd) return true;
     const fs = dayStart(fStart);
@@ -517,7 +713,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
     return evStartMs <= fe && evEndMs >= fs;
   };
 
-  // filtering
   const timeFiltered = list.filter((ev) => classifyEvent(ev) === timeFilter);
   const catFiltered =
     categoryFilter === "All"
@@ -588,7 +783,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
     }
   };
 
-  // ticket helpers
   const defaultTicket = () => ({
     id: "",
     name: "",
@@ -610,13 +804,11 @@ export default function SubgroupEventPage({ navbarHeight }) {
     },
     startDateTime: "",
     endDateTime: "",
-
     hasTables: false,
     tableType: "",
     tableCount: "",
     ticketsPerTable: "",
-
-    allowedGroups: [], // ✅ club/subgroup selector
+    allowedGroups: [],
   });
 
   const updateTicket = (index, patch) => {
@@ -637,162 +829,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
     });
   };
 
-  // ---------- SUBMIT ----------
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const hasPoster = (form.posters?.length || 0) > 0 || (form.posterFiles?.length || 0) > 0;
-      if (!editingData && !hasPoster) return toast.error("Please add at least one poster");
-      if (isBlankHtml(form.eventDescriptionHtml)) return toast.error("Please add a description");
-
-      // Event time validation
-      const sMs = new Date(form.startDateTime).getTime();
-      const eMs = new Date(form.endDateTime).getTime();
-      if (Number.isNaN(sMs) || Number.isNaN(eMs) || eMs <= sMs)
-        return toast.error("End date/time must be after start date/time.");
-
-      // Free ticket window validation
-      if (form.freeTicketStartDateTime && form.freeTicketEndDateTime) {
-        const fsMs = new Date(form.freeTicketStartDateTime).getTime();
-        const feMs = new Date(form.freeTicketEndDateTime).getTime();
-        if (!Number.isNaN(fsMs) && !Number.isNaN(feMs) && feMs <= fsMs) {
-          return toast.error("Free ticket end time must be after its start time.");
-        }
-      }
-
-      const capNum = parseInt(form.capacity, 10);
-      const maxPerNum = parseInt(form.maxPurchaseTickets, 10);
-      if (!Number.isNaN(maxPerNum) && maxPerNum < 1)
-        return toast.error("Max purchase tickets must be at least 1.");
-      if (!Number.isNaN(capNum) && !Number.isNaN(maxPerNum) && maxPerNum > capNum)
-        return toast.error("Max purchase tickets cannot be greater than Max Capacity.");
-
-      if (form.priceType === "Paid" && (form.ticketTypes || []).length === 0) {
-        toast.warning("You selected Paid event but no tickets are configured. Please add at least one ticket type.");
-      }
-
-      // upload new posters
-      let uploaded = [];
-      if (form.posterFiles?.length) {
-        const uploads = form.posterFiles.map(async (file) => {
-          const path = uniquePath(
-            `public_event_posters/${emp?.id || "emp"}/${form.eventName || "subgroup_events"}`,
-            file
-          );
-          const sRef = storageRef(storage, path);
-          await uploadBytes(sRef, file);
-          const url = await getDownloadURL(sRef);
-          return { url, name: file.name };
-        });
-        uploaded = await Promise.all(uploads);
-      }
-      const posters = [...(form.posters || []), ...uploaded];
-
-      // ticket sanitisation
-      const ticketTypesSanitised = (form.ticketTypes || []).map((t, idx) => ({
-        id: t.id || `ticket_${idx + 1}`,
-        name: (t.name || "").trim(),
-        description: (t.description ?? "").toString().trim(),
-        price: t.price === "" || t.price == null ? 0 : Number(t.price),
-        allowedGroupNote: (t.allowedGroupNote || "").trim(),
-        allowedGroups: Array.isArray(t.allowedGroups)
-          ? t.allowedGroups.map((g) => ({ id: g.id, title: g.title, type: g.type || "club" }))
-          : [],
-        passwordRequired: !!t.passwordRequired,
-        password: t.passwordRequired ? (t.password || "").trim() : "",
-        maxCapacity: t.maxCapacity === "" || t.maxCapacity == null ? null : Number(t.maxCapacity),
-        maxPurchasePerUser:
-          t.maxPurchasePerUser === "" || t.maxPurchasePerUser == null ? null : Number(t.maxPurchasePerUser),
-        collectExtraInfo: !!t.collectExtraInfo,
-        fields: {
-          name: !!t.fields?.name,
-          email: !!t.fields?.email,
-          number: !!t.fields?.number,
-          studentId: !!t.fields?.studentId,
-          degree: !!t.fields?.degree,
-          studyYear: !!t.fields?.studyYear,
-        },
-        startDateTime: t.startDateTime || "",
-        endDateTime: t.endDateTime || "",
-
-        hasTables: !!t.hasTables,
-        tableType: t.hasTables ? t.tableType || "" : "",
-        tableCount:
-          t.hasTables && t.tableCount !== "" && t.tableCount != null ? Number(t.tableCount) : null,
-        ticketsPerTable:
-          t.hasTables && t.ticketsPerTable !== "" && t.ticketsPerTable != null
-            ? Number(t.ticketsPerTable)
-            : null,
-      }));
-
-      const eventData = {
-        ...form,
-
-        // base club info
-        groupid: groupId,
-        groupName: groupName || "",
-        uid,
-
-        // subgroup context (optional)
-        subGroupId: subGroupId || "",
-        subGroupName: subGroupName || "",
-
-        posters,
-        imageUrl: emp?.imageUrl ?? null,
-
-        isPinned: !!form.isPinned,
-        pinnedAt: form.isPinned ? form.pinnedAt || Timestamp.now() : null,
-        pinnedOrder: Number.isFinite(Number(form.pinnedOrder)) ? Number(form.pinnedOrder) : null,
-
-        maxPurchaseTickets: Number.isNaN(Number(form.maxPurchaseTickets)) ? null : Number(form.maxPurchaseTickets),
-
-        refundPolicy: form.refundPolicy || "",
-        freeTicketStartDateTime: form.freeTicketStartDateTime || "",
-        freeTicketEndDateTime: form.freeTicketEndDateTime || "",
-
-        hasTables: !!form.hasTables,
-        tableType: form.hasTables ? form.tableType || "" : "",
-        tableCount:
-          form.hasTables && form.tableCount !== "" && form.tableCount != null ? Number(form.tableCount) : null,
-        ticketsPerTable:
-          form.hasTables && form.ticketsPerTable !== "" && form.ticketsPerTable != null
-            ? Number(form.ticketsPerTable)
-            : null,
-
-        ticketTypes: ticketTypesSanitised,
-        enableQrCheckIn: !!form.enableQrCheckIn,
-
-        hostClubIds:
-          Array.isArray(form.hostClubIds) && form.hostClubIds.length ? form.hostClubIds : groupId ? [groupId] : [],
-
-        websiteLinks: form.websiteLinks || [],
-        instagramLinks: form.instagramLinks || [],
-      };
-
-      delete eventData.id;
-      delete eventData.posterFiles;
-
-      if (editingData) {
-        const ref = doc(db, "subgroupevents", editingData.id);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) return toast.warning("Event does not exist! Cannot update.");
-        await updateDoc(ref, eventData);
-        toast.success("Event updated successfully");
-      } else {
-        await addDoc(collection(db, "subgroupevents"), eventData);
-        toast.success("Event created successfully");
-      }
-
-      await getList();
-      setModalOpen(false);
-      setEditing(null);
-      setForm(initialFormData);
-    } catch (err) {
-      console.error(err);
-      toast.error("Save failed");
-    }
-  };
-
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
@@ -807,21 +843,133 @@ export default function SubgroupEventPage({ navbarHeight }) {
     setDelete(null);
   };
 
-  // ---------- UI ----------
+  // ✅ QR verify & check-in
+  const handleVerifyAndCheckIn = async (payloadRaw) => {
+    try {
+      const ev = scanModal.event;
+      if (!ev?.id) return setScanStatus({ ok: false, msg: "Event missing." });
+
+      let bookingId = payloadRaw;
+
+      try {
+        const j = JSON.parse(payloadRaw);
+        bookingId = j?.bid || j?.bookingId || j?.id || payloadRaw;
+      } catch { }
+
+      if (!bookingId) {
+        setScanStatus({ ok: false, msg: "Invalid QR payload." });
+        return;
+      }
+
+      const bRef = doc(db, "subgroupeventbookings", bookingId);
+      const bSnap = await getDoc(bRef);
+
+      if (!bSnap.exists()) {
+        setScanStatus({ ok: false, msg: "Booking not found." });
+        return;
+      }
+
+      const b = { id: bSnap.id, ...bSnap.data() };
+      const bookedEventId = b.eventDocId || b.eventId;
+
+      if (String(bookedEventId) !== String(ev.id)) {
+        setScanStatus({ ok: false, msg: "Wrong event ticket." });
+        return;
+      }
+
+      if (b.checkInStatus === "checked_in") {
+        setScanStatus({ ok: true, msg: "Already checked-in ✅" });
+        return;
+      }
+
+      await updateDoc(bRef, {
+        checkInStatus: "checked_in",
+        checkedInAt: Timestamp.now(),
+        checkedInBy: uid,
+        checkedInByName: emp?.name || emp?.email || "",
+      });
+
+      setScanStatus({ ok: true, msg: "Verified & checked-in ✅" });
+    } catch (e) {
+      console.error(e);
+      setScanStatus({ ok: false, msg: "Check-in failed." });
+    }
+  };
+
+  // ✅ Start/stop scanner when modal opens/closes
+  useEffect(() => {
+    if (!scanModal.open) {
+      setQrReady(false);
+      return;
+    }
+    // wait 1 paint so Dialog content mounts
+    const raf = requestAnimationFrame(() => setQrReady(true));
+    return () => cancelAnimationFrame(raf);
+  }, [scanModal.open]);
+  useEffect(() => {
+    const start = async () => {
+      if (!scanModal.open || !qrReady) return;
+
+      const el = qrContainerRef.current;
+      if (!el) return;
+
+      setScanStatus(null);
+      setScanResult(null);
+
+      // ensure container has an id (Html5Qrcode needs an element id)
+      if (!el.id) el.id = "mymor-qr-reader";
+
+      try {
+        if (qrInstanceRef.current) {
+          await qrInstanceRef.current.stop();
+          await qrInstanceRef.current.clear();
+        }
+      } catch { }
+
+      qrInstanceRef.current = new Html5Qrcode(el.id);
+
+      try {
+        await qrInstanceRef.current.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 260, height: 260 } },
+          async (decodedText) => {
+            if (scanBusy) return;
+            setScanBusy(true);
+            setScanResult(decodedText);
+            await handleVerifyAndCheckIn(decodedText);
+            setScanBusy(false);
+          },
+          () => { }
+        );
+      } catch (err) {
+        console.error("QR start error", err);
+        setScanStatus({ ok: false, msg: "Camera access denied or scanner failed." });
+      }
+    };
+
+    start();
+
+    return () => {
+      (async () => {
+        try {
+          if (qrInstanceRef.current) {
+            await qrInstanceRef.current.stop();
+            await qrInstanceRef.current.clear();
+          }
+        } catch { }
+      })();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanModal.open, qrReady]);
+  const isCreator = (item) => String(item?.groupid || "") === String(emp?.uniclubid || "");
+
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       <div className="flex justify-between items-center mb-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Sub-group Events</h1>
-          {!!subGroupId && (
-            <div className="text-xs text-gray-500 mt-1">
-              Sub-group: <span className="font-medium">{subGroupName || subGroupId}</span>
-            </div>
-          )}
-        </div>
-
+        <h1 className="text-2xl font-semibold">Event</h1>
         <button
-          className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+          className=
+          "px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
             setForm(initialFormData);
@@ -839,9 +987,8 @@ export default function SubgroupEventPage({ navbarHeight }) {
             <button
               key={k}
               onClick={() => setTimeFilter(k)}
-              className={`px-3 py-1.5 rounded-full text-sm border ${
-                active ? "bg-black text-white border-black" : "bg-white text-gray-700 border-gray-300"
-              }`}
+              className={`px-3 py-1.5 rounded-full text-sm border ${active ? "bg-black text-white border-black" : "bg-white text-gray-700 border-gray-300"
+                }`}
             >
               {k[0].toUpperCase() + k.slice(1)}
             </button>
@@ -853,7 +1000,9 @@ export default function SubgroupEventPage({ navbarHeight }) {
           Show pinned only
         </label>
 
-        <span className="text-xs text-gray-500">Showing {sorted.length} of {list.length}</span>
+        <span className="text-xs text-gray-500">
+          Showing {sorted.length} of {list.length}
+        </span>
       </div>
 
       <h2 className="text-xl font-semibold mb-2">
@@ -908,7 +1057,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
                   />
                 </th>
 
-                {/* DATE RANGE FILTER */}
+                {/* DATE RANGE FILTER (calendar popover) */}
                 <th className="px-6 pb-3 relative">
                   <button
                     type="button"
@@ -993,16 +1142,14 @@ export default function SubgroupEventPage({ navbarHeight }) {
               ) : (
                 sorted.map((item) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.eventName}</td>
-
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.eventName} - {item.role}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {getTimeLine(item)} <br />
                       {getDateLine(item)}
                     </td>
-
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.locationName}</td>
 
-                    {/* Bookings column ✅ uses event doc id */}
+                    {/* Bookings column */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {(() => {
                         const arr = bookingsByEvent[item.id] || [];
@@ -1051,9 +1198,8 @@ export default function SubgroupEventPage({ navbarHeight }) {
                           type="button"
                           title={item.isPinned ? "Unpin" : "Pin"}
                           onClick={() => togglePin(item, !item.isPinned)}
-                          className={`text-lg leading-none ${
-                            item.isPinned ? "text-yellow-500" : "text-gray-300"
-                          } hover:opacity-80`}
+                          className={`text-lg leading-none ${item.isPinned ? "text-yellow-500" : "text-gray-300"
+                            } hover:opacity-80`}
                           aria-label={item.isPinned ? "Unpin event" : "Pin event"}
                         >
                           {item.isPinned ? "★" : "☆"}
@@ -1076,20 +1222,10 @@ export default function SubgroupEventPage({ navbarHeight }) {
                               title="Pinned order (1 = top)"
                             />
                             <div className="flex flex-col gap-1">
-                              <button
-                                type="button"
-                                className="border rounded px-1 leading-none"
-                                title="Move up"
-                                onClick={() => movePin(item, -1)}
-                              >
+                              <button type="button" className="border rounded px-1 leading-none" title="Move up" onClick={() => movePin(item, -1)}>
                                 ↑
                               </button>
-                              <button
-                                type="button"
-                                className="border rounded px-1 leading-none"
-                                title="Move down"
-                                onClick={() => movePin(item, 1)}
-                              >
+                              <button type="button" className="border rounded px-1 leading-none" title="Move down" onClick={() => movePin(item, 1)}>
                                 ↓
                               </button>
                             </div>
@@ -1098,7 +1234,18 @@ export default function SubgroupEventPage({ navbarHeight }) {
                       </div>
                     </td>
 
+                    {/* Actions */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <button
+                        className="text-green-700 hover:underline mr-3"
+                        onClick={() => setScanModal({ open: true, event: item })}
+                        disabled={!item.enableQrCheckIn}
+                        title={item.enableQrCheckIn ? "Scan tickets for this event" : "QR check-in disabled"}
+                        style={!item.enableQrCheckIn ? { opacity: 0.4, cursor: "not-allowed" } : {}}
+                      >
+                        Scan QR
+                      </button>
+
                       <button
                         className="text-blue-600 hover:underline mr-3"
                         onClick={() => {
@@ -1116,7 +1263,10 @@ export default function SubgroupEventPage({ navbarHeight }) {
                             ...initialFormData,
                             ...item,
                             id: item.id,
-                            date: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+                            date: {
+                              startDate: startDate.toISOString(),
+                              endDate: endDate.toISOString(),
+                            },
                             startDateTime: item.startDateTime || "",
                             endDateTime: item.endDateTime || "",
                             freeTicketStartDateTime: item.freeTicketStartDateTime || "",
@@ -1126,7 +1276,9 @@ export default function SubgroupEventPage({ navbarHeight }) {
                             eventDescriptionHtml: item.eventDescriptionHtml || item.eventDescription || "",
                             pinnedOrder: Number.isFinite(item.pinnedOrder) ? item.pinnedOrder : null,
                             ticketTypes: Array.isArray(item.ticketTypes) ? item.ticketTypes : [],
-                            hostClubIds: Array.isArray(item.hostClubIds) ? item.hostClubIds : groupId ? [groupId] : [],
+                            hostClubIds: Array.isArray(item.hostClubIds) && item.hostClubIds.length
+                              ? item.hostClubIds
+                              : [item.groupid || groupId],
                             websiteLinks: Array.isArray(item.websiteLinks) ? item.websiteLinks : [],
                             instagramLinks: Array.isArray(item.instagramLinks) ? item.instagramLinks : [],
                           }));
@@ -1156,6 +1308,39 @@ export default function SubgroupEventPage({ navbarHeight }) {
         )}
       </div>
 
+      {/* ✅ QR SCAN MODAL */}
+      <Dialog
+        open={scanModal.open}
+        onClose={() => setScanModal({ open: false, event: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Scan QR — {scanModal.event?.eventName || "Event"}
+        </DialogTitle>
+        <DialogContent dividers>
+          <div className="space-y-3">
+            <div ref={qrContainerRef} id="mymor-qr-reader" style={{ width: "100%", borderRadius: 12, overflow: "hidden" }} />
+
+            {scanResult && (
+              <div className="text-xs text-gray-500 break-all">
+                <div className="font-semibold text-gray-700 mb-1">Last scan:</div>
+                {scanResult}
+              </div>
+            )}
+
+            {scanStatus && (
+              <div className={`text-sm font-semibold ${scanStatus.ok ? "text-green-700" : "text-red-700"}`}>
+                {scanStatus.msg}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setScanModal({ open: false, event: null })}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Create/Edit Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -1173,7 +1358,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
                   required
                 />
 
-                {/* Description */}
                 <label className="block font-medium">Description</label>
                 <EditorPro
                   value={form.eventDescriptionHtml}
@@ -1189,7 +1373,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
                   className="w-full border border-gray-300 p-2 rounded"
                 />
 
-                {/* Event Display Range */}
+                {/* Event Display Range on App */}
                 <label className="block font-medium">Event Display Range on App</label>
                 <div className="relative">
                   <input
@@ -1197,10 +1381,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
                     readOnly
                     value={
                       form.date?.startDate && form.date?.endDate
-                        ? `${format(new Date(form.date.startDate), "MMM dd, yyyy")} - ${format(
-                            new Date(form.date.endDate),
-                            "MMM dd, yyyy"
-                          )}`
+                        ? `${format(new Date(form.date.startDate), "MMM dd, yyyy")} - ${format(new Date(form.date.endDate), "MMM dd, yyyy")}`
                         : ""
                     }
                     onClick={() => setShowPicker(!showPicker)}
@@ -1335,11 +1516,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
                       <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
                         {form.posters.map((img, i) => (
                           <div key={`${img.url}-${i}`} className="relative">
-                            <img
-                              src={img.url}
-                              alt={img.name || `poster-${i}`}
-                              className="w-full h-24 object-cover rounded"
-                            />
+                            <img src={img.url} alt={img.name || `poster-${i}`} className="w-full h-24 object-cover rounded" />
                             <button
                               type="button"
                               className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
@@ -1377,7 +1554,19 @@ export default function SubgroupEventPage({ navbarHeight }) {
                     <option value="Paid">Paid</option>
                   </select>
 
-                  {/* FREE */}
+                  {/* QR check-in flag */}
+                  <label className="text-sm">
+                    <input
+                      type="checkbox"
+                      name="enableQrCheckIn"
+                      checked={!!form.enableQrCheckIn}
+                      onChange={handleChange}
+                      className="mr-2"
+                    />
+                    Enable QR check-in
+                  </label>
+
+                  {/* FREE EVENTS */}
                   {form.priceType === "Free" && (
                     <>
                       <input
@@ -1401,7 +1590,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
                         Limit how many tickets one booking (or user) can purchase. Leave blank for no limit.
                       </p>
 
-                      {/* Free ticket sale window */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
                         <div>
                           <label className="block text-xs text-gray-600 mb-1">Ticket Start Time</label>
@@ -1425,7 +1613,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
                         </div>
                       </div>
 
-                      {/* Tables/Pods event-level */}
                       <div className="space-y-2 mt-3">
                         <label className="block text-sm">
                           <input
@@ -1479,7 +1666,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
                     </>
                   )}
 
-                  {/* PAID */}
+                  {/* PAID EVENTS: ticket builder */}
                   {form.priceType === "Paid" && (
                     <div className="mt-3 space-y-2">
                       <div className="flex items-center justify-between">
@@ -1503,7 +1690,10 @@ export default function SubgroupEventPage({ navbarHeight }) {
                       )}
 
                       {(form.ticketTypes || []).map((t, index) => (
-                        <div key={index} className="border border-gray-200 rounded-md p-3 space-y-2 bg-gray-50">
+                        <div
+                          key={index}
+                          className="border border-gray-200 rounded-md p-3 space-y-2 bg-gray-50"
+                        >
                           <div className="flex justify-between items-center">
                             <span className="text-xs font-medium text-gray-600">Ticket {index + 1}</span>
                             <button
@@ -1529,6 +1719,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
                               className="border border-gray-300 p-2 rounded"
                               required
                             />
+
                             <input
                               placeholder="Description"
                               value={t.description || ""}
@@ -1582,11 +1773,9 @@ export default function SubgroupEventPage({ navbarHeight }) {
                                   <Select
                                     multiple
                                     displayEmpty
-                                    size="small"
                                     value={selectedKeys}
                                     onChange={(e) => {
-                                      const value = Array.isArray(e.target.value) ? e.target.value : [];
-
+                                      const value = e.target.value;
                                       const nextAllowed = value.map((k) => {
                                         const [type, id] = k.split(":");
                                         if (type === "club") {
@@ -1597,7 +1786,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
                                           return { id, title: g?.title || "Untitled Sub-group", type: "subgroup" };
                                         }
                                       });
-
                                       updateTicket(index, { allowedGroups: nextAllowed });
                                     }}
                                     renderValue={(selected) => {
@@ -1605,6 +1793,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
                                       return selected.map((k) => getLabelFromKey(k)).filter(Boolean).join(", ");
                                     }}
                                     className="w-full text-sm"
+                                    size="small"
                                   >
                                     {OPTIONS.map((opt) => (
                                       <MenuItem key={opt.key} value={opt.key}>
@@ -1641,7 +1830,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
                             />
                           </div>
 
-                          {/* Advanced ticket timing */}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             <div>
                               <label className="block text-xs text-gray-600 mb-1">Ticket Start Time</label>
@@ -1663,7 +1851,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
                             </div>
                           </div>
 
-                          {/* Password + extra info */}
                           <div className="space-y-2">
                             <label className="text-sm">
                               <input
@@ -1697,65 +1884,21 @@ export default function SubgroupEventPage({ navbarHeight }) {
 
                             {t.collectExtraInfo && (
                               <div className="grid grid-cols-2 gap-2 text-xs">
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={t.fields?.name ?? true}
-                                    onChange={() => updateTicketFieldCheckbox(index, "name")}
-                                    className="mr-1"
-                                  />
-                                  Name
-                                </label>
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={t.fields?.email ?? true}
-                                    onChange={() => updateTicketFieldCheckbox(index, "email")}
-                                    className="mr-1"
-                                  />
-                                  Email
-                                </label>
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={t.fields?.number ?? true}
-                                    onChange={() => updateTicketFieldCheckbox(index, "number")}
-                                    className="mr-1"
-                                  />
-                                  Number
-                                </label>
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={t.fields?.studentId ?? false}
-                                    onChange={() => updateTicketFieldCheckbox(index, "studentId")}
-                                    className="mr-1"
-                                  />
-                                  Student ID (Optional)
-                                </label>
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={t.fields?.degree ?? false}
-                                    onChange={() => updateTicketFieldCheckbox(index, "degree")}
-                                    className="mr-1"
-                                  />
-                                  Degree (Optional)
-                                </label>
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={t.fields?.studyYear ?? false}
-                                    onChange={() => updateTicketFieldCheckbox(index, "studyYear")}
-                                    className="mr-1"
-                                  />
-                                  Study Year (Optional)
-                                </label>
+                                {["name", "email", "number", "studentId", "degree"].map((field) => (
+                                  <label key={field}>
+                                    <input
+                                      type="checkbox"
+                                      checked={t.fields?.[field] ?? (field === "name" || field === "email" || field === "number")}
+                                      onChange={() => updateTicketFieldCheckbox(index, field)}
+                                      className="mr-1"
+                                    />
+                                    {field}
+                                  </label>
+                                ))}
                               </div>
                             )}
                           </div>
 
-                          {/* TABLE / POD per ticket */}
                           <div className="space-y-2 pt-3 border-t border-gray-300">
                             <label className="text-sm font-medium">
                               <input
@@ -1808,86 +1951,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
                   )}
                 </div>
 
-                {/* Website links */}
-                <div className="space-y-2">
-                  <label className="block font-medium">Website Links</label>
-
-                  {(form.websiteLinks || []).map((link, index) => (
-                    <div key={index} className="flex gap-2">
-                      <input
-                        value={link}
-                        onChange={(e) => {
-                          const newArr = [...form.websiteLinks];
-                          newArr[index] = e.target.value;
-                          setForm({ ...form, websiteLinks: newArr });
-                        }}
-                        className="flex-1 border border-gray-300 p-2 rounded"
-                        placeholder={`Website link ${index + 1}`}
-                      />
-
-                      <button
-                        type="button"
-                        className="text-red-600 text-sm"
-                        onClick={() => {
-                          const newArr = [...form.websiteLinks];
-                          newArr.splice(index, 1);
-                          setForm({ ...form, websiteLinks: newArr });
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() => setForm((p) => ({ ...p, websiteLinks: [...(p.websiteLinks || []), ""] }))}
-                    className="text-sm text-blue-600 hover:underline"
-                  >
-                    + Add website link
-                  </button>
-                </div>
-
-                {/* Social links */}
-                <div className="space-y-2">
-                  <label className="block font-medium">Social Media links</label>
-
-                  {(form.instagramLinks || []).map((link, index) => (
-                    <div key={index} className="flex gap-2">
-                      <input
-                        value={link}
-                        onChange={(e) => {
-                          const newArr = [...form.instagramLinks];
-                          newArr[index] = e.target.value;
-                          setForm({ ...form, instagramLinks: newArr });
-                        }}
-                        className="flex-1 border border-gray-300 p-2 rounded"
-                        placeholder={`Social Media link ${index + 1}`}
-                      />
-
-                      <button
-                        type="button"
-                        className="text-red-600 text-sm"
-                        onClick={() => {
-                          const newArr = [...form.instagramLinks];
-                          newArr.splice(index, 1);
-                          setForm({ ...form, instagramLinks: newArr });
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() => setForm((p) => ({ ...p, instagramLinks: [...(p.instagramLinks || []), ""] }))}
-                    className="text-sm text-blue-600 hover:underline"
-                  >
-                    + Add Social Media link
-                  </button>
-                </div>
-
                 {/* Refund Policy */}
                 <label className="block font-medium">Refund Policy</label>
                 <textarea
@@ -1898,59 +1961,67 @@ export default function SubgroupEventPage({ navbarHeight }) {
                   className="w-full border border-gray-300 p-2 rounded text-sm min-h-[80px]"
                 />
 
-                {/* Host clubs */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Host club(s)</label>
+                {/* HOST CLUBS */}
+                {/* HOST CLUBS */}
+                {(() => {
+                  const creator = String(editingData?.groupid || form?.groupid || "") === String(emp?.uniclubid || "");
+                  const selectedHosts = form.hostClubIds || [];
 
-                  <Select
-                    multiple
-                    displayEmpty
-                    size="small"
-                    className="w-full text-sm"
-                    value={form.hostClubIds || []}
-                    onChange={(e) => {
-                      const value = Array.isArray(e.target.value) ? e.target.value : [];
-                      const next = value.length ? value : groupId ? [groupId] : [];
-                      setForm((prev) => ({ ...prev, hostClubIds: next }));
-                    }}
-                    renderValue={(selected) => {
-                      if (!selected || selected.length === 0) return "Select host club(s)";
-                      const labels = selected
-                        .map((id) => clubs.find((c) => c.id === id)?.title || id)
-                        .filter(Boolean);
-                      return labels.join(", ");
-                    }}
-                  >
-                    {clubs.map((c) => (
-                      <MenuItem key={c.id} value={c.id}>
-                        <Checkbox checked={(form.hostClubIds || []).includes(c.id)} />
-                        <ListItemText primary={c.title} />
-                      </MenuItem>
-                    ))}
-                  </Select>
+                  return (
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Host club(s)</label>
 
-                  <p className="text-[11px] text-gray-500">
-                    Select 1 or more clubs from the same university. The first one can be treated as the “primary” host
-                    in the app UI.
-                  </p>
-                </div>
+                      {/* ✅ Non-creator: show read-only text only */}
+                      {!creator ? (
+                        <div className="border border-gray-200 rounded p-2 bg-gray-50 text-sm text-gray-700">
+                          {selectedHosts.length
+                            ? selectedHosts
+                              .map((id) => clubs.find((c) => c.id === id)?.title || id)
+                              .join(", ")
+                            : "—"}
+                          <div className="text-[11px] text-gray-500 mt-1">
+                            Only the event creator can change host clubs.
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {/* ✅ Creator: can edit */}
+                          <Select
+                            multiple
+                            displayEmpty
+                            size="small"
+                            className="w-full text-sm"
+                            value={selectedHosts}
+                            onChange={(e) => {
+                              const value = e.target.value || [];
+                              const next = value.length ? value : [groupId];
+                              setForm((prev) => ({ ...prev, hostClubIds: next }));
+                            }}
+                            renderValue={(selected) => {
+                              if (!selected || selected.length === 0) return "Select host club(s)";
+                              const labels = selected
+                                .map((id) => clubs.find((c) => c.id === id)?.title || id)
+                                .filter(Boolean);
+                              return labels.join(", ");
+                            }}
+                          >
+                            {clubs.map((c) => (
+                              <MenuItem key={c.id} value={c.id}>
+                                <Checkbox checked={selectedHosts.includes(c.id)} />
+                                <ListItemText primary={c.title} />
+                              </MenuItem>
+                            ))}
+                          </Select>
 
-                {/* QR Check-in */}
-                <div className="space-y-1 pt-2">
-                  <label className="text-sm">
-                    <input
-                      type="checkbox"
-                      name="enableQrCheckIn"
-                      checked={!!form.enableQrCheckIn}
-                      onChange={handleChange}
-                      className="mr-2"
-                    />
-                    Enable QR Check-in for this event
-                  </label>
-                  <p className="text-[11px] text-gray-500">
-                    If enabled, admins can scan QR to verify which student attended.
-                  </p>
-                </div>
+                          <p className="text-[11px] text-gray-500">
+                            Select 1 or more clubs from the same university. Only the creator can edit host clubs.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
+
               </div>
 
               <div className="flex justify-end mt-6 space-x-3">
@@ -2023,7 +2094,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
             <div className="px-5 py-4 border-b flex items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">Bookings — {bookingModal.event?.eventName || "Event"}</h3>
               <div className="flex items-center gap-2">
-                {/* Export CSV */}
                 <button
                   className="text-sm px-2 py-1 border rounded hover:bg-gray-50"
                   onClick={() => {
@@ -2040,13 +2110,12 @@ export default function SubgroupEventPage({ navbarHeight }) {
                     ]
                       .map((r) => r.join(","))
                       .join("\n");
+
                     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = `${(bookingModal.event?.eventName || "event")
-                      .replace(/\s+/g, "_")
-                      .toLowerCase()}_bookings.csv`;
+                    a.download = `${(bookingModal.event?.eventName || "event").replace(/\s+/g, "_").toLowerCase()}_bookings.csv`;
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
@@ -2054,17 +2123,12 @@ export default function SubgroupEventPage({ navbarHeight }) {
                   Export CSV
                 </button>
 
-                <button
-                  className="text-gray-600 hover:text-black"
-                  onClick={() => setBookingModal((p) => ({ ...p, open: false }))}
-                  aria-label="Close"
-                >
+                <button className="text-gray-600 hover:text-black" onClick={() => setBookingModal((p) => ({ ...p, open: false }))} aria-label="Close">
                   ✕
                 </button>
               </div>
             </div>
 
-            {/* Controls */}
             <div className="px-5 py-3 border-b flex items-center gap-3">
               <input
                 className="border rounded px-3 py-1.5 text-sm w-60"
@@ -2089,7 +2153,6 @@ export default function SubgroupEventPage({ navbarHeight }) {
               </div>
             </div>
 
-            {/* Table */}
             <div className="overflow-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -2125,17 +2188,17 @@ export default function SubgroupEventPage({ navbarHeight }) {
                     ))}
                   </tr>
                 </thead>
+
                 <tbody className="divide-y divide-gray-200">
                   {(() => {
                     const rows = bookingsByEvent[bookingModal.event?.id] || [];
-
                     const q = (bookingModal.q || "").trim().toLowerCase();
                     const filteredRows = q
                       ? rows.filter(
-                          (b) =>
-                            (b.userName || "").toLowerCase().includes(q) ||
-                            (b.userEmail || "").toLowerCase().includes(q)
-                        )
+                        (b) =>
+                          (b.userName || "").toLowerCase().includes(q) ||
+                          (b.userEmail || "").toLowerCase().includes(q)
+                      )
                       : rows;
 
                     const dir = bookingModal.sort.dir === "asc" ? 1 : -1;
@@ -2203,17 +2266,16 @@ export default function SubgroupEventPage({ navbarHeight }) {
               </table>
             </div>
 
-            {/* Pager */}
             <div className="px-5 py-3 border-t flex items-center justify-between">
               {(() => {
                 const rows = bookingsByEvent[bookingModal.event?.id] || [];
                 const q = (bookingModal.q || "").trim().toLowerCase();
                 const filteredRows = q
                   ? rows.filter(
-                      (b) =>
-                        (b.userName || "").toLowerCase().includes(q) ||
-                        (b.userEmail || "").toLowerCase().includes(q)
-                    )
+                    (b) =>
+                      (b.userName || "").toLowerCase().includes(q) ||
+                      (b.userEmail || "").toLowerCase().includes(q)
+                  )
                   : rows;
 
                 const total = filteredRows.length;
@@ -2228,18 +2290,16 @@ export default function SubgroupEventPage({ navbarHeight }) {
                     </span>
                     <div className="flex items-center gap-2">
                       <button
-                        className={`px-3 py-1 rounded border ${
-                          canPrev ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                        }`}
+                        className={`px-3 py-1 rounded border ${canPrev ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          }`}
                         onClick={() => canPrev && setBookingModal((p) => ({ ...p, page: p.page - 1 }))}
                         disabled={!canPrev}
                       >
                         Prev
                       </button>
                       <button
-                        className={`px-3 py-1 rounded border ${
-                          canNext ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                        }`}
+                        className={`px-3 py-1 rounded border ${canNext ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          }`}
                         onClick={() => canNext && setBookingModal((p) => ({ ...p, page: p.page + 1 }))}
                         disabled={!canNext}
                       >
