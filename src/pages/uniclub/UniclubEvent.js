@@ -216,6 +216,45 @@ export default function UniclubEventPage({ navbarHeight }) {
   const getList = async () => {
     setIsLoading(true);
     try {
+      // ✅ New: events where this club is a host
+      const qHost = query(
+        collection(db, "discoverevents"),
+        where("hostClubIds", "array-contains", emp?.uniclubid)
+      );
+
+      // ✅ Old fallback: (purane events jisme hostClubIds nahi tha)
+      const qOld = query(
+        collection(db, "discoverevents"),
+        where("groupid", "==", groupId)
+      );
+
+      // const [snapHost, snapOld] = await Promise.all([getDocs(qHost), getDocs(qOld)]);
+      const [snapHost] = await Promise.all([getDocs(qHost)]);
+
+      // ✅ Merge unique by id
+      const map = new Map();
+      snapHost.docs.forEach((d) => map.set(d.id, { id: d.id, ...d.data() }));
+      // snapOld.docs.forEach((d) => map.set(d.id, { id: d.id, ...d.data() }));
+
+      const docs = Array.from(map.values());
+
+      // sort same as before
+      docs.sort(
+        (a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0)
+      );
+
+      setList(docs);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load events");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getList1 = async () => {
+    setIsLoading(true);
+    try {
       const qEvents = query(
         collection(db, "discoverevents"),
         where("groupid", "==", groupId)
@@ -265,7 +304,7 @@ export default function UniclubEventPage({ navbarHeight }) {
       const snap = await rtdbGet(ref);
       const val = snap.val() || {};
       const filtered = Object.entries(val)
-        .filter(([id, c]) => c.id === emp?.uniclubid)
+        .filter(([id, c]) => c.universityid === emp?.universityId)
         .map(([id, c]) => ({
           id,
           title: c.title || "Unnamed Club",
@@ -472,38 +511,50 @@ export default function UniclubEventPage({ navbarHeight }) {
     }
   };
 
+  // ✅ Robust millis converter (works for ISO string, Date, Timestamp, {seconds})
   const toMillis = (val) => {
     if (!val) return null;
-    if (typeof val === "object" && val.seconds != null) return val.seconds * 1000;
-    if (val?.toDate) return val.toDate().getTime();
-    const ms = new Date(val).getTime();
+    if (typeof val === "object" && val.seconds != null) return val.seconds * 1000; // Firestore timestamp object
+    if (val?.toDate) return val.toDate().getTime(); // Firestore Timestamp
+    if (val instanceof Date) return val.getTime();
+    const ms = new Date(val).getTime(); // ISO string
     return Number.isNaN(ms) ? null : ms;
   };
 
-  // windows + classification
+  // ✅ NEW: use "date.startDate/endDate" FIRST (image wala), then fallback to startDateTime/endDateTime
   function getEventWindowMillis(item) {
+    // 1) ✅ Primary: Display Range on App (date range)
+    const sd = toMillis(item?.date?.startDate);
+    const ed = toMillis(item?.date?.endDate);
+
+    if (sd || ed) {
+      const startMs = sd ?? ed;
+      const endMs = ed ?? sd;
+
+      // normalize to full-day window
+      const s = new Date(startMs);
+      const e = new Date(endMs);
+      const dayStartMs = new Date(s.getFullYear(), s.getMonth(), s.getDate(), 0, 0, 0, 0).getTime();
+      const dayEndMs = new Date(e.getFullYear(), e.getMonth(), e.getDate(), 23, 59, 59, 999).getTime();
+
+      return { start: dayStartMs, end: dayEndMs, source: "displayRange" };
+    }
+
+    // 2) fallback: actual event start/end datetime
     const s1 = toMillis(item.startDateTime);
     const e1 = toMillis(item.endDateTime);
     if (s1 || e1) return { start: s1 ?? e1, end: e1 ?? s1, source: "dateTime" };
 
-    const sd = toMillis(item?.date?.startDate);
-    const ed = toMillis(item?.date?.endDate);
-    if (sd || ed) {
-      const start = sd ? new Date(sd) : ed ? new Date(ed) : null;
-      const end = ed ? new Date(ed) : sd ? new Date(sd) : null;
-      if (start && end) {
-        const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0).getTime();
-        const dayEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999).getTime();
-        return { start: dayStart, end: dayEnd, source: "dateOnly" };
-      }
-    }
     return { start: null, end: null, source: "none" };
   }
 
   function classifyEvent(item) {
     const now = Date.now();
     const { start, end } = getEventWindowMillis(item);
+
     if (start == null && end == null) return "current";
+
+    // ✅ important: current means overlap with today/now
     if (start != null && now < start) return "future";
     if (end != null && now > end) return "past";
     return "current";

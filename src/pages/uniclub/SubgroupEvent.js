@@ -36,24 +36,7 @@ import { format } from "date-fns";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { MenuItem, Select, Checkbox, ListItemText } from "@mui/material";
 
-/**
- * ✅ SubGroupEventPage
- * - Same Create/Edit form as UniclubEventPage
- * - Supports ticket builder + allowedGroups (club/subgroup) multiselect
- * - Supports free ticket window, tables/pods (event-level & per-ticket)
- * - Supports refundPolicy, websiteLinks/instagramLinks, hostClubIds
- * - Supports pinning + bookings modal
- *
- * Assumptions:
- * - Events are stored in Firestore collection: "discoverevents"
- * - Subgroup id (optional) is passed as:
- *    - URL query: ?subGroupId=xxx OR ?subgroupId=xxx
- *    - OR via location.state.subGroupId
- * - If subgroup id is present, list filters by subgroupId as well.
- * - Bookings collection: "discovereventbookings" and each booking has eventId = event doc id
- */
-
-export default function SubGroupEventPage({ navbarHeight }) {
+export default function SubgroupEventPage({ navbarHeight }) {
   const { state } = useLocation();
   const [params] = useSearchParams();
 
@@ -233,7 +216,7 @@ export default function SubGroupEventPage({ navbarHeight }) {
       // (If your field name differs, adjust here.)
       if (subGroupId) base.push(where("subGroupId", "==", subGroupId));
 
-      const qEvents = query(collection(db, "discoverevents"), ...base);
+      const qEvents = query(collection(db, "subgroupevents"), ...base);
       const snap = await getDocs(qEvents);
 
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -415,7 +398,7 @@ export default function SubGroupEventPage({ navbarHeight }) {
     pinned.forEach((ev, i) => {
       const order = i + 1;
       if (ev.pinnedOrder !== order)
-        batch.update(doc(db, "discoverevents", ev.id), { pinnedOrder: order });
+        batch.update(doc(db, "subgroupevents", ev.id), { pinnedOrder: order });
     });
     await batch.commit();
     await getList();
@@ -429,8 +412,8 @@ export default function SubGroupEventPage({ navbarHeight }) {
     const a = pinned[idx];
     const b = pinned[swapIdx];
     const batch = writeBatch(db);
-    batch.update(doc(db, "discoverevents", a.id), { pinnedOrder: b.pinnedOrder });
-    batch.update(doc(db, "discoverevents", b.id), { pinnedOrder: a.pinnedOrder });
+    batch.update(doc(db, "subgroupevents", a.id), { pinnedOrder: b.pinnedOrder });
+    batch.update(doc(db, "subgroupevents", b.id), { pinnedOrder: a.pinnedOrder });
     await batch.commit();
     await getList();
   };
@@ -444,7 +427,7 @@ export default function SubGroupEventPage({ navbarHeight }) {
     sequence.splice(newOrder - 1, 0, { ...item });
     const batch = writeBatch(db);
     sequence.forEach((ev, i) =>
-      batch.update(doc(db, "discoverevents", ev.id), { pinnedOrder: i + 1 })
+      batch.update(doc(db, "subgroupevents", ev.id), { pinnedOrder: i + 1 })
     );
     await batch.commit();
     await getList();
@@ -452,7 +435,7 @@ export default function SubGroupEventPage({ navbarHeight }) {
 
   const togglePin = async (item, makePinned) => {
     try {
-      const ref = doc(db, "discoverevents", item.id);
+      const ref = doc(db, "subgroupevents", item.id);
       if (makePinned) {
         const currentPinned = getPinnedSorted();
         const nextOrder = (currentPinned[currentPinned.length - 1]?.pinnedOrder || 0) + 1;
@@ -790,13 +773,13 @@ export default function SubGroupEventPage({ navbarHeight }) {
       delete eventData.posterFiles;
 
       if (editingData) {
-        const ref = doc(db, "discoverevents", editingData.id);
+        const ref = doc(db, "subgroupevents", editingData.id);
         const snap = await getDoc(ref);
         if (!snap.exists()) return toast.warning("Event does not exist! Cannot update.");
         await updateDoc(ref, eventData);
         toast.success("Event updated successfully");
       } else {
-        await addDoc(collection(db, "discoverevents"), eventData);
+        await addDoc(collection(db, "subgroupevents"), eventData);
         toast.success("Event created successfully");
       }
 
@@ -813,7 +796,7 @@ export default function SubGroupEventPage({ navbarHeight }) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "discoverevents", deleteData.id));
+      await deleteDoc(doc(db, "subgroupevents", deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (e) {
