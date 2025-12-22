@@ -39,6 +39,9 @@ export default function UniclubEmployeePage(props) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([]);
   const [universities, setUniversities] = useState([]);
+  const [filterUniversity, setFilterUniversity] = useState([]);
+  const [filterUniversityId, setFiletrUniversityId] = useState("");
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const [hostels, setHostels] = useState([]); // still kept for delete logic, even if not shown
   const [selectedUniversityId, setSelectedUniversityId] = useState("");
   const [hostelFeatures, setHostelFeatures] = useState({});
@@ -48,6 +51,7 @@ export default function UniclubEmployeePage(props) {
   const [fileName, setFileName] = useState("No file chosen");
 
   const uid = useSelector((state) => state.auth.user.uid);
+  const emp = useSelector((state) => state.auth.employee);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -134,15 +138,25 @@ export default function UniclubEmployeePage(props) {
   };
 
   /* -------------------- Derived -------------------- */
-  const filteredData = useMemo(
-    () =>
-      list.filter(
-        (item) =>
-          item.name?.toLowerCase?.().includes(searchTerm.toLowerCase()) ||
-          item.email?.toLowerCase?.().includes(searchTerm.toLowerCase())
-      ),
-    [list, searchTerm]
-  );
+  const filteredData = useMemo(() => {
+    const term = (searchTerm || "").toLowerCase().trim();
+
+    return list.filter((item) => {
+      // ✅ University filter (ONLY)
+      const uniOk = !filterUniversityId
+        ? true
+        : item.universityId === filterUniversityId;
+
+      // ✅ Search filter (optional)
+      const searchOk = !term
+        ? true
+        : item.name?.toLowerCase?.().includes(term) ||
+        item.email?.toLowerCase?.().includes(term);
+
+      return uniOk && searchOk;
+    });
+  }, [list, searchTerm, filterUniversityId]);
+
 
   const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
   const paginatedData = useMemo(
@@ -205,7 +219,33 @@ export default function UniclubEmployeePage(props) {
 
     setAllowedMenuKeys(Array.from(all));
   }, [universities, form.universityId, form.permissions]);
+  useEffect(() => {
+    const fetchUniversities = async () => {
+      if (!emp?.uid) return;
+      setIsLoading(true);
+      try {
+        // adjust query as per your schema (uid / org / etc)
+        const qy = query(
+          collection(db, "university"),
+          where("uid", "==", emp.uid)
+        );
+        const qs = await getDocs(qy);
+        const uniArr = qs.docs.map((d) => ({
+          id: d.id,
+          name: d.data().name,
+          countryName: d.data().countryName || "",
+        }));
+        if (mountedRef.current) setFilterUniversity(uniArr);
+      } catch (err) {
+        console.error("fetchUniversities error:", err);
+        toast.error("Failed to load universities");
+      } finally {
+        if (mountedRef.current) setIsLoading(false);
+      }
+    };
 
+    fetchUniversities();
+  }, [emp?.uid]);
   /* -------------------- Data Fetch -------------------- */
   const getList = async () => {
     setIsLoading(true);
@@ -246,7 +286,33 @@ export default function UniclubEmployeePage(props) {
       setIsLoading(false);
     }
   };
+  useEffect(() => {
+    const fetchUniversities = async () => {
+      if (!emp?.uid) return;
+      setIsLoading(true);
+      try {
+        // adjust query as per your schema (uid / org / etc)
+        const qy = query(
+          collection(db, "university"),
+          where("uid", "==", emp.uid)
+        );
+        const qs = await getDocs(qy);
+        const uniArr = qs.docs.map((d) => ({
+          id: d.id,
+          name: d.data().name,
+          countryName: d.data().countryName || "",
+        }));
+        if (mountedRef.current) setFilterUniversity(uniArr);
+      } catch (err) {
+        console.error("fetchUniversities error:", err);
+        toast.error("Failed to load universities");
+      } finally {
+        if (mountedRef.current) setIsLoading(false);
+      }
+    };
 
+    fetchUniversities();
+  }, [emp?.uid]);
   const fetchUniversitiesByCountry = async (countryName) => {
     if (!countryName) {
       setUniversities([]);
@@ -422,13 +488,13 @@ export default function UniclubEmployeePage(props) {
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) {
           toast.warning("Employee does not exist! Cannot update.");
-          try { await deleteApp(tempApp); } catch {}
+          try { await deleteApp(tempApp); } catch { }
           return;
         }
-      
+
         const newEmail = baseData.email;
         const oldEmail = form.originalEmail || editingData.email || "";
-      
+
         // 🔹 1) Agar email change hui hai to Cloud Function se Auth email update karo
         if (newEmail && oldEmail && newEmail !== oldEmail) {
           try {
@@ -438,7 +504,7 @@ export default function UniclubEmployeePage(props) {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  uid: form.id,       
+                  uid: form.id,
                   newEmail,
                 }),
               }
@@ -450,10 +516,10 @@ export default function UniclubEmployeePage(props) {
           } catch (err) {
             console.error("updateUserEmailByUid error:", err);
             toast.error("Could not update login email. Please try again.");
-            try { await deleteApp(tempApp); } catch {}
+            try { await deleteApp(tempApp); } catch { }
             return;
           }
-      
+
           // 🔹 2) Firestore users collection me bhi email update
           try {
             await updateDoc(doc(db, "users", form.id), { email: newEmail });
@@ -462,12 +528,12 @@ export default function UniclubEmployeePage(props) {
             // non-blocking, sirf console/ toast
           }
         }
-      
+
         // 🔹 3) Employees doc update (baaki fields)
         await updateDoc(docRef, baseData);
         toast.success("Employee updated successfully");
       }
-      
+
       else {
         // 1) ensure university exists
         const uniRef = doc(db, "university", form.universityId);
@@ -476,7 +542,7 @@ export default function UniclubEmployeePage(props) {
           toast.warn("University not found.");
           try {
             await deleteApp(tempApp);
-          } catch {}
+          } catch { }
           return;
         }
 
@@ -493,7 +559,7 @@ export default function UniclubEmployeePage(props) {
           toast.warn("This UniClub already has an assigned admin.");
           try {
             await deleteApp(tempApp);
-          } catch {}
+          } catch { }
           return;
         }
 
@@ -533,7 +599,7 @@ export default function UniclubEmployeePage(props) {
 
       try {
         await deleteApp(tempApp);
-      } catch {}
+      } catch { }
 
       await getList();
       setModalOpen(false);
@@ -655,6 +721,8 @@ export default function UniclubEmployeePage(props) {
       {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Uni Club Employee</h1>
+
+
         <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
@@ -673,7 +741,27 @@ export default function UniclubEmployeePage(props) {
       </div>
 
       {/* Search */}
-      <div className="mb-4">
+      <div className="mb-4 flex flex-col md:flex-row gap-3 md:items-center">
+        <select
+          className="border border-gray-300 px-3 py-2 rounded-xl bg-white text-sm"
+          value={filterUniversityId}
+          onChange={(e) => {
+            setFiletrUniversityId(e.target.value);
+            setSelectedIds(new Set());
+            setCurrentPage(1);
+          }}
+        >
+          <option value="">
+            {filterUniversity.length
+              ? "Select University"
+              : "Loading universities..."}
+          </option>
+          {filterUniversity.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
         <input
           type="text"
           placeholder="Search by name or email"
@@ -682,8 +770,10 @@ export default function UniclubEmployeePage(props) {
           onChange={(e) => {
             setSearchTerm(e.target.value);
             setCurrentPage(1);
+
           }}
         />
+
       </div>
 
       {/* Table */}
@@ -928,17 +1018,17 @@ export default function UniclubEmployeePage(props) {
                     return same
                       ? prev
                       : {
-                          ...prev,
-                          ...next,
-                          universityId: "",
-                          university: "",
-                          hostelid: "",
-                          hostel: "",
-                          uniclubid: "",
-                          uniclub: "",
-                          domain: "",
-                          permissions: [],
-                        };
+                        ...prev,
+                        ...next,
+                        universityId: "",
+                        university: "",
+                        hostelid: "",
+                        hostel: "",
+                        uniclubid: "",
+                        uniclub: "",
+                        domain: "",
+                        permissions: [],
+                      };
                   });
                   setSelectedUniversityId("");
                   setAllowedMenuKeys(["dashboard", "setting", "contact"]);
@@ -1091,9 +1181,8 @@ export default function UniclubEmployeePage(props) {
                   <span className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5" />
                 </div>
                 <span
-                  className={`text-sm font-semibold ${
-                    form.isActive ? "text-green-600" : "text-red-500"
-                  }`}
+                  className={`text-sm font-semibold ${form.isActive ? "text-green-600" : "text-red-500"
+                    }`}
                 >
                   {form.isActive ? "Active" : "Inactive"}
                 </span>

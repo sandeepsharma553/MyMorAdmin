@@ -101,6 +101,12 @@ export default function UniclubSubgroup({ navbarHeight }) {
   const uid = useSelector((s) => s.auth?.user?.uid);
   const emp = useSelector((s) => s.auth?.employee);
   const user = useSelector((s) => s.auth?.user);
+  const committeeScope = emp?.committeeScope || "";
+  const scopedSubgroupId = emp?.subgroupId || "";
+  const scopedSubgroupName = emp?.subgroupName || "";
+
+  const isSubgroupCommittee =
+    committeeScope === "subgroup" && !!scopedSubgroupId;
 
   const groupId = emp.uniclubid;
   const groupName = emp.uniclub;
@@ -159,7 +165,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
     id: 0,
     title: "",
     desc: "",
-    address:"",
+    address: "",
     location: "",
     website: "",
     link: "",
@@ -200,6 +206,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
     showPhone: false,
     showEmail: false,
     contacts: [{ name: "", phone: "", email: "" }],
+    editingJoinQId: ""
   };
   const [form, setForm] = useState(initialForm);
 
@@ -250,12 +257,28 @@ export default function UniclubSubgroup({ navbarHeight }) {
   /* ---------- Data IO ---------- */
   const getList = () => {
     setIsLoading(true);
-    const ref = dbRef(database, `${basePath}`);
-    const handler = async (snap) => {
-      const val = snap.val();
-      const arr = val ? Object.entries(val).map(([id, v]) => ({ id, ...v })) : [];
 
-      // Fetch counts for each row
+    // ✅ if committee is subgroup-scoped -> load only that subgroup
+    const path = isSubgroupCommittee
+      ? `${basePath}/${scopedSubgroupId}`
+      : `${basePath}`;
+
+    const ref = dbRef(database, path);
+
+    const handler = async (snap) => {
+      let arr = [];
+
+      if (isSubgroupCommittee) {
+        // single subgroup object
+        const v = snap.val();
+        arr = v ? [{ id: scopedSubgroupId, ...v }] : [];
+      } else {
+        // all subgroups
+        const val = snap.val();
+        arr = val ? Object.entries(val).map(([id, v]) => ({ id, ...v })) : [];
+      }
+
+      // ✅ counts
       const withCounts = await Promise.all(
         arr.map(async (item) => {
           try {
@@ -272,15 +295,19 @@ export default function UniclubSubgroup({ navbarHeight }) {
         })
       );
 
-      const filtered = withCounts.filter(
-        (x) => String(x.parentGroupId || "") === String(groupId)
-      );
+      // ✅ keep existing behavior when NOT scoped
+      const filtered = isSubgroupCommittee
+        ? withCounts // already a single subgroup
+        : withCounts.filter((x) => String(x.parentGroupId || "") === String(groupId));
+
       setList(filtered);
       setIsLoading(false);
     };
+
     onValue(ref, handler, { onlyOnce: false });
     return () => off(ref, "value", handler);
   };
+
 
   const getMembers = async () => {
     setIsLoading(true);
@@ -338,6 +365,49 @@ export default function UniclubSubgroup({ navbarHeight }) {
     } else {
       setForm((prev) => ({ ...prev, [name]: value }));
     }
+  };
+  const startEditJoinQuestion = (q) => {
+    setForm((p) => ({
+      ...p,
+      editingJoinQId: q.id,
+      joinQInput: q.question || "",
+      joinQType: q.type || "short",
+      joinQOptionInput: "",
+      joinQOptionList: Array.isArray(q.options) ? q.options : [],
+    }));
+  };
+
+  const cancelEditJoinQuestion = () => {
+    setForm((p) => ({
+      ...p,
+      editingJoinQId: "",
+      joinQInput: "",
+      joinQType: "short",
+      joinQOptionInput: "",
+      joinQOptionList: [],
+    }));
+  };
+
+  const saveEditedJoinQuestion = () => {
+    const qText = (form.joinQInput || "").trim();
+    if (!qText) return;
+
+    const type = form.joinQType || "short";
+    const options = type === "short" ? [] : (form.joinQOptionList || []);
+
+    setForm((p) => ({
+      ...p,
+      joinQuestions: (p.joinQuestions || []).map((q) =>
+        q.id === p.editingJoinQId
+          ? { ...q, question: qText, type, options }
+          : q
+      ),
+      editingJoinQId: "",
+      joinQInput: "",
+      joinQType: "short",
+      joinQOptionInput: "",
+      joinQOptionList: [],
+    }));
   };
 
   const validate = () => {
@@ -499,7 +569,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
       const payload = {
         parentGroupId: groupId,
         title: form.title.trim(),
-        address:form.address.trim(),
+        address: form.address.trim(),
         location: form.location.trim(),
         desc: form.desc.trim(),
         website: form.website?.trim() || (cleanedLinks[0]?.url || ""),
@@ -726,18 +796,20 @@ export default function UniclubSubgroup({ navbarHeight }) {
         <h1 className="text-2xl font-semibold">
           {groupName} — Uniclub {groupId ? "(Subgroups)" : ""}
         </h1>
-        <button
-          className="px-4 py-2 bg-black text-white rounded hover:bg-black"
-          onClick={() => {
-            setEditing(null);
-            setForm(initialForm);
-            setFileName("No file chosen");
-            setPreviewUrl("");
-            setModalOpen(true);
-          }}
-        >
-          + Add Subgroup
-        </button>
+        {!isSubgroupCommittee && (
+          <button
+            className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+            onClick={() => {
+              setEditing(null);
+              setForm(initialForm);
+              setFileName("No file chosen");
+              setPreviewUrl("");
+              setModalOpen(true);
+            }}
+          >
+            + Add Subgroup
+          </button>
+        )}
       </div>
 
       <div className="overflow-x-auto bg-white rounded shadow no-scrollbar">
@@ -747,33 +819,40 @@ export default function UniclubSubgroup({ navbarHeight }) {
           </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
+            {/* ================= HEADER ================= */}
             <thead className="bg-gray-50">
+              {/* ---- main header ---- */}
               <tr>
                 {[
                   { key: "title", label: "Title" },
                   { key: "desc", label: "Description" },
                   { key: "when", label: "When", sortable: false },
                   { key: "requests", label: "Requests", sortable: false },
-                  { key: "membersCol", label: "Members", sortable: false },
-                  { key: "announcementCol", label: "Announcement", sortable: false },
-                  { key: "eventsCol", label: "Events", sortable: false },
-                  { key: "eventBookingsCol", label: "EventBookings", sortable: false },
+                  { key: "members", label: "Members", sortable: false },
+
+                  ...(!isSubgroupCommittee
+                    ? [
+                      { key: "announcement", label: "Announcement", sortable: false },
+                      { key: "events", label: "Events", sortable: false },
+                      { key: "bookings", label: "Event Bookings", sortable: false },
+                    ]
+                    : []),
+
                   { key: "actions", label: "Action", sortable: false },
                 ].map((col) => (
                   <th
                     key={col.key}
-                    className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none"
+                    className="px-6 py-3 text-left text-sm font-medium text-gray-600"
                   >
                     {col.sortable === false ? (
-                      <span>{col.label}</span>
+                      col.label
                     ) : (
                       <button
                         type="button"
-                        className="flex items-center gap-1 hover:underline"
                         onClick={() => onSort(col.key)}
-                        title="Sort"
+                        className="flex items-center gap-1 hover:underline"
                       >
-                        <span>{col.label}</span>
+                        {col.label}
                         {sortConfig.key === col.key && (
                           <span className="text-gray-400">
                             {sortConfig.direction === "asc" ? "▲" : "▼"}
@@ -785,7 +864,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                 ))}
               </tr>
 
-              {/* header filters */}
+              {/* ---- filters row ---- */}
               <tr className="border-t border-gray-200">
                 <th className="px-6 pb-3">
                   <input
@@ -795,6 +874,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                     onChange={(e) => setFilterDebounced("title", e.target.value)}
                   />
                 </th>
+
                 <th className="px-6 pb-3">
                   <input
                     className="w-full border border-gray-300 p-1 rounded text-sm"
@@ -803,26 +883,32 @@ export default function UniclubSubgroup({ navbarHeight }) {
                     onChange={(e) => setFilterDebounced("desc", e.target.value)}
                   />
                 </th>
+
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
-                <th className="px-6 pb-3" />
-                <th className="px-6 pb-3" />
-                <th className="px-6 pb-3" />
+
+                {!isSubgroupCommittee && (
+                  <>
+                    <th className="px-6 pb-3" />
+                    <th className="px-6 pb-3" />
+                    <th className="px-6 pb-3" />
+                  </>
+                )}
+
                 <th className="px-6 pb-3" />
               </tr>
             </thead>
 
+            {/* ================= BODY ================= */}
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={isSubgroupCommittee ? 6 : 9}
                     className="px-6 py-8 text-center text-gray-500"
                   >
-                    {groupId
-                      ? "No subgroups yet. Create one."
-                      : "No groups found."}
+                    No subgroups found.
                   </td>
                 </tr>
               ) : (
@@ -830,50 +916,41 @@ export default function UniclubSubgroup({ navbarHeight }) {
                   const start = item.startAtMs || item.startAt;
                   const end = item.endAtMs || item.endAt;
                   const whenLabel = start
-                    ? `${dayjs(start).format("DD MMM, h:mm A")}${
-                        end
-                          ? ` – ${dayjs(end).format("DD MMM, h:mm A")}`
-                          : ""
-                      }`
-                    : item.date || item.time
-                    ? `${item.date || ""}${
-                        item.time
-                          ? ` • ${item.time}${
-                              item.endAt ? ` – ${item.endAt}` : ""
-                            }`
-                          : ""
-                      }`
+                    ? `${dayjs(start).format("DD MMM, h:mm A")}${end ? ` – ${dayjs(end).format("DD MMM, h:mm A")}` : ""
+                    }`
                     : "-";
 
                   return (
                     <tr key={item.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {/* Title */}
+                      <td className="px-6 py-4 text-sm text-gray-700">
                         {item.title}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-500 whitespace-normal break-words max-w-xs">
+
+                      {/* Description */}
+                      <td className="px-6 py-4 text-sm text-gray-500 max-w-xs break-words">
                         {item.desc}
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {/* When */}
+                      <td className="px-6 py-4 text-sm text-gray-700">
                         {whenLabel}
                       </td>
 
                       {/* Requests */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <td className="px-6 py-4 text-sm">
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                          <span className="px-2 py-0.5 rounded-full bg-gray-100 text-xs">
                             {item.requestsCount ?? 0}
                           </span>
                           {item.requestsCount > 0 && (
                             <button
-                              type="button"
                               className="text-blue-600 hover:underline"
                               onClick={() => {
                                 setActiveClubId(item.id);
-                                setActiveClubTitle(item.title || "Club");
+                                setActiveClubTitle(item.title);
                                 setReqModalOpen(true);
                               }}
-                              title="Requests"
                             >
                               View
                             </button>
@@ -882,21 +959,19 @@ export default function UniclubSubgroup({ navbarHeight }) {
                       </td>
 
                       {/* Members */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <td className="px-6 py-4 text-sm">
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                          <span className="px-2 py-0.5 rounded-full bg-gray-100 text-xs">
                             {item.membersCount ?? 0}
                           </span>
                           {item.membersCount > 0 && (
                             <button
-                              type="button"
                               className="text-blue-600 hover:underline"
                               onClick={() => {
                                 setActiveClubId(item.id);
-                                setActiveClubTitle(item.title || "Club");
+                                setActiveClubTitle(item.title);
                                 setMemModalOpen(true);
                               }}
-                              title="Members"
                             >
                               View
                             </button>
@@ -904,186 +979,74 @@ export default function UniclubSubgroup({ navbarHeight }) {
                         </div>
                       </td>
 
-                      {/* Announcements */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button
-                          className="text-blue-600 hover:underline"
-                          onClick={() =>
-                            navigate("/subgroupannouncement", {
-                              state: {
-                                groupId: item.id,
-                                subgroupId: item.id,
-                                groupName: item.title || "Club",
-                              },
-                            })
-                          }
-                          title="Announcements"
-                        >
-                          <span> + Add</span>
-                        </button>
-                      </td>
+                      {/* Scoped-only columns */}
+                      {!isSubgroupCommittee && (
+                        <>
+                          <td className="px-6 py-4 text-sm">
+                            <button
+                              className="text-blue-600 hover:underline"
+                              onClick={() =>
+                                navigate("/subgroupannouncement", {
+                                  state: { subgroupId: item.id },
+                                })
+                              }
+                            >
+                              + Add
+                            </button>
+                          </td>
 
-                      {/* Events */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button
-                          className="text-blue-600 hover:underline"
-                          onClick={() =>
-                            navigate("/subgroupevent", {
-                              state: {
-                                groupId: item.id,
-                                subgroupId: item.id,
-                                groupName: item.title || "Club",
-                              },
-                            })
-                          }
-                          title="Events"
-                        >
-                          <span>+ Add</span>
-                        </button>
-                      </td>
+                          <td className="px-6 py-4 text-sm">
+                            <button
+                              className="text-blue-600 hover:underline"
+                              onClick={() =>
+                                navigate("/subgroupevent", {
+                                  state: { subgroupId: item.id },
+                                })
+                              }
+                            >
+                              + Add
+                            </button>
+                          </td>
 
-                      {/* Event Bookings */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button
-                          className="text-blue-600 hover:underline"
-                          onClick={() =>
-                            navigate("/subgroupeventbooking", {
-                              state: {
-                                groupId: item.id,
-                                subgroupId: item.id,
-                                groupName: item.title || "Club",
-                              },
-                            })
-                          }
-                          title="Event Bookings"
-                        >
-                          <span>View</span>
-                        </button>
-                      </td>
+                          <td className="px-6 py-4 text-sm">
+                            <button
+                              className="text-blue-600 hover:underline"
+                              onClick={() =>
+                                navigate("/subgroupeventbooking", {
+                                  state: { subgroupId: item.id },
+                                })
+                              }
+                            >
+                              View
+                            </button>
+                          </td>
+                        </>
+                      )}
 
                       {/* Actions */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <div className="flex items-center gap-3">
+                      <td className="px-6 py-4 text-sm">
+                        <div className="flex gap-3">
                           <button
                             className="text-blue-600 hover:underline"
                             onClick={() => {
                               setEditing(item);
-                              setForm({
-                                ...initialForm,
-                                ...item,
-                                imageFile: null,
-                                imageUrl: item.image || "",
-                                startAtMs: item.startAtMs || item.startAt || 0,
-                                endAtMs: item.endAtMs || item.endAt || 0,
-                                tags: Array.isArray(item.tags)
-                                  ? item.tags
-                                  : parseTags(item.tags || ""),
-                                tagInput: "",
-                                rules: item.rules || "",
-                                joinQInput: "",
-                                joinQType: "short",
-                                joinQOptionInput: "",
-                                joinQOptionList: [],
-                                joinQuestions: Array.isArray(item.joinQuestions)
-                                  ? item.joinQuestions.map((q, idx) =>
-                                      typeof q === "string"
-                                        ? {
-                                            id: `q${idx + 1}`,
-                                            question: q,
-                                            type: "short",
-                                            options: [],
-                                          }
-                                        : {
-                                            id: q.id || `q${idx + 1}`,
-                                            question: q.question || "",
-                                            type: q.type || "short",
-                                            options: Array.isArray(q.options)
-                                              ? q.options
-                                              : [],
-                                          }
-                                    )
-                                  : [],
-                                category: item.category || "",
-                                enableChat: !!item?.settings?.chatEnabled,
-                                allowEventsByMembers:
-                                  !!item?.settings?.allowEventsByMembers,
-                                pollsEnabled: !!item?.settings?.pollsEnabled,
-                                sharedFilesEnabled:
-                                  !!item?.settings?.sharedFilesEnabled,
-                                allowSubGroups:
-                                  !!item?.settings?.allowSubGroups,
-                                allowNotifications:
-                                  item?.settings?.allowNotifications === false
-                                    ? false
-                                    : true,
-                                maxMembers: Number.isFinite(
-                                  item?.settings?.maxMembers
-                                )
-                                  ? String(item?.settings?.maxMembers)
-                                  : "",
-                                paymentType: item?.settings?.paymentType || "free",
-                                paymentAmount:
-                                  item?.settings?.amount != null
-                                    ? String(item?.settings?.amount)
-                                    : "",
-                                memberValidFromMs:
-                                  item?.settings?.memberValidFromMs || 0,
-                                memberValidToMs:
-                                  item?.settings?.memberValidToMs || 0,
-                                successorUid:
-                                  item?.ownership?.successorUid || "",
-                                memberId: "",
-                                roleId: "",
-                                role: "",
-                                contacts:
-                                  Array.isArray(item.contacts) &&
-                                  item.contacts.length > 0
-                                    ? item.contacts
-                                    : [{ name: "", phone: "", email: "" }],
-                                showPhone: !!item.contactPhone,
-                                showEmail: !!item.contactEmail,
-                                links:
-                                  Array.isArray(item.links) &&
-                                  item.links.length > 0
-                                    ? item.links
-                                    : (
-                                        [
-                                          item.website
-                                            ? { label: "Website", url: item.website }
-                                            : null,
-                                          item.link
-                                            ? { label: "External", url: item.link }
-                                            : null,
-                                        ].filter(Boolean).length > 0
-                                          ? [
-                                              ...[
-                                                item.website
-                                                  ? { label: "Website", url: item.website }
-                                                  : null,
-                                                item.link
-                                                  ? { label: "External", url: item.link }
-                                                  : null,
-                                              ].filter(Boolean),
-                                            ]
-                                          : [{ label: "", url: "" }]
-                                      ),
-                              });
-                              setFileName("No file chosen");
-                              setPreviewUrl(item.image || "");
                               setModalOpen(true);
                             }}
                           >
                             Edit
                           </button>
-                          <button
-                            className="text-red-600 hover:underline"
-                            onClick={() => {
-                              setDelete(item);
-                              setConfirmDeleteOpen(true);
-                            }}
-                          >
-                            Delete
-                          </button>
+
+                          {!isSubgroupCommittee && (
+                            <button
+                              className="text-red-600 hover:underline"
+                              onClick={() => {
+                                setDelete(item);
+                                setConfirmDeleteOpen(true);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1094,6 +1057,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
           </table>
         )}
       </div>
+
 
       {/* Pagination */}
       <div className="flex justify-between items-center mt-4">
@@ -1353,27 +1317,23 @@ export default function UniclubSubgroup({ navbarHeight }) {
                           type="button"
                           className="px-3 py-2 rounded bg-gray-800 text-white whitespace-nowrap"
                           onClick={() => {
+                            if (form.editingJoinQId) {
+                              saveEditedJoinQuestion();
+                              return;
+                            }
+
                             const qText = (form.joinQInput || "").trim();
                             if (!qText) return;
 
                             const type = form.joinQType || "short";
-                            const options =
-                              type === "short"
-                                ? []
-                                : (form.joinQOptionList || []);
+                            const options = type === "short" ? [] : (form.joinQOptionList || []);
 
                             setForm((p) => ({
                               ...p,
                               joinQuestions: [
                                 ...(p.joinQuestions || []),
-                                {
-                                  id: `q${Date.now()}`,
-                                  question: qText,
-                                  type,
-                                  options,
-                                },
+                                { id: `q${Date.now()}`, question: qText, type, options },
                               ],
-                              // reset builder
                               joinQInput: "",
                               joinQType: "short",
                               joinQOptionInput: "",
@@ -1381,76 +1341,86 @@ export default function UniclubSubgroup({ navbarHeight }) {
                             }));
                           }}
                         >
-                          +
+                          {form.editingJoinQId ? "Update" : "+"}
                         </button>
+                        {form.editingJoinQId ? (
+                          <button
+                            type="button"
+                            className="px-3 py-2 rounded bg-gray-200 text-gray-800 whitespace-nowrap"
+                            onClick={cancelEditJoinQuestion}
+                          >
+                            Cancel
+                          </button>
+                        ) : null}
+
                       </div>
 
                       {/* Options builder – only for checkbox / dropdown */}
                       {(form.joinQType === "checkboxes" ||
                         form.joinQType === "dropdown") && (
-                        <div className="space-y-2">
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              className="flex-1 border border-gray-300 p-2 rounded"
-                              placeholder="Add option"
-                              value={form.joinQOptionInput}
-                              onChange={(e) =>
-                                setForm((p) => ({
-                                  ...p,
-                                  joinQOptionInput: e.target.value,
-                                }))
-                              }
-                            />
-                            <button
-                              type="button"
-                              className="px-3 py-2 rounded bg-gray-700 text-white whitespace-nowrap"
-                              onClick={() => {
-                                const opt = (form.joinQOptionInput || "").trim();
-                                if (!opt) return;
-                                setForm((p) => ({
-                                  ...p,
-                                  joinQOptionList: [
-                                    ...(p.joinQOptionList || []),
-                                    opt,
-                                  ],
-                                  joinQOptionInput: "",
-                                }));
-                              }}
-                            >
-                              Add option
-                            </button>
-                          </div>
-
-                          {/* Option chips */}
-                          {form.joinQOptionList?.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {form.joinQOptionList.map((opt, idx) => (
-                                <span
-                                  key={idx}
-                                  className="inline-flex items-center gap-2 bg-gray-100 border px-2 py-1 rounded-full text-xs"
-                                >
-                                  {opt}
-                                  <button
-                                    type="button"
-                                    className="text-red-500"
-                                    onClick={() =>
-                                      setForm((p) => ({
-                                        ...p,
-                                        joinQOptionList: p.joinQOptionList.filter(
-                                          (_, i) => i !== idx
-                                        ),
-                                      }))
-                                    }
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              ))}
+                          <div className="space-y-2">
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                className="flex-1 border border-gray-300 p-2 rounded"
+                                placeholder="Add option"
+                                value={form.joinQOptionInput}
+                                onChange={(e) =>
+                                  setForm((p) => ({
+                                    ...p,
+                                    joinQOptionInput: e.target.value,
+                                  }))
+                                }
+                              />
+                              <button
+                                type="button"
+                                className="px-3 py-2 rounded bg-gray-700 text-white whitespace-nowrap"
+                                onClick={() => {
+                                  const opt = (form.joinQOptionInput || "").trim();
+                                  if (!opt) return;
+                                  setForm((p) => ({
+                                    ...p,
+                                    joinQOptionList: [
+                                      ...(p.joinQOptionList || []),
+                                      opt,
+                                    ],
+                                    joinQOptionInput: "",
+                                  }));
+                                }}
+                              >
+                                Add option
+                              </button>
                             </div>
-                          )}
-                        </div>
-                      )}
+
+                            {/* Option chips */}
+                            {form.joinQOptionList?.length > 0 && (
+                              <div className="flex flex-wrap gap-2">
+                                {form.joinQOptionList.map((opt, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="inline-flex items-center gap-2 bg-gray-100 border px-2 py-1 rounded-full text-xs"
+                                  >
+                                    {opt}
+                                    <button
+                                      type="button"
+                                      className="text-red-500"
+                                      onClick={() =>
+                                        setForm((p) => ({
+                                          ...p,
+                                          joinQOptionList: p.joinQOptionList.filter(
+                                            (_, i) => i !== idx
+                                          ),
+                                        }))
+                                      }
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                     </div>
 
                     {/* List of questions */}
@@ -1459,38 +1429,71 @@ export default function UniclubSubgroup({ navbarHeight }) {
                         {form.joinQuestions.map((q, i) => (
                           <div
                             key={q.id || i}
-                            className="inline-flex items-center justify-between bg-gray-50 border px-3 py-2 rounded text-sm"
+                            className="flex items-start justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm"
                           >
-                            <div className="flex flex-col">
-                              <span className="font-medium">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-gray-900 truncate">
                                 {q.question}
-                              </span>
-                              <span className="text-xs text-gray-500">
+                              </div>
+
+                              <div className="mt-1 text-xs text-gray-500">
                                 Type:{" "}
-                                {q.type === "short"
-                                  ? "Short Answer"
-                                  : q.type === "checkboxes"
-                                  ? "Checkboxes"
-                                  : "Dropdown"}
-                                {q.options && q.options.length
-                                  ? ` • Options: ${q.options.join(", ")}`
-                                  : ""}
-                              </span>
+                                <span className="font-medium text-gray-700">
+                                  {q.type === "short"
+                                    ? "Short Answer"
+                                    : q.type === "checkboxes"
+                                      ? "Checkboxes"
+                                      : "Dropdown"}
+                                </span>
+
+                                {q.options?.length ? (
+                                  <span className="text-gray-400">
+                                    {" "}
+                                    • Options:{" "}
+                                    <span className="text-gray-600">
+                                      {q.options.join(", ")}
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
-                            <button
-                              type="button"
-                              className="text-red-600 text-xs ml-3"
-                              onClick={() =>
-                                setForm((p) => ({
-                                  ...p,
-                                  joinQuestions: p.joinQuestions.filter(
-                                    (_, idx) => idx !== i
-                                  ),
-                                }))
-                              }
-                            >
-                              Remove
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                className="text-blue-600 text-xs ml-3"
+                                onClick={() => startEditJoinQuestion(q)}
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                type="button"
+                                className="text-red-600 text-xs ml-3"
+                                onClick={() =>
+                                  setForm((p) => ({
+                                    ...p,
+                                    joinQuestions: p.joinQuestions.filter((_, idx) => idx !== i),
+                                  }))
+                                }
+                              >
+                                Remove
+                              </button>
+                              {/* 
+                         <button
+                           type="button"
+                           className="text-red-600 text-xs ml-3"
+                           onClick={() =>
+                             setForm((p) => ({
+                               ...p,
+                               joinQuestions: p.joinQuestions.filter(
+                                 (_, idx) => idx !== i
+                               ),
+                             }))
+                           }
+                         >
+                           Remove
+                         </button> */}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1838,7 +1841,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                     </div>
 
                     {Array.isArray(form.contacts) &&
-                    form.contacts.length > 0 ? (
+                      form.contacts.length > 0 ? (
                       <div className="space-y-2">
                         {form.contacts.map((c, idx) => (
                           <div
@@ -2082,11 +2085,10 @@ export default function UniclubSubgroup({ navbarHeight }) {
                       </div>
                     </div>
                     <span
-                      className={`text-xs px-2 py-0.5 rounded ${
-                        m.status === "active"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
+                      className={`text-xs px-2 py-0.5 rounded ${m.status === "active"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-gray-100 text-gray-600"
+                        }`}
                     >
                       {m.status || "active"}
                     </span>

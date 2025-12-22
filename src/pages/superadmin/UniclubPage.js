@@ -105,6 +105,8 @@ export default function UniclubPage({ navbarHeight }) {
   const [universities, setUniversities] = useState([]);
   const [selectedUniversityId, setSelectedUniversityId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [filterUniversity, setFilterUniversity] = useState([]);
+  const [filterUniversityId, setFilterUniversityId] = useState("");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [fileName, setFileName] = useState("No file chosen");
@@ -177,7 +179,22 @@ export default function UniclubPage({ navbarHeight }) {
     lat: null,
     lng: null,
   };
+
   const [form, setForm] = useState(initialForm);
+  useEffect(() => {
+    const fetchMyUniversities = async () => {
+      if (!emp?.uid) return;
+      try {
+        const qy = dbQuery(collection(db, "university"), where("uid", "==", emp.uid));
+        const qs = await getDocs(qy);
+        setFilterUniversity(qs.docs.map(d => ({ id: d.id, name: d.data().name })));
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    fetchMyUniversities();
+  }, [emp?.uid]);
+
   useEffect(() => {
     getList();
   }, []);
@@ -440,8 +457,14 @@ export default function UniclubPage({ navbarHeight }) {
   const filteredData = list.filter((g) => {
     const titleOK = !filters.title || (g.title || "").toLowerCase().includes(filters.title.toLowerCase());
     const descOK = !filters.desc || (g.desc || "").toLowerCase().includes(filters.desc.toLowerCase());
-    return titleOK && descOK;
+
+    const uniOK = !filterUniversityId
+      ? true
+      : (g.universityid || "") === filterUniversityId;
+
+    return titleOK && descOK && uniOK;
   });
+
 
   const sortedData = [...filteredData].sort((a, b) => {
     const dir = sortConfig.direction === "asc" ? 1 : -1;
@@ -471,6 +494,21 @@ export default function UniclubPage({ navbarHeight }) {
         >
           + Add uniclub
         </button>
+      </div>
+      <div className="mb-4 flex flex-col md:flex-row gap-3 md:items-center">
+        <select
+          className="border border-gray-300 px-3 py-2 rounded-xl bg-white text-sm"
+          value={filterUniversityId}
+          onChange={(e) => {
+            setFilterUniversityId(e.target.value);
+            setCurrentPage(1);
+          }}
+        >
+          <option value="">All Universities</option>
+          {filterUniversity.map((u) => (
+            <option key={u.id} value={u.id}>{u.name}</option>
+          ))}
+        </select>
       </div>
 
       <div className="overflow-x-auto bg-white rounded shadow no-scrollbar">
@@ -608,9 +646,9 @@ export default function UniclubPage({ navbarHeight }) {
                                 lat: item.lat ?? null,
                                 lng: item.lng ?? null,
                               });
-                            setTimeout(() => {
-                              setSelectedUniversityId(item.universityid || "");
-                            }, 200);
+                              setTimeout(() => {
+                                setSelectedUniversityId(item.universityid || "");
+                              }, 200);
                               setFileName("No file chosen");
                               setPreviewUrl(item.image || "");
                               setModalOpen(true);

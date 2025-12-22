@@ -193,6 +193,7 @@ export default function UniclubPage({ navbarHeight }) {
     contacts: [
       { name: "", phone: "", email: "" },
     ],
+    editingJoinQId: "",
   };
   const [form, setForm] = useState(initialForm);
 
@@ -326,6 +327,49 @@ export default function UniclubPage({ navbarHeight }) {
       console.error(e);
       toast.error("Failed to load roles");
     }
+  };
+  const startEditJoinQuestion = (q) => {
+    setForm((p) => ({
+      ...p,
+      editingJoinQId: q.id,
+      joinQInput: q.question || "",
+      joinQType: q.type || "short",
+      joinQOptionInput: "",
+      joinQOptionList: Array.isArray(q.options) ? q.options : [],
+    }));
+  };
+
+  const cancelEditJoinQuestion = () => {
+    setForm((p) => ({
+      ...p,
+      editingJoinQId: "",
+      joinQInput: "",
+      joinQType: "short",
+      joinQOptionInput: "",
+      joinQOptionList: [],
+    }));
+  };
+
+  const saveEditedJoinQuestion = () => {
+    const qText = (form.joinQInput || "").trim();
+    if (!qText) return;
+
+    const type = form.joinQType || "short";
+    const options = type === "short" ? [] : (form.joinQOptionList || []);
+
+    setForm((p) => ({
+      ...p,
+      joinQuestions: (p.joinQuestions || []).map((q) =>
+        q.id === p.editingJoinQId
+          ? { ...q, question: qText, type, options }
+          : q
+      ),
+      editingJoinQId: "",
+      joinQInput: "",
+      joinQType: "short",
+      joinQOptionInput: "",
+      joinQOptionList: [],
+    }));
   };
 
   const handleChange = (e) => {
@@ -922,7 +966,7 @@ export default function UniclubPage({ navbarHeight }) {
                                 rules: item.rules || "",
                                 joinQInput: "",
                                 // joinQuestions: Array.isArray(item.joinQuestions) ? item.joinQuestions : [],
-
+                                editingJoinQId: "",
                                 joinQType: "short",          // 👈 reset new-question type
                                 joinQInput: "",
                                 joinQOptionInput: "",
@@ -1079,17 +1123,24 @@ export default function UniclubPage({ navbarHeight }) {
                   required
                 />
                 {/* Location */}
-                <input
-                  type="text"
-                  name="location"
-                  placeholder="Select on map"
-                  className="w-full border border-gray-300 p-2 rounded"
-                  value={form.location}
-                  onClick={() => setShowMapModal(true)}
-                />
-                {/* <input name="mapLocation" readOnly placeholder="Select on map" value={form.location} onClick={() => setShowMapModal(true)} className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer" /> */}
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                {/* When */}
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Location
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      name="location"
+                      placeholder="Select on map"
+                      className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer"
+                      value={form.location}
+                      onClick={() => setShowMapModal(true)}
+                    />
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  </div>
+                </div>
+
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Club vaild from</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1305,25 +1356,23 @@ export default function UniclubPage({ navbarHeight }) {
                           type="button"
                           className="px-3 py-2 rounded bg-gray-800 text-white whitespace-nowrap"
                           onClick={() => {
+                            if (form.editingJoinQId) {
+                              saveEditedJoinQuestion();
+                              return;
+                            }
+
                             const qText = (form.joinQInput || "").trim();
                             if (!qText) return;
 
                             const type = form.joinQType || "short";
-                            const options =
-                              type === "short" ? [] : (form.joinQOptionList || []);
+                            const options = type === "short" ? [] : (form.joinQOptionList || []);
 
                             setForm((p) => ({
                               ...p,
                               joinQuestions: [
                                 ...(p.joinQuestions || []),
-                                {
-                                  id: `q${Date.now()}`,
-                                  question: qText,
-                                  type,
-                                  options,
-                                },
+                                { id: `q${Date.now()}`, question: qText, type, options },
                               ],
-                              // reset builder
                               joinQInput: "",
                               joinQType: "short",
                               joinQOptionInput: "",
@@ -1331,8 +1380,17 @@ export default function UniclubPage({ navbarHeight }) {
                             }));
                           }}
                         >
-                          +
+                          {form.editingJoinQId ? "Update" : "+"}
                         </button>
+                        {form.editingJoinQId ? (
+                          <button
+                            type="button"
+                            className="px-3 py-2 rounded bg-gray-200 text-gray-800 whitespace-nowrap"
+                            onClick={cancelEditJoinQuestion}
+                          >
+                            Cancel
+                          </button>
+                        ) : null}
                       </div>
 
                       {/* Options builder – only for checkbox / dropdown */}
@@ -1405,22 +1463,56 @@ export default function UniclubPage({ navbarHeight }) {
                         {form.joinQuestions.map((q, i) => (
                           <div
                             key={q.id || i}
-                            className="inline-flex items-center justify-between bg-gray-50 border px-3 py-2 rounded text-sm"
+                            className="flex items-start justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm"
                           >
-                            <div className="flex flex-col">
-                              <span className="font-medium">{q.question}</span>
-                              <span className="text-xs text-gray-500">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-gray-900 truncate">
+                                {q.question}
+                              </div>
+
+                              <div className="mt-1 text-xs text-gray-500">
                                 Type:{" "}
-                                {q.type === "short"
-                                  ? "Short Answer"
-                                  : q.type === "checkboxes"
-                                    ? "Checkboxes"
-                                    : "Dropdown"}
-                                {q.options && q.options.length
-                                  ? ` • Options: ${q.options.join(", ")}`
-                                  : ""}
-                              </span>
+                                <span className="font-medium text-gray-700">
+                                  {q.type === "short"
+                                    ? "Short Answer"
+                                    : q.type === "checkboxes"
+                                      ? "Checkboxes"
+                                      : "Dropdown"}
+                                </span>
+
+                                {q.options?.length ? (
+                                  <span className="text-gray-400">
+                                    {" "}
+                                    • Options:{" "}
+                                    <span className="text-gray-600">
+                                      {q.options.join(", ")}
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                className="text-blue-600 text-xs ml-3"
+                                onClick={() => startEditJoinQuestion(q)}
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                type="button"
+                                className="text-red-600 text-xs ml-3"
+                                onClick={() =>
+                                  setForm((p) => ({
+                                    ...p,
+                                    joinQuestions: p.joinQuestions.filter((_, idx) => idx !== i),
+                                  }))
+                                }
+                              >
+                                Remove
+                              </button>
+                              {/* 
                             <button
                               type="button"
                               className="text-red-600 text-xs ml-3"
@@ -1434,7 +1526,8 @@ export default function UniclubPage({ navbarHeight }) {
                               }
                             >
                               Remove
-                            </button>
+                            </button> */}
+                            </div>
                           </div>
                         ))}
                       </div>

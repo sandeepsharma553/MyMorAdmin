@@ -40,7 +40,8 @@ export default function AdminEmployeePage({ navbarHeight }) {
   const [allowedMenuKeys, setAllowedMenuKeys] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [fileName, setFileName] = useState("No file chosen");
-
+  const [filterUniId, setFilterUniId] = useState("all"); 
+  const [filterHostelId, setFilterHostelId] = useState("all");
   const uid = useSelector((state) => state.auth.user.uid);
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -153,15 +154,24 @@ export default function AdminEmployeePage({ navbarHeight }) {
   };
 
   /* -------------------- Derived -------------------- */
-  const filteredData = useMemo(
-    () =>
-      list.filter(
-        (item) =>
-          item.name?.toLowerCase?.().includes(searchTerm.toLowerCase()) ||
-          item.email?.toLowerCase?.().includes(searchTerm.toLowerCase())
-      ),
-    [list, searchTerm]
-  );
+  const filteredData = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+  
+    return list.filter((item) => {
+      const matchesSearch =
+        item.name?.toLowerCase?.().includes(term) ||
+        item.email?.toLowerCase?.().includes(term);
+  
+      const matchesUni =
+        filterUniId === "all" ? true : item.universityId === filterUniId;
+  
+      const matchesHostel =
+        filterHostelId === "all" ? true : item.hostelid === filterHostelId;
+  
+      return matchesSearch && matchesUni && matchesHostel;
+    });
+  }, [list, searchTerm, filterUniId, filterHostelId]);
+  
 
   const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
   const paginatedData = useMemo(
@@ -256,11 +266,16 @@ export default function AdminEmployeePage({ navbarHeight }) {
       });
       setList(superAdmins);
 
-      const [, hostelSnap] = await Promise.all([
+      const [uniSnap, hostelSnap] = await Promise.all([
         getDocs(collection(db, "university")),
         getDocs(collection(db, "hostel")),
       ]);
-
+      const uniArr = uniSnap.docs.map((d) => ({
+        id: d.id,
+        name: d.data().name,
+        countryName: d.data().countryName || "",
+      }));
+      setUniversities(uniArr);
       const hostelArr = hostelSnap.docs.map((d) => {
         const data = d.data();
         return {
@@ -282,6 +297,26 @@ export default function AdminEmployeePage({ navbarHeight }) {
       setIsLoading(false);
     }
   };
+  const universityOptions = useMemo(() => {
+    return (universities || [])
+      .filter((u) => u?.id)
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [universities]);
+  
+  const hostelOptionsByUni = useMemo(() => {
+    if (filterUniId === "all") {
+      return (hostels || []).filter((h) => h?.id).sort((a,b)=> (a.name||"").localeCompare(b.name||""));
+    }
+    return (hostels || [])
+      .filter((h) => {
+        if (!h?.id) return false;
+        const one = h.universityId === filterUniId;
+        const many = Array.isArray(h.uniIds) && h.uniIds.includes(filterUniId);
+        return (one || many) && h.active !== false;
+      })
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [hostels, filterUniId]);
+  
 
   const fetchUniversitiesByCountry = async (countryName) => {
     if (!countryName) {
@@ -603,18 +638,74 @@ export default function AdminEmployeePage({ navbarHeight }) {
       </div>
 
       {/* Search */}
-      <div className="mb-4">
-        <input
-          type="text"
-          placeholder="Search by name or email"
-          className="p-2 border border-gray-300 rounded w-full md:w-1/3"
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setCurrentPage(1);
-          }}
-        />
-      </div>
+      <div className="mb-4 flex flex-col md:flex-row gap-3 md:items-center">
+  {/* University */}
+  <select
+    className="p-2 border border-gray-300 rounded w-full md:w-1/4"
+    value={filterUniId}
+    onChange={(e) => {
+      const nextUni = e.target.value;
+      setFilterUniId(nextUni);
+      setFilterHostelId("all"); // reset hostel when uni changes
+      setCurrentPage(1);
+    }}
+  >
+    <option value="all">All Universities</option>
+    {universityOptions.map((u) => (
+      <option key={u.id} value={u.id}>
+        {u.name}
+      </option>
+    ))}
+  </select>
+
+  {/* Hostel (bind by uni) */}
+  <select
+    className="p-2 border border-gray-300 rounded w-full md:w-1/4"
+    value={filterHostelId}
+    onChange={(e) => {
+      setFilterHostelId(e.target.value);
+      setCurrentPage(1);
+    }}
+    disabled={filterUniId === "all"} // optional: only enable after uni selected
+  >
+    <option value="all">
+      {filterUniId === "all" ? "Select University first" : "All Hostels"}
+    </option>
+
+    {hostelOptionsByUni.map((h) => (
+      <option key={h.id} value={h.id}>
+        {h.name} {h.location ? `- ${h.location}` : ""}
+      </option>
+    ))}
+  </select>
+
+  {/* Search */}
+  <input
+    type="text"
+    placeholder="Search by name or email"
+    className="p-2 border border-gray-300 rounded w-full md:w-1/3"
+    value={searchTerm}
+    onChange={(e) => {
+      setSearchTerm(e.target.value);
+      setCurrentPage(1);
+    }}
+  />
+
+  {/* Clear */}
+  {(filterUniId !== "all" || filterHostelId !== "all" || searchTerm) && (
+    <button
+      className="px-3 py-2 bg-gray-200 rounded w-full md:w-auto"
+      onClick={() => {
+        setSearchTerm("");
+        setFilterUniId("all");
+        setFilterHostelId("all");
+        setCurrentPage(1);
+      }}
+    >
+      Clear
+    </button>
+  )}
+</div>
 
       {/* Table */}
       <div className="overflow-x-auto bg-white rounded shadow">
