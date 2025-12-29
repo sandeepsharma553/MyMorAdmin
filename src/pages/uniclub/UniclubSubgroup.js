@@ -1030,6 +1030,95 @@ export default function UniclubSubgroup({ navbarHeight }) {
                             className="text-blue-600 hover:underline"
                             onClick={() => {
                               setEditing(item);
+                              setForm({
+                                ...initialForm,
+                                ...item,
+                                imageFile: null,
+                                imageUrl: item.image || "",
+                                startAtMs: item.startAtMs || item.startAt || 0,
+                                endAtMs: item.endAtMs || item.endAt || 0,
+                                tags: Array.isArray(item.tags) ? item.tags : parseTags(item.tags || ""),
+                                tagInput: "",
+                                rules: item.rules || "",
+                                joinQInput: "",
+                                // joinQuestions: Array.isArray(item.joinQuestions) ? item.joinQuestions : [],
+                                editingJoinQId: "",
+                                joinQType: "short",          // 👈 reset new-question type
+                                joinQInput: "",
+                                joinQOptionInput: "",
+                                joinQOptionList: [],
+                                joinQuestions: Array.isArray(item.joinQuestions)
+                                  ? item.joinQuestions.map((q, idx) =>
+                                    typeof q === "string"
+                                      ? {
+                                        id: `q${idx + 1}`,
+                                        question: q,
+                                        type: "short",
+                                        options: [],
+                                      }
+                                      : {
+                                        id: q.id || `q${idx + 1}`,
+                                        question: q.question || "",
+                                        type: q.type || "short",
+                                        options: Array.isArray(q.options) ? q.options : [],
+                                      }
+                                  )
+                                  : [],
+                                category: item.category || "",
+                                enableChat: !!item?.settings?.chatEnabled,
+                                allowEventsByMembers: !!item?.settings?.allowEventsByMembers,
+                                pollsEnabled: !!item?.settings?.pollsEnabled,
+                                sharedFilesEnabled: !!item?.settings?.sharedFilesEnabled,
+                                allowSubGroups: !!item?.settings?.allowSubGroups,
+                                allowNotifications:
+                                  item?.settings?.allowNotifications === false ? false : true,
+                                maxMembers: Number.isFinite(item?.settings?.maxMembers)
+                                  ? String(item?.settings?.maxMembers)
+                                  : "",
+                                paymentType: item?.settings?.paymentType || "free",
+                                paymentAmount:
+                                  item?.settings?.amount != null ? String(item.settings.amount) : "",
+                                memberValidFromMs: item?.settings?.memberValidFromMs || 0,
+                                memberValidToMs: item?.settings?.memberValidToMs || 0,
+                                successorUid: item?.ownership?.successorUid || "",
+                                memberId: "",
+                                roleId: "",
+                                role: "",
+                                contacts:
+                                  Array.isArray(item.contacts) && item.contacts.length > 0
+                                    ? item.contacts
+                                    : [{ name: "", phone: "", email: "" }],
+                                showPhone: !!item.contactPhone,
+                                showEmail: !!item.contactEmail,
+                                links:
+                                  Array.isArray(item.links) && item.links.length > 0
+                                    ? item.links
+                                    : (
+                                      [
+                                        item.website
+                                          ? { label: "Website", url: item.website }
+                                          : null,
+                                        item.link
+                                          ? { label: "External", url: item.link }
+                                          : null,
+                                      ].filter(Boolean).length > 0
+                                        ? [
+                                          ...[
+                                            item.website
+                                              ? { label: "Website", url: item.website }
+                                              : null,
+                                            item.link
+                                              ? { label: "External", url: item.link }
+                                              : null,
+                                          ].filter(Boolean),
+                                        ]
+                                        : [{ label: "", url: "" }]
+                                    ),
+
+
+                              });
+                              setFileName("No file chosen");
+                              setPreviewUrl(item.image || "");
                               setModalOpen(true);
                             }}
                           >

@@ -33,7 +33,7 @@ export default function UniclubAnnouncementPage(props) {
   const [currentPage, setCurrentPage] = useState(1);
   const [fileName, setFileName] = useState('No file chosen');
 
- 
+
 
   const [visiblePoll, setVisiblePoll] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -666,6 +666,7 @@ export default function UniclubAnnouncementPage(props) {
                 <tr>
                   {[
                     { key: 'title', label: 'Title' },
+                    { key: 'by', label: 'By' },
                     { key: 'description', label: 'Description' },
                     { key: 'date', label: 'Date' },
                     { key: 'image', label: 'Images', sortable: false },
@@ -703,6 +704,14 @@ export default function UniclubAnnouncementPage(props) {
                       defaultValue={filters.title}
                       onChange={(e) => setFilterDebounced('title', e.target.value)}
                     />
+                  </th>
+                  <th className="px-6 pb-3">
+                    {/* <input
+                      className="w-full border border-gray-300 p-1 rounded text-sm"
+                      placeholder="Search By"
+                      defaultValue={filters.by}
+                      onChange={(e) => setFilterDebounced('by', e.target.value)}
+                    /> */}
                   </th>
                   <th className="px-6 pb-3">
                     <input
@@ -806,7 +815,8 @@ export default function UniclubAnnouncementPage(props) {
                 ) : (
                   paginatedData.map((item, i) => (
                     <tr key={i}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title} - {item.role}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.role === '' ? 'Member' : item.role}</td>
                       <td className="px-6 py-4 text-sm text-gray-700">
                         <div className="flex-shrink">{item.shortdesc}</div>
                       </td>

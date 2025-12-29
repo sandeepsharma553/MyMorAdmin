@@ -711,6 +711,7 @@ export default function SubgroupAnnouncement(props) {
                 <tr>
                   {[
                     { key: 'title', label: 'Title' },
+                    { key: 'by', label: 'By' },
                     { key: 'description', label: 'Description' },
                     { key: 'date', label: 'Date' },
                     { key: 'image', label: 'Images', sortable: false },
@@ -748,6 +749,14 @@ export default function SubgroupAnnouncement(props) {
                       defaultValue={filters.title}
                       onChange={(e) => setFilterDebounced('title', e.target.value)}
                     />
+                  </th>
+                  <th className="px-6 pb-3">
+                    {/* <input
+                      className="w-full border border-gray-300 p-1 rounded text-sm"
+                      placeholder="Search title"
+                      defaultValue={filters.title}
+                      onChange={(e) => setFilterDebounced('title', e.target.value)}
+                    /> */}
                   </th>
                   <th className="px-6 pb-3">
                     <input
@@ -852,6 +861,7 @@ export default function SubgroupAnnouncement(props) {
                   paginatedData.map((item, i) => (
                     <tr key={i}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.role}</td>
                       <td className="px-6 py-4 text-sm text-gray-700">
                         <div className="flex-shrink">{item.shortdesc}</div>
                       </td>

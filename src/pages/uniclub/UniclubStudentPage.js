@@ -12,13 +12,11 @@ import {
   where,
   getDoc,
 } from "firebase/firestore";
-import { db, storage, firebaseConfig,database } from "../../firebase";
+import { db, storage, firebaseConfig, database } from "../../firebase";
 import { initializeApp, deleteApp } from "firebase/app";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { ref as dbRef, onValue, off } from "firebase/database";
-
-
 import { useSelector } from "react-redux";
 
 export default function UniclubStudentPage(props) {
@@ -43,6 +41,7 @@ export default function UniclubStudentPage(props) {
   // auth/employee
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
+
   const initialForm = {
     id: "",
     firstname: "",
@@ -66,29 +65,47 @@ export default function UniclubStudentPage(props) {
 
   const pageSize = 10;
 
-  const filteredData = list.filter(
-    (item) =>
-      (item.firstname || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.email || "").toLowerCase().includes(searchTerm.toLowerCase())
+  /* ------------------------ ✅ Permission options (scope-based) ------------------------ */
+  const UNICLUB_MENU_OPTIONS = useMemo(
+    () => [
+      { key: "dashboard", label: "Dashboard" },
+      { key: "uniclub", label: "UniClub" },
+      { key: "uniclubannouncement", label: "Announcement" },
+      { key: "uniclubevent", label: "Event" },
+      { key: "uniclubeventbooking", label: "Event Booking" },
+      { key: "uniclubsubgroup", label: "Sub Group" },
+      { key: "contact", label: "Contact" },
+    ],
+    []
   );
 
-  const totalPages = Math.ceil(filteredData.length / pageSize);
-  const paginatedData = filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const SUBGROUP_MENU_OPTIONS = useMemo(
+    () => [
+      { key: "dashboard", label: "Dashboard" },
+      { key: "subgroupannouncement", label: "Subgroup Announcement" },
+      { key: "subgroupevent", label: "Subgroup Event" },
+      { key: "subgroupeventbooking", label: "Subgroup Event Booking" },
+      { key: "contact", label: "Contact" },
+    ],
+    []
+  );
 
-  const MENU_OPTIONS = [
-    { key: "dashboard", label: "Dashboard" },
-    { key: "uniclub", label: "UniClub" },
-    { key: "uniclubannouncement", label: "Announcement" },
-    { key: "uniclubevent", label: "Event" },
-    { key: "uniclubeventbooking", label: "Event Booking" },
-    { key: "uniclubsubgroup", label: "Sub Group" },
-    { key: "subgroupannouncement", label: "Subgroup Announcement" },
-    { key: "subgroupevent", label: "Subgroup Event" },
-    { key: "subgroupeventbooking", label: "Subgroup Event Booking" },
-    { key: "contact", label: "Contact" },
-  ];
+  const visibleMenuOptions = useMemo(() => {
+    return form.committeeScope === "subgroup" ? SUBGROUP_MENU_OPTIONS : UNICLUB_MENU_OPTIONS;
+  }, [form.committeeScope, SUBGROUP_MENU_OPTIONS, UNICLUB_MENU_OPTIONS]);
 
-  const visibleMenuOptions = useMemo(() => MENU_OPTIONS, []);
+  // ✅ when switching scope, drop invalid permissions automatically
+  useEffect(() => {
+    const allowed = new Set(visibleMenuOptions.map((o) => o.key));
+    setForm((prev) => {
+      const cleaned = (prev.permissions || []).filter((p) => allowed.has(p));
+      const prevArr = prev.permissions || [];
+      const sameLen = cleaned.length === prevArr.length;
+      const sameVals = sameLen && cleaned.every((x, i) => x === prevArr[i]);
+      return sameVals ? prev : { ...prev, permissions: cleaned };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.committeeScope]);
 
   const allPermissionsSelected = useMemo(() => {
     if (!visibleMenuOptions.length) return false;
@@ -113,12 +130,22 @@ export default function UniclubStudentPage(props) {
     });
   };
 
+  /* ------------------------ table filter + pagination ------------------------ */
+  const filteredData = list.filter(
+    (item) =>
+      (item.firstname || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.email || "").toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const totalPages = Math.ceil(filteredData.length / pageSize);
+  const paginatedData = filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   useEffect(() => {
     getList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ NEW: fetch subgroups for this uniclub (Firestore: collection "uniclubsubgroup")
+  // ✅ fetch subgroups for this uniclub (RTDB: uniclubsubgroup)
   useEffect(() => {
     fetchSubgroups();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,19 +159,17 @@ export default function UniclubStudentPage(props) {
     const r = dbRef(database, `uniclubsubgroup`);
     const handler = (snap) => {
       const val = snap.val() || {};
-     const rows = Object.entries(val)
+      const rows = Object.entries(val)
         .map(([id, v]) => ({
           id,
           ...v,
           name: v.title || v.name || "Subgroup",
         }))
-       
         .filter((sg) => sg.parentGroupId === emp.uniclubid);
       setSubgroups(rows);
     };
-  
+
     onValue(r, handler);
-  
     return () => off(r, "value", handler);
   };
 
@@ -196,7 +221,7 @@ export default function UniclubStudentPage(props) {
         return;
       }
 
-      // ✅ NEW: if committeeScope=subgroup, subgroup selection required
+      // ✅ if committeeScope=subgroup, subgroup selection required
       if (form.committeeScope === "subgroup" && !form.subgroupId) {
         toast.error("Please select a subgroup");
         return;
@@ -209,8 +234,8 @@ export default function UniclubStudentPage(props) {
 
       if (editingData) {
         // ---- UPDATE ----
-        const docRef = doc(db, "users", form.id);
-        const docSnap = await getDoc(docRef);
+        const docRefUser = doc(db, "users", form.id);
+        const docSnap = await getDoc(docRefUser);
         if (!docSnap.exists()) {
           toast.warning("Student does not exist! Cannot update.");
           return;
@@ -220,7 +245,7 @@ export default function UniclubStudentPage(props) {
           firstname: form.firstname,
           lastname: form.lastname || "",
           username: form.firstname,
-          email: form.email, // disabled in UI when editing
+          email: form.email,
           universityid: emp?.universityId || "",
           university: emp?.university || "",
           livingtype: "university",
@@ -233,10 +258,9 @@ export default function UniclubStudentPage(props) {
           uid: form.id,
           password: docSnap.data()?.password || "",
 
-          // ✅ NEW (optional): store scope here too
           committeeScope: form.committeeScope || "uniclub",
-          subgroupId: form.committeeScope === "subgroup" ? (form.subgroupId || "") : "",
-          subgroupName: form.committeeScope === "subgroup" ? (form.subgroupName || "") : "",
+          subgroupId: form.committeeScope === "subgroup" ? form.subgroupId || "" : "",
+          subgroupName: form.committeeScope === "subgroup" ? form.subgroupName || "" : "",
         };
 
         const employeeData = {
@@ -259,13 +283,13 @@ export default function UniclubStudentPage(props) {
           createddate: new Date(),
           permissions: Array.isArray(form.permissions) ? form.permissions : [],
 
-          // ✅ NEW: scope + subgroup binding (main thing)
           committeeScope: form.committeeScope || "uniclub",
-          subgroupId: form.committeeScope === "subgroup" ? (form.subgroupId || "") : "",
-          subgroupName: form.committeeScope === "subgroup" ? (form.subgroupName || "") : "",
+          subgroupId: form.committeeScope === "subgroup" ? form.subgroupId || "" : "",
+          subgroupName: form.committeeScope === "subgroup" ? form.subgroupName || "" : "",
         };
 
-        await updateDoc(docRef, updated);
+        await updateDoc(docRefUser, updated);
+
         await updateDoc(doc(db, "employees", form.id), {
           ...employeeData,
           ...(finalImageUrl ? { imageUrl: finalImageUrl } : { imageUrl: "" }),
@@ -305,10 +329,9 @@ export default function UniclubStudentPage(props) {
             address: form.address || "",
             studentid: form.studentid || "",
 
-            // ✅ NEW (optional): store scope here too
             committeeScope: form.committeeScope || "uniclub",
-            subgroupId: form.committeeScope === "subgroup" ? (form.subgroupId || "") : "",
-            subgroupName: form.committeeScope === "subgroup" ? (form.subgroupName || "") : "",
+            subgroupId: form.committeeScope === "subgroup" ? form.subgroupId || "" : "",
+            subgroupName: form.committeeScope === "subgroup" ? form.subgroupName || "" : "",
           };
 
           await setDoc(doc(db, "users", createdUser.uid), userData);
@@ -335,10 +358,9 @@ export default function UniclubStudentPage(props) {
             permissions: Array.isArray(form.permissions) ? form.permissions : [],
             imageUrl: finalImageUrl || "",
 
-            // ✅ NEW: scope + subgroup binding (main thing)
             committeeScope: form.committeeScope || "uniclub",
-            subgroupId: form.committeeScope === "subgroup" ? (form.subgroupId || "") : "",
-            subgroupName: form.committeeScope === "subgroup" ? (form.subgroupName || "") : "",
+            subgroupId: form.committeeScope === "subgroup" ? form.subgroupId || "" : "",
+            subgroupName: form.committeeScope === "subgroup" ? form.subgroupName || "" : "",
           };
 
           await setDoc(doc(db, "employees", createdUser.uid), employeeData);
@@ -438,6 +460,7 @@ export default function UniclubStudentPage(props) {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
+
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
@@ -461,7 +484,6 @@ export default function UniclubStudentPage(props) {
                         onClick={async () => {
                           setEditing(item);
 
-                          // load employee permissions + scope binding from employees doc
                           let empPerms = [];
                           let scope = "uniclub";
                           let subgroupId = "";
@@ -486,9 +508,7 @@ export default function UniclubStudentPage(props) {
                             image: null,
                             imageUrl: item.imageUrl || "",
                             id: item.id,
-                            permissions: empPerms.length ? empPerms : (Array.isArray(item.permissions) ? item.permissions : []),
-
-                            // ✅ NEW: set scope on edit
+                            permissions: empPerms.length ? empPerms : Array.isArray(item.permissions) ? item.permissions : [],
                             committeeScope: scope,
                             subgroupId,
                             subgroupName,
@@ -521,9 +541,7 @@ export default function UniclubStudentPage(props) {
 
       {/* Pagination */}
       <div className="flex justify-between items-center mt-4">
-        <p className="text-sm text-gray-600">
-          Page {currentPage} of {Math.max(totalPages, 1)}
-        </p>
+        <p className="text-sm text-gray-600">Page {currentPage} of {Math.max(totalPages, 1)}</p>
         <div className="space-x-2">
           <button
             onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
@@ -568,7 +586,9 @@ export default function UniclubStudentPage(props) {
                 required
               />
 
-              {form.email && !isEmailValid(form.email) && <p className="text-red-500 text-sm mt-1">Invalid email format</p>}
+              {form.email && !isEmailValid(form.email) && (
+                <p className="text-red-500 text-sm mt-1">Invalid email format</p>
+              )}
 
               <input
                 name="mobileNo"
@@ -597,7 +617,7 @@ export default function UniclubStudentPage(props) {
                 required
               />
 
-              {/* ✅ NEW: Committee Scope + Subgroup dropdown */}
+              {/* Committee scope */}
               <div className="border rounded-lg p-3 bg-gray-50">
                 <p className="text-sm font-medium text-gray-700 mb-2">Committee for</p>
 
@@ -660,7 +680,9 @@ export default function UniclubStudentPage(props) {
                       ))}
                     </select>
 
-                    {!subgroups.length && <p className="text-xs text-gray-500 mt-1">No subgroups found for this uniclub.</p>}
+                    {!subgroups.length && (
+                      <p className="text-xs text-gray-500 mt-1">No subgroups found for this uniclub.</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -671,18 +693,25 @@ export default function UniclubStudentPage(props) {
 
                 <div className="mb-2">
                   <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={allPermissionsSelected} onChange={(e) => handleSelectAllPermissions(e.target.checked)} />
+                    <input
+                      type="checkbox"
+                      checked={allPermissionsSelected}
+                      onChange={(e) => handleSelectAllPermissions(e.target.checked)}
+                    />
                     <span>{allPermissionsSelected ? "Unselect all permissions" : "Select all permissions"}</span>
                   </label>
                 </div>
 
                 <div className="flex flex-wrap gap-3">
                   {visibleMenuOptions.length === 0 && (
-                    <p className="text-xs text-gray-500">No permissions available. Enable features first.</p>
+                    <p className="text-xs text-gray-500">No permissions available.</p>
                   )}
 
                   {visibleMenuOptions.map(({ key, label }) => (
-                    <label key={key} className="flex items-center gap-2 text-sm bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                    <label
+                      key={key}
+                      className="flex items-center gap-2 text-sm bg-gray-50 px-2 py-1 rounded border border-gray-200"
+                    >
                       <input
                         type="checkbox"
                         checked={(form.permissions || []).includes(key)}
@@ -746,7 +775,10 @@ export default function UniclubStudentPage(props) {
               >
                 Cancel
               </button>
-              <button onClick={handleDelete} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+              <button
+                onClick={handleDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
                 Delete
               </button>
             </div>

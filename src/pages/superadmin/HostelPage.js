@@ -1,7 +1,16 @@
+// HostelPage.jsx
+
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
-  query, where, getDoc
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  doc,
+  deleteDoc,
+  query,
+  where,
+  getDoc,
 } from "firebase/firestore";
 import { db, storage } from "../../firebase"; // ⬅️ storage added
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage"; // ⬅️ upload utils
@@ -32,12 +41,12 @@ const DEFAULT_FEATURES = {
   community: false,
   employee: false,
   student: false,
-  discover:false,
+  discover: false,
   activity: false,
-  room:false,
+  room: false,
   social: false,
   uniclub: false,
-  explore:false,
+  explore: false,
 };
 
 const pageSize = 10;
@@ -60,19 +69,27 @@ const initialForm = {
   lng: null,
 
   // ⬇️ Images (like posters)
-  images: [],       // [{url, name}]
-  imageFiles: [],   // File[]
+  images: [], // [{url, name}]
+  imageFiles: [], // File[]
 };
 
 const HostelPage = () => {
   const uid = useSelector((state) => state.auth.user.uid);
+  const emp = useSelector((state) => state.auth?.employee);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
   const [list, setList] = useState([]);
-  const [universities, setUniversities] = useState([]);
+  const [universities, setUniversities] = useState([]); // for modal country-wise multi-select
   const [isLoading, setIsLoading] = useState(false);
+
+  // ✅ NEW: university-wise list filter (like Uniclub)
+  const [filterUniversity, setFilterUniversity] = useState([]); // dropdown options
+  const [filterUniversityId, setFilterUniversityId] = useState(""); // selected uniId
+
   const [currentPage, setCurrentPage] = useState(1);
   const [confirmToggleOpen, setConfirmToggleOpen] = useState(false);
   const [toggleItem, setToggleItem] = useState(null);
@@ -81,18 +98,49 @@ const HostelPage = () => {
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
-  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  // ✅ NEW: fetch my universities for filter dropdown (same logic as UniclubPage)
+  useEffect(() => {
+    const fetchMyUniversities = async () => {
+      if (!emp?.uid) return;
+      try {
+        const qy = query(collection(db, "university"), where("uid", "==", emp.uid));
+        const qs = await getDocs(qy);
+        if (mountedRef.current) {
+          setFilterUniversity(qs.docs.map((d) => ({ id: d.id, name: d.data().name })));
+        }
+      } catch (e) {
+        console.error("fetchMyUniversities error:", e);
+      }
+    };
+    fetchMyUniversities();
+  }, [emp?.uid]);
+
+  // ✅ NEW: filter list by selected university
+  const filteredData = useMemo(() => {
+    if (!filterUniversityId) return list;
+    return list.filter((h) => (h.uniIds || []).includes(filterUniversityId));
+  }, [list, filterUniversityId]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
+
   const paginatedData = useMemo(
-    () => list.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [list, currentPage]
+    () => filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [filteredData, currentPage]
   );
 
   useEffect(() => {
     getList();
   }, []);
+
+  // ✅ reset to page 1 when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterUniversityId]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -129,12 +177,21 @@ const HostelPage = () => {
       const hostelArr = hostelSnap.docs.map((d) => {
         const data = d.data();
         const {
-          name, uniIds = [], location, features,
-          active = true, disabledReason, disabledAt,
-          countryCode = "", countryName = "",
-          stateCode = "", stateName = "",
-          cityName = "", lat = null, lng = null,
-          images = [], // ⬅️ bring saved images
+          name,
+          uniIds = [],
+          location,
+          features,
+          active = true,
+          disabledReason,
+          disabledAt,
+          countryCode = "",
+          countryName = "",
+          stateCode = "",
+          stateName = "",
+          cityName = "",
+          lat = null,
+          lng = null,
+          images = [],
         } = data;
 
         const universityNames = uniIds.map((id) => uniMap[id] ?? "Unknown");
@@ -147,8 +204,15 @@ const HostelPage = () => {
           location: location || "",
           features: { ...DEFAULT_FEATURES, ...(features || {}) },
           active,
-          disabledReason, disabledAt,
-          countryCode, countryName, stateCode, stateName, cityName, lat, lng,
+          disabledReason,
+          disabledAt,
+          countryCode,
+          countryName,
+          stateCode,
+          stateName,
+          cityName,
+          lat,
+          lng,
           images: Array.isArray(images) ? images : [],
         };
       });
@@ -202,7 +266,11 @@ const HostelPage = () => {
     try {
       if (form.imageFiles?.length) {
         const uploads = form.imageFiles.map(async (file) => {
-          const path = uniquePath(`hostel_images/${rawName.replace(/\s+/g, "_")}`, file, rawName.replace(/\s+/g, "_"));
+          const path = uniquePath(
+            `hostel_images/${rawName.replace(/\s+/g, "_")}`,
+            file,
+            rawName.replace(/\s+/g, "_")
+          );
           const sRef = storageRef(storage, path);
           await uploadBytes(sRef, file);
           const url = await getDownloadURL(sRef);
@@ -217,7 +285,6 @@ const HostelPage = () => {
     }
 
     const images = [...(form.images || []), ...uploaded];
-
     const featuresToSave = { ...DEFAULT_FEATURES, ...(form.features || {}) };
 
     const payload = {
@@ -238,7 +305,7 @@ const HostelPage = () => {
       lat: typeof form.lat === "number" ? form.lat : null,
       lng: typeof form.lng === "number" ? form.lng : null,
 
-      images, // ⬅️ save merged images
+      images,
     };
 
     try {
@@ -296,6 +363,7 @@ const HostelPage = () => {
       toast.error("Something went wrong.");
     }
   };
+
   const allFeaturesSelected = useMemo(
     () => Object.values(form.features || {}).every(Boolean),
     [form.features]
@@ -410,8 +478,8 @@ const HostelPage = () => {
       cityName: item.cityName || "",
       lat: typeof item.lat === "number" ? item.lat : null,
       lng: typeof item.lng === "number" ? item.lng : null,
-      images: Array.isArray(item.images) ? item.images : [], // ⬅️ carry saved
-      imageFiles: [], // ⬅️ reset local files
+      images: Array.isArray(item.images) ? item.images : [],
+      imageFiles: [],
     });
     setModalOpen(true);
   };
@@ -436,10 +504,29 @@ const HostelPage = () => {
         <h1 className="text-2xl font-semibold">Hostel</h1>
         <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
-          onClick={() => { resetForm(); setModalOpen(true); }}
+          onClick={() => {
+            resetForm();
+            setModalOpen(true);
+          }}
         >
           + Add
         </button>
+      </div>
+
+      {/* ✅ NEW: University-wise filter (like Uniclub) */}
+      <div className="mb-4 flex flex-col md:flex-row gap-3 md:items-center">
+        <select
+          className="border border-gray-300 px-3 py-2 rounded-xl bg-white text-sm"
+          value={filterUniversityId}
+          onChange={(e) => setFilterUniversityId(e.target.value)}
+        >
+          <option value="">All Universities</option>
+          {filterUniversity.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Table */}
@@ -455,11 +542,12 @@ const HostelPage = () => {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Hostel</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">University</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Location</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Images</th>{/* ⬅️ new column */}
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Images</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
+
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
@@ -471,6 +559,7 @@ const HostelPage = () => {
                 paginatedData.map((item) => (
                   <tr key={item.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       <ul className="list-disc list-inside space-y-1">
                         {item.universityNames.map((name) => (
@@ -478,6 +567,7 @@ const HostelPage = () => {
                         ))}
                       </ul>
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       <div className="flex flex-col">
                         <span>{formatLocation(item)}</span>
@@ -496,32 +586,57 @@ const HostelPage = () => {
                             className="rounded"
                           />
                           {item.images.length > 1 && (
-                            <div className="text-xs text-gray-500 mt-1">+{item.images.length - 1} more</div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              +{item.images.length - 1} more
+                            </div>
                           )}
                         </>
-                      ) : "—"}
+                      ) : (
+                        "—"
+                      )}
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       {item.active ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-800">Active</span>
+                        <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-800">
+                          Active
+                        </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-1 rounded bg-red-100 text-red-700">Disabled</span>
+                        <span className="inline-flex items-center px-2 py-1 rounded bg-red-100 text-red-700">
+                          Disabled
+                        </span>
                       )}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button className="text-blue-600 hover:underline mr-3" onClick={() => openEdit(item)}>
+                      <button
+                        className="text-blue-600 hover:underline mr-3"
+                        onClick={() => openEdit(item)}
+                      >
                         Edit
                       </button>
+
                       <button
-                        className={item.active ? "text-red-600 hover:underline mr-3" : "text-green-600 hover:underline mr-3"}
-                        onClick={() => { setToggleItem(item); setConfirmToggleOpen(true); }}
+                        className={
+                          item.active
+                            ? "text-red-600 hover:underline mr-3"
+                            : "text-green-600 hover:underline mr-3"
+                        }
+                        onClick={() => {
+                          setToggleItem(item);
+                          setConfirmToggleOpen(true);
+                        }}
                       >
                         {item.active ? "Disable" : "Enable"}
                       </button>
+
+                      {/* optional delete */}
                       {/* <button
                         className="text-red-600 hover:underline"
-                        onClick={() => { setDelete(item); setConfirmDeleteOpen(true); }}
+                        onClick={() => {
+                          setDelete(item);
+                          setConfirmDeleteOpen(true);
+                        }}
                       >
                         Delete
                       </button> */}
@@ -536,7 +651,9 @@ const HostelPage = () => {
 
       {/* Pager */}
       <div className="flex justify-between items-center mt-4">
-        <p className="text-sm text-gray-600">Page {currentPage} of {totalPages}</p>
+        <p className="text-sm text-gray-600">
+          Page {currentPage} of {totalPages}
+        </p>
         <div className="space-x-2">
           <button
             onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
@@ -560,6 +677,7 @@ const HostelPage = () => {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-bold mb-4">{editingData ? "Edit Hostel" : "Add New"}</h2>
+
             <form onSubmit={handleAdd} className="space-y-4">
               <input
                 type="text"
@@ -588,6 +706,7 @@ const HostelPage = () => {
                     lat: loc?.coords?.lat ?? null,
                     lng: loc?.coords?.lng ?? null,
                   };
+
                   setForm((prev) => {
                     const same =
                       prev.countryCode === next.countryCode &&
@@ -600,6 +719,7 @@ const HostelPage = () => {
 
                     return same ? prev : { ...prev, ...next, uniIds: [] };
                   });
+
                   fetchUniversitiesByCountry(loc?.country?.name || "");
                 }}
               />
@@ -612,7 +732,9 @@ const HostelPage = () => {
                 value={
                   form.location ||
                   (form.cityName
-                    ? `${form.cityName}${form.stateName ? ", " + form.stateName : ""}${form.countryName ? ", " + form.countryName : ""}`
+                    ? `${form.cityName}${form.stateName ? ", " + form.stateName : ""}${
+                        form.countryName ? ", " + form.countryName : ""
+                      }`
                     : "")
                 }
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
@@ -645,7 +767,7 @@ const HostelPage = () => {
               <fieldset style={{ marginTop: "20px" }}>
                 <legend style={{ fontWeight: "bold", marginBottom: "10px" }}>Features</legend>
 
-                {/* 🔘 Select all toggle */}
+                {/* Select all toggle */}
                 <div style={{ marginBottom: "10px" }}>
                   <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <input
@@ -653,17 +775,20 @@ const HostelPage = () => {
                       checked={allFeaturesSelected}
                       onChange={(e) => handleSelectAllFeatures(e.target.checked)}
                     />
-                    <span>
-                      {allFeaturesSelected ? "Unselect all features" : "Select all features"}
-                    </span>
+                    <span>{allFeaturesSelected ? "Unselect all features" : "Select all features"}</span>
                   </label>
                 </div>
 
                 {/* Individual feature checkboxes */}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "20px", padding: "10px 0" }}>
+                <div
+                  style={{ display: "flex", flexWrap: "wrap", gap: "20px", padding: "10px 0" }}
+                >
                   {Object.keys(form.features).map((key) => (
-                    <label key={key} style={{ display: "flex", alignItems: "center", gap: "6px" }}
-                    className="flex items-center gap-2 text-sm bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                    <label
+                      key={key}
+                      style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                      className="flex items-center gap-2 text-sm bg-gray-50 px-2 py-1 rounded border border-gray-200"
+                    >
                       <input
                         type="checkbox"
                         name={key}
@@ -676,10 +801,10 @@ const HostelPage = () => {
                 </div>
               </fieldset>
 
-
-              {/* ⬇️ IMAGES (multiple) */}
+              {/* Images (multiple) */}
               <div className="space-y-2">
                 <label className="block font-medium">Images (you can add multiple)</label>
+
                 <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                   <label className="cursor-pointer">
                     <input
@@ -695,6 +820,7 @@ const HostelPage = () => {
                     />
                     📁 Choose Images
                   </label>
+
                   <span className="text-sm text-gray-600">
                     {form.imageFiles.length ? `${form.imageFiles.length} selected` : "No files selected"}
                   </span>
@@ -705,7 +831,11 @@ const HostelPage = () => {
                   <div className="mt-2 grid grid-cols-3 md:grid-cols-4 gap-2">
                     {form.imageFiles.map((f, i) => (
                       <div key={`${f.name}-${i}`} className="relative">
-                        <img src={URL.createObjectURL(f)} alt={f.name} className="w-full h-24 object-cover rounded" />
+                        <img
+                          src={URL.createObjectURL(f)}
+                          alt={f.name}
+                          className="w-full h-24 object-cover rounded"
+                        />
                         <button
                           type="button"
                           className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
@@ -732,7 +862,11 @@ const HostelPage = () => {
                     <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
                       {form.images.map((img, i) => (
                         <div key={`${img.url}-${i}`} className="relative">
-                          <img src={img.url} alt={img.name || `image-${i}`} className="w-full h-24 object-cover rounded" />
+                          <img
+                            src={img.url}
+                            alt={img.name || `image-${i}`}
+                            className="w-full h-24 object-cover rounded"
+                          />
                           <button
                             type="button"
                             className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
@@ -757,7 +891,10 @@ const HostelPage = () => {
               <div className="flex justify-end mt-6 space-x-3">
                 <button
                   type="button"
-                  onClick={() => { setModalOpen(false); resetForm(); }}
+                  onClick={() => {
+                    setModalOpen(false);
+                    resetForm();
+                  }}
                   className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
                 >
                   Cancel
@@ -781,7 +918,10 @@ const HostelPage = () => {
             </p>
             <div className="flex justify-end space-x-3">
               <button
-                onClick={() => { setConfirmDeleteOpen(false); setDelete(null); }}
+                onClick={() => {
+                  setConfirmDeleteOpen(false);
+                  setDelete(null);
+                }}
                 className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
               >
                 Cancel
@@ -810,7 +950,10 @@ const HostelPage = () => {
             </p>
             <div className="flex justify-end space-x-3">
               <button
-                onClick={() => { setConfirmToggleOpen(false); setToggleItem(null); }}
+                onClick={() => {
+                  setConfirmToggleOpen(false);
+                  setToggleItem(null);
+                }}
                 className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
               >
                 Cancel
@@ -829,7 +972,9 @@ const HostelPage = () => {
                     setToggleItem(null);
                   }
                 }}
-                className={`px-4 py-2 text-white rounded ${toggleItem?.active ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}`}
+                className={`px-4 py-2 text-white rounded ${
+                  toggleItem?.active ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"
+                }`}
               >
                 {toggleItem?.active ? "Disable" : "Enable"}
               </button>

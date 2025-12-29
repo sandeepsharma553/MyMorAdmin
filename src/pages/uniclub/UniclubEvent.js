@@ -997,6 +997,7 @@ export default function UniclubEventPage({ navbarHeight }) {
               <tr>
                 {[
                   { key: "name", label: "Event" },
+                  { key: "by", label: "By" },
                   { key: "start", label: "Event Date" },
                   { key: "location", label: "Location" },
                   { key: "bookings", label: "Bookings", sortable: false },
@@ -1032,6 +1033,14 @@ export default function UniclubEventPage({ navbarHeight }) {
                     defaultValue={filters.name}
                     onChange={(e) => setFilterDebounced("name", e.target.value)}
                   />
+                </th>
+                <th className="px-6 pb-3">
+                  {/* <input
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    placeholder="Search name"
+                    defaultValue={filters.name}
+                    onChange={(e) => setFilterDebounced("name", e.target.value)}
+                  /> */}
                 </th>
 
                 {/* DATE RANGE FILTER (calendar popover) */}
@@ -1119,7 +1128,8 @@ export default function UniclubEventPage({ navbarHeight }) {
               ) : (
                 sorted.map((item) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.eventName} - {item.role}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.eventName}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.role}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {getTimeLine(item)} <br />
                       {getDateLine(item)}
