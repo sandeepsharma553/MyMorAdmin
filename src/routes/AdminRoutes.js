@@ -27,6 +27,7 @@ import UniclubMembersPage from "../pages/uniclub/UniclubMembersPage";
 import UniclubEventBookingPage from "../pages/uniclub/UniclubEventBooking";
 import UniclubEventPage from "../pages/uniclub/UniclubEvent";
 import UniclubAnnouncementPage from "../pages/uniclub/UniclubAnnouncement";
+import UniclubCommunity from "../pages/uniclub/UniclubCommunity";
 import UniclubSubgroup from "../pages/uniclub/UniclubSubgroup";
 import SubgroupEventBooking from "../pages/uniclub/SubgroupEventBooking";
 import SubgroupAnnouncement from "../pages/uniclub/SubgroupAnnouncement";
@@ -68,6 +69,7 @@ export default function AdminRoutes({ route }) {
       <Route path="/uniclubevent" element={<UniclubEventPage />} />
       <Route path="/uniclubeventbooking" element={<UniclubEventBookingPage />} />
       <Route path="/uniclubannouncement" element={<UniclubAnnouncementPage />} />
+      <Route path="/uniclubcommunity" element={<UniclubCommunity />} />
       <Route path="/uniclubsubgroup" element={<UniclubSubgroup />} />
       <Route path="/subgroupevent" element={<SubgroupEvent />} />
       <Route path="/subgroupeventbooking" element={<SubgroupEventBooking />} />

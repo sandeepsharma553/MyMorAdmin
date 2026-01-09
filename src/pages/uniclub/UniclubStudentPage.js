@@ -71,6 +71,7 @@ export default function UniclubStudentPage(props) {
       { key: "dashboard", label: "Dashboard" },
       { key: "uniclub", label: "UniClub" },
       { key: "uniclubannouncement", label: "Announcement" },
+      { key: "uniclubcommunity", label: "Community" },
       { key: "uniclubevent", label: "Event" },
       { key: "uniclubeventbooking", label: "Event Booking" },
       { key: "uniclubsubgroup", label: "Sub Group" },
