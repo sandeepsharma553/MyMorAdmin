@@ -1,4 +1,3 @@
-// Sidebar.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { BeatLoader } from "react-spinners";
 import dummyProfileImage from "../assets/logo1.png";
@@ -21,18 +20,13 @@ import {
   Handshake,
   Layers,
 } from "lucide-react";
-import { useSelector } from "react-redux";
+
+import { useSelector, useDispatch } from "react-redux";
+
 
 import { db } from "../firebase";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  where,
-  setDoc,
-  serverTimestamp,
-} from "firebase/firestore";
+import { collection, doc, onSnapshot, query, where, setDoc, serverTimestamp } from "firebase/firestore";
+import { setActiveOrg } from "../app/features/AuthSlice";
 
 /* ------------------------- Permissions helper ------------------------- */
 const hasPermission = (perm, key) =>
@@ -40,8 +34,8 @@ const hasPermission = (perm, key) =>
 
 /* ------------------------------- Sections ----------------------------- */
 const SECTIONS = [
+  // hostel
   { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
-  { key: "uniclubdashboard", label: "Dashboard", Icon: LayoutDashboard },
   { key: "employee", label: "Employee", Icon: UserPlus },
   { key: "student", label: "Student", Icon: UserPlus },
   { key: "announcement", label: "Announcement", Icon: Bell },
@@ -58,7 +52,11 @@ const SECTIONS = [
   { key: "eventbooking", label: "Event Booking", Icon: Calendar },
   { key: "deal", label: "Deals", Icon: Utensils },
   { key: "faq", label: "FAQs", Icon: HelpCircle },
+
+  // uniclub
+  { key: "uniclubdashboard", label: "Dashboard", Icon: LayoutDashboard },
   { key: "uniclub", label: "Uniclub", Icon: Handshake },
+  { key: "uniclubemp", label: "Uni Club Employee", Icon: UserPlus },
   { key: "uniclubstudent", label: "Committee", Icon: UserPlus },
   { key: "uniclubmember", label: "Member", Icon: UserPlus },
   { key: "uniclubannouncement", label: "Announcement", Icon: Bell },
@@ -70,9 +68,9 @@ const SECTIONS = [
   { key: "subgroupevent", label: "Event", Icon: Calendar },
   { key: "subgroupeventbooking", label: "Event Booking", Icon: Calendar },
 
+  // common
   { key: "setting", label: "Setting", Icon: SettingsIcon },
   { key: "contact", label: "Contact", Icon: HelpCircle },
- 
 ];
 
 /* -------------------------------- Badge ------------------------------- */
@@ -91,32 +89,21 @@ const safeParseInt = (x) => {
   return Number.isNaN(n) ? null : n;
 };
 
-/**
- * Robustly extract ms from various "created" shapes:
- * - Firestore Timestamp: { toMillis() } or { _seconds }
- * - ISO string
- * - epoch number in ms or s
- * - legacy createdDate string
- */
 const extractCreatedMs = (docData) => {
   const ts = docData?.createdAt ?? docData?.created_on ?? docData?.created ?? null;
 
-  // Firestore Timestamp
   if (ts?.toMillis) return ts.toMillis();
   if (typeof ts?._seconds === "number") return ts._seconds * 1000;
 
-  // ISO string
   if (typeof ts === "string") {
     const t = Date.parse(ts);
     if (!Number.isNaN(t)) return t;
   }
 
-  // numeric epoch (ms or s)
   if (typeof ts === "number") {
-    return ts < 10_000_000_000 ? ts * 1000 : ts; // seconds → ms
+    return ts < 10_000_000_000 ? ts * 1000 : ts;
   }
 
-  // Legacy field name support
   if (typeof docData?.createdDate === "string") {
     const t = Date.parse(docData.createdDate);
     if (!Number.isNaN(t)) return t;
@@ -131,10 +118,11 @@ function useBadgeCount({
   collName,
   hostelid,
   statusIn = [],
-  // On first-ever open (no lastOpened stored), we want to show existing unseen docs.
   preferZeroIfNoLastOpened = false,
+  enabled = true,
 }) {
   const storageKey = adminUid && menuKey ? `amState:${adminUid}:${menuKey}` : null;
+
   const [lastOpenedMs, setLastOpenedMs] = useState(() => {
     if (!storageKey) return null;
     const raw = localStorage.getItem(storageKey);
@@ -144,35 +132,36 @@ function useBadgeCount({
   const [firestoreLastOpened, setFirestoreLastOpened] = useState(null);
   const [docs, setDocs] = useState([]);
 
-  // Track lastOpened from Firestore (source of truth)
+  // lastOpened from Firestore
   useEffect(() => {
+    if (!enabled) return;
     if (!adminUid || !menuKey) return;
-    const ref = doc(db, "adminMenuState", adminUid, "menus", menuKey);
-    return onSnapshot(ref, (snap) => {
+    const refDoc = doc(db, "adminMenuState", adminUid, "menus", menuKey);
+    return onSnapshot(refDoc, (snap) => {
       const val = snap.exists() ? snap.data().lastOpened : null;
       setFirestoreLastOpened(val ?? null);
     });
-  }, [adminUid, menuKey]);
+  }, [enabled, adminUid, menuKey]);
 
-  // Sync Firestore lastOpened -> localStorage cache (ms)
+  // sync Firestore -> localStorage
   useEffect(() => {
+    if (!enabled) return;
     if (!storageKey) return;
     const ms = firestoreLastOpened?.toMillis?.() ?? null;
     if (ms) {
       try {
         localStorage.setItem(storageKey, String(ms));
         setLastOpenedMs(ms);
-      } catch {
-        // ignore storage issues
-      }
+      } catch {}
     }
-  }, [storageKey, firestoreLastOpened]);
+  }, [enabled, storageKey, firestoreLastOpened]);
 
-  // Attach collection listener only when hostelid is present
+  // collection listener
   useEffect(() => {
+    if (!enabled) return;
     if (!collName || !hostelid) return;
-    const baseRef = collection(db, collName);
 
+    const baseRef = collection(db, collName);
     const clauses = [where("hostelid", "==", String(hostelid))];
     if (statusIn?.length) clauses.push(where("status", "in", statusIn));
 
@@ -180,21 +169,21 @@ function useBadgeCount({
     return onSnapshot(q, (snap) => {
       setDocs(snap.docs.map((d) => d.data()));
     });
-  }, [collName, hostelid, JSON.stringify(statusIn)]);
+  }, [enabled, collName, hostelid, JSON.stringify(statusIn)]);
 
   const count = useMemo(() => {
-    // Decide which "last opened" to use (Firestore > cached > none)
+    if (!enabled) return 0;
+
     const openedAt =
       firestoreLastOpened?.toMillis?.() ??
       (typeof lastOpenedMs === "number" ? lastOpenedMs : null);
 
     if (!openedAt) {
-      // No lastOpen known anywhere
       return preferZeroIfNoLastOpened ? 0 : docs.length;
     }
 
     return docs.filter((d) => extractCreatedMs(d) > openedAt).length;
-  }, [docs, firestoreLastOpened, lastOpenedMs, preferZeroIfNoLastOpened]);
+  }, [enabled, docs, firestoreLastOpened, lastOpenedMs, preferZeroIfNoLastOpened]);
 
   return count;
 }
@@ -203,11 +192,29 @@ function useBadgeCount({
 function Sidebar({ onSectionClick, isLoading }) {
   const [activeSection, setActiveSection] = useState("dashboard");
   const navigate = useNavigate();
-  const employee = useSelector((state) => state.auth.employee);
+  const dispatch = useDispatch();
 
+  const employee = useSelector((state) => state.auth.employee);
   const perms = employee?.permissions ?? null;
   const adminUid = employee?.uid || employee?.id || null;
+
   const hostelid = employee?.hostelid || null;
+  const uniclubid = employee?.uniclubid || null;
+
+  const activeOrg = useSelector((s) => s.auth.activeOrg);
+
+  const hasHostel = !!hostelid;
+  const hasUniclub = !!uniclubid;
+
+  // ✅ if both exist but no selection => force chooser
+  useEffect(() => {
+    if (hasHostel && hasUniclub && !activeOrg) {
+      navigate("/choose");
+    }
+  }, [hasHostel, hasUniclub, activeOrg, navigate]);
+
+  // ✅ BADGES only for hostel mode
+  const badgeEnabled = activeOrg === "hostel";
 
   const maintenanceBadge = useBadgeCount({
     adminUid,
@@ -215,8 +222,8 @@ function Sidebar({ onSectionClick, isLoading }) {
     collName: "maintenance",
     hostelid,
     statusIn: ["Pending", "New"],
-    // show counts even on first-ever open
     preferZeroIfNoLastOpened: false,
+    enabled: badgeEnabled,
   });
 
   const reportBadge = useBadgeCount({
@@ -226,6 +233,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     hostelid,
     statusIn: ["Pending"],
     preferZeroIfNoLastOpened: false,
+    enabled: badgeEnabled,
   });
 
   const feedbackBadge = useBadgeCount({
@@ -235,6 +243,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     hostelid,
     statusIn: ["Pending"],
     preferZeroIfNoLastOpened: false,
+    enabled: badgeEnabled,
   });
 
   const bookingBadge = useBadgeCount({
@@ -244,6 +253,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     hostelid,
     statusIn: ["Booked"],
     preferZeroIfNoLastOpened: false,
+    enabled: badgeEnabled,
   });
 
   const eventBadge = useBadgeCount({
@@ -253,17 +263,15 @@ function Sidebar({ onSectionClick, isLoading }) {
     hostelid,
     statusIn: ["Booked"],
     preferZeroIfNoLastOpened: false,
+    enabled: badgeEnabled,
   });
 
   const resetMenuKey = async (menuKey) => {
     if (!adminUid) return;
     try {
-      const ref = doc(db, "adminMenuState", adminUid, "menus", menuKey);
-      await setDoc(ref, { lastOpened: serverTimestamp() }, { merge: true });
-      // local cache will be updated by the onSnapshot -> sync effect
-    } catch (e) {
-      // optional: console.error("Failed to set lastOpened", e);
-    }
+      const refDoc = doc(db, "adminMenuState", adminUid, "menus", menuKey);
+      await setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
+    } catch {}
   };
 
   const handleClick = async (sectionKey) => {
@@ -271,7 +279,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     onSectionClick?.(sectionKey);
     navigate(`/${sectionKey}`);
 
-    // Mark opened for the sections we badge
+    // mark opened for hostel badges
     if (
       sectionKey === "maintenance" ||
       sectionKey === "reportincident" ||
@@ -283,38 +291,75 @@ function Sidebar({ onSectionClick, isLoading }) {
     }
   };
 
-  /* ---------- Dashboard vs Uniclub Dashboard logic ---------- */
-  const showUniDashboard =
-    !!employee?.uniclubid && hasPermission(perms, "dashboard");
-
-  const showHostelDashboard = !!employee?.hostelid && !showUniDashboard;
-
+  // ✅ filter sections by activeOrg
   const visibleSections = useMemo(() => {
-    return SECTIONS.filter((s) => {
-      // Normal dashboard visibility
-      if (s.key === "dashboard" && !showHostelDashboard) return false;
+    const uniclubKeys = new Set([
+      "uniclubdashboard",
+      "uniclub",
+      "uniclubemp",
+      "uniclubstudent",
+      "uniclubmember",
+      "uniclubannouncement",
+      "uniclubcommunity",
+      "uniclubevent",
+      "uniclubeventbooking",
+      "uniclubsubgroup",
+      "subgroupannouncement",
+      "subgroupevent",
+      "subgroupeventbooking",
+    ]);
 
-      // Uniclub dashboard visibility
-      if (s.key === "uniclubdashboard" && !showUniDashboard) return false;
+    const hostelKeys = new Set([
+      "dashboard",
+      "employee",
+      "student",
+      "announcement",
+      "diningmenu",
+      "cleaningschedule",
+      "tutorialschedule",
+      "maintenance",
+      "bookingroom",
+      "academicgroup",
+      "reportincident",
+      "feedback",
+      "resources",
+      "event",
+      "eventbooking",
+      "deal",
+      "faq",
+    ]);
 
-      // ---- Permissions check ----
+    // org filter
+    const byOrg = SECTIONS.filter((s) => {
+      if (activeOrg === "hostel") {
+        if (uniclubKeys.has(s.key)) return false;
+        return hostelKeys.has(s.key) || s.key === "setting" || s.key === "contact";
+      }
+
+      if (activeOrg === "uniclub") {
+        if (hostelKeys.has(s.key)) return false;
+        return uniclubKeys.has(s.key) || s.key === "setting" || s.key === "contact";
+      }
+
+      // no selection yet (should go choose)
+      return s.key === "setting" || s.key === "contact";
+    });
+
+    // permission check
+    return byOrg.filter((s) => {
       if (!perms) return true;
 
-      // For uniclubdashboard, use "dashboard" permission
-      const permKey =
-        s.key === "uniclubdashboard" ? "dashboard" : s.key;
-
+      // Uniclub dashboard uses "dashboard" permission
+      const permKey = s.key === "uniclubdashboard" ? "dashboard" : s.key;
       return hasPermission(perms, permKey);
     });
-  }, [showHostelDashboard, showUniDashboard, perms]);
+  }, [activeOrg, perms]);
 
+  // ✅ when org changes set default active section
   useEffect(() => {
-    if (showUniDashboard) {
-      setActiveSection("uniclubdashboard");
-    } else if (showHostelDashboard) {
-      setActiveSection("dashboard");
-    }
-  }, [showUniDashboard, showHostelDashboard]);
+    if (activeOrg === "uniclub") setActiveSection("uniclubdashboard");
+    if (activeOrg === "hostel") setActiveSection("dashboard");
+  }, [activeOrg]);
 
   return (
     <aside
@@ -339,10 +384,42 @@ function Sidebar({ onSectionClick, isLoading }) {
         )}
       </div>
 
+      {/* ✅ Switch only if both */}
+      {hasHostel && hasUniclub && (
+        <div className="px-2 pb-2">
+          <div className="bg-white rounded-lg p-2 shadow-sm flex gap-2">
+            <button
+              className={`flex-1 py-2 rounded font-semibold text-sm ${
+                activeOrg === "hostel" ? "bg-black text-white" : "bg-gray-100"
+              }`}
+              onClick={() => {
+                dispatch(setActiveOrg("hostel"));
+                navigate("/dashboard");
+              }}
+            >
+              Hostel
+            </button>
+
+            <button
+              className={`flex-1 py-2 rounded font-semibold text-sm ${
+                activeOrg === "uniclub" ? "bg-blue-600 text-white" : "bg-gray-100"
+              }`}
+              onClick={() => {
+                dispatch(setActiveOrg("uniclub"));
+                navigate("/uniclubdashboard");
+              }}
+            >
+              UniClub
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Menu */}
       <nav className="flex-1 min-h-0 overflow-y-auto px-2 custom-scroll">
         {visibleSections.map(({ key, label, Icon }) => {
           const isActive = activeSection === key;
+
           const base =
             "w-full flex items-center gap-2 p-2 mb-1 rounded-md text-left font-semibold";
           const cls = isActive
@@ -350,11 +427,13 @@ function Sidebar({ onSectionClick, isLoading }) {
             : `${base} hover:bg-gray-300`;
 
           let badgeValue = 0;
-          if (key === "maintenance") badgeValue = maintenanceBadge;
-          if (key === "reportincident") badgeValue = reportBadge;
-          if (key === "feedback") badgeValue = feedbackBadge;
-          if (key === "bookingroom") badgeValue = bookingBadge;
-          if (key === "eventbooking") badgeValue = eventBadge;
+          if (badgeEnabled) {
+            if (key === "maintenance") badgeValue = maintenanceBadge;
+            if (key === "reportincident") badgeValue = reportBadge;
+            if (key === "feedback") badgeValue = feedbackBadge;
+            if (key === "bookingroom") badgeValue = bookingBadge;
+            if (key === "eventbooking") badgeValue = eventBadge;
+          }
 
           return (
             <button key={key} onClick={() => handleClick(key)} className={cls}>
