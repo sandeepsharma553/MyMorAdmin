@@ -375,21 +375,22 @@ export default function UniclubCommunity(props) {
             <FadeLoader loading={isLoading} />
           </div>
         ) : (
-          <table className="min-w-full divide-y divide-gray-200">
+          // ✅ table-fixed + colgroup => Content cannot push other columns away
+          <table className="w-full table-fixed divide-y divide-gray-200">
+            <colgroup>
+              <col className="w-[45%]" /> {/* Content (kam) */}
+              <col className="w-[12%]" /> {/* By */}
+              <col className="w-[18%]" /> {/* Media (thoda zyada) */}
+              <col className="w-[20%]" /> {/* Actions (thoda zyada) */}
+              <col className="w-[5%]" />  {/* Select */}
+            </colgroup>
+
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
-                  Content
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
-                  By
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
-                  Media
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
-                  Actions
-                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Content</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600 whitespace-nowrap">By</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600 whitespace-nowrap">Media</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600 whitespace-nowrap">Actions</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-600"></th>
               </tr>
 
@@ -436,15 +437,25 @@ export default function UniclubCommunity(props) {
               ) : (
                 paginatedData.map((item) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {item.content}
+                    <td className="px-6 py-4 text-sm text-gray-700 align-top">
+                      <div
+                        className="whitespace-normal break-words"
+                        style={{
+                          display: "-webkit-box",
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {item.content}
+                      </div>
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 align-top">
                       {item.role || "Member"}
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 align-top">
                       {item.mediaType === "image" && item.mediaUrl ? (
                         <img
                           src={item.mediaUrl}
@@ -460,7 +471,7 @@ export default function UniclubCommunity(props) {
                       )}
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm align-top">
                       <button
                         className="text-blue-600 hover:underline mr-3"
                         onClick={() => {
@@ -492,7 +503,7 @@ export default function UniclubCommunity(props) {
                       </button>
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm align-top">
                       <input
                         type="checkbox"
                         checked={selectedIds.has(item.id)}
@@ -567,15 +578,13 @@ export default function UniclubCommunity(props) {
                   />
                   📁 Choose File
                 </label>
-                <span className="text-sm text-gray-600 truncate max-w-[260px]">
-                  {fileName}
-                </span>
+                <span className="text-sm text-gray-600 truncate max-w-[260px]">{fileName}</span>
               </div>
 
               {/* existing/new preview */}
               {(form.existingMediaUrl || form.mediaUrl) && (
                 <div className="mt-2">
-                  {((form.mediaType || form.existingMediaType) === "image") ? (
+                  {(form.mediaType || form.existingMediaType) === "image" ? (
                     <div className="relative inline-block">
                       <img
                         src={form.mediaUrl || form.existingMediaUrl}
