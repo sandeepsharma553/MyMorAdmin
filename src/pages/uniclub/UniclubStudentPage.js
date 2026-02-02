@@ -68,10 +68,10 @@ export default function UniclubStudentPage(props) {
     imageUrl: "",
     password: "",
     permissions: [],
-
-    committeeScope: "uniclub", // "uniclub" | "subgroup"
+    committeeScope: "uniclub",
     subgroupId: "",
     subgroupName: "",
+    role: "",
   };
 
   const [form, setForm] = useState(initialForm);
@@ -475,6 +475,7 @@ export default function UniclubStudentPage(props) {
             mobileNo: form.mobileNo || "",
             address: form.address || "",
             studentid: form.studentid || "",
+            role: form.role,
             imageUrl: finalImageUrl || userSnap.data()?.imageUrl || "",
             uniclub: emp?.uniclub || userSnap.data()?.uniclub || "",
             uniclubid: emp?.uniclubid || userSnap.data()?.uniclubid || "",
@@ -499,7 +500,7 @@ export default function UniclubStudentPage(props) {
             email: emailLower,
             mobileNo: form.mobileNo || "",
             address: form.address || "",
-            role: "student",
+            role: form.role,
             type: "admin",
             isActive: true,
             universityid: emp?.universityId || oldEmp.universityid || "",
@@ -643,7 +644,7 @@ export default function UniclubStudentPage(props) {
           mobileNo: form.mobileNo || "",
           address: form.address || "",
           studentid: form.studentid || "",
-
+          role: form.role,
           uniclub: emp?.uniclub || "",
           uniclubid: emp?.uniclubid || "",
 
@@ -662,7 +663,7 @@ export default function UniclubStudentPage(props) {
           address: form.address || "",
           designation: "",
           department: "",
-          role: "student",
+          role: form.role,
           isActive: true,
           hostelid: "",
           uid, // creator
@@ -761,7 +762,7 @@ export default function UniclubStudentPage(props) {
       if (tempApp) {
         try {
           await deleteApp(tempApp);
-        } catch {}
+        } catch { }
       }
     }
   };
@@ -849,6 +850,9 @@ export default function UniclubStudentPage(props) {
                   Student ID
                 </th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Role
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
                   Password
                 </th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
@@ -880,6 +884,10 @@ export default function UniclubStudentPage(props) {
                       {item.studentid}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.role || "-"}
+                    </td>
+
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item.password}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -897,6 +905,7 @@ export default function UniclubStudentPage(props) {
                           let scope = "uniclub";
                           let subgroupId = "";
                           let subgroupName = "";
+                          let role = "";
 
                           try {
                             const empSnap = await getDoc(doc(db, "employees", item.id));
@@ -906,6 +915,7 @@ export default function UniclubStudentPage(props) {
                               scope = ed.committeeScope || "uniclub";
                               subgroupId = ed.subgroupId || "";
                               subgroupName = ed.subgroupName || "";
+                              role = ed.role || "";
                             }
                           } catch (e) {
                             console.error("load employee permissions error:", e);
@@ -923,6 +933,7 @@ export default function UniclubStudentPage(props) {
                             committeeScope: scope,
                             subgroupId,
                             subgroupName,
+                            role
                           });
 
                           setFileName("No file chosen");
@@ -1027,6 +1038,14 @@ export default function UniclubStudentPage(props) {
                 name="studentid"
                 placeholder="Student ID"
                 value={form.studentid}
+                onChange={handleChange}
+                className="w-full border border-gray-300 p-2 rounded"
+                required
+              />
+              <input
+                name="role"
+                placeholder="Committee Role (e.g. President, Treasurer)"
+                value={form.role}
                 onChange={handleChange}
                 className="w-full border border-gray-300 p-2 rounded"
                 required

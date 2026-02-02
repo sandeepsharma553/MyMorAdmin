@@ -67,16 +67,12 @@ export default function UniclubMembersPage(props) {
     studentid: "",
     degree: "",
     password: "",
-
-    // NEW FIELDS
     paymentMethod: "",
     clubid: "",
     subGroupid: "",
-
-    // ✅ membership duration for new join / renew
+    membershipStartDate: "",
+    membershipEndDate: "",
     membershipDays: 30,
-
-    // image kept for future use (no UI now)
     image: null,
     imageUrl: "",
   };
@@ -116,7 +112,22 @@ export default function UniclubMembersPage(props) {
     if (!ms) return "-";
     return new Date(Number(ms)).toLocaleDateString();
   };
-
+  const toDateInputValue = (ms) => {
+    if (!ms) return "";
+    const d = new Date(ms);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+  
+  const dateInputToMs = (yyyyMmDd) => {
+    if (!yyyyMmDd) return null;
+    const d = new Date(yyyyMmDd);
+    d.setHours(0, 0, 0, 0); // midnight local
+    return d.getTime();
+  };
+  
   const formatRemaining = (endAt, status) => {
     if (!endAt) return "-";
     if (status === "revoked") return "Revoked";
@@ -459,9 +470,20 @@ export default function UniclubMembersPage(props) {
           await setDoc(doc(db, "users", newUser.uid), userData);
 
           // ✅ membership dates
-          const startAt = Date.now();
-          const endAt = startAt + Number(form.membershipDays || DEFAULT_MEMBERSHIP_DAYS) * dayMs;
-
+          // const startAt = Date.now();
+          // const endAt = startAt + Number(form.membershipDays || DEFAULT_MEMBERSHIP_DAYS) * dayMs;
+          const startAt = dateInputToMs(form.membershipStartDate) ?? Date.now();
+          const endAt = dateInputToMs(form.membershipEndDate);
+          
+          if (!endAt) {
+            toast.error("Please select membership end date");
+            return;
+          }
+          if (endAt <= startAt) {
+            toast.error("End date must be after start date");
+            return;
+          }
+          
           // 🔗 Add as member in the SELECTED club in RTDB
           const memberRef = dbRef(
             database,
@@ -577,10 +599,13 @@ export default function UniclubMembersPage(props) {
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
+            const startMs = Date.now();
+            const endMs = startMs + 30 * dayMs;
             setForm({
               ...initialForm,
               clubid: emp?.uniclubid || "",
-              membershipDays: 30,
+              membershipStartDate: toDateInputValue(startMs),
+              membershipEndDate: toDateInputValue(endMs),
             });
             setModalOpen(true);
           }}
@@ -828,7 +853,41 @@ export default function UniclubMembersPage(props) {
               </div>
 
               {/* ✅ Membership Duration */}
-              {!editingData && (
+              {/* ✅ Membership Dates (Calendar) */}
+{!editingData && (
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        Membership Start Date
+      </label>
+      <input
+        type="date"
+        name="membershipStartDate"
+        value={form.membershipStartDate}
+        onChange={handleChange}
+        className="w-full border border-gray-300 p-2 rounded"
+        required
+      />
+    </div>
+
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        Membership End Date
+      </label>
+      <input
+        type="date"
+        name="membershipEndDate"
+        value={form.membershipEndDate}
+        onChange={handleChange}
+        className="w-full border border-gray-300 p-2 rounded"
+        min={form.membershipStartDate || undefined} // end >= start
+        required
+      />
+    </div>
+  </div>
+)}
+
+              {/* {!editingData && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Membership Duration
@@ -845,7 +904,7 @@ export default function UniclubMembersPage(props) {
                     <option value={365}>365 days</option>
                   </select>
                 </div>
-              )}
+              )} */}
 
               {/* Select Club */}
               <div>
