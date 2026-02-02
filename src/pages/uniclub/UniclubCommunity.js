@@ -19,6 +19,7 @@ import {
 } from "firebase/database";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, getDocs } from "firebase/firestore";
+import EditorPro from "../../components/EditorPro";
 
 export default function UniclubCommunity(props) {
   const { navbarHeight } = props;
@@ -192,7 +193,13 @@ export default function UniclubCommunity(props) {
 
     setForm((prev) => ({ ...prev, [name]: value }));
   };
-
+  const decodeHtml = (str = "") => {
+    if (!str) return "";
+    // If already normal HTML, returns same
+    const txt = document.createElement("textarea");
+    txt.innerHTML = str;
+    return txt.value;
+  };
   // ✅ Save same fields like RN popup
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -205,7 +212,7 @@ export default function UniclubCommunity(props) {
     const isTextValid = (form.content || "").trim().length > 0;
     const hasNewFile = (form.postersFiles || []).length > 0;
     const hasExistingMedia = !!form.existingMediaUrl;
-
+    const cleanContent = decodeHtml(form.content || "").trim();
     if (!isTextValid && !hasNewFile && !hasExistingMedia) {
       toast.error("Please enter text or select media to post.");
       return;
@@ -242,7 +249,7 @@ export default function UniclubCommunity(props) {
         await update(itemRef, {
           senderId: user?.uid || uid || null,
           sender: userName || user?.displayName || emp?.name || "Member",
-          content: (form.content || "").trim(),
+          content: cleanContent,
           photoURL: user?.photoURL || "",
           createdAt: existing.createdAt || Date.now(),
           likes: existing.likes || [],
@@ -262,7 +269,7 @@ export default function UniclubCommunity(props) {
         await set(postRef, {
           senderId: user?.uid || uid || null,
           sender: userName || user?.displayName || emp?.name || "Member",
-          content: (form.content || "").trim(),
+          content: cleanContent,
           id, // ✅ same as RN
           photoURL: user?.photoURL || "",
           createdAt: Date.now(),
@@ -372,7 +379,7 @@ export default function UniclubCommunity(props) {
       <div className="overflow-x-auto bg-white rounded shadow">
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
-            <FadeLoader loading={isLoading} />
+            <FadeLoader color="#36d7b7" loading={isLoading} />
           </div>
         ) : (
           // ✅ table-fixed + colgroup => Content cannot push other columns away
@@ -446,8 +453,9 @@ export default function UniclubCommunity(props) {
                           WebkitBoxOrient: "vertical",
                           overflow: "hidden",
                         }}
+                        dangerouslySetInnerHTML={{ __html: item.content || "" }}
                       >
-                        {item.content}
+                       
                       </div>
                     </td>
 
@@ -558,14 +566,18 @@ export default function UniclubCommunity(props) {
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <textarea
+              {/* <textarea
                 name="content"
                 placeholder="What's on your mind?"
                 value={form.content}
                 onChange={handleChange}
                 className="w-full border border-gray-300 p-2 rounded"
+              /> */}
+              <EditorPro
+                value={form.content}
+                onChange={(html) => setForm((f) => ({ ...f, content: html }))}
+                placeholder="What's on your mind?"
               />
-
               <label className="block font-medium">Media (image/video)</label>
               <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                 <label className="cursor-pointer">
