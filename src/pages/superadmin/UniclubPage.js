@@ -9,8 +9,10 @@ import {
   remove,
   off,
   serverTimestamp,
-  get as rtdbGet, orderByChild,
-  equalTo, query
+  get as rtdbGet,
+  orderByChild,
+  equalTo,
+  query,
 } from "firebase/database";
 import {
   collection,
@@ -30,8 +32,8 @@ import { ToastContainer, toast } from "react-toastify";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import { useNavigate } from "react-router-dom";
-import { ar } from "date-fns/locale";
 import LocationPicker from "./LocationPicker";
+
 dayjs.extend(customParseFormat);
 
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -101,25 +103,35 @@ export default function UniclubPage({ navbarHeight }) {
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
   const [list, setList] = useState([]);
   const [universities, setUniversities] = useState([]);
   const [selectedUniversityId, setSelectedUniversityId] = useState("");
+
   const [isLoading, setIsLoading] = useState(false);
   const [filterUniversity, setFilterUniversity] = useState([]);
   const [filterUniversityId, setFilterUniversityId] = useState("");
 
+  const [showPinnedOnly, setShowPinnedOnly] = useState(false);
+
   const [currentPage, setCurrentPage] = useState(1);
   const [fileName, setFileName] = useState("No file chosen");
   const [previewUrl, setPreviewUrl] = useState("");
+
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
+
   const pageSize = 10;
   const navigate = useNavigate();
+
   const [sortConfig, setSortConfig] = useState({ key: "title", direction: "asc" });
   const [filters, setFilters] = useState({ title: "", desc: "" });
+
   const debounceRef = useRef(null);
   const setFilterDebounced = (field, value) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -127,12 +139,12 @@ export default function UniclubPage({ navbarHeight }) {
       setFilters((prev) => ({ ...prev, [field]: value }));
     }, 250);
   };
+
   const onSort = (key) =>
     setSortConfig((prev) =>
-      prev.key === key
-        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
-        : { key, direction: "asc" }
+      prev.key === key ? { key, direction: prev.direction === "asc" ? "desc" : "asc" } : { key, direction: "asc" }
     );
+
   const initialForm = {
     id: 0,
     title: "",
@@ -165,12 +177,12 @@ export default function UniclubPage({ navbarHeight }) {
     memberValidFromMs: 0,
     memberValidToMs: 0,
     successorUid: "",
-    successor: '',
+    successor: "",
     memberId: "",
     roleId: "",
     role: "",
-    universityid: '',
-    university: '',
+    universityid: "",
+    university: "",
     countryCode: "",
     countryName: "",
     stateCode: "",
@@ -178,16 +190,22 @@ export default function UniclubPage({ navbarHeight }) {
     cityName: "",
     lat: null,
     lng: null,
+
+    // ✅ PIN fields (like EventPage)
+    isPinned: false,
+    pinnedAt: null,
+    pinnedOrder: null,
   };
 
   const [form, setForm] = useState(initialForm);
+
   useEffect(() => {
     const fetchMyUniversities = async () => {
       if (!emp?.uid) return;
       try {
         const qy = dbQuery(collection(db, "university"), where("uid", "==", emp.uid));
         const qs = await getDocs(qy);
-        setFilterUniversity(qs.docs.map(d => ({ id: d.id, name: d.data().name })));
+        setFilterUniversity(qs.docs.map((d) => ({ id: d.id, name: d.data().name })));
       } catch (e) {
         console.error(e);
       }
@@ -196,25 +214,33 @@ export default function UniclubPage({ navbarHeight }) {
   }, [emp?.uid]);
 
   useEffect(() => {
-    getList();
-  }, []);
+    const cleanup = getList();
+    return () => {
+      if (typeof cleanup === "function") cleanup();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters, sortConfig]);
+  }, [filters, sortConfig, filterUniversityId, showPinnedOnly]);
+
   const getList = () => {
+    if (!uid) return;
     setIsLoading(true);
+
     const ref = query(dbRef(database, "uniclubs"), orderByChild("creatorId"), equalTo(uid));
-    const handler = async (snap) => {
+    const handler = (snap) => {
       const val = snap.val();
       const arr = val ? Object.entries(val).map(([id, v]) => ({ id, ...v })) : [];
-      console.log(val);
       setList(arr);
       setIsLoading(false);
     };
+
     onValue(ref, handler, { onlyOnce: false });
     return () => off(ref, "value", handler);
   };
+
   const fetchUniversitiesByCountry = async (countryName) => {
     if (!countryName) {
       setUniversities([]);
@@ -224,7 +250,11 @@ export default function UniclubPage({ navbarHeight }) {
     try {
       const qy = dbQuery(collection(db, "university"), where("countryName", "==", countryName));
       const uniSnap = await getDocs(qy);
-      const uniArr = uniSnap.docs.map((d) => ({ id: d.id, name: d.data().name, features: d.data().features || {}, }));
+      const uniArr = uniSnap.docs.map((d) => ({
+        id: d.id,
+        name: d.data().name,
+        features: d.data().features || {},
+      }));
       if (mountedRef.current) setUniversities(uniArr);
     } catch (err) {
       console.error("fetchUniversitiesByCountry error:", err);
@@ -278,6 +308,106 @@ export default function UniclubPage({ navbarHeight }) {
     return true;
   };
 
+  // ---------------- PIN HELPERS (RTDB) ----------------
+  const eNumber = (v) => (v === "" || v === null || v === undefined ? NaN : Number(v));
+
+  const getPinnedSorted = () =>
+    [...list]
+      .filter((e) => !!e.isPinned)
+      .sort((a, b) => {
+        const ao = Number.isFinite(eNumber(a.pinnedOrder)) ? Number(a.pinnedOrder) : 1e9;
+        const bo = Number.isFinite(eNumber(b.pinnedOrder)) ? Number(b.pinnedOrder) : 1e9;
+        if (ao !== bo) return ao - bo;
+
+        const aPA = Number(a.pinnedAt || 0);
+        const bPA = Number(b.pinnedAt || 0);
+        return bPA - aPA;
+      });
+
+  const renumberPinned = async () => {
+    const pinned = getPinnedSorted();
+    const updates = {};
+    pinned.forEach((club, i) => {
+      const order = i + 1;
+      if (Number(club.pinnedOrder) !== order) {
+        updates[`uniclubs/${club.id}/pinnedOrder`] = order;
+      }
+    });
+    if (Object.keys(updates).length) {
+      await rtdbUpdate(dbRef(database), updates);
+    }
+    getList();
+  };
+
+  const movePin = async (item, dir) => {
+    const pinned = getPinnedSorted();
+    const idx = pinned.findIndex((e) => e.id === item.id);
+    const swapIdx = idx + dir;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= pinned.length) return;
+
+    const a = pinned[idx];
+    const b = pinned[swapIdx];
+
+    const updates = {
+      [`uniclubs/${a.id}/pinnedOrder`]: Number(b.pinnedOrder) || swapIdx + 1,
+      [`uniclubs/${b.id}/pinnedOrder`]: Number(a.pinnedOrder) || idx + 1,
+    };
+    await rtdbUpdate(dbRef(database), updates);
+    getList();
+  };
+
+  const applyPinOrder = async (item, newOrderRaw) => {
+    if (!item.isPinned) return;
+
+    let newOrder = Math.max(1, Math.floor(Number(newOrderRaw) || 1));
+    const pinned = getPinnedSorted().filter((e) => e.id !== item.id);
+
+    newOrder = Math.min(newOrder, pinned.length + 1);
+
+    const sequence = [...pinned];
+    sequence.splice(newOrder - 1, 0, { ...item });
+
+    const updates = {};
+    sequence.forEach((club, i) => {
+      updates[`uniclubs/${club.id}/pinnedOrder`] = i + 1;
+    });
+
+    await rtdbUpdate(dbRef(database), updates);
+    getList();
+  };
+
+  const togglePin = async (item, makePinned) => {
+    try {
+      const base = `uniclubs/${item.id}`;
+
+      if (makePinned) {
+        const currentPinned = getPinnedSorted();
+        const last = currentPinned[currentPinned.length - 1];
+        const nextOrder = (Number(last?.pinnedOrder) || currentPinned.length || 0) + 1;
+
+        await rtdbUpdate(dbRef(database, base), {
+          isPinned: true,
+          pinnedAt: Date.now(),
+          pinnedOrder: nextOrder,
+        });
+        toast.success("Pinned");
+      } else {
+        await rtdbUpdate(dbRef(database, base), {
+          isPinned: false,
+          pinnedAt: null,
+          pinnedOrder: null,
+        });
+        await renumberPinned();
+        toast.success("Unpinned");
+      }
+
+      getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not update pin");
+    }
+  };
+
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!validate()) return;
@@ -316,6 +446,7 @@ export default function UniclubPage({ navbarHeight }) {
         memberValidFromMs: form.memberValidFromMs || 0,
         memberValidToMs: form.memberValidToMs || 0,
       };
+
       const payload = {
         title: form.title.trim(),
         location: form.location.trim(),
@@ -333,7 +464,7 @@ export default function UniclubPage({ navbarHeight }) {
         createdAt: editingData ? undefined : Date.now(),
         updatedAt: Date.now(),
         creatorId: uid || "",
-        uid: user.uid || "",
+        uid: user?.uid || "",
         displayName: user?.displayName || emp?.name || "",
         photoURL: user?.photoURL || emp?.imageUrl || "",
         privacyType: form.privacyType,
@@ -352,6 +483,11 @@ export default function UniclubPage({ navbarHeight }) {
         cityName: form.cityName || "",
         lat: form.lat ?? null,
         lng: form.lng ?? null,
+
+        // ✅ keep existing pin fields when editing OR default on create
+        isPinned: !!form.isPinned,
+        pinnedAt: form.isPinned ? Number(form.pinnedAt || Date.now()) : null,
+        pinnedOrder: form.isPinned ? (Number.isFinite(eNumber(form.pinnedOrder)) ? Number(form.pinnedOrder) : 1) : null,
       };
 
       Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
@@ -365,7 +501,23 @@ export default function UniclubPage({ navbarHeight }) {
       } else {
         const newRef = push(dbRef(database, "uniclubs/"));
         clubId = newRef.key;
-        await rtdbSet(newRef, { ...payload, id: clubId });
+
+        // if creating and pinned, put it at bottom of pinned list
+        let createPinnedOrder = null;
+        let createPinnedAt = null;
+        if (payload.isPinned) {
+          const currentPinned = getPinnedSorted();
+          const last = currentPinned[currentPinned.length - 1];
+          createPinnedOrder = (Number(last?.pinnedOrder) || currentPinned.length || 0) + 1;
+          createPinnedAt = Date.now();
+        }
+
+        await rtdbSet(newRef, {
+          ...payload,
+          id: clubId,
+          pinnedOrder: payload.isPinned ? createPinnedOrder : null,
+          pinnedAt: payload.isPinned ? createPinnedAt : null,
+        });
 
         // add creator as admin
         if (user?.uid) {
@@ -380,21 +532,25 @@ export default function UniclubPage({ navbarHeight }) {
         }
         toast.success("Uniclub created successfully");
       }
+
       const base = `uniclubs/${clubId}`;
+
+      // successor logic
       if (form.successorUid && form.successorUid !== user?.uid) {
         await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/joinedAt`), serverTimestamp());
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/name`), form.successor.name);
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/photoURL`), form.successor.photoURL);
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/role`), 'admin');
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/status`), 'active');
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/name`), form.successor?.name || "");
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/photoURL`), form.successor?.photoURL || "");
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/role`), "admin");
+        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/status`), "active");
         await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/uid`), form.successorUid);
         if (user?.uid) {
-          await rtdbSet(dbRef(database, `${base}/members/${user.uid}/role`), 'moderator');
+          await rtdbSet(dbRef(database, `${base}/members/${user.uid}/role`), "moderator");
         }
         await rtdbSet(dbRef(database, `${base}/uid`), form.successorUid);
       }
-      if (form.memberId && form.roleId) {
 
+      // role assignment
+      if (form.memberId && form.roleId) {
         await Promise.all([
           rtdbSet(dbRef(database, `${base}/roles/${form.memberId}`), { roleId: form.roleId, roleName: form.role }),
           rtdbSet(dbRef(database, `${base}/members/${form.memberId}/role`), form.role || "contributor"),
@@ -428,7 +584,7 @@ export default function UniclubPage({ navbarHeight }) {
     setDelete(null);
   };
 
-  /* ---------- Approve / Reject join requests (works from Requests modal) ---------- */
+  /* ---------- Approve / Reject join requests (if you use it elsewhere) ---------- */
   const approveRequest = async (clubId, req) => {
     const base = `uniclubs/${clubId}`;
     const memberRecord = {
@@ -441,12 +597,8 @@ export default function UniclubPage({ navbarHeight }) {
       answers: req.answers || null,
     };
     try {
-      await Promise.all([
-        rtdbSet(dbRef(database, `${base}/members/${req.uid}`), memberRecord),
-        remove(dbRef(database, `${base}/joinRequests/${req.uid}`)),
-      ]);
+      await Promise.all([rtdbSet(dbRef(database, `${base}/members/${req.uid}`), memberRecord), remove(dbRef(database, `${base}/joinRequests/${req.uid}`))]);
       getList();
-
       toast.success("Request approved");
     } catch (e) {
       console.error("approveRequest error", e);
@@ -454,19 +606,35 @@ export default function UniclubPage({ navbarHeight }) {
     }
   };
 
+  // ---------------- filtering + sorting ----------------
   const filteredData = list.filter((g) => {
+    if (showPinnedOnly && !g.isPinned) return false;
+
     const titleOK = !filters.title || (g.title || "").toLowerCase().includes(filters.title.toLowerCase());
     const descOK = !filters.desc || (g.desc || "").toLowerCase().includes(filters.desc.toLowerCase());
-
-    const uniOK = !filterUniversityId
-      ? true
-      : (g.universityid || "") === filterUniversityId;
+    const uniOK = !filterUniversityId ? true : (g.universityid || "") === filterUniversityId;
 
     return titleOK && descOK && uniOK;
   });
 
-
   const sortedData = [...filteredData].sort((a, b) => {
+    // ✅ pinned first
+    const ap = a.isPinned ? 1 : 0;
+    const bp = b.isPinned ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+
+    // ✅ if both pinned, pinnedOrder then pinnedAt
+    if (ap === 1 && bp === 1) {
+      const ao = Number.isFinite(eNumber(a.pinnedOrder)) ? Number(a.pinnedOrder) : 1e9;
+      const bo = Number.isFinite(eNumber(b.pinnedOrder)) ? Number(b.pinnedOrder) : 1e9;
+      if (ao !== bo) return ao - bo;
+
+      const aPA = Number(a.pinnedAt || 0);
+      const bPA = Number(b.pinnedAt || 0);
+      if (aPA !== bPA) return bPA - aPA;
+    }
+
+    // fallback sort
     const dir = sortConfig.direction === "asc" ? 1 : -1;
     const key = sortConfig.key;
     const sa = (a[key] ?? "").toString().toLowerCase();
@@ -476,7 +644,7 @@ export default function UniclubPage({ navbarHeight }) {
 
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
   const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  /* ---------- Render ---------- */
+
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto no-scrollbar" style={{ paddingTop: navbarHeight || 0 }}>
       {/* Top bar */}
@@ -495,6 +663,8 @@ export default function UniclubPage({ navbarHeight }) {
           + Add uniclub
         </button>
       </div>
+
+      {/* Filters */}
       <div className="mb-4 flex flex-col md:flex-row gap-3 md:items-center">
         <select
           className="border border-gray-300 px-3 py-2 rounded-xl bg-white text-sm"
@@ -506,9 +676,28 @@ export default function UniclubPage({ navbarHeight }) {
         >
           <option value="">All Universities</option>
           {filterUniversity.map((u) => (
-            <option key={u.id} value={u.id}>{u.name}</option>
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
           ))}
         </select>
+
+        {/* ✅ Show pinned only */}
+        <label className="text-sm flex items-center gap-2 border border-gray-300 rounded-full px-3 py-2 bg-white w-fit">
+          <input
+            type="checkbox"
+            checked={showPinnedOnly}
+            onChange={(e) => {
+              setShowPinnedOnly(e.target.checked);
+              setCurrentPage(1);
+            }}
+          />
+          Show pinned only
+        </label>
+
+        <span className="text-xs text-gray-500 md:ml-auto">
+          Showing {sortedData.length} of {list.length}
+        </span>
       </div>
 
       <div className="overflow-x-auto bg-white rounded shadow no-scrollbar">
@@ -523,19 +712,15 @@ export default function UniclubPage({ navbarHeight }) {
                 {[
                   { key: "title", label: "Title" },
                   { key: "desc", label: "Description" },
-                  { key: "image", label: "Image" },
+                  { key: "image", label: "Image", sortable: false },
+                  { key: "pin", label: "Pin", sortable: false }, // ✅ added
                   { key: "actions", label: "Action", sortable: false },
                 ].map((col) => (
                   <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
                     {col.sortable === false ? (
                       <span>{col.label}</span>
                     ) : (
-                      <button
-                        type="button"
-                        className="flex items-center gap-1 hover:underline"
-                        onClick={() => onSort(col.key)}
-                        title="Sort"
-                      >
+                      <button type="button" className="flex items-center gap-1 hover:underline" onClick={() => onSort(col.key)} title="Sort">
                         <span>{col.label}</span>
                         {sortConfig.key === col.key && (
                           <span className="text-gray-400">{sortConfig.direction === "asc" ? "▲" : "▼"}</span>
@@ -566,36 +751,69 @@ export default function UniclubPage({ navbarHeight }) {
                 </th>
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
               </tr>
             </thead>
+
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
                     No matching uniclubs found.
                   </td>
                 </tr>
               ) : (
                 paginatedData.map((item) => {
-
                   return (
                     <tr key={item.id}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500 whitespace-normal break-words max-w-xs">
-                        {item.desc}
-                      </td>
+
+                      <td className="px-6 py-4 text-sm text-gray-500 whitespace-normal break-words max-w-xs">{item.desc}</td>
+
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {item.image ? (
-                          <>
-                            <img
-                              src={item.image}
-                              width={80}
-                              height={80}
-                              className="rounded"
-                            />
-                          </>
-                        ) : "—"}
+                        {item.image ? <img src={item.image} width={80} height={80} className="rounded" alt="" /> : "—"}
                       </td>
+
+                      {/* ✅ Pin column */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            title={item.isPinned ? "Unpin" : "Pin"}
+                            onClick={() => togglePin(item, !item.isPinned)}
+                            className={`text-lg leading-none ${item.isPinned ? "text-yellow-500" : "text-gray-300"} hover:opacity-80`}
+                            aria-label={item.isPinned ? "Unpin club" : "Pin club"}
+                          >
+                            {item.isPinned ? "★" : "☆"}
+                          </button>
+
+                          {item.isPinned && (
+                            <>
+                              <input
+                                type="number"
+                                min={1}
+                                value={Number.isFinite(eNumber(item.pinnedOrder)) ? Number(item.pinnedOrder) : 1}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setList((prev) => prev.map((c) => (c.id === item.id ? { ...c, pinnedOrder: Number(val) } : c)));
+                                }}
+                                onBlur={(e) => applyPinOrder(item, e.target.value)}
+                                className="w-12 px-2 py-1 border rounded text-sm text-center"
+                                title="Pinned order (1 = top)"
+                              />
+                              <div className="flex flex-col gap-1">
+                                <button type="button" className="border rounded px-1 leading-none" title="Move up" onClick={() => movePin(item, -1)}>
+                                  ↑
+                                </button>
+                                <button type="button" className="border rounded px-1 leading-none" title="Move down" onClick={() => movePin(item, 1)}>
+                                  ↓
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </td>
+
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div className="flex items-center gap-3">
                           <button
@@ -622,14 +840,10 @@ export default function UniclubPage({ navbarHeight }) {
                                 pollsEnabled: !!item?.settings?.pollsEnabled,
                                 sharedFilesEnabled: !!item?.settings?.sharedFilesEnabled,
                                 allowSubGroups: !!item?.settings?.allowSubGroups,
-                                allowNotifications:
-                                  item?.settings?.allowNotifications === false ? false : true,
-                                maxMembers: Number.isFinite(item?.settings?.maxMembers)
-                                  ? String(item?.settings?.maxMembers)
-                                  : "",
+                                allowNotifications: item?.settings?.allowNotifications === false ? false : true,
+                                maxMembers: Number.isFinite(item?.settings?.maxMembers) ? String(item?.settings?.maxMembers) : "",
                                 paymentType: item?.settings?.paymentType || "free",
-                                paymentAmount:
-                                  item?.settings?.amount != null ? String(item.settings.amount) : "",
+                                paymentAmount: item?.settings?.amount != null ? String(item.settings.amount) : "",
                                 memberValidFromMs: item?.settings?.memberValidFromMs || 0,
                                 memberValidToMs: item?.settings?.memberValidToMs || 0,
                                 successorUid: item?.ownership?.successorUid || "",
@@ -645,6 +859,11 @@ export default function UniclubPage({ navbarHeight }) {
                                 cityName: item.cityName || "",
                                 lat: item.lat ?? null,
                                 lng: item.lng ?? null,
+
+                                // ✅ pin in edit form
+                                isPinned: !!item.isPinned,
+                                pinnedAt: item.pinnedAt ?? null,
+                                pinnedOrder: item.pinnedOrder ?? null,
                               });
                               setTimeout(() => {
                                 setSelectedUniversityId(item.universityid || "");
@@ -656,7 +875,6 @@ export default function UniclubPage({ navbarHeight }) {
                           >
                             Edit
                           </button>
-
 
                           <button
                             className="text-red-600 hover:underline"
@@ -701,7 +919,7 @@ export default function UniclubPage({ navbarHeight }) {
         </div>
       </div>
 
-      {/* Create/Edit modal (➡️ requests/members removed from here) */}
+      {/* Create/Edit modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -725,9 +943,7 @@ export default function UniclubPage({ navbarHeight }) {
                   required
                 />
 
-
                 <section className="space-y-4">
-
                   <select
                     name="privacyType"
                     value={form.privacyType}
@@ -740,11 +956,15 @@ export default function UniclubPage({ navbarHeight }) {
                     <option value="Hidden">Hidden / Invite-only</option>
                   </select>
                 </section>
-                <section className="space-y-4">
 
+                <section className="space-y-4">
                   <LocationPicker
                     key={form.id || "new"}
-                    value={{ countryCode: form.countryCode || "", stateCode: form.stateCode || "", cityName: form.cityName || "" }}
+                    value={{
+                      countryCode: form.countryCode || "",
+                      stateCode: form.stateCode || "",
+                      cityName: form.cityName || "",
+                    }}
                     onChange={(loc) => {
                       const next = {
                         countryCode: loc.country?.code || "",
@@ -767,10 +987,10 @@ export default function UniclubPage({ navbarHeight }) {
                         return same ? prev : { ...prev, ...next, universityid: "", university: "" };
                       });
                       setSelectedUniversityId("");
-
                       fetchUniversitiesByCountry(loc?.country?.name || "");
                     }}
                   />
+
                   <select
                     value={selectedUniversityId}
                     onChange={(e) => {
@@ -778,47 +998,36 @@ export default function UniclubPage({ navbarHeight }) {
                       const uniName = universities.find((u) => u.id === uniId)?.name || "";
                       setSelectedUniversityId(uniId);
                       setForm((prev) => ({ ...prev, universityid: uniId, university: uniName }));
-
                     }}
                     className="w-full border border-gray-300 p-2 rounded"
                     required
                     disabled={!universities.length}
                   >
                     <option value="">{universities.length ? "Select University" : "Select University"}</option>
-                    {universities.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    {universities.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
                   </select>
                 </section>
-
-
 
                 {/* Logo */}
                 <section className="space-y-2">
                   <h2 className="text-sm font-semibold">Upload Logo</h2>
                   <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                     <label className="cursor-pointer">
-                      <input
-                        type="file"
-                        name="image"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleChange}
-                      />
+                      <input type="file" name="image" accept="image/*" className="hidden" onChange={handleChange} />
                       📁 Choose File
                     </label>
                     <span className="text-sm text-gray-600 truncate max-w-[150px]">{fileName}</span>
                   </div>
-                  {(previewUrl || form.imageUrl) && (
-                    <img src={previewUrl || form.imageUrl} alt="Poster Preview" width="150" />
-                  )}
+                  {(previewUrl || form.imageUrl) && <img src={previewUrl || form.imageUrl} alt="Logo Preview" width="150" />}
                 </section>
               </div>
 
               <div className="flex justify-end mt-6 space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-                >
+                <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
                   Cancel
                 </button>
                 <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
@@ -827,7 +1036,6 @@ export default function UniclubPage({ navbarHeight }) {
           </div>
         </div>
       )}
-
 
       {/* Delete confirm */}
       {confirmDeleteOpen && (
