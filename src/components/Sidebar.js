@@ -1,3 +1,5 @@
+// Sidebar.jsx — FULL CODE (Hostel Firestore badges + UniClub member RTDB badge)
+
 import React, { useEffect, useMemo, useState } from "react";
 import { BeatLoader } from "react-spinners";
 import dummyProfileImage from "../assets/logo1.png";
@@ -23,9 +25,24 @@ import {
 
 import { useSelector, useDispatch } from "react-redux";
 
+import { db, database } from "../firebase";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  query,
+  where,
+  setDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 
-import { db } from "../firebase";
-import { collection, doc, onSnapshot, query, where, setDoc, serverTimestamp } from "firebase/firestore";
+import {
+  ref as dbRef,
+  onValue,
+  set as rtdbSet,
+  serverTimestamp as rtdbServerTimestamp,
+} from "firebase/database";
+
 import { setActiveOrg } from "../app/features/AuthSlice";
 
 /* ------------------------- Permissions helper ------------------------- */
@@ -83,7 +100,7 @@ function Badge({ value }) {
   );
 }
 
-/* ------------------- utils ------------------- */
+/* ------------------- utils (Firestore docs createdAt) ------------------- */
 const safeParseInt = (x) => {
   const n = parseInt(x, 10);
   return Number.isNaN(n) ? null : n;
@@ -112,6 +129,7 @@ const extractCreatedMs = (docData) => {
   return 0;
 };
 
+/* ------------------- Firestore badge hook (Hostel) ------------------- */
 function useBadgeCount({
   adminUid,
   menuKey,
@@ -152,7 +170,7 @@ function useBadgeCount({
       try {
         localStorage.setItem(storageKey, String(ms));
         setLastOpenedMs(ms);
-      } catch {}
+      } catch { }
     }
   }, [enabled, storageKey, firestoreLastOpened]);
 
@@ -188,6 +206,87 @@ function useBadgeCount({
   return count;
 }
 
+/* ------------------- RTDB badge hook (UniClub Members) ------------------- */
+function useRtdbMembersBadgeCount({ adminUid, menuKey, clubId, enabled = true }) {
+  const storageKey = adminUid && menuKey ? `amState:${adminUid}:${menuKey}` : null;
+
+  const [lastOpenedLocal, setLastOpenedLocal] = useState(() => {
+    if (!storageKey) return null;
+    const raw = localStorage.getItem(storageKey);
+    const n = parseInt(raw, 10);
+    return Number.isNaN(n) ? null : n;
+  });
+
+  const [lastOpenedRtdb, setLastOpenedRtdb] = useState(null);
+  const [members, setMembers] = useState([]);
+
+  // ✅ admin lastOpened from RTDB
+  useEffect(() => {
+    if (!enabled) return;
+    if (!adminUid || !menuKey) return;
+
+    const sRef = dbRef(database, `adminMenuState/${adminUid}/menus/${menuKey}`);
+    return onValue(sRef, (snap) => {
+      const v = snap.val();
+      const t =
+        typeof v?.lastOpenedAt === "number"
+          ? v.lastOpenedAt
+          : typeof v?.lastOpenedServerAt === "number"
+            ? v.lastOpenedServerAt
+            : null;
+
+      setLastOpenedRtdb(t);
+
+    });
+  }, [enabled, adminUid, menuKey]);
+
+  // ✅ sync RTDB -> localStorage
+  useEffect(() => {
+    if (!enabled) return;
+    if (!storageKey) return;
+    if (typeof lastOpenedRtdb === "number") {
+      try {
+        localStorage.setItem(storageKey, String(lastOpenedRtdb));
+        setLastOpenedLocal(lastOpenedRtdb);
+      } catch { }
+    }
+  }, [enabled, storageKey, lastOpenedRtdb]);
+
+  // ✅ listen members list from RTDB
+  useEffect(() => {
+    if (!enabled) return;
+    if (!clubId) return;
+
+    const mRef = dbRef(database, `uniclubs/${clubId}/members`);
+    return onValue(mRef, (snap) => {
+      const val = snap.val() || {};
+      const arr = Object.values(val); // member objects
+      setMembers(arr);
+    });
+  }, [enabled, clubId]);
+
+  const count = useMemo(() => {
+    if (!enabled) return 0;
+
+    const openedAt =
+      typeof lastOpenedRtdb === "number"
+        ? lastOpenedRtdb
+        : typeof lastOpenedLocal === "number"
+          ? lastOpenedLocal
+          : null;
+
+    if (!openedAt) return members.length; // first time -> show all
+
+    return members.filter((m) => {
+      // joinedAt should be numeric once resolved
+      const joinedAt = typeof m?.joinedAt === "number" ? m.joinedAt : 0;
+      return joinedAt > openedAt;
+    }).length;
+  }, [enabled, members, lastOpenedRtdb, lastOpenedLocal]);
+
+  return count;
+}
+
 /* -------------------------------- Sidebar ----------------------------- */
 function Sidebar({ onSectionClick, isLoading }) {
   const [activeSection, setActiveSection] = useState("dashboard");
@@ -213,9 +312,11 @@ function Sidebar({ onSectionClick, isLoading }) {
     }
   }, [hasHostel, hasUniclub, activeOrg, navigate]);
 
-  // ✅ BADGES only for hostel mode
-  const badgeEnabled = activeOrg === "hostel";
+  // badges enabled flags
+  const hostelBadgeEnabled = activeOrg === "hostel";
+  const uniclubBadgeEnabled = activeOrg === "uniclub";
 
+  /* -------- Hostel badges (Firestore collections) -------- */
   const maintenanceBadge = useBadgeCount({
     adminUid,
     menuKey: "maintenance",
@@ -223,7 +324,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     hostelid,
     statusIn: ["Pending", "New"],
     preferZeroIfNoLastOpened: false,
-    enabled: badgeEnabled,
+    enabled: hostelBadgeEnabled,
   });
 
   const reportBadge = useBadgeCount({
@@ -233,7 +334,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     hostelid,
     statusIn: ["Pending"],
     preferZeroIfNoLastOpened: false,
-    enabled: badgeEnabled,
+    enabled: hostelBadgeEnabled,
   });
 
   const feedbackBadge = useBadgeCount({
@@ -243,7 +344,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     hostelid,
     statusIn: ["Pending"],
     preferZeroIfNoLastOpened: false,
-    enabled: badgeEnabled,
+    enabled: hostelBadgeEnabled,
   });
 
   const bookingBadge = useBadgeCount({
@@ -253,7 +354,7 @@ function Sidebar({ onSectionClick, isLoading }) {
     hostelid,
     statusIn: ["Booked"],
     preferZeroIfNoLastOpened: false,
-    enabled: badgeEnabled,
+    enabled: hostelBadgeEnabled,
   });
 
   const eventBadge = useBadgeCount({
@@ -263,23 +364,45 @@ function Sidebar({ onSectionClick, isLoading }) {
     hostelid,
     statusIn: ["Booked"],
     preferZeroIfNoLastOpened: false,
-    enabled: badgeEnabled,
+    enabled: hostelBadgeEnabled,
   });
 
-  const resetMenuKey = async (menuKey) => {
+  /* -------- UniClub member badge (RTDB members joinedAt) -------- */
+  const uniclubMemberBadge = useRtdbMembersBadgeCount({
+    adminUid,
+    menuKey: "uniclubmember",
+    clubId: uniclubid,
+    enabled: uniclubBadgeEnabled,
+  });
+
+  const resetMenuKeyFirestore = async (menuKey) => {
     if (!adminUid) return;
     try {
       const refDoc = doc(db, "adminMenuState", adminUid, "menus", menuKey);
       await setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
-    } catch {}
+    } catch { }
   };
+
+  const resetMenuKeyRTDB = async (menuKey) => {
+    if (!adminUid) return;
+    try {
+      const ref = dbRef(database, `adminMenuState/${adminUid}/menus/${menuKey}`);
+      await rtdbSet(ref, {
+        lastOpenedAt: Date.now(),                 // ✅ number
+        lastOpenedServerAt: rtdbServerTimestamp() // optional audit
+      });
+    } catch (e) {
+      console.error("resetMenuKeyRTDB failed:", e);
+    }
+  };
+  
 
   const handleClick = async (sectionKey) => {
     setActiveSection(sectionKey);
     onSectionClick?.(sectionKey);
     navigate(`/${sectionKey}`);
 
-    // mark opened for hostel badges
+    // Hostel: mark opened for hostel badges (Firestore)
     if (
       sectionKey === "maintenance" ||
       sectionKey === "reportincident" ||
@@ -287,7 +410,12 @@ function Sidebar({ onSectionClick, isLoading }) {
       sectionKey === "bookingroom" ||
       sectionKey === "eventbooking"
     ) {
-      resetMenuKey(sectionKey);
+      resetMenuKeyFirestore(sectionKey);
+    }
+
+    // UniClub: mark opened for uniclub member badge (RTDB)
+    if (sectionKey === "uniclubmember") {
+      resetMenuKeyRTDB("uniclubmember");
     }
   };
 
@@ -389,9 +517,8 @@ function Sidebar({ onSectionClick, isLoading }) {
         <div className="px-2 pb-2">
           <div className="bg-white rounded-lg p-2 shadow-sm flex gap-2">
             <button
-              className={`flex-1 py-2 rounded font-semibold text-sm ${
-                activeOrg === "hostel" ? "bg-black text-white" : "bg-gray-100"
-              }`}
+              className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "hostel" ? "bg-black text-white" : "bg-gray-100"
+                }`}
               onClick={() => {
                 dispatch(setActiveOrg("hostel"));
                 navigate("/dashboard");
@@ -401,9 +528,8 @@ function Sidebar({ onSectionClick, isLoading }) {
             </button>
 
             <button
-              className={`flex-1 py-2 rounded font-semibold text-sm ${
-                activeOrg === "uniclub" ? "bg-blue-600 text-white" : "bg-gray-100"
-              }`}
+              className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "uniclub" ? "bg-blue-600 text-white" : "bg-gray-100"
+                }`}
               onClick={() => {
                 dispatch(setActiveOrg("uniclub"));
                 navigate("/uniclubdashboard");
@@ -427,12 +553,19 @@ function Sidebar({ onSectionClick, isLoading }) {
             : `${base} hover:bg-gray-300`;
 
           let badgeValue = 0;
-          if (badgeEnabled) {
+
+          // Hostel badge mapping
+          if (hostelBadgeEnabled) {
             if (key === "maintenance") badgeValue = maintenanceBadge;
             if (key === "reportincident") badgeValue = reportBadge;
             if (key === "feedback") badgeValue = feedbackBadge;
             if (key === "bookingroom") badgeValue = bookingBadge;
             if (key === "eventbooking") badgeValue = eventBadge;
+          }
+
+          // UniClub badge mapping (members)
+          if (uniclubBadgeEnabled) {
+            if (key === "uniclubmember") badgeValue = uniclubMemberBadge;
           }
 
           return (

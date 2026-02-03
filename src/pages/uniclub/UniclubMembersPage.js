@@ -100,7 +100,27 @@ export default function UniclubMembersPage(props) {
     const t = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+  useEffect(() => {
+    const doReset = async () => {
+      // Sidebar uses employee.uid || employee.id
+      const adminUid = emp?.uid || emp?.id || uid;
+      if (!adminUid) return;
 
+      try {
+        const refState = dbRef(database, `adminMenuState/${adminUid}/menus/uniclubmember`);
+        await rtdbSet(refState, {
+          // ✅ MUST BE NUMBER so sidebar can compare instantly
+          lastOpenedAt: Date.now(),
+          // optional: keep server timestamp too (for audit)
+          lastOpenedServerAt: serverTimestamp(),
+        });
+      } catch (e) {
+        console.error("Failed to reset uniclubmember badge:", e);
+      }
+    };
+
+    doReset();
+  }, [uid, emp]);
   useEffect(() => {
     getList();
     getClubs();
@@ -120,14 +140,14 @@ export default function UniclubMembersPage(props) {
     const dd = String(d.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
   };
-  
+
   const dateInputToMs = (yyyyMmDd) => {
     if (!yyyyMmDd) return null;
     const d = new Date(yyyyMmDd);
     d.setHours(0, 0, 0, 0); // midnight local
     return d.getTime();
   };
-  
+
   const formatRemaining = (endAt, status) => {
     if (!endAt) return "-";
     if (status === "revoked") return "Revoked";
@@ -474,7 +494,7 @@ export default function UniclubMembersPage(props) {
           // const endAt = startAt + Number(form.membershipDays || DEFAULT_MEMBERSHIP_DAYS) * dayMs;
           const startAt = dateInputToMs(form.membershipStartDate) ?? Date.now();
           const endAt = dateInputToMs(form.membershipEndDate);
-          
+
           if (!endAt) {
             toast.error("Please select membership end date");
             return;
@@ -483,7 +503,7 @@ export default function UniclubMembersPage(props) {
             toast.error("End date must be after start date");
             return;
           }
-          
+
           // 🔗 Add as member in the SELECTED club in RTDB
           const memberRef = dbRef(
             database,
@@ -497,7 +517,8 @@ export default function UniclubMembersPage(props) {
             status: "active",
             paymentMethod: form.paymentMethod || "",
             // keep old joinedAt for history field, but store numeric too
-            joinedAt: serverTimestamp(),
+            joinedAt: Date.now(),                 // ✅ numeric for badge
+            joinedAtServerAt: serverTimestamp(),
 
             // ✅ for countdown
             membershipStartAt: startAt,
@@ -854,38 +875,38 @@ export default function UniclubMembersPage(props) {
 
               {/* ✅ Membership Duration */}
               {/* ✅ Membership Dates (Calendar) */}
-{!editingData && (
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        Membership Start Date
-      </label>
-      <input
-        type="date"
-        name="membershipStartDate"
-        value={form.membershipStartDate}
-        onChange={handleChange}
-        className="w-full border border-gray-300 p-2 rounded"
-        required
-      />
-    </div>
+              {!editingData && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Membership Start Date
+                    </label>
+                    <input
+                      type="date"
+                      name="membershipStartDate"
+                      value={form.membershipStartDate}
+                      onChange={handleChange}
+                      className="w-full border border-gray-300 p-2 rounded"
+                      required
+                    />
+                  </div>
 
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        Membership End Date
-      </label>
-      <input
-        type="date"
-        name="membershipEndDate"
-        value={form.membershipEndDate}
-        onChange={handleChange}
-        className="w-full border border-gray-300 p-2 rounded"
-        min={form.membershipStartDate || undefined} // end >= start
-        required
-      />
-    </div>
-  </div>
-)}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Membership End Date
+                    </label>
+                    <input
+                      type="date"
+                      name="membershipEndDate"
+                      value={form.membershipEndDate}
+                      onChange={handleChange}
+                      className="w-full border border-gray-300 p-2 rounded"
+                      min={form.membershipStartDate || undefined} // end >= start
+                      required
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* {!editingData && (
                 <div>
