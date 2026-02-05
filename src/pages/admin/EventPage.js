@@ -31,6 +31,7 @@ import "react-date-range/dist/styles.css";
 import "react-date-range/dist/theme/default.css";
 import { enUS } from "date-fns/locale";
 import { format } from "date-fns";
+import { Html5Qrcode } from "html5-qrcode";
 
 export default function EventPage({ navbarHeight }) {
   const [modalOpen, setModalOpen] = useState(false);
@@ -53,7 +54,14 @@ export default function EventPage({ navbarHeight }) {
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
   const [timeFilter, setTimeFilter] = useState("current"); // 'past' | 'current' | 'future'
   const [categoryFilter, setCategoryFilter] = useState("All");
-
+// ✅ Scan modal (same as Uniclub)
+const [scanModal, setScanModal] = useState({ open: false, event: null });
+const [scanResult, setScanResult] = useState(null);
+const [scanBusy, setScanBusy] = useState(false);
+const [scanStatus, setScanStatus] = useState(null); // {ok:boolean,msg:string}
+const qrInstanceRef = useRef(null);
+const qrContainerRef = useRef(null);
+const [qrReady, setQrReady] = useState(false);
   const [sortConfig, setSortConfig] = useState({
     key: "start",
     direction: "asc",
@@ -250,7 +258,70 @@ export default function EventPage({ navbarHeight }) {
       toast.error("Failed to load categories");
     }
   };
-
+  useEffect(() => {
+    if (!scanModal.open) {
+      setQrReady(false);
+      return;
+    }
+    const raf = requestAnimationFrame(() => setQrReady(true));
+    return () => cancelAnimationFrame(raf);
+  }, [scanModal.open]);
+  
+  useEffect(() => {
+    const start = async () => {
+      if (!scanModal.open || !qrReady) return;
+  
+      const el = qrContainerRef.current;
+      if (!el) return;
+  
+      setScanStatus(null);
+      setScanResult(null);
+  
+      if (!el.id) el.id = "mymor-qr-reader";
+  
+      try {
+        if (qrInstanceRef.current) {
+          await qrInstanceRef.current.stop();
+          await qrInstanceRef.current.clear();
+        }
+      } catch {}
+  
+      qrInstanceRef.current = new Html5Qrcode(el.id);
+  
+      try {
+        await qrInstanceRef.current.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 260, height: 260 } },
+          async (decodedText) => {
+            if (scanBusy) return;
+            setScanBusy(true);
+            setScanResult(decodedText);
+            await handleVerifyAndCheckIn(decodedText);
+            setScanBusy(false);
+          },
+          () => {}
+        );
+      } catch (err) {
+        console.error("QR start error", err);
+        setScanStatus({ ok: false, msg: "Camera access denied or scanner failed." });
+      }
+    };
+  
+    start();
+  
+    return () => {
+      (async () => {
+        try {
+          if (qrInstanceRef.current) {
+            await qrInstanceRef.current.stop();
+            await qrInstanceRef.current.clear();
+          }
+        } catch {}
+      })();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanModal.open, qrReady]);
+  
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setForm((f) => ({ ...f, [name]: type === "checkbox" ? checked : value }));
@@ -784,7 +855,68 @@ export default function EventPage({ navbarHeight }) {
       setShowPicker(false);
     }
   };
-
+  const handleVerifyAndCheckIn = async (payloadRaw) => {
+    try {
+      const ev = scanModal.event;
+      if (!ev?.id) return setScanStatus({ ok: false, msg: "Event missing." });
+  
+      let bookingId = payloadRaw;
+  
+      // ✅ allow JSON payload like {"bid":"..."} or {"bookingId":"..."}
+      try {
+        const j = JSON.parse(payloadRaw);
+        bookingId = j?.bid || j?.bookingId || j?.id || payloadRaw;
+      } catch {}
+  
+      if (!bookingId) {
+        setScanStatus({ ok: false, msg: "Invalid QR payload." });
+        return;
+      }
+  
+      const bRef = doc(db, "eventbookings", bookingId);
+      const bSnap = await getDoc(bRef);
+  
+      if (!bSnap.exists()) {
+        setScanStatus({ ok: false, msg: "Booking not found." });
+        return;
+      }
+  
+      const b = { id: bSnap.id, ...bSnap.data() };
+  
+      // ✅ optional safety: hostel match
+      if (b.hostelid && emp?.hostelid && String(b.hostelid) !== String(emp.hostelid)) {
+        setScanStatus({ ok: false, msg: "Wrong hostel booking." });
+        return;
+      }
+  
+      // ✅ event match (support both fields)
+      const bookedEventId = b.eventDocId || b.eventId;
+      if (bookedEventId && String(bookedEventId) !== String(ev.id)) {
+        setScanStatus({ ok: false, msg: "Wrong event ticket." });
+        return;
+      }
+  
+      // ✅ already checked-in
+      if (b.checkInStatus === "checked_in") {
+        setScanStatus({ ok: true, msg: "Already checked-in ✅" });
+        return;
+      }
+  
+      await updateDoc(bRef, {
+        checkInStatus: "checked_in",
+        checkedInAt: Timestamp.now(),
+        checkedInBy: uid,
+        checkedInByName: emp?.name || emp?.email || "",
+        checkedInEventId: ev.id,
+      });
+  
+      setScanStatus({ ok: true, msg: "Verified & checked-in ✅" });
+    } catch (e) {
+      console.error(e);
+      setScanStatus({ ok: false, msg: "Check-in failed." });
+    }
+  };
+  
   return (
     <main
       className="flex-1 p-6 bg-gray-100 overflow-auto"
@@ -1124,6 +1256,14 @@ export default function EventPage({ navbarHeight }) {
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <button
+  className="text-green-700 hover:underline mr-3"
+  onClick={() => setScanModal({ open: true, event: item })}
+  title="Scan tickets for this event"
+>
+  Scan QR
+</button>
+
                       <button
                         className="text-blue-600 hover:underline mr-3"
                         onClick={() => {
@@ -2320,6 +2460,43 @@ export default function EventPage({ navbarHeight }) {
           </div>
         </div>
       )}
+<Dialog
+  open={scanModal.open}
+  onClose={() => setScanModal({ open: false, event: null })}
+  maxWidth="sm"
+  fullWidth
+>
+  <DialogTitle>
+    Scan QR — {scanModal.event?.eventName || "Event"}
+  </DialogTitle>
+
+  <DialogContent dividers>
+    <div className="space-y-3">
+      <div
+        ref={qrContainerRef}
+        id="mymor-qr-reader"
+        style={{ width: "100%", borderRadius: 12, overflow: "hidden" }}
+      />
+
+      {scanResult && (
+        <div className="text-xs text-gray-500 break-all">
+          <div className="font-semibold text-gray-700 mb-1">Last scan:</div>
+          {scanResult}
+        </div>
+      )}
+
+      {scanStatus && (
+        <div className={`text-sm font-semibold ${scanStatus.ok ? "text-green-700" : "text-red-700"}`}>
+          {scanStatus.msg}
+        </div>
+      )}
+    </div>
+  </DialogContent>
+
+  <DialogActions>
+    <Button onClick={() => setScanModal({ open: false, event: null })}>Close</Button>
+  </DialogActions>
+</Dialog>
 
       <ToastContainer />
     </main>
