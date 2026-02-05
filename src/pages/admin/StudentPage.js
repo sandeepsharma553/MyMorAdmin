@@ -412,6 +412,45 @@ export default function StudentPage(props) {
       toast.error("Action failed");
     }
   };
+  const handleHostelApproval = async (uid, action) => {
+    // action: "approved" | "rejected"
+    try {
+      const ok = window.confirm(`Are you sure you want to ${action.toUpperCase()} this user?`);
+      if (!ok) return;
+
+      setIsLoading(true);
+
+      const userRef = doc(db, "users", uid);
+
+      if (action === "approved") {
+        await updateDoc(userRef, {
+          hostelApprovalStatus: "approved",
+          livingtype: "hostel",
+          hostelApprovalUpdatedAt: serverTimestamp(),
+          hostelApprovalUpdatedBy: myUid || null,
+          hostelApprovalReason: null,
+        });
+      } else {
+        await updateDoc(userRef, {
+          hostelApprovalStatus: "rejected",
+          // ✅ reject = hostel dashboard hide; normal app access
+          livingtype: "outside",
+          hostelApprovalUpdatedAt: serverTimestamp(),
+          hostelApprovalUpdatedBy: myUid || null,
+          hostelApprovalReason: "Rejected by admin",
+        });
+      }
+
+      toast.success(`User ${action}!`);
+      await getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to update hostel approval.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
 
   return (
     <main
@@ -487,6 +526,9 @@ export default function StudentPage(props) {
                   Image
                 </th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Join Request
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
@@ -533,36 +575,75 @@ export default function StudentPage(props) {
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">
+                      {String(item.hostelApprovalStatus || "none") === "pending" ? (
+                        <span className="px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-800">
+                          pending
+                        </span>
+                      ) : String(item.hostelApprovalStatus || "none") === "approved" ? (
+                        <span className="px-2 py-1 rounded text-xs bg-green-100 text-green-700">
+                          approved
+                        </span>
+                      ) : String(item.hostelApprovalStatus || "none") === "rejected" ? (
+                        <span className="px-2 py-1 rounded text-xs bg-red-100 text-red-700">
+                          rejected
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">—</span>
+                      )}
+                    </td>
+
+
+                    <td className="px-6 py-4 text-sm">
                       <span
                         className={`px-2 py-1 rounded text-xs ${(item.accountStatus || "active") === "disabled"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-green-100 text-green-700"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-green-100 text-green-700"
                           }`}
                       >
                         {item.accountStatus || "active"}
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      {item.accountStatus === "disabled" ? (
-                        <button
-                          onClick={() =>
-                            handleToggleUser(item.id, item.accountStatus)
-                          }
-                          className="px-2 py-1 bg-green-600 text-white rounded text-xs"
-                        >
-                          Enable
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() =>
-                            handleToggleUser(item.id, item.accountStatus)
-                          }
-                          className="px-2 py-1 bg-red-600 text-white rounded text-xs"
-                        >
-                          Disable
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2 flex-wrap">
+
+                        {/* ✅ Hostel approve/reject only if hostel pending */}
+                        {String(item.hostelApprovalStatus || "") === "pending" && (
+                          <>
+                            <button
+                              onClick={() => handleHostelApproval(item.id, "approved")}
+                              className="px-2 py-1 bg-blue-600 text-white rounded text-xs"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => handleHostelApproval(item.id, "rejected")}
+                              className="px-2 py-1 bg-orange-600 text-white rounded text-xs"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
+
+                        {/* existing enable/disable */}
+                        {item.accountStatus === "disabled" ? (
+                          <button
+                            onClick={() => handleToggleUser(item.id, item.accountStatus)}
+                            className="px-2 py-1 bg-green-600 text-white rounded text-xs"
+                          >
+                            Enable
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleToggleUser(item.id, item.accountStatus)}
+                            className="px-2 py-1 bg-red-600 text-white rounded text-xs"
+                          >
+                            Disable
+                          </button>
+                        )}
+                      </div>
                     </td>
+
+
                   </tr>
                 ))
               )}
