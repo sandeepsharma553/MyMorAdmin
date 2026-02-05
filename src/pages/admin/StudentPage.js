@@ -1,5 +1,5 @@
 // src/pages/StudentPage.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -14,16 +14,20 @@ import {
   updateDoc,
   doc,
   serverTimestamp,
+  writeBatch,
 } from "firebase/firestore";
 
 import * as XLSX from "xlsx";
 import studentFile from "../../assets/excel/student_verification.xlsx";
+import { parse, isValid } from "date-fns";
 
 export default function StudentPage(props) {
   const { navbarHeight } = props;
 
   // Redux state
   const emp = useSelector((state) => state.auth.employee);
+  const authUser = useSelector((state) => state.auth.user);
+  const myUid = authUser?.uid;
 
   // UI State
   const [list, setList] = useState([]);
@@ -37,21 +41,23 @@ export default function StudentPage(props) {
   const [fileName, setFileName] = useState("No file chosen");
   const [data, setData] = useState([]); // parsed rows from Excel
 
+  // Protected users
+  const PROTECTED_EMAILS = useMemo(() => new Set(["chiggy14@gmail.com"]), []);
+  const isProtected = (u) => {
+    const emailLc = String(u?.email || "").trim().toLowerCase();
+    return u?.id === myUid || PROTECTED_EMAILS.has(emailLc);
+  };
+
   // Derived
   const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
   const paginatedData = list.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   );
-  const authUser = useSelector((state) => state.auth.user);
-  const myUid = authUser?.uid;
-  const PROTECTED_EMAILS = new Set(["chiggy14@gmail.com"]);
-  const isProtected = (u) => {
-  const emailLc = String(u?.email || "").trim().toLowerCase();
-  return u?.id === myUid || PROTECTED_EMAILS.has(emailLc);
-};
+  const todayISO = () => new Date().toISOString().slice(0, 10);
   useEffect(() => {
     getList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const getList = async () => {
@@ -59,17 +65,74 @@ export default function StudentPage(props) {
       toast.error("Missing hostel context.");
       return;
     }
+
     try {
       setIsLoading(true);
+
+      // 1) Fetch only this hostel users
       const usersQuery = query(
         collection(db, "users"),
         where("hostelid", "==", emp.hostelid)
       );
+
       const snap = await getDocs(usersQuery);
-      const docs = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((u) => !isProtected(u));
-      setList(docs);
+      const users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      const today = todayISO();
+
+      // 2) Find expired users who are ONLY livingtype === "hostel"
+      const expiredHostelUsers = [];
+      for (const u of users) {
+        if (isProtected(u)) continue;
+
+        const living = String(u.livingtype || "").trim().toLowerCase();
+        if (living !== "hostel") continue; // ✅ only hostel
+
+        const end = String(u.studentVerifyEnd || "").trim().slice(0, 10); // expect YYYY-MM-DD
+        if (end && end < today) {
+          expiredHostelUsers.push(u.id);
+        }
+      }
+
+      // 3) Batch update: hostel -> outside
+      if (expiredHostelUsers.length) {
+        let batch = writeBatch(db);
+        let count = 0;
+
+        for (const uid of expiredHostelUsers) {
+          batch.update(doc(db, "users", uid), {
+            livingtype: "outside",
+            livingtypeUpdatedAt: serverTimestamp(),
+            livingtypeReason: "student_verification_expired",
+          });
+
+          count++;
+          if (count >= 450) {
+            await batch.commit();
+            batch = writeBatch(db);
+            count = 0;
+          }
+        }
+        if (count > 0) await batch.commit();
+      }
+
+      // 4) Update UI list locally too (so table instantly shows new value)
+      const updatedList = users
+        .map((u) => {
+          if (isProtected(u)) return null;
+
+          const living = String(u.livingtype || "").trim().toLowerCase();
+          if (living !== "hostel") return u; // ✅ do NOT touch outside/university
+
+          const end = String(u.studentVerifyEnd || "").trim().slice(0, 10);
+          if (end && end < today) {
+            return { ...u, livingtype: "outside" };
+          }
+          return u;
+        })
+        .filter(Boolean);
+
+      setList(updatedList);
     } catch (err) {
       console.error(err);
       toast.error("Failed to fetch users.");
@@ -94,6 +157,36 @@ export default function StudentPage(props) {
     }
   };
 
+  const normalize = (s = "") => String(s || "").trim().toLowerCase();
+
+  // Convert Excel cell value -> ISO date string (YYYY-MM-DD) or null
+  const excelDateToISO = (v) => {
+    if (!v) return null;
+
+    // If already Date
+    if (v instanceof Date && !isNaN(v.getTime())) {
+      return v.toISOString().slice(0, 10);
+    }
+
+    // If Excel serial number
+    if (typeof v === "number") {
+      // Excel epoch starts 1899-12-30 (with Excel bug), common conversion:
+      const ms = Math.round((v - 25569) * 86400 * 1000);
+      const d = new Date(ms);
+      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    }
+
+    // If string: try yyyy-MM-dd then fallback Date()
+    const s = String(v).trim();
+    const p = parse(s, "yyyy-MM-dd", new Date());
+    if (isValid(p)) return p.toISOString().slice(0, 10);
+
+    const d2 = new Date(s);
+    if (!isNaN(d2.getTime())) return d2.toISOString().slice(0, 10);
+
+    return null;
+  };
+
   const readExcel = (file) => {
     setIsLoading(true);
     const reader = new FileReader();
@@ -103,13 +196,28 @@ export default function StudentPage(props) {
         const workbook = XLSX.read(bstr, { type: "binary" });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-        const cleaned = jsonData.map((row) => ({
-          studentid: row["Student ID"] || row["ID"] || row["sid"] || "",
-          studentname: row["Student Name"] || row["Name"] || "",
-          email: row["Student Email"] || row["Email"] || "",
-        }));
+        // raw: true keeps date-like values as Date/number where possible
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: true });
+
+        const cleaned = jsonData.map((row) => {
+          const studentid = row["Student ID"] || row["ID"] || row["sid"] || "";
+          const studentname = row["Student Name"] || row["Name"] || "";
+          const email = row["Student Email"] || row["Email"] || "";
+
+          const startRaw =
+            row["Start Date"] || row["Start"] || row["From"] || "";
+          const endRaw = row["End Date"] || row["End"] || row["To"] || "";
+
+          return {
+            studentid,
+            studentname,
+            email,
+            startDate: excelDateToISO(startRaw),
+            endDate: excelDateToISO(endRaw),
+          };
+        });
+
         setData(cleaned);
       } catch (e) {
         console.error(e);
@@ -121,8 +229,6 @@ export default function StudentPage(props) {
     reader.readAsBinaryString(file);
   };
 
-  const normalize = (s = "") => String(s || "").trim().toLowerCase();
-
   const handleUploadExcel = async () => {
     if (!emp?.hostelid) {
       toast.error("Missing hostel context.");
@@ -132,16 +238,26 @@ export default function StudentPage(props) {
       toast.error("Please choose an Excel file first.");
       return;
     }
+
     try {
       setIsLoading(true);
 
-      // Build lookups from Excel
-      const excelEmails = new Set(
-        data.map((r) => normalize(r.email)).filter(Boolean)
-      );
-      const excelIds = new Set(
-        data.map((r) => normalize(r.studentid)).filter(Boolean)
-      );
+      // Build lookup maps from Excel (email & studentid)
+      const excelByEmail = new Map();
+      const excelById = new Map();
+
+      for (const r of data) {
+        const e = normalize(r.email);
+        const sid = normalize(r.studentid);
+
+        // Optional: skip rows that have invalid date strings
+        // (we already converted to ISO or null)
+        // If you want to require both dates, uncomment:
+        // if (!r.startDate || !r.endDate) continue;
+
+        if (e) excelByEmail.set(e, r);
+        if (sid) excelById.set(sid, r);
+      }
 
       // Fetch users (fresh) in this hostel
       const usersQuery = query(
@@ -151,21 +267,28 @@ export default function StudentPage(props) {
       const snap = await getDocs(usersQuery);
       const users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      // Decide who to disable vs enable (Auth + Firestore via CF HTTP endpoint)
+      // Decide who to disable vs enable
       const toDisable = [];
       const toEnable = [];
+      const matchedRows = new Map(); // uid -> excel row
 
       for (const u of users) {
         if (isProtected(u)) continue;
+
         const emailKey = normalize(u.email);
         const idKey = normalize(u.studentid || u.studentID || u.sid);
 
-        const isMatch =
-          (emailKey && excelEmails.has(emailKey)) ||
-          (idKey && excelIds.has(idKey));
+        const row =
+          (emailKey && excelByEmail.get(emailKey)) ||
+          (idKey && excelById.get(idKey)) ||
+          null;
 
-        if (isMatch) toEnable.push(u.id); // uid == doc id
-        else toDisable.push(u.id);
+        if (row) {
+          toEnable.push(u.id);
+          matchedRows.set(u.id, row);
+        } else {
+          toDisable.push(u.id);
+        }
       }
 
       // Call HTTP endpoint (matches functions.bulkSetUsersStatus)
@@ -183,6 +306,41 @@ export default function StudentPage(props) {
         throw new Error(res?.error || "Bulk update failed");
       }
 
+      // Save date range into Firestore for enabled users
+      // (batch commit in chunks, safe below Firestore 500 ops limit)
+      try {
+        const batchLimit = 450;
+        let batch = writeBatch(db);
+        let count = 0;
+
+        for (const uid of toEnable) {
+          const r = matchedRows.get(uid);
+          if (!r) continue;
+
+          batch.update(doc(db, "users", uid), {
+            accountStatus: "active",
+            verified: true,
+            verifiedAt: serverTimestamp(),
+            disabledReason: null,
+            disabledAt: null,
+            studentVerifyStart: r.startDate || null,
+            studentVerifyEnd: r.endDate || null,
+          });
+
+          count++;
+          if (count >= batchLimit) {
+            await batch.commit();
+            batch = writeBatch(db);
+            count = 0;
+          }
+        }
+
+        if (count > 0) await batch.commit();
+      } catch (e) {
+        console.error(e);
+        toast.error("Enabled users updated, but date range save failed.");
+      }
+
       const { enabledCount = 0, disabledCount = 0 } = res || {};
       toast.success(
         `Verification complete. Enabled: ${enabledCount}, Disabled: ${disabledCount}, Total checked: ${users.length}`
@@ -198,64 +356,19 @@ export default function StudentPage(props) {
     }
   };
 
-  // Manual single-user enable (Auth CF + local Firestore mirror just in case)
-  const handleEnableUser = async (uid) => {
-    try {
-      // 1) Enable in Auth (your CF also mirrors Firestore if you patched it)
-      const response = await fetch(
-        "https://us-central1-mymor-one.cloudfunctions.net/enableUserByUid",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ uid }),
-        }
-      );
-      const res = await response.json();
-      if (!response.ok) throw new Error(res.error || "Failed to enable user");
-
-      // 2) Ensure Firestore reflects status (safe no-op if CF already did)
-      await updateDoc(doc(db, "users", uid), {
-        accountStatus: "active",
-        verified: true,
-        verifiedAt: serverTimestamp(),
-        disabledReason: null,
-        disabledAt: null,
-      });
-
-      // Optimistic UI
-      setList((prev) =>
-        prev.map((u) =>
-          u.id === uid
-            ? {
-                ...u,
-                accountStatus: "active",
-                verified: true,
-              }
-            : u
-        )
-      );
-
-      toast.success("Account enabled successfully");
-    } catch (err) {
-      console.error(err);
-      toast.error("Enable failed");
-    }
-  };
-// ADD THIS inside component (replace your handleEnableUser if you want one function)
-const handleToggleUser = async (uid, currentStatus) => {
-    const isDisabling = currentStatus !== "disabled"; // if active/null → disable, if disabled → enable
+  // Toggle single user enable/disable
+  const handleToggleUser = async (uid, currentStatus) => {
+    const isDisabling = currentStatus !== "disabled"; // active/null -> disable, disabled -> enable
     const endpoint = isDisabling
       ? "https://us-central1-mymor-one.cloudfunctions.net/disableUserByUid"
       : "https://us-central1-mymor-one.cloudfunctions.net/enableUserByUid";
-  
+
     try {
-      // Optional confirm on disabling
       if (isDisabling) {
         const ok = window.confirm("Are you sure you want to disable this account?");
         if (!ok) return;
       }
-  
-      // 1) Call your HTTP CF to flip Auth (and ideally CF also mirrors Firestore as we patched)
+
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -263,8 +376,7 @@ const handleToggleUser = async (uid, currentStatus) => {
       });
       const res = await response.json();
       if (!response.ok) throw new Error(res.error || "Operation failed");
-  
-      // 2) Ensure Firestore reflects status (safe no-op if CF already did)
+
       if (isDisabling) {
         await updateDoc(doc(db, "users", uid), {
           accountStatus: "disabled",
@@ -281,27 +393,26 @@ const handleToggleUser = async (uid, currentStatus) => {
           disabledAt: null,
         });
       }
-  
-      // 3) Optimistic UI
+
       setList((prev) =>
         prev.map((u) =>
           u.id === uid
             ? {
-                ...u,
-                accountStatus: isDisabling ? "disabled" : "active",
-                verified: !isDisabling,
-              }
+              ...u,
+              accountStatus: isDisabling ? "disabled" : "active",
+              verified: !isDisabling,
+            }
             : u
         )
       );
-  
+
       toast.success(isDisabling ? "Account disabled" : "Account enabled");
     } catch (err) {
       console.error(err);
       toast.error("Action failed");
     }
   };
-  
+
   return (
     <main
       className="flex-1 p-6 bg-gray-100 overflow-auto"
@@ -363,18 +474,33 @@ const handleToggleUser = async (uid, currentStatus) => {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Email</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Address</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Image</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Action</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Name
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Email
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Address
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Image
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
+                  <td
+                    colSpan="6"
+                    className="px-6 py-4 text-center text-gray-500"
+                  >
                     No matching users found.
                   </td>
                 </tr>
@@ -399,39 +525,44 @@ const handleToggleUser = async (uid, currentStatus) => {
                         />
                       ) : (
                         <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center text-sm text-white">
-                          {(item.username || item.name || "U").toString().charAt(0).toUpperCase()}
+                          {(item.username || item.name || "U")
+                            .toString()
+                            .charAt(0)
+                            .toUpperCase()}
                         </div>
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <span
-                        className={`px-2 py-1 rounded text-xs ${
-                          (item.accountStatus || "active") === "disabled"
+                        className={`px-2 py-1 rounded text-xs ${(item.accountStatus || "active") === "disabled"
                             ? "bg-red-100 text-red-700"
                             : "bg-green-100 text-green-700"
-                        }`}
+                          }`}
                       >
                         {item.accountStatus || "active"}
                       </span>
                     </td>
                     <td className="px-6 py-4">
-  {item.accountStatus === "disabled" ? (
-    <button
-      onClick={() => handleToggleUser(item.id, item.accountStatus)}
-      className="px-2 py-1 bg-green-600 text-white rounded text-xs"
-    >
-      Enable
-    </button>
-  ) : (
-    <button
-      onClick={() => handleToggleUser(item.id, item.accountStatus)}
-      className="px-2 py-1 bg-red-600 text-white rounded text-xs"
-    >
-      Disable
-    </button>
-  )}
-</td>
-
+                      {item.accountStatus === "disabled" ? (
+                        <button
+                          onClick={() =>
+                            handleToggleUser(item.id, item.accountStatus)
+                          }
+                          className="px-2 py-1 bg-green-600 text-white rounded text-xs"
+                        >
+                          Enable
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            handleToggleUser(item.id, item.accountStatus)
+                          }
+                          className="px-2 py-1 bg-red-600 text-white rounded text-xs"
+                        >
+                          Disable
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}
