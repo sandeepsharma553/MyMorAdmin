@@ -149,7 +149,11 @@ export default function BookingPage({ navbarHeight }) {
       });
 
       // Bookings
-      const bookingSnap = await getDocs(collection(db, "bookingroom"), where("hostelid", "==", emp.hostelid));
+      const bookingQ = query(
+        collection(db, "bookingroom"),
+        where("hostelid", "==", emp?.hostelid)
+      );
+      const bookingSnap = await getDocs(bookingQ);
       const allBookings = bookingSnap.docs.map((d) => {
         const raw = d.data();
         const s = toJsDate(raw.startdate);

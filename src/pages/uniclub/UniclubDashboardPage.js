@@ -170,7 +170,7 @@ export default function UniclubDashboardPage(props) {
   const universityName = emp?.university || "Your University";
   const clubName = emp?.uniclub || "All Clubs";
   const campusName = university?.campus || "Campus";
-
+  const role  = emp?.role
   return (
     <main className="flex-1 bg-slate-100/80 overflow-auto px-4 py-6">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -196,7 +196,7 @@ export default function UniclubDashboardPage(props) {
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
-                    {universityName}
+                    {universityName} 
                   </h1>
                 </div>
 
@@ -208,6 +208,8 @@ export default function UniclubDashboardPage(props) {
                   </span>
                   <span className="text-slate-400">•</span>
                   <span>{campusName}</span>
+                  <span className="text-slate-400">•</span>
+                  <span>{role}</span>
                 </div>
 
                 <p className="mt-2 text-xs sm:text-sm text-slate-500">
