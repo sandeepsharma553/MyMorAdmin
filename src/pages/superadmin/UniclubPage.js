@@ -226,20 +226,52 @@ export default function UniclubPage({ navbarHeight }) {
   }, [filters, sortConfig, filterUniversityId, showPinnedOnly]);
 
   const getList = () => {
-    if (!uid) return;
+    if (!uid) {
+      setList([]);
+      setIsLoading(false);
+      return;
+    }
+  
     setIsLoading(true);
-
-    const ref = query(dbRef(database, "uniclubs"), orderByChild("creatorId"), equalTo(uid));
+  
+    const refQ = query(
+      dbRef(database, "uniclubs"),
+      orderByChild("creatorId"),
+      equalTo(uid)
+    );
+  
     const handler = (snap) => {
+      if (!mountedRef.current) return;
+  
       const val = snap.val();
-      const arr = val ? Object.entries(val).map(([id, v]) => ({ id, ...v })) : [];
+  
+      if (!val) {
+        // 🔥 IMPORTANT: no data case
+        setList([]);
+        setIsLoading(false);
+        return;
+      }
+  
+      const arr = Object.entries(val).map(([id, v]) => ({
+        id,
+        ...v,
+      }));
+  
       setList(arr);
       setIsLoading(false);
     };
-
-    onValue(ref, handler, { onlyOnce: false });
-    return () => off(ref, "value", handler);
+  
+    onValue(refQ, handler, (error) => {
+      console.error("RTDB error:", error);
+      if (mountedRef.current) {
+        setList([]);
+        setIsLoading(false);
+      }
+    });
+  
+    return () => off(refQ, "value", handler);
   };
+  
 
   const fetchUniversitiesByCountry = async (countryName) => {
     if (!countryName) {
