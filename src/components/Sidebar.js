@@ -136,6 +136,8 @@ function useBadgeCount({
   collName,
   hostelid,
   statusIn = [],
+  statusField = "status",
+  statusEq = null,               // ✅ add
   preferZeroIfNoLastOpened = false,
   enabled = true,
 }) {
@@ -181,7 +183,8 @@ function useBadgeCount({
 
     const baseRef = collection(db, collName);
     const clauses = [where("hostelid", "==", String(hostelid))];
-    if (statusIn?.length) clauses.push(where("status", "in", statusIn));
+    if (statusEq !== null) clauses.push(where(statusField, "==", statusEq));
+    if (statusIn?.length) clauses.push(where(statusField, "in", statusIn));
 
     const q = query(baseRef, ...clauses);
     return onSnapshot(q, (snap) => {
@@ -366,6 +369,16 @@ function Sidebar({ onSectionClick, isLoading }) {
     preferZeroIfNoLastOpened: false,
     enabled: hostelBadgeEnabled,
   });
+  /* -------- Student badge (NEW join requests) -------- */
+  const studentBadge = useBadgeCount({
+    adminUid,
+    menuKey: "student",
+    collName: "users",
+    hostelid,
+    statusField: "hostelApprovalStatus",
+    statusEq: "pending", // ✅ only pending join requests
+    enabled: hostelBadgeEnabled,
+  });
 
   /* -------- UniClub member badge (RTDB members joinedAt) -------- */
   const uniclubMemberBadge = useRtdbMembersBadgeCount({
@@ -374,7 +387,12 @@ function Sidebar({ onSectionClick, isLoading }) {
     clubId: uniclubid,
     enabled: uniclubBadgeEnabled,
   });
-
+  const uniclubJoinReqBadge = useRtdbJoinRequestsBadgeCount({
+    adminUid,
+    menuKey: "uniclub",   // sidebar menu item key
+    clubId: uniclubid,    // single club
+    enabled: uniclubBadgeEnabled,
+  });
   const resetMenuKeyFirestore = async (menuKey) => {
     if (!adminUid) return;
     try {
@@ -395,7 +413,93 @@ function Sidebar({ onSectionClick, isLoading }) {
       console.error("resetMenuKeyRTDB failed:", e);
     }
   };
-  
+
+  /* ------------------- RTDB badge hook (UniClub Join Requests) ------------------- */
+  function useRtdbJoinRequestsBadgeCount({ adminUid, menuKey, clubId, enabled = true }) {
+    const storageKey = adminUid && menuKey ? `amState:${adminUid}:${menuKey}` : null;
+
+    const [lastOpenedLocal, setLastOpenedLocal] = useState(() => {
+      if (!storageKey) return null;
+      const raw = localStorage.getItem(storageKey);
+      const n = parseInt(raw, 10);
+      return Number.isNaN(n) ? null : n;
+    });
+
+    const [lastOpenedRtdb, setLastOpenedRtdb] = useState(null);
+    const [requests, setRequests] = useState([]);
+
+    // admin lastOpened from RTDB
+    useEffect(() => {
+      if (!enabled) return;
+      if (!adminUid || !menuKey) return;
+
+      const sRef = dbRef(database, `adminMenuState/${adminUid}/menus/${menuKey}`);
+      return onValue(sRef, (snap) => {
+        const v = snap.val();
+        const t =
+          typeof v?.lastOpenedAt === "number"
+            ? v.lastOpenedAt
+            : typeof v?.lastOpenedServerAt === "number"
+              ? v.lastOpenedServerAt
+              : null;
+
+        setLastOpenedRtdb(t);
+      });
+    }, [enabled, adminUid, menuKey]);
+
+    // sync RTDB -> localStorage
+    useEffect(() => {
+      if (!enabled) return;
+      if (!storageKey) return;
+      if (typeof lastOpenedRtdb === "number") {
+        try {
+          localStorage.setItem(storageKey, String(lastOpenedRtdb));
+          setLastOpenedLocal(lastOpenedRtdb);
+        } catch { }
+      }
+    }, [enabled, storageKey, lastOpenedRtdb]);
+
+    // listen joinRequests from RTDB
+    useEffect(() => {
+      if (!enabled) return;
+      if (!clubId) return;
+
+      const rRef = dbRef(database, `uniclubs/${clubId}/joinRequests`);
+      return onValue(rRef, (snap) => {
+        const val = snap.val() || {};
+        const arr = Object.values(val); // request objects
+        setRequests(arr);
+      });
+    }, [enabled, clubId]);
+
+    const count = useMemo(() => {
+      if (!enabled) return 0;
+
+      const openedAt =
+        typeof lastOpenedRtdb === "number"
+          ? lastOpenedRtdb
+          : typeof lastOpenedLocal === "number"
+            ? lastOpenedLocal
+            : null;
+
+      // helper: request time field (robust)
+      const getReqAt = (r) => {
+        const t =
+          (typeof r?.requestedAt === "number" && r.requestedAt) ||
+          (typeof r?.createdAt === "number" && r.createdAt) ||
+          (typeof r?.requestedAtMs === "number" && r.requestedAtMs) ||
+          (typeof r?.time === "number" && r.time) ||
+          0;
+        return t;
+      };
+
+      if (!openedAt) return requests.length; // first time -> show all
+
+      return requests.filter((r) => getReqAt(r) > openedAt).length;
+    }, [enabled, requests, lastOpenedRtdb, lastOpenedLocal]);
+
+    return count;
+  }
 
   const handleClick = async (sectionKey) => {
     setActiveSection(sectionKey);
@@ -408,7 +512,8 @@ function Sidebar({ onSectionClick, isLoading }) {
       sectionKey === "reportincident" ||
       sectionKey === "feedback" ||
       sectionKey === "bookingroom" ||
-      sectionKey === "eventbooking"
+      sectionKey === "eventbooking" ||
+      sectionKey === "student"
     ) {
       resetMenuKeyFirestore(sectionKey);
     }
@@ -416,6 +521,9 @@ function Sidebar({ onSectionClick, isLoading }) {
     // UniClub: mark opened for uniclub member badge (RTDB)
     if (sectionKey === "uniclubmember") {
       resetMenuKeyRTDB("uniclubmember");
+    }
+    if (sectionKey === "uniclub") {
+      resetMenuKeyRTDB("uniclub"); // ✅ open uniclub page => clear join-request badge
     }
   };
 
@@ -561,11 +669,13 @@ function Sidebar({ onSectionClick, isLoading }) {
             if (key === "feedback") badgeValue = feedbackBadge;
             if (key === "bookingroom") badgeValue = bookingBadge;
             if (key === "eventbooking") badgeValue = eventBadge;
+            if (key === "student") badgeValue = studentBadge;
           }
 
           // UniClub badge mapping (members)
           if (uniclubBadgeEnabled) {
             if (key === "uniclubmember") badgeValue = uniclubMemberBadge;
+            if (key === "uniclub") badgeValue = uniclubJoinReqBadge;
           }
 
           return (

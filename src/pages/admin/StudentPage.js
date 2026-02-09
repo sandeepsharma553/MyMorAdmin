@@ -47,13 +47,44 @@ export default function StudentPage(props) {
     const emailLc = String(u?.email || "").trim().toLowerCase();
     return u?.id === myUid || PROTECTED_EMAILS.has(emailLc);
   };
+// pick best "latest" field (jo tumhare users docs me aata ho)
+const getLatestMs = (u) => {
+  const t =
+    u?.createdAt ||
+    u?.updatedAt ||
+    u?.verifiedAt ||
+    u?.hostelApprovalUpdatedAt ||
+    u?.livingtypeUpdatedAt ||
+    null;
+
+  // Firestore Timestamp -> ms
+  if (t?.toMillis) return t.toMillis();
+  // If it's already a Date
+  if (t instanceof Date) return t.getTime();
+  // If it's ISO string
+  const d = new Date(t);
+  if (!isNaN(d.getTime())) return d.getTime();
+
+  return 0;
+};
+
+const sortedList = useMemo(() => {
+  return [...list].sort((a, b) => getLatestMs(b) - getLatestMs(a));
+}, [list]);
+
+const totalPages = Math.max(1, Math.ceil(sortedList.length / pageSize));
+
+const paginatedData = sortedList.slice(
+  (currentPage - 1) * pageSize,
+  currentPage * pageSize
+);
 
   // Derived
-  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
-  const paginatedData = list.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
+  // const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  // const paginatedData = list.slice(
+  //   (currentPage - 1) * pageSize,
+  //   currentPage * pageSize
+  // );
   const todayISO = () => new Date().toISOString().slice(0, 10);
   useEffect(() => {
     getList();
@@ -507,7 +538,7 @@ export default function StudentPage(props) {
       <div className="overflow-x-auto bg-white rounded shadow">
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
-            <FadeLoader />
+            <FadeLoader  color="#36d7b7" loading={isLoading}/>
           </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">

@@ -902,6 +902,7 @@ export default function UniclubPage({ navbarHeight }) {
       answers: req.answers || null,
     };
     try {
+      await rtdbSet(dbRef(database, `${base}/joinRequests/${req.uid}/status`), "approved");
       await Promise.all([
         rtdbSet(dbRef(database, `${base}/members/${req.uid}`), memberRecord),
         remove(dbRef(database, `${base}/joinRequests/${req.uid}`)),
@@ -924,6 +925,7 @@ export default function UniclubPage({ navbarHeight }) {
   const rejectRequest = async (clubId, req) => {
     const base = `uniclubs/${clubId}`;
     try {
+      await rtdbSet(dbRef(database, `${base}/joinRequests/${req.uid}/status`), "rejected");
       await remove(dbRef(database, `${base}/joinRequests/${req.uid}`));
       setRequests((prev) => prev.filter((r) => r.uid !== req.uid));
       getList();
