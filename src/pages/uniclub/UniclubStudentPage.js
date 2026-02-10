@@ -199,22 +199,33 @@ export default function UniclubStudentPage(props) {
   const getList = async () => {
     setIsLoading(true);
     try {
-      const constraints = [
-        where("createdby", "==", uid),
-      ];
-      const qy = query(collection(db, "users"), ...constraints);
+      if (!emp?.uniclubid) {
+        setList([]);
+        return;
+      }
+  
+      const qy = query(
+        collection(db, "users"),
+        where("uniclubid", "==", emp.uniclubid),
+        where("roles.committee", "==", true)
+        // optional: where("livingtype", "==", "university")
+      );
+  
       const snap = await getDocs(qy);
+  
       const rows = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((u) => u.firstname !== emp?.name);
+        .filter((u) => u.id !== uid); // ✅ apne aap ko hide karna ho to
+  
       setList(rows);
     } catch (err) {
       console.error("getList error:", err);
-      toast.error("Failed to load students");
+      toast.error("Failed to load committee");
     } finally {
       setIsLoading(false);
     }
   };
+  
 
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
