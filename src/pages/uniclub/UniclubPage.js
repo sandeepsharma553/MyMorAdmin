@@ -113,7 +113,7 @@ export default function UniclubPage({ navbarHeight }) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [list, setList] = useState([]);
 
-  // Requests/Members separate modals
+  // 🔀 Requests/Members moved out into separate modals
   const [reqModalOpen, setReqModalOpen] = useState(false);
   const [memModalOpen, setMemModalOpen] = useState(false);
   const [activeClubId, setActiveClubId] = useState("");
@@ -126,25 +126,20 @@ export default function UniclubPage({ navbarHeight }) {
   const [roles, setRoles] = useState([]);
   const [members, setMembers] = useState([]);
   const [showMapModal, setShowMapModal] = useState(false);
-
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
-
   const navigate = useNavigate();
-
   // Sorting + Filters
   const [sortConfig, setSortConfig] = useState({ key: "title", direction: "asc" });
   const [filters, setFilters] = useState({ title: "" });
   const debounceRef = useRef(null);
-
   const setFilterDebounced = (field, value) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       setFilters((prev) => ({ ...prev, [field]: value }));
     }, 250);
   };
-
   const onSort = (key) =>
     setSortConfig((prev) =>
       prev.key === key
@@ -156,7 +151,7 @@ export default function UniclubPage({ navbarHeight }) {
   const uid = useSelector((s) => s.auth?.user?.uid);
   const emp = useSelector((s) => s.auth?.employee);
   const user = useSelector((s) => s.auth?.user);
-
+  console.log("emp", emp);
   // File input
   const [fileName, setFileName] = useState("No file chosen");
   const [previewUrl, setPreviewUrl] = useState("");
@@ -322,7 +317,7 @@ export default function UniclubPage({ navbarHeight }) {
     setCurrentPage(1);
   }, [filters, sortConfig]);
 
-  // Live listeners for requests
+  // ✅ Live listeners tied to separate modals now
   useEffect(() => {
     if (!reqModalOpen || !activeClubId) return;
     const reqRef = dbRef(database, `uniclubs/${activeClubId}/joinRequests`);
@@ -335,7 +330,6 @@ export default function UniclubPage({ navbarHeight }) {
     return () => off(reqRef, "value", handler);
   }, [reqModalOpen, activeClubId]);
 
-  // Live listeners for members
   useEffect(() => {
     if (!memModalOpen || !activeClubId) return;
     const memRef = dbRef(database, `uniclubs/${activeClubId}/members`);
@@ -964,6 +958,18 @@ export default function UniclubPage({ navbarHeight }) {
       {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Uniclub</h1>
+        {/* <button
+          className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+          onClick={() => {
+            setEditing(null);
+            setForm(initialForm);
+            setFileName("No file chosen");
+            setPreviewUrl("");
+            setModalOpen(true);
+          }}
+        >
+          + Add uniclub
+        </button> */}
       </div>
 
       <div className="overflow-x-auto bg-white rounded shadow no-scrollbar">
@@ -980,8 +986,13 @@ export default function UniclubPage({ navbarHeight }) {
                   { key: "location", label: "Address" },
                   { key: "when", label: "When", sortable: false },
                   { key: "desc", label: "Description" },
+                  // 🆕 two new columns for counts
                   { key: "requests", label: "Requests", sortable: false },
                   { key: "members", label: "Members", sortable: false },
+                  // { key: "announcement", label: "Announcement", sortable: false },
+                  // { key: "events", label: "Events", sortable: false },
+                  // { key: "eventbookings", label: "EventBookings", sortable: false },
+                  // { key: "subgroup", label: "Sub Group", sortable: false },
                   { key: "actions", label: "Action", sortable: false },
                 ].map((col) => (
                   <th key={col.key} className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none">
@@ -992,6 +1003,7 @@ export default function UniclubPage({ navbarHeight }) {
                         type="button"
                         className="flex items-center gap-1 hover:underline"
                         onClick={() => onSort(col.key)}
+                        title="Sort"
                       >
                         <span>{col.label}</span>
                         {sortConfig.key === col.key && (
@@ -1019,6 +1031,10 @@ export default function UniclubPage({ navbarHeight }) {
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
                 <th className="px-6 pb-3" />
+                {/* <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" /> */}
+                <th className="px-6 pb-3" />
               </tr>
             </thead>
 
@@ -1034,7 +1050,8 @@ export default function UniclubPage({ navbarHeight }) {
                   const start = item.startAtMs || item.startAt;
                   const end = item.endAtMs || item.endAt;
                   const whenLabel = start
-                    ? `${dayjs(start).format("DD MMM, h:mm A")}${end ? ` – ${dayjs(end).format("DD MMM, h:mm A")}` : ""}`
+                    ? `${dayjs(start).format("DD MMM, h:mm A")}${end ? ` – ${dayjs(end).format("DD MMM, h:mm A")}` : ""
+                    }`
                     : item.date || item.time
                       ? `${item.date || ""}${item.time ? ` • ${item.time}${item.endAt ? ` – ${item.endAt}` : ""}` : ""}`
                       : "-";
@@ -1044,14 +1061,11 @@ export default function UniclubPage({ navbarHeight }) {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.title}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.address || "-"}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{whenLabel}</td>
-                      <td
-                        className="px-6 py-4 text-sm text-gray-500 whitespace-normal break-words max-w-xs"
-                        title={item.desc}
-                      >
+                      <td className="px-6 py-4 text-sm text-gray-500 whitespace-normal break-words max-w-xs" title={item.desc}>
                         {truncateText(item.desc, 100)}
                       </td>
 
-                      {/* Requests */}
+                      {/* 🆕 Requests count + modal trigger */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
@@ -1060,13 +1074,16 @@ export default function UniclubPage({ navbarHeight }) {
                             setActiveClubTitle(item.title || "Club");
                             setReqModalOpen(true);
                           }}
+                          title="View join requests"
                         >
                           <span>View</span>
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200">{item.requestsCount ?? 0}</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200">
+                            {item.requestsCount ?? 0}
+                          </span>
                         </button>
                       </td>
 
-                      {/* Members */}
+                      {/* 🆕 Members count + modal trigger */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
@@ -1075,11 +1092,69 @@ export default function UniclubPage({ navbarHeight }) {
                             setActiveClubTitle(item.title || "Club");
                             setMemModalOpen(true);
                           }}
+                          title="View members"
                         >
                           <span>View</span>
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200">{item.membersCount ?? 0}</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200">
+                            {item.membersCount ?? 0}
+                          </span>
                         </button>
                       </td>
+                      {/* <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          onClick={() =>
+                                 navigate("/uniclubannouncement", {
+                                  state: { groupId: item.id, groupName: item.title || "Club" },
+                                 })
+                               }
+                          title="Announcements"
+                        >
+                          <span>Announcements</span>
+
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          onClick={() =>
+                                 navigate("/uniclubevent", {
+                                   state: { groupId: item.id, groupName: item.title || "Club" },
+                                 })
+                               }
+                          title="Events"
+                        >
+                          <span>Events</span>
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          onClick={() =>
+                                 navigate("/uniclubeventbooking", {
+                                   state: { groupId: item.id, groupName: item.title || "Club" },
+                                 })
+                               }
+                          title="EventBooking"
+                        >
+                          <span>EventBooking</span>
+
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          onClick={() =>
+                                 navigate("/uniclubsubgroup", {
+                                   state: { groupId: item.id, groupName: item.title || "Club" },
+                                 })
+                               }
+                          title="Subgroups"
+                        >
+                          <span>Sub Group</span>
+
+                        </button>
+                      </td> */}
 
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div className="flex items-center gap-3">
@@ -1099,17 +1174,22 @@ export default function UniclubPage({ navbarHeight }) {
                                 tags: Array.isArray(item.tags) ? item.tags : parseTags(item.tags || ""),
                                 tagInput: "",
                                 rules: item.rules || "",
-
-                                // join questions hydrate
+                                joinQInput: "",
+                                // joinQuestions: Array.isArray(item.joinQuestions) ? item.joinQuestions : [],
                                 editingJoinQId: "",
-                                joinQType: "short",
+                                joinQType: "short",          // 👈 reset new-question type
                                 joinQInput: "",
                                 joinQOptionInput: "",
                                 joinQOptionList: [],
                                 joinQuestions: Array.isArray(item.joinQuestions)
                                   ? item.joinQuestions.map((q, idx) =>
                                     typeof q === "string"
-                                      ? { id: `q${idx + 1}`, question: q, type: "short", options: [] }
+                                      ? {
+                                        id: `q${idx + 1}`,
+                                        question: q,
+                                        type: "short",
+                                        options: [],
+                                      }
                                       : {
                                         id: q.id || `q${idx + 1}`,
                                         question: q.question || "",
@@ -1118,9 +1198,7 @@ export default function UniclubPage({ navbarHeight }) {
                                       }
                                   )
                                   : [],
-
                                 category: item.category || "",
-
                                 enableChat: !!item?.settings?.chatEnabled,
                                 allowEventsByMembers: !!item?.settings?.allowEventsByMembers,
                                 pollsEnabled: !!item?.settings?.pollsEnabled,
@@ -1131,29 +1209,38 @@ export default function UniclubPage({ navbarHeight }) {
 
                                 memberValidFromMs: item?.settings?.memberValidFromMs || 0,
                                 memberValidToMs: item?.settings?.memberValidToMs || 0,
-
                                 successorUid: item?.ownership?.successorUid || "",
                                 memberId: "",
                                 roleId: "",
                                 role: "",
-
                                 contacts:
                                   Array.isArray(item.contacts) && item.contacts.length > 0
                                     ? item.contacts
                                     : [{ name: "", phone: "", email: "" }],
-
                                 showPhone: !!item.contactPhone,
                                 showEmail: !!item.contactEmail,
-
                                 links:
                                   Array.isArray(item.links) && item.links.length > 0
                                     ? item.links
                                     : (
                                       [
-                                        item.website ? { label: "Website", url: item.website } : null,
-                                        item.link ? { label: "External", url: item.link } : null,
+                                        item.website
+                                          ? { label: "Website", url: item.website }
+                                          : null,
+                                        item.link
+                                          ? { label: "External", url: item.link }
+                                          : null,
                                       ].filter(Boolean).length > 0
-                                        ? [...[item.website ? { label: "Website", url: item.website } : null, item.link ? { label: "External", url: item.link } : null].filter(Boolean)]
+                                        ? [
+                                          ...[
+                                            item.website
+                                              ? { label: "Website", url: item.website }
+                                              : null,
+                                            item.link
+                                              ? { label: "External", url: item.link }
+                                              : null,
+                                          ].filter(Boolean),
+                                        ]
                                         : [{ label: "", url: "" }]
                                     ),
 
@@ -1212,6 +1299,15 @@ export default function UniclubPage({ navbarHeight }) {
                           >
                             Edit
                           </button>
+                          {/* <button
+                            className="text-red-600 hover:underline"
+                            onClick={() => {
+                              setDelete(item);
+                              setConfirmDeleteOpen(true);
+                            }}
+                          >
+                            Delete
+                          </button> */}
                         </div>
                       </td>
                     </tr>
@@ -1246,12 +1342,11 @@ export default function UniclubPage({ navbarHeight }) {
         </div>
       </div>
 
-      {/* Create/Edit modal */}
+      {/* Create/Edit modal (➡️ requests/members removed from here) */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-bold mb-4">{editingData ? "Edit uniclub" : "Add uniclub"}</h2>
-
             <form onSubmit={handleAdd} className="space-y-4">
               <div className="space-y-4">
                 <input
@@ -1270,7 +1365,6 @@ export default function UniclubPage({ navbarHeight }) {
                   onChange={(e) => setForm({ ...form, desc: e.target.value })}
                   required
                 />
-
                 <input
                   type="text"
                   placeholder="Address"
@@ -1279,10 +1373,11 @@ export default function UniclubPage({ navbarHeight }) {
                   onChange={(e) => setForm({ ...form, address: e.target.value })}
                   required
                 />
-
                 {/* Location */}
                 <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700">Location</label>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Location
+                  </label>
                   <div className="relative">
                     <input
                       type="text"
@@ -1291,15 +1386,14 @@ export default function UniclubPage({ navbarHeight }) {
                       className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer"
                       value={form.location}
                       onClick={() => setShowMapModal(true)}
-                      readOnly
                     />
                     <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                   </div>
                 </div>
 
-                {/* Club valid from/to (date) */}
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Club valid from</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Club vaild from</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
                       type="date"
@@ -1323,7 +1417,7 @@ export default function UniclubPage({ navbarHeight }) {
                 </div>
 
                 {/* Privacy */}
-                <section className="space-y-2">
+                <section className="space-y-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Privacy Type</label>
                   <select
                     name="privacyType"
@@ -1357,11 +1451,376 @@ export default function UniclubPage({ navbarHeight }) {
                   </select>
                 </section>
 
-                {/* Tags + Rules + Join Questions */}
-                {/* (your existing section kept as-is) */}
-                {/* ... (unchanged: tags/rules/join questions) ... */}
+                {/* Club Meta */}
+                <section className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Tags</label>
 
-                {/* ✅ Membership Tickets (FULL screenshot system) */}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        className="flex-1 border border-gray-300 p-2 rounded"
+                        placeholder="football"
+                        value={form.tagInput}
+                        onChange={(e) => setForm((p) => ({ ...p, tagInput: e.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        className="px-3 py-2 rounded bg-gray-800 text-white"
+                        onClick={() => {
+                          const t = (form.tagInput || "").trim();
+                          if (!t) return;
+
+                          // avoid exact duplicates
+                          setForm((p) => {
+                            if (p.tags?.includes(t)) {
+                              return { ...p, tagInput: "" };
+                            }
+                            return { ...p, tags: [...(p.tags || []), t], tagInput: "" };
+                          });
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {form.tags?.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {form.tags.map((tag, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-2 bg-gray-100 border px-2 py-1 rounded-full text-sm"
+                          >
+                            {tag}
+                            <button
+                              type="button"
+                              className="text-red-600"
+                              onClick={() =>
+                                setForm((p) => ({
+                                  ...p,
+                                  tags: p.tags.filter((_, idx) => idx !== i),
+                                }))
+                              }
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Rules &amp; Guidelines</label>
+                    <textarea
+                      className="w-full border border-gray-300 p-2 rounded"
+                      placeholder="Be respectful, no spam…"
+                      rows={3}
+                      value={form.rules}
+                      onChange={(e) => setForm((p) => ({ ...p, rules: e.target.value }))}
+                    />
+                  </div>
+
+                  {/* <div>
+                    <label className="block text-sm font-medium text-gray-700">Join Questions</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        className="flex-1 border border-gray-300 p-2 rounded"
+                        placeholder="Add a question (press +)"
+                        value={form.joinQInput}
+                        onChange={(e) => setForm((p) => ({ ...p, joinQInput: e.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        className="px-3 py-2 rounded bg-gray-800 text-white"
+                        onClick={() => {
+                          const q = (form.joinQInput || "").trim();
+                          if (q) setForm((p) => ({ ...p, joinQuestions: [...p.joinQuestions, q], joinQInput: "" }));
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                    {form.joinQuestions?.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {form.joinQuestions.map((q, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-2 bg-gray-100 border px-2 py-1 rounded-full text-sm"
+                          >
+                            {q}
+                            <button
+                              type="button"
+                              className="text-red-600"
+                              onClick={() =>
+                                setForm((p) => ({ ...p, joinQuestions: p.joinQuestions.filter((_, idx) => idx !== i) }))
+                              }
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div> */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Join Questions</label>
+
+                    {/* Builder row */}
+                    <div className="flex flex-col gap-2 mt-1">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        {/* Type select */}
+                        <select
+                          className="border border-gray-300 p-2 rounded w-full sm:w-40"
+                          value={form.joinQType}
+                          onChange={(e) => {
+                            const newType = e.target.value;
+                            setForm((p) => ({
+                              ...p,
+                              joinQType: newType,
+                              ...(newType === "short"
+                                ? { joinQOptionList: [], joinQOptionInput: "" }
+                                : {}),
+                            }));
+                          }}
+                        >
+                          <option value="short">Short Answer</option>
+                          <option value="checkboxes">Checkboxes</option>
+                          <option value="dropdown">Dropdown</option>
+                        </select>
+
+                        {/* Question text */}
+                        <input
+                          type="text"
+                          className="flex-1 border border-gray-300 p-2 rounded"
+                          placeholder="Add a question"
+                          value={form.joinQInput}
+                          onChange={(e) =>
+                            setForm((p) => ({ ...p, joinQInput: e.target.value }))
+                          }
+                        />
+
+                        {/* Add question button */}
+                        <button
+                          type="button"
+                          className="px-3 py-2 rounded bg-gray-800 text-white whitespace-nowrap"
+                          onClick={() => {
+                            if (form.editingJoinQId) {
+                              saveEditedJoinQuestion();
+                              return;
+                            }
+
+                            const qText = (form.joinQInput || "").trim();
+                            if (!qText) return;
+
+                            const type = form.joinQType || "short";
+                            const options = type === "short" ? [] : (form.joinQOptionList || []);
+
+                            setForm((p) => ({
+                              ...p,
+                              joinQuestions: [
+                                ...(p.joinQuestions || []),
+                                { id: `q${Date.now()}`, question: qText, type, options },
+                              ],
+                              joinQInput: "",
+                              joinQType: "short",
+                              joinQOptionInput: "",
+                              joinQOptionList: [],
+                            }));
+                          }}
+                        >
+                          {form.editingJoinQId ? "Update" : "+"}
+                        </button>
+                        {form.editingJoinQId ? (
+                          <button
+                            type="button"
+                            className="px-3 py-2 rounded bg-gray-200 text-gray-800 whitespace-nowrap"
+                            onClick={cancelEditJoinQuestion}
+                          >
+                            Cancel
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {/* Options builder – only for checkbox / dropdown */}
+                      {(form.joinQType === "checkboxes" || form.joinQType === "dropdown") && (
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              className="flex-1 border border-gray-300 p-2 rounded"
+                              placeholder="Add option"
+                              value={form.joinQOptionInput}
+                              onChange={(e) =>
+                                setForm((p) => ({ ...p, joinQOptionInput: e.target.value }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="px-3 py-2 rounded bg-gray-700 text-white whitespace-nowrap"
+                              onClick={() => {
+                                const opt = (form.joinQOptionInput || "").trim();
+                                if (!opt) return;
+                                setForm((p) => ({
+                                  ...p,
+                                  joinQOptionList: [
+                                    ...(p.joinQOptionList || []),
+                                    opt,
+                                  ],
+                                  joinQOptionInput: "",
+                                }));
+                              }}
+                            >
+                              Add option
+                            </button>
+                          </div>
+
+                          {/* Option chips */}
+                          {form.joinQOptionList?.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {form.joinQOptionList.map((opt, idx) => (
+                                <span
+                                  key={idx}
+                                  className="inline-flex items-center gap-2 bg-gray-100 border px-2 py-1 rounded-full text-xs"
+                                >
+                                  {opt}
+                                  <button
+                                    type="button"
+                                    className="text-red-500"
+                                    onClick={() =>
+                                      setForm((p) => ({
+                                        ...p,
+                                        joinQOptionList: p.joinQOptionList.filter(
+                                          (_, i) => i !== idx
+                                        ),
+                                      }))
+                                    }
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* List of questions */}
+                    {form.joinQuestions?.length > 0 && (
+                      <div className="mt-3 flex flex-col gap-2">
+                        {form.joinQuestions.map((q, i) => (
+                          <div
+                            key={q.id || i}
+                            className="flex items-start justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-gray-900 truncate">
+                                {q.question}
+                              </div>
+
+                              <div className="mt-1 text-xs text-gray-500">
+                                Type:{" "}
+                                <span className="font-medium text-gray-700">
+                                  {q.type === "short"
+                                    ? "Short Answer"
+                                    : q.type === "checkboxes"
+                                      ? "Checkboxes"
+                                      : "Dropdown"}
+                                </span>
+
+                                {q.options?.length ? (
+                                  <span className="text-gray-400">
+                                    {" "}
+                                    • Options:{" "}
+                                    <span className="text-gray-600">
+                                      {q.options.join(", ")}
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                className="text-blue-600 text-xs ml-3"
+                                onClick={() => startEditJoinQuestion(q)}
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                type="button"
+                                className="text-red-600 text-xs ml-3"
+                                onClick={() =>
+                                  setForm((p) => ({
+                                    ...p,
+                                    joinQuestions: p.joinQuestions.filter((_, idx) => idx !== i),
+                                  }))
+                                }
+                              >
+                                Remove
+                              </button>
+                              {/* 
+                            <button
+                              type="button"
+                              className="text-red-600 text-xs ml-3"
+                              onClick={() =>
+                                setForm((p) => ({
+                                  ...p,
+                                  joinQuestions: p.joinQuestions.filter(
+                                    (_, idx) => idx !== i
+                                  ),
+                                }))
+                              }
+                            >
+                              Remove
+                            </button> */}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                </section>
+
+                {/* Toggles */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    ["allowEventsByMembers", "Allow Events by Members"],
+                    ["pollsEnabled", "Allow Polls"],
+                    ["sharedFilesEnabled", "Allow Shared Files"],
+                    ["allowSubGroups", "Allow Sub-Groups/Channels"],
+                    ["enableChat", "Enable Chat"],
+                    ["allowNotifications", "Allow Notifications to Members"],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex items-center justify-between border rounded px-3 py-2">
+                      <span className="text-sm">{label}</span>
+                      <input
+                        type="checkbox"
+                        className="h-5 w-5"
+                        checked={!!form[key]}
+                        onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.checked }))}
+                      />
+                    </label>
+                  ))}
+                </div>
+
+                {/* Limits */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Max Members (optional)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full border border-gray-300 p-2 rounded"
+                    placeholder="200"
+                    value={form.maxMembers}
+                    onChange={(e) => setForm((p) => ({ ...p, maxMembers: e.target.value }))}
+                  />
+                </div>
                 <section className="space-y-4">
                   <h3 className="text-sm font-semibold text-gray-900">Membership Tickets</h3>
 
@@ -1711,9 +2170,9 @@ export default function UniclubPage({ navbarHeight }) {
                     </div>
                   )}
                 </section>
-
-                {/* Membership validity */}
+                {/* Payment & Membership validity */}
                 <section className="space-y-4">
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="block text-sm font-medium text-gray-700">Student Membership Valid From</label>
@@ -1744,17 +2203,278 @@ export default function UniclubPage({ navbarHeight }) {
                   </div>
                 </section>
 
+                {/* Ownership Transfer */}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ownership Transfer Contact</label>
+                <select
+                  name="successorUid"
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={form.successorUid}
+                  // onChange={handleChange}
+                  onChange={(e) => {
+                    const successorUid = e.target.value;
+                    const r = members.find((x) => x.id === successorUid);
+                    setForm((prev) => ({
+                      ...prev,
+                      successorUid,
+                      successor: r,
+                    }));
+                  }}
+                >
+                  <option value="">Select</option>
+                  {members?.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Moderator + Role */}
+                <section className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="col-span-1">
+                      <label className="block text-sm font-medium text-gray-700">Add Moderator</label>
+                      <select
+                        name="memberId"
+                        className="w-full border border-gray-300 p-2 rounded"
+                        value={form.memberId}
+                        onChange={handleChange}
+                      >
+                        <option value="">Select</option>
+                        {members?.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="col-span-1">
+                      <label className="block text-sm font-medium text-gray-700">Assign Role</label>
+                      <select
+                        name="roleId"
+                        className="w-full border border-gray-300 p-2 rounded"
+                        value={form.roleId}
+                        onChange={(e) => {
+                          const roleId = e.target.value;
+                          const r = roles.find((x) => x.id === roleId);
+                          setForm((prev) => ({
+                            ...prev,
+                            roleId,
+                            role: r?.name || "",
+                          }));
+                        }}
+                      >
+                        <option value="">Select Role</option>
+                        {roles?.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Links */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="block text-sm font-medium text-gray-700">Links</h3>
+                    <button
+                      type="button"
+                      className="text-xs px-2 py-1 rounded bg-gray-900 text-white"
+                      onClick={addLinkRow}
+                    >
+                      + Add link
+                    </button>
+                  </div>
+
+                  {Array.isArray(form.links) && form.links.length > 0 ? (
+                    <div className="space-y-2">
+                      {form.links.map((l, idx) => (
+                        <div
+                          key={idx}
+                          className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-start"
+                        >
+                          <input
+                            type="text"
+                            placeholder="Label (e.g. Website, Instagram)"
+                            className="w-full border border-gray-300 p-2 rounded"
+                            value={l.label}
+                            onChange={(e) => updateLinkRow(idx, "label", e.target.value)}
+                          />
+                          <div className="sm:col-span-2 flex gap-2">
+                            <input
+                              type="url"
+                              placeholder="https://…"
+                              className="w-full border border-gray-300 p-2 rounded"
+                              value={l.url}
+                              onChange={(e) => updateLinkRow(idx, "url", e.target.value)}
+                              autoCapitalize="none"
+                            />
+                            {form.links.length > 1 && (
+                              <button
+                                type="button"
+                                className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 border border-red-200 whitespace-nowrap"
+                                onClick={() => removeLinkRow(idx)}
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">
+                      No links yet. Use “Add link” for website, socials, ticketing, etc.
+                    </p>
+                  )}
+                </div>
+
+                {/* Contact */}
+                <div className="space-y-3">
+                  <h3 className="block text-sm font-medium text-gray-700">Contact</h3>
+
+                  {/* Primary contact (creator) */}
+                  <div className="border rounded-lg p-3 bg-gray-50 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
+                      {user?.photoURL || emp?.imageUrl ? (
+                        <img
+                          src={user.photoURL || emp.imageUrl}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : null}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900">
+                        {emp?.name || user?.displayName || "Club contact"}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        The primary contact is always the club creator.
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-4 text-xs text-gray-600">
+                        <label className="inline-flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={form.showPhone}
+                            onChange={(e) =>
+                              setForm((p) => ({ ...p, showPhone: e.target.checked }))
+                            }
+                          />
+                          <span>
+                            Show phone
+                            {emp?.phone || user?.phoneNumber
+                              ? ` (${emp?.phone || user?.phoneNumber})`
+                              : ""}
+                          </span>
+                        </label>
+                        <label className="inline-flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={form.showEmail}
+                            onChange={(e) =>
+                              setForm((p) => ({ ...p, showEmail: e.target.checked }))
+                            }
+                          />
+                          <span>
+                            Show email
+                            {user?.email || emp?.email
+                              ? ` (${user?.email || emp?.email})`
+                              : ""}
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Additional contacts (committee etc.) */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">
+                        Additional contacts (optional)
+                      </span>
+                      <button
+                        type="button"
+                        className="text-xs px-2 py-1 rounded bg-gray-900 text-white"
+                        onClick={addContactRow}
+                      >
+                        + Add contact
+                      </button>
+                    </div>
+
+                    {Array.isArray(form.contacts) && form.contacts.length > 0 ? (
+                      <div className="space-y-2">
+                        {form.contacts.map((c, idx) => (
+                          <div
+                            key={idx}
+                            className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-start"
+                          >
+                            <input
+                              type="text"
+                              placeholder="Name"
+                              className="w-full border border-gray-300 p-2 rounded"
+                              value={c.name}
+                              onChange={(e) => updateContactRow(idx, "name", e.target.value)}
+                            />
+                            <input
+                              type="tel"
+                              placeholder="Phone"
+                              className="w-full border border-gray-300 p-2 rounded"
+                              value={c.phone}
+                              onChange={(e) => updateContactRow(idx, "phone", e.target.value)}
+                            />
+                            <div className="flex gap-2">
+                              <input
+                                type="email"
+                                placeholder="Email"
+                                className="w-full border border-gray-300 p-2 rounded"
+                                value={c.email}
+                                onChange={(e) => updateContactRow(idx, "email", e.target.value)}
+                              />
+                              {form.contacts.length > 1 && (
+                                <button
+                                  type="button"
+                                  className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 border border-red-200 whitespace-nowrap"
+                                  onClick={() => removeContactRow(idx)}
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500">
+                        No extra contacts yet. Use “Add contact” for committee members.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+
                 {/* Logo */}
                 <section className="space-y-2">
                   <h2 className="text-sm font-semibold">Upload Logo</h2>
                   <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                     <label className="cursor-pointer">
-                      <input type="file" name="image" accept="image/*" className="hidden" onChange={handleChange} />
+                      <input
+                        type="file"
+                        name="image"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleChange}
+                      />
                       📁 Choose File
                     </label>
                     <span className="text-sm text-gray-600 truncate max-w-[150px]">{fileName}</span>
                   </div>
-                  {(previewUrl || form.imageUrl) && <img src={previewUrl || form.imageUrl} alt="Poster Preview" width="150" />}
+                  {(previewUrl || form.imageUrl) && (
+                    <img src={previewUrl || form.imageUrl} alt="Poster Preview" width="150" />
+                  )}
                 </section>
               </div>
 
@@ -1772,17 +2492,13 @@ export default function UniclubPage({ navbarHeight }) {
           </div>
         </div>
       )}
-
-      {/* Map modal */}
       <Dialog open={showMapModal} onClose={() => setShowMapModal(false)} maxWidth="md" fullWidth>
         <DialogTitle>Pick a Location</DialogTitle>
         <DialogContent dividers sx={{ overflow: "hidden" }}>
-          <MapLocationInput
-            value={form.location}
-            onChange={(val) => {
-              setForm({ ...form, location: val.address });
-            }}
-          />
+          <MapLocationInput value={form.location} onChange={(val) => {
+            setForm({ ...form, location: val.address })
+          }
+          } />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowMapModal(false)}>Cancel</Button>
@@ -1791,8 +2507,7 @@ export default function UniclubPage({ navbarHeight }) {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* Requests modal */}
+      {/* 🆕 Requests modal */}
       {reqModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -1821,7 +2536,9 @@ export default function UniclubPage({ navbarHeight }) {
                   <li key={r.uid} className="border rounded p-3 flex items-start justify-between">
                     <div className="space-y-1">
                       <div className="font-medium">{r.name || r.displayName || r.uid}</div>
-                      {r.answers && <div className="text-sm bg-gray-50 rounded p-2">{renderAnswers(r.answers)}</div>}
+                      {r.answers && (
+                        <div className="text-sm bg-gray-50 rounded p-2">{renderAnswers(r.answers)}</div>
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -1847,7 +2564,7 @@ export default function UniclubPage({ navbarHeight }) {
         </div>
       )}
 
-      {/* Members modal */}
+      {/* 🆕 Members modal */}
       {memModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -1929,3 +2646,4 @@ export default function UniclubPage({ navbarHeight }) {
     </main>
   );
 }
+
