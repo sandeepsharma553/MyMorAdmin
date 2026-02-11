@@ -7,6 +7,7 @@ import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import DiscoverSettingPage from "./DiscoverSettingPage";
+import MarketSettingPage from "./MarketSettingPage";
 
 const EventSettingPage = lazy(() =>
   import("./EventSettingPage")
@@ -36,6 +37,7 @@ const SettingPage = () => {
   const MENU = [
     { key: "event", label: "Event Setting" },
     { key: "discover", label: "Discover Setting" },
+    { key: "market", label: "Market Setting" },
   ];
   const [activeKey, setActiveKey] = useState("event");
   // Sidebar click
@@ -109,6 +111,17 @@ const SettingPage = () => {
           }>
             <div className="bg-white rounded shadow p-4">
               <DiscoverSettingPage uid={uid} embedded />
+            </div>
+          </Suspense>
+        )}
+        {activeKey === "market" && (
+          <Suspense fallback={
+            <div className="flex justify-center items-center h-64">
+              <FadeLoader color="#36d7b7" />
+            </div>
+          }>
+            <div className="bg-white rounded shadow p-4">
+              <MarketSettingPage uid={uid} embedded />
             </div>
           </Suspense>
         )}
