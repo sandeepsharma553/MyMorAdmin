@@ -52,6 +52,7 @@ const DEFAULT_FEATURES = {
   uniclubsubgroup: false,
   explore:false,
   uniclubcommunity:false,
+  marketplace:false,
 };
 
 const initialForm = {

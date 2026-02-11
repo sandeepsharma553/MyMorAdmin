@@ -47,6 +47,7 @@ const DEFAULT_FEATURES = {
   social: false,
   uniclub: false,
   explore: false,
+  marketplace: false,
 };
 
 const pageSize = 10;
