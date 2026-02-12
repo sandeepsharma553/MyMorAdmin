@@ -1,4 +1,4 @@
-// Sidebar.jsx — FULL CODE (Hostel Firestore badges + UniClub member RTDB badge)
+// Sidebar.jsx — Firestore menu-state badges + RTDB members/joinRequests counts
 
 import React, { useEffect, useMemo, useState } from "react";
 import { BeatLoader } from "react-spinners";
@@ -36,13 +36,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 
-import {
-  ref as dbRef,
-  onValue,
-  set as rtdbSet,
-  serverTimestamp as rtdbServerTimestamp,
-} from "firebase/database";
-
+import { ref as dbRef, onValue } from "firebase/database";
 import { setActiveOrg } from "../app/features/AuthSlice";
 
 /* ------------------------- Permissions helper ------------------------- */
@@ -72,7 +66,7 @@ const SECTIONS = [
 
   // uniclub
   { key: "uniclubdashboard", label: "Dashboard", Icon: LayoutDashboard },
-  { key: "uniclub", label: "Uniclub", Icon: Handshake },
+  { key: "uniclub", label: "Uniclub", Icon: Handshake }, // use as join-requests screen
   { key: "uniclubemp", label: "Uni Club Employee", Icon: UserPlus },
   { key: "uniclubstudent", label: "Committee", Icon: UserPlus },
   { key: "uniclubmember", label: "Member", Icon: UserPlus },
@@ -129,176 +123,150 @@ const extractCreatedMs = (docData) => {
   return 0;
 };
 
-/* ------------------- Firestore badge hook (Hostel) ------------------- */
-function useBadgeCount({
-  adminUid,
+/* ------------------- Firestore menu lastOpened hook ------------------- */
+function useMenuLastOpenedMs({ uid, menuKey, enabled = true }) {
+  const storageKey = uid && menuKey ? `amState:${uid}:${menuKey}` : null;
+
+  const [localMs, setLocalMs] = useState(() => {
+    if (!storageKey) return null;
+    return safeParseInt(localStorage.getItem(storageKey));
+  });
+
+  const [fsTs, setFsTs] = useState(null);
+
+  useEffect(() => {
+    if (!enabled || !uid || !menuKey) return;
+    const refDoc = doc(db, "adminMenuState", uid, "menus", menuKey);
+    return onSnapshot(refDoc, (snap) => {
+      const v = snap.exists() ? snap.data()?.lastOpened : null;
+      setFsTs(v ?? null);
+    });
+  }, [enabled, uid, menuKey]);
+
+  useEffect(() => {
+    if (!enabled || !storageKey) return;
+    const ms = fsTs?.toMillis?.() ?? null;
+    if (ms) {
+      try {
+        localStorage.setItem(storageKey, String(ms));
+        setLocalMs(ms);
+      } catch {}
+    }
+  }, [enabled, storageKey, fsTs]);
+
+  return fsTs?.toMillis?.() ?? (typeof localMs === "number" ? localMs : null);
+}
+
+/* ------------------- Firestore badge hook (Hostel collections) ------------------- */
+function useFirestoreBadgeCount({
+  uid,
   menuKey,
   collName,
   hostelid,
   statusIn = [],
   statusField = "status",
-  statusEq = null,               // ✅ add
-  preferZeroIfNoLastOpened = false,
+  statusEq = null,
   enabled = true,
 }) {
-  const storageKey = adminUid && menuKey ? `amState:${adminUid}:${menuKey}` : null;
+  const openedAt = useMenuLastOpenedMs({ uid, menuKey, enabled });
 
-  const [lastOpenedMs, setLastOpenedMs] = useState(() => {
-    if (!storageKey) return null;
-    const raw = localStorage.getItem(storageKey);
-    return safeParseInt(raw);
-  });
-
-  const [firestoreLastOpened, setFirestoreLastOpened] = useState(null);
   const [docs, setDocs] = useState([]);
 
-  // lastOpened from Firestore
   useEffect(() => {
-    if (!enabled) return;
-    if (!adminUid || !menuKey) return;
-    const refDoc = doc(db, "adminMenuState", adminUid, "menus", menuKey);
-    return onSnapshot(refDoc, (snap) => {
-      const val = snap.exists() ? snap.data().lastOpened : null;
-      setFirestoreLastOpened(val ?? null);
-    });
-  }, [enabled, adminUid, menuKey]);
-
-  // sync Firestore -> localStorage
-  useEffect(() => {
-    if (!enabled) return;
-    if (!storageKey) return;
-    const ms = firestoreLastOpened?.toMillis?.() ?? null;
-    if (ms) {
-      try {
-        localStorage.setItem(storageKey, String(ms));
-        setLastOpenedMs(ms);
-      } catch { }
-    }
-  }, [enabled, storageKey, firestoreLastOpened]);
-
-  // collection listener
-  useEffect(() => {
-    if (!enabled) return;
-    if (!collName || !hostelid) return;
+    if (!enabled || !collName || !hostelid) return;
 
     const baseRef = collection(db, collName);
     const clauses = [where("hostelid", "==", String(hostelid))];
+
     if (statusEq !== null) clauses.push(where(statusField, "==", statusEq));
     if (statusIn?.length) clauses.push(where(statusField, "in", statusIn));
 
-    const q = query(baseRef, ...clauses);
-    return onSnapshot(q, (snap) => {
+    const qRef = query(baseRef, ...clauses);
+    return onSnapshot(qRef, (snap) => {
       setDocs(snap.docs.map((d) => d.data()));
     });
-  }, [enabled, collName, hostelid, JSON.stringify(statusIn)]);
+  }, [enabled, collName, hostelid, statusField, statusEq, JSON.stringify(statusIn)]);
 
-  const count = useMemo(() => {
+  return useMemo(() => {
     if (!enabled) return 0;
-
-    const openedAt =
-      firestoreLastOpened?.toMillis?.() ??
-      (typeof lastOpenedMs === "number" ? lastOpenedMs : null);
-
-    if (!openedAt) {
-      return preferZeroIfNoLastOpened ? 0 : docs.length;
-    }
-
+    if (!openedAt) return docs.length;
     return docs.filter((d) => extractCreatedMs(d) > openedAt).length;
-  }, [enabled, docs, firestoreLastOpened, lastOpenedMs, preferZeroIfNoLastOpened]);
-
-  return count;
+  }, [enabled, docs, openedAt]);
 }
 
-/* ------------------- RTDB badge hook (UniClub Members) ------------------- */
-function useRtdbMembersBadgeCount({ adminUid, menuKey, clubId, enabled = true }) {
-  const storageKey = adminUid && menuKey ? `amState:${adminUid}:${menuKey}` : null;
+/* ------------------- RTDB badge: Members joined since lastOpened ------------------- */
+function useRtdbMembersBadgeCount({ uid, menuKey, clubId, enabled = true }) {
+  const openedAt = useMenuLastOpenedMs({ uid, menuKey, enabled });
 
-  const [lastOpenedLocal, setLastOpenedLocal] = useState(() => {
-    if (!storageKey) return null;
-    const raw = localStorage.getItem(storageKey);
-    const n = parseInt(raw, 10);
-    return Number.isNaN(n) ? null : n;
-  });
-
-  const [lastOpenedRtdb, setLastOpenedRtdb] = useState(null);
   const [members, setMembers] = useState([]);
 
-  // ✅ admin lastOpened from RTDB
   useEffect(() => {
-    if (!enabled) return;
-    if (!adminUid || !menuKey) return;
-
-    const sRef = dbRef(database, `adminMenuState/${adminUid}/menus/${menuKey}`);
-    return onValue(sRef, (snap) => {
-      const v = snap.val();
-      const t =
-        typeof v?.lastOpenedAt === "number"
-          ? v.lastOpenedAt
-          : typeof v?.lastOpenedServerAt === "number"
-            ? v.lastOpenedServerAt
-            : null;
-
-      setLastOpenedRtdb(t);
-
-    });
-  }, [enabled, adminUid, menuKey]);
-
-  // ✅ sync RTDB -> localStorage
-  useEffect(() => {
-    if (!enabled) return;
-    if (!storageKey) return;
-    if (typeof lastOpenedRtdb === "number") {
-      try {
-        localStorage.setItem(storageKey, String(lastOpenedRtdb));
-        setLastOpenedLocal(lastOpenedRtdb);
-      } catch { }
-    }
-  }, [enabled, storageKey, lastOpenedRtdb]);
-
-  // ✅ listen members list from RTDB
-  useEffect(() => {
-    if (!enabled) return;
-    if (!clubId) return;
-
+    if (!enabled || !clubId) return;
     const mRef = dbRef(database, `uniclubs/${clubId}/members`);
     return onValue(mRef, (snap) => {
       const val = snap.val() || {};
-      const arr = Object.values(val); // member objects
-      setMembers(arr);
+      setMembers(Object.values(val));
     });
   }, [enabled, clubId]);
 
-  const count = useMemo(() => {
+  return useMemo(() => {
     if (!enabled) return 0;
-
-    const openedAt =
-      typeof lastOpenedRtdb === "number"
-        ? lastOpenedRtdb
-        : typeof lastOpenedLocal === "number"
-          ? lastOpenedLocal
-          : null;
-
-    if (!openedAt) return members.length; // first time -> show all
+    if (!openedAt) return members.length;
 
     return members.filter((m) => {
-      // joinedAt should be numeric once resolved
       const joinedAt = typeof m?.joinedAt === "number" ? m.joinedAt : 0;
       return joinedAt > openedAt;
     }).length;
-  }, [enabled, members, lastOpenedRtdb, lastOpenedLocal]);
+  }, [enabled, members, openedAt]);
+}
 
-  return count;
+/* ------------------- RTDB badge: JoinRequests since lastOpened ------------------- */
+function useRtdbJoinReqBadgeCount({ uid, menuKey, clubId, enabled = true }) {
+  const openedAt = useMenuLastOpenedMs({ uid, menuKey, enabled });
+
+  const [requests, setRequests] = useState([]);
+
+  useEffect(() => {
+    if (!enabled || !clubId) return;
+    const rRef = dbRef(database, `uniclubs/${clubId}/joinRequests`);
+    return onValue(rRef, (snap) => {
+      const val = snap.val() || {};
+      setRequests(Object.values(val));
+    });
+  }, [enabled, clubId]);
+
+  const getReqAt = (r) =>
+    (typeof r?.requestedAt === "number" && r.requestedAt) ||
+    (typeof r?.createdAt === "number" && r.createdAt) ||
+    (typeof r?.requestedAtMs === "number" && r.requestedAtMs) ||
+    (typeof r?.time === "number" && r.time) ||
+    0;
+
+  return useMemo(() => {
+    if (!enabled) return 0;
+    if (!openedAt) return requests.length;
+    return requests.filter((r) => getReqAt(r) > openedAt).length;
+  }, [enabled, requests, openedAt]);
+}
+
+/* ------------------- Write lastOpened to Firestore ------------------- */
+async function markMenuOpenedFirestore(uid, menuKey) {
+  if (!uid || !menuKey) return;
+  const refDoc = doc(db, "adminMenuState", uid, "menus", menuKey);
+  await setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
 }
 
 /* -------------------------------- Sidebar ----------------------------- */
-function Sidebar({ onSectionClick, isLoading }) {
+export default function Sidebar({ onSectionClick, isLoading }) {
   const [activeSection, setActiveSection] = useState("dashboard");
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
-  const employee = useSelector((state) => state.auth.employee);
+  const employee = useSelector((s) => s.auth.employee);
   const perms = employee?.permissions ?? null;
-  const adminUid = employee?.uid || employee?.id || null;
+
+  // ✅ MUST be auth.uid for menu state
+  const uid = useSelector((s) => s.auth.user?.uid);
 
   const hostelid = employee?.hostelid || null;
   const uniclubid = employee?.uniclubid || null;
@@ -308,226 +276,110 @@ function Sidebar({ onSectionClick, isLoading }) {
   const hasHostel = !!hostelid;
   const hasUniclub = !!uniclubid;
 
-  // ✅ if both exist but no selection => force chooser
   useEffect(() => {
-    if (hasHostel && hasUniclub && !activeOrg) {
-      navigate("/choose");
-    }
+    if (hasHostel && hasUniclub && !activeOrg) navigate("/choose");
   }, [hasHostel, hasUniclub, activeOrg, navigate]);
 
-  // badges enabled flags
   const hostelBadgeEnabled = activeOrg === "hostel";
   const uniclubBadgeEnabled = activeOrg === "uniclub";
 
   /* -------- Hostel badges (Firestore collections) -------- */
-  const maintenanceBadge = useBadgeCount({
-    adminUid,
+  const maintenanceBadge = useFirestoreBadgeCount({
+    uid,
     menuKey: "maintenance",
     collName: "maintenance",
     hostelid,
     statusIn: ["Pending", "New"],
-    preferZeroIfNoLastOpened: false,
     enabled: hostelBadgeEnabled,
   });
 
-  const reportBadge = useBadgeCount({
-    adminUid,
+  const reportBadge = useFirestoreBadgeCount({
+    uid,
     menuKey: "reportincident",
     collName: "reportIncident",
     hostelid,
     statusIn: ["Pending"],
-    preferZeroIfNoLastOpened: false,
     enabled: hostelBadgeEnabled,
   });
 
-  const feedbackBadge = useBadgeCount({
-    adminUid,
+  const feedbackBadge = useFirestoreBadgeCount({
+    uid,
     menuKey: "feedback",
     collName: "feedback",
     hostelid,
     statusIn: ["Pending"],
-    preferZeroIfNoLastOpened: false,
     enabled: hostelBadgeEnabled,
   });
 
-  const bookingBadge = useBadgeCount({
-    adminUid,
+  const bookingBadge = useFirestoreBadgeCount({
+    uid,
     menuKey: "bookingroom",
     collName: "bookingroom",
     hostelid,
     statusIn: ["Booked"],
-    preferZeroIfNoLastOpened: false,
     enabled: hostelBadgeEnabled,
   });
 
-  const eventBadge = useBadgeCount({
-    adminUid,
+  const eventBadge = useFirestoreBadgeCount({
+    uid,
     menuKey: "eventbooking",
     collName: "eventbookings",
     hostelid,
     statusIn: ["Booked"],
-    preferZeroIfNoLastOpened: false,
     enabled: hostelBadgeEnabled,
   });
-  /* -------- Student badge (NEW join requests) -------- */
-  const studentBadge = useBadgeCount({
-    adminUid,
+
+  const studentBadge = useFirestoreBadgeCount({
+    uid,
     menuKey: "student",
     collName: "users",
     hostelid,
     statusField: "hostelApprovalStatus",
-    statusEq: "pending", // ✅ only pending join requests
+    statusEq: "pending",
     enabled: hostelBadgeEnabled,
   });
 
-  /* -------- UniClub member badge (RTDB members joinedAt) -------- */
+  /* -------- UniClub badges (RTDB list compared to Firestore lastOpened) -------- */
   const uniclubMemberBadge = useRtdbMembersBadgeCount({
-    adminUid,
+    uid,
     menuKey: "uniclubmember",
     clubId: uniclubid,
     enabled: uniclubBadgeEnabled,
   });
-  const uniclubJoinReqBadge = useRtdbJoinRequestsBadgeCount({
-    adminUid,
-    menuKey: "uniclub",   // sidebar menu item key
-    clubId: uniclubid,    // single club
+
+  const uniclubJoinReqBadge = useRtdbJoinReqBadgeCount({
+    uid,
+    menuKey: "uniclub",
+    clubId: uniclubid,
     enabled: uniclubBadgeEnabled,
   });
-  const resetMenuKeyFirestore = async (menuKey) => {
-    if (!adminUid) return;
-    try {
-      const refDoc = doc(db, "adminMenuState", adminUid, "menus", menuKey);
-      await setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
-    } catch { }
-  };
-
-  const resetMenuKeyRTDB = async (menuKey) => {
-    if (!adminUid) return;
-    try {
-      const ref = dbRef(database, `adminMenuState/${adminUid}/menus/${menuKey}`);
-      await rtdbSet(ref, {
-        lastOpenedAt: Date.now(),                 // ✅ number
-        lastOpenedServerAt: rtdbServerTimestamp() // optional audit
-      });
-    } catch (e) {
-      console.error("resetMenuKeyRTDB failed:", e);
-    }
-  };
-
-  /* ------------------- RTDB badge hook (UniClub Join Requests) ------------------- */
-  function useRtdbJoinRequestsBadgeCount({ adminUid, menuKey, clubId, enabled = true }) {
-    const storageKey = adminUid && menuKey ? `amState:${adminUid}:${menuKey}` : null;
-
-    const [lastOpenedLocal, setLastOpenedLocal] = useState(() => {
-      if (!storageKey) return null;
-      const raw = localStorage.getItem(storageKey);
-      const n = parseInt(raw, 10);
-      return Number.isNaN(n) ? null : n;
-    });
-
-    const [lastOpenedRtdb, setLastOpenedRtdb] = useState(null);
-    const [requests, setRequests] = useState([]);
-
-    // admin lastOpened from RTDB
-    useEffect(() => {
-      if (!enabled) return;
-      if (!adminUid || !menuKey) return;
-
-      const sRef = dbRef(database, `adminMenuState/${adminUid}/menus/${menuKey}`);
-      return onValue(sRef, (snap) => {
-        const v = snap.val();
-        const t =
-          typeof v?.lastOpenedAt === "number"
-            ? v.lastOpenedAt
-            : typeof v?.lastOpenedServerAt === "number"
-              ? v.lastOpenedServerAt
-              : null;
-
-        setLastOpenedRtdb(t);
-      });
-    }, [enabled, adminUid, menuKey]);
-
-    // sync RTDB -> localStorage
-    useEffect(() => {
-      if (!enabled) return;
-      if (!storageKey) return;
-      if (typeof lastOpenedRtdb === "number") {
-        try {
-          localStorage.setItem(storageKey, String(lastOpenedRtdb));
-          setLastOpenedLocal(lastOpenedRtdb);
-        } catch { }
-      }
-    }, [enabled, storageKey, lastOpenedRtdb]);
-
-    // listen joinRequests from RTDB
-    useEffect(() => {
-      if (!enabled) return;
-      if (!clubId) return;
-
-      const rRef = dbRef(database, `uniclubs/${clubId}/joinRequests`);
-      return onValue(rRef, (snap) => {
-        const val = snap.val() || {};
-        const arr = Object.values(val); // request objects
-        setRequests(arr);
-      });
-    }, [enabled, clubId]);
-
-    const count = useMemo(() => {
-      if (!enabled) return 0;
-
-      const openedAt =
-        typeof lastOpenedRtdb === "number"
-          ? lastOpenedRtdb
-          : typeof lastOpenedLocal === "number"
-            ? lastOpenedLocal
-            : null;
-
-      // helper: request time field (robust)
-      const getReqAt = (r) => {
-        const t =
-          (typeof r?.requestedAt === "number" && r.requestedAt) ||
-          (typeof r?.createdAt === "number" && r.createdAt) ||
-          (typeof r?.requestedAtMs === "number" && r.requestedAtMs) ||
-          (typeof r?.time === "number" && r.time) ||
-          0;
-        return t;
-      };
-
-      if (!openedAt) return requests.length; // first time -> show all
-
-      return requests.filter((r) => getReqAt(r) > openedAt).length;
-    }, [enabled, requests, lastOpenedRtdb, lastOpenedLocal]);
-
-    return count;
-  }
 
   const handleClick = async (sectionKey) => {
     setActiveSection(sectionKey);
     onSectionClick?.(sectionKey);
     navigate(`/${sectionKey}`);
 
-    // Hostel: mark opened for hostel badges (Firestore)
-    if (
-      sectionKey === "maintenance" ||
-      sectionKey === "reportincident" ||
-      sectionKey === "feedback" ||
-      sectionKey === "bookingroom" ||
-      sectionKey === "eventbooking" ||
-      sectionKey === "student"
-    ) {
-      resetMenuKeyFirestore(sectionKey);
-    }
+    // ✅ On click, clear badge by writing lastOpened to Firestore
+    const hostelClearKeys = new Set([
+      "maintenance",
+      "reportincident",
+      "feedback",
+      "bookingroom",
+      "eventbooking",
+      "student",
+    ]);
 
-    // UniClub: mark opened for uniclub member badge (RTDB)
-    if (sectionKey === "uniclubmember") {
-      resetMenuKeyRTDB("uniclubmember");
-    }
-    if (sectionKey === "uniclub") {
-      resetMenuKeyRTDB("uniclub"); // ✅ open uniclub page => clear join-request badge
+    const uniclubClearKeys = new Set(["uniclubmember", "uniclub"]);
+
+    if (hostelClearKeys.has(sectionKey) || uniclubClearKeys.has(sectionKey)) {
+      try {
+        await markMenuOpenedFirestore(uid, sectionKey);
+      } catch (e) {
+        console.error("markMenuOpenedFirestore failed:", sectionKey, e);
+      }
     }
   };
 
-  // ✅ filter sections by activeOrg
   const visibleSections = useMemo(() => {
     const uniclubKeys = new Set([
       "uniclubdashboard",
@@ -565,43 +417,32 @@ function Sidebar({ onSectionClick, isLoading }) {
       "faq",
     ]);
 
-    // org filter
     const byOrg = SECTIONS.filter((s) => {
       if (activeOrg === "hostel") {
         if (uniclubKeys.has(s.key)) return false;
         return hostelKeys.has(s.key) || s.key === "setting" || s.key === "contact";
       }
-
       if (activeOrg === "uniclub") {
         if (hostelKeys.has(s.key)) return false;
         return uniclubKeys.has(s.key) || s.key === "setting" || s.key === "contact";
       }
-
-      // no selection yet (should go choose)
       return s.key === "setting" || s.key === "contact";
     });
 
-    // permission check
     return byOrg.filter((s) => {
       if (!perms) return true;
-
-      // Uniclub dashboard uses "dashboard" permission
       const permKey = s.key === "uniclubdashboard" ? "dashboard" : s.key;
       return hasPermission(perms, permKey);
     });
   }, [activeOrg, perms]);
 
-  // ✅ when org changes set default active section
   useEffect(() => {
     if (activeOrg === "uniclub") setActiveSection("uniclubdashboard");
     if (activeOrg === "hostel") setActiveSection("dashboard");
   }, [activeOrg]);
 
   return (
-    <aside
-      className="bg-gray-200 flex flex-col h-dvh shadow
-      w-[220px] lg:w-[240px] xl:w-[260px] [1440px]:w-[260px] [1680px]:w-[900px] [1920px]:w-[300px]"
-    >
+    <aside className="bg-gray-200 flex flex-col h-dvh shadow w-[220px] lg:w-[240px] xl:w-[260px]">
       {/* Header */}
       <div className="flex flex-col items-center justify-center gap-2 py-4 px-2 shrink-0">
         {isLoading ? (
@@ -620,13 +461,14 @@ function Sidebar({ onSectionClick, isLoading }) {
         )}
       </div>
 
-      {/* ✅ Switch only if both */}
+      {/* Switch org */}
       {hasHostel && hasUniclub && (
         <div className="px-2 pb-2">
           <div className="bg-white rounded-lg p-2 shadow-sm flex gap-2">
             <button
-              className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "hostel" ? "bg-black text-white" : "bg-gray-100"
-                }`}
+              className={`flex-1 py-2 rounded font-semibold text-sm ${
+                activeOrg === "hostel" ? "bg-black text-white" : "bg-gray-100"
+              }`}
               onClick={() => {
                 dispatch(setActiveOrg("hostel"));
                 navigate("/dashboard");
@@ -636,8 +478,9 @@ function Sidebar({ onSectionClick, isLoading }) {
             </button>
 
             <button
-              className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "uniclub" ? "bg-blue-600 text-white" : "bg-gray-100"
-                }`}
+              className={`flex-1 py-2 rounded font-semibold text-sm ${
+                activeOrg === "uniclub" ? "bg-blue-600 text-white" : "bg-gray-100"
+              }`}
               onClick={() => {
                 dispatch(setActiveOrg("uniclub"));
                 navigate("/uniclubdashboard");
@@ -662,7 +505,6 @@ function Sidebar({ onSectionClick, isLoading }) {
 
           let badgeValue = 0;
 
-          // Hostel badge mapping
           if (hostelBadgeEnabled) {
             if (key === "maintenance") badgeValue = maintenanceBadge;
             if (key === "reportincident") badgeValue = reportBadge;
@@ -672,7 +514,6 @@ function Sidebar({ onSectionClick, isLoading }) {
             if (key === "student") badgeValue = studentBadge;
           }
 
-          // UniClub badge mapping (members)
           if (uniclubBadgeEnabled) {
             if (key === "uniclubmember") badgeValue = uniclubMemberBadge;
             if (key === "uniclub") badgeValue = uniclubJoinReqBadge;
@@ -687,13 +528,6 @@ function Sidebar({ onSectionClick, isLoading }) {
           );
         })}
       </nav>
-
-      <br />
-      <br />
-      <br />
-      <br />
     </aside>
   );
 }
-
-export default Sidebar;

@@ -12,7 +12,7 @@ import {
   deleteDoc,
   query,
   where,
-  getDoc,
+  getDoc,serverTimestamp
 } from "firebase/firestore";
 import { db, storage, auth, firebaseConfig, database } from "../../firebase";
 import { initializeApp, deleteApp } from "firebase/app";
@@ -26,7 +26,6 @@ import {
   get as rtdbGet,
   set as rtdbSet,
   remove as rtdbRemove,
-  serverTimestamp,
 } from "firebase/database";
 import {
   getAuth,
@@ -100,27 +99,12 @@ export default function UniclubMembersPage(props) {
     const t = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+  const adminId = emp?.uid || uid;
   useEffect(() => {
-    const doReset = async () => {
-      // Sidebar uses employee.uid || employee.id
-      const adminUid = emp?.uid || emp?.id || uid;
-      if (!adminUid) return;
-
-      try {
-        const refState = dbRef(database, `adminMenuState/${adminUid}/menus/uniclubmember`);
-        await rtdbSet(refState, {
-          // ✅ MUST BE NUMBER so sidebar can compare instantly
-          lastOpenedAt: Date.now(),
-          // optional: keep server timestamp too (for audit)
-          lastOpenedServerAt: serverTimestamp(),
-        });
-      } catch (e) {
-        console.error("Failed to reset uniclubmember badge:", e);
-      }
-    };
-
-    doReset();
-  }, [uid, emp]);
+      if (!adminId) return;
+      const refDoc = doc(db, "adminMenuState", adminId, "menus", "uniclubmember");
+      setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
+    }, [adminId]);
   useEffect(() => {
     getList();
     getClubs();
@@ -184,7 +168,6 @@ export default function UniclubMembersPage(props) {
       const memRef = dbRef(database, `uniclubs/${emp.uniclubid}/members`);
       const memSnap = await rtdbGet(memRef);
       const memVal = memSnap.val() || {};
-
       const memberUids = Object.keys(memVal);
       if (memberUids.length === 0) {
         setList([]);

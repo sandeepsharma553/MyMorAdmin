@@ -100,7 +100,8 @@ function SimpleCrudSection({
     setIsLoading(true);
     try {
       // No base filter (to match your original payment code). Change if needed.
-      const qBase = query(collection(db, collectionName));
+      const qBase = query(collection(db, collectionName),
+      where("uid", "==", uid));
       const snap = await getDocs(qBase);
       const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setList(rows);
@@ -339,6 +340,7 @@ function SimpleCrudSection({
 }
 
 const UniclubSetting = () => {
+  
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
       <h1 className="text-2xl font-semibold mb-4">Uniclub Setting</h1>
