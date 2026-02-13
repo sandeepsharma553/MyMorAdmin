@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection, getDocs, query, where, serverTimestamp, doc,
+  setDoc,
+} from "firebase/firestore";
 import { database, storage, db } from "../../firebase";
 import {
   ref as dbRef,
@@ -9,7 +12,6 @@ import {
   update as rtdbUpdate,
   remove,
   off,
-  serverTimestamp,
   get as rtdbGet,
   orderByChild,
   equalTo,
@@ -151,7 +153,6 @@ export default function UniclubPage({ navbarHeight }) {
   const uid = useSelector((s) => s.auth?.user?.uid);
   const emp = useSelector((s) => s.auth?.employee);
   const user = useSelector((s) => s.auth?.user);
-  console.log("emp", emp);
   // File input
   const [fileName, setFileName] = useState("No file chosen");
   const [previewUrl, setPreviewUrl] = useState("");
@@ -303,7 +304,12 @@ export default function UniclubPage({ navbarHeight }) {
       return { ...p, paidTickets: next };
     });
   };
-
+  const adminId = emp?.uid || uid;
+  useEffect(() => {
+    if (!adminId) return;
+    const refDoc = doc(db, "adminMenuState", adminId, "menus", "uniclub");
+    setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
+  }, [adminId]);
   /* ---------- Effects ---------- */
   useEffect(() => {
     getList();
@@ -316,32 +322,107 @@ export default function UniclubPage({ navbarHeight }) {
   useEffect(() => {
     setCurrentPage(1);
   }, [filters, sortConfig]);
+  const chunk = (arr, size) => {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  };
+  const fetchUsersMapByUids = async (uids) => {
+    const clean = Array.from(new Set((uids || []).filter(Boolean)));
+    if (clean.length === 0) return {};
 
+    const usersCol = collection(db, "users"); // ✅ your users table name
+    const parts = chunk(clean, 10);
+
+    const snaps = await Promise.all(
+      parts.map((p) => getDocs(query(usersCol, where("uid", "in", p))))
+    );
+
+    const map = {};
+    snaps.forEach((snap) => {
+      snap.forEach((d) => {
+        const u = d.data();
+        if (u?.uid) map[u.uid] = u;
+      });
+    });
+
+    return map;
+  };
   // ✅ Live listeners tied to separate modals now
   useEffect(() => {
     if (!reqModalOpen || !activeClubId) return;
+
     const reqRef = dbRef(database, `uniclubs/${activeClubId}/joinRequests`);
-    const handler = (snap) => {
-      const val = snap.val() || {};
-      const arr = Object.entries(val).map(([uid, r]) => ({ uid, ...r }));
-      setRequests(arr);
+    let alive = true;
+
+    const handler = async (snap) => {
+      try {
+        const val = snap.val() || {};
+        const arr = Object.entries(val).map(([uid, r]) => ({ uid, ...(r || {}) }));
+
+        const uids = arr.map((r) => r.uid);
+        const usersMap = await fetchUsersMapByUids(uids);
+
+        const merged = arr.map((r) => {
+          const u = usersMap[r.uid] || {};
+          return {
+            ...r,
+            studentId: u.studentId || u.studentID || "",
+            email: u.email || "",
+          };
+        });
+
+        if (alive) setRequests(merged);
+      } catch (e) {
+        console.log("joinRequests merge error", e);
+        if (alive) setRequests([]);
+      }
     };
+
     onValue(reqRef, handler);
-    return () => off(reqRef, "value", handler);
+    return () => {
+      alive = false;
+      off(reqRef, "value", handler);
+    };
   }, [reqModalOpen, activeClubId]);
 
-  useEffect(() => {
-    if (!memModalOpen || !activeClubId) return;
-    const memRef = dbRef(database, `uniclubs/${activeClubId}/members`);
-    const handler = (snap) => {
-      const val = snap.val() || {};
-      const arr = Object.entries(val).map(([uid, m]) => ({ uid, ...m }));
-      setMembersList(arr);
-    };
-    onValue(memRef, handler);
-    return () => off(memRef, "value", handler);
-  }, [memModalOpen, activeClubId]);
 
+  useEffect(() => {
+    const memRef = dbRef(database, `uniclubs/${activeClubId}/members`);
+    let alive = true;
+
+    const handler = async (snap) => {
+      try {
+        const val = snap.val() || {};
+        const arr = Object.entries(val).map(([uid, m]) => ({ uid, ...(m || {}) }));
+
+        const uids = arr.map((m) => m.uid);
+        const usersMap = await fetchUsersMapByUids(uids);
+
+        const merged = arr.map((m) => {
+          const u = usersMap[m.uid] || {};
+          return {
+            ...m,
+            studentId: u.studentId || u.studentID || "",
+            email: u.email || "",
+          };
+        });
+
+        if (alive) setMembersList(merged);
+      } catch (e) {
+        console.log("members merge error", e);
+        if (alive) setMembersList([]);
+      }
+    };
+
+    onValue(memRef, handler);
+    return () => {
+      alive = false;
+      off(memRef, "value", handler);
+    };
+  }, [memModalOpen, activeClubId, emp?.name]);
+
+  console.log(emp)
   /* ---------- Data IO ---------- */
   const getList = () => {
     if (!emp?.universityId) return;
@@ -385,24 +466,23 @@ export default function UniclubPage({ navbarHeight }) {
 
   const getMembers = async () => {
     setIsLoading(true);
-    try {
-      const constraints = [where("createdby", "==", uid), where("livingtype", "==", "university")];
-      const q = query(collection(db, "users"), ...constraints);
-      const snap = await getDocs(q);
-      const rows = snap.docs
-        .map((d) => ({
-          id: d.id,
-          name: d.data().firstname || "User",
-          photoURL: d.data().imageUrl || d.data().photoURL || "",
+
+    const memRef = dbRef(database, `uniclubs/${emp?.uniclubid}/members`);
+
+    const handler = (snap) => {
+      const val = snap.val() || {};
+      const rows = Object.entries(val)
+        .map(([uid, m]) => ({
+          id: uid,
+          name: m?.user || m?.name || "User",
+          photoURL: m?.imageUrl || m?.photoURL || "",
         }))
         .filter((u) => u.name !== (emp?.name || ""));
       setMembers(rows);
-    } catch (err) {
-      console.error("getMembers error:", err);
-      toast.error("Failed to load students");
-    } finally {
-      setIsLoading(false);
-    }
+    };
+
+    onValue(memRef, handler);
+    return () => off(memRef, "value", handler);
   };
 
   const getCategory = async () => {
@@ -423,6 +503,7 @@ export default function UniclubPage({ navbarHeight }) {
       const qCat = query(collection(db, "uniclubrole"), where("uid", "==", uid));
       const snap = await getDocs(qCat);
       setRoles(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      console.log("Roles fetched: ", snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (e) {
       console.error(e);
       toast.error("Failed to load roles");
@@ -2536,6 +2617,9 @@ export default function UniclubPage({ navbarHeight }) {
                   <li key={r.uid} className="border rounded p-3 flex items-start justify-between">
                     <div className="space-y-1">
                       <div className="font-medium">{r.name || r.displayName || r.uid}</div>
+                      <div className="text-xs text-gray-600">Student ID: {r.studentId || "-"}</div>
+                      <div className="text-xs text-gray-600">Email: {r.email || "-"}</div>
+
                       {r.answers && (
                         <div className="text-sm bg-gray-50 rounded p-2">{renderAnswers(r.answers)}</div>
                       )}
@@ -2600,6 +2684,11 @@ export default function UniclubPage({ navbarHeight }) {
                       <div>
                         <div className="font-medium">{m.name || m.uid}</div>
                         <div className="text-xs text-gray-500">{m.role || "member"}</div>
+                        <div className="text-xs text-gray-500">
+                          {m.studentId ? `Student ID: ${m.studentId}` : "Student ID: -"}
+                          {" • "}
+                          {m.email ? m.email : "Email: -"}
+                        </div>
                       </div>
                     </div>
                     <span
