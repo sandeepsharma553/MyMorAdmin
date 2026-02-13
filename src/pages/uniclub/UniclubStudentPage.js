@@ -325,17 +325,17 @@ export default function UniclubStudentPage(props) {
     const scope = form.committeeScope || "uniclub";
     const sgId = scope === "subgroup" ? form.subgroupId || "" : "";
     const sgName = scope === "subgroup" ? form.subgroupName || "" : "";
-
+    const isNewUserDoc = !userSnap.exists();
     // ✅ users merge (do not overwrite other profile)
     await setDoc(
       userRef,
       {
         uid: targetUid,
-        firstname: form.firstname,
-        lastname: form.lastname || "",
-        username: form.firstname,
+        firstname: oldUser.firstname,
+        lastname: oldUser.lastname || "",
+        username: oldUser.firstname,
         email: emailLower,
-        livingtype: "university",
+        ...(isNewUserDoc ? { livingtype: "university" } : {}),
 
         universityid: emp?.universityId || oldUser.universityid || "",
         university: emp?.university || oldUser.university || "",
@@ -482,7 +482,6 @@ export default function UniclubStudentPage(props) {
             email: emailLower,
             universityid: emp?.universityId || userSnap.data()?.universityid || "",
             university: emp?.university || userSnap.data()?.university || "",
-            livingtype: "university",
             mobileNo: form.mobileNo || "",
             address: form.address || "",
             studentid: form.studentid || "",
