@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import EditorPro from "../../components/EditorPro"; // adjust path
+import EditorPro from "../../components/EditorPro";
 
 // ====== OPTIONS (admin) ======
 const CAMPAIGN_TYPES = [
@@ -52,7 +52,6 @@ const DAYS = [
   { id: "sun", label: "S" },
 ];
 
-// Discovery tags + feed sections (PDF style)
 const DISCOVERY_TAGS = [
   "Free",
   "Under $10",
@@ -89,55 +88,38 @@ const cardCls = "rounded-2xl border border-gray-200 bg-white p-4";
 const chipOn = "rounded-full border border-black bg-black px-3 py-1 text-xs font-semibold text-white";
 const chipOff = "rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-900 hover:bg-gray-50";
 
-export default function DealForm({
-  initialValues,
-  onSubmit,
-  loading,
-  submitText = "Save Deal",
-}) {
+export default function DealForm({ initialValues, onSubmit, loading, submitText = "Save Deal" }) {
   const defaults = useMemo(
     () => ({
-      // core
       header: "",
       campaignType: "single_offer",
       category: "dining",
       slot: "",
       mode: "simple",
 
-      // lifecycle
       status: "draft",
       active: true,
       featured: false,
 
-      // discovery
       discoveryTags: [],
       feedSections: [],
 
-      // poster
       imageFile: null,
       imageUrl: "",
 
-      // partner linking (future-ready)
-      partnerId: "",
-      merchantId: "",
-
-      // venue/partner info
       venueName: "",
       venueLocationLabel: "",
       lat: "",
       lng: "",
 
-      // description
       descriptionHtml: "",
 
-      // schedule
       validFrom: "",
       validTo: "",
       daysActive: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
       timeWindowStart: "",
       timeWindowEnd: "",
 
-      // redemption/voucher rules
       redemptionMethod: "student_id",
       requiresStudentId: true,
       oneClaimPerStudent: true,
@@ -145,21 +127,17 @@ export default function DealForm({
       promoCode: "",
       instructions: "",
 
-      // booking (experience)
       bookingEnabled: false,
       bookingLink: "",
       sessionLabel: "",
 
-      // retail catalog (mode=catalog)
       saleType: "storewide",
       discountRangeLabel: "",
       catalogFile: null,
       catalogUrl: "",
-      retailHighlights: [
-        // { title:"", priceLabel:"", imageUrl:"" }
-      ],
+      retailHighlights: [],
 
-      ...initialValues,
+      ...(initialValues || {}),
     }),
     [initialValues]
   );
@@ -167,7 +145,6 @@ export default function DealForm({
   const [v, setV] = useState(defaults);
   const [openEditor, setOpenEditor] = useState(false);
 
-  // sync when editing changes
   useEffect(() => setV(defaults), [defaults]);
 
   const slotOptions = useMemo(() => SLOTS_BY_CATEGORY[v.category] || [], [v.category]);
@@ -180,6 +157,18 @@ export default function DealForm({
     return Number.isFinite(diff) ? Math.max(diff, 0) : null;
   }, [v.validTo]);
 
+  // ✅ preview URL memory leak fix
+  const previewUrl = useMemo(() => {
+    if (!v.imageFile) return "";
+    return URL.createObjectURL(v.imageFile);
+  }, [v.imageFile]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
   const set = (key) => (e) => {
     const val = e?.target?.type === "checkbox" ? e.target.checked : e?.target?.value ?? e;
     setV((p) => ({ ...p, [key]: val }));
@@ -188,38 +177,29 @@ export default function DealForm({
   const toggleDay = (dayId) => {
     setV((p) => {
       const has = p.daysActive.includes(dayId);
-      return {
-        ...p,
-        daysActive: has ? p.daysActive.filter((d) => d !== dayId) : [...p.daysActive, dayId],
-      };
+      return { ...p, daysActive: has ? p.daysActive.filter((d) => d !== dayId) : [...p.daysActive, dayId] };
     });
   };
 
   const toggleTag = (tag) => {
     setV((p) => {
       const has = (p.discoveryTags || []).includes(tag);
-      const next = has ? p.discoveryTags.filter((t) => t !== tag) : [...(p.discoveryTags || []), tag];
-      return { ...p, discoveryTags: next };
+      return { ...p, discoveryTags: has ? p.discoveryTags.filter((t) => t !== tag) : [...(p.discoveryTags || []), tag] };
     });
   };
 
   const toggleSection = (sec) => {
     setV((p) => {
       const has = (p.feedSections || []).includes(sec);
-      const next = has ? p.feedSections.filter((t) => t !== sec) : [...(p.feedSections || []), sec];
-      return { ...p, feedSections: next };
+      return { ...p, feedSections: has ? p.feedSections.filter((t) => t !== sec) : [...(p.feedSections || []), sec] };
     });
   };
 
   const onPickImage = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const okTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
-    if (!okTypes.includes(file.type)) {
-      alert("Invalid image file. Only allowed: .jpg, .jpeg, .png, .gif, .webp");
-      return;
-    }
+    if (!okTypes.includes(file.type)) return alert("Invalid image. Only jpg/jpeg/png/gif/webp");
     setV((p) => ({ ...p, imageFile: file }));
   };
 
@@ -227,26 +207,24 @@ export default function DealForm({
     const file = e.target.files?.[0];
     if (!file) return;
     const ok = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
-    if (!ok.includes(file.type)) {
-      alert("Catalog must be PDF or image (jpg/png/webp).");
-      return;
-    }
+    if (!ok.includes(file.type)) return alert("Catalog must be PDF or image (jpg/png/webp).");
     setV((p) => ({ ...p, catalogFile: file }));
   };
 
-  // Retail highlights helpers
   const addHighlight = () => {
     setV((p) => ({
       ...p,
       retailHighlights: [...(p.retailHighlights || []), { title: "", priceLabel: "", imageUrl: "" }],
     }));
   };
+
   const removeHighlight = (idx) => {
     setV((p) => ({
       ...p,
       retailHighlights: (p.retailHighlights || []).filter((_, i) => i !== idx),
     }));
   };
+
   const setHighlight = (idx, key, val) => {
     setV((p) => {
       const arr = [...(p.retailHighlights || [])];
@@ -258,109 +236,21 @@ export default function DealForm({
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // required
     if (!v.header.trim()) return alert("Header is required");
     if (!v.imageFile && !v.imageUrl) return alert("Poster image is required");
     if (!v.category) return alert("Category is required");
     if (!v.slot) return alert("Slot is required");
 
-    // redemption validations
-    if (v.redemptionMethod === "promo" && !String(v.promoCode).trim()) {
-      return alert("Promo code is required");
-    }
+    if (v.redemptionMethod === "promo" && !String(v.promoCode).trim()) return alert("Promo code is required");
+    if (v.bookingEnabled && !String(v.bookingLink).trim()) return alert("Booking link required");
 
-    // booking validation
-    if (v.bookingEnabled && !String(v.bookingLink).trim()) {
-      return alert("Booking link is required when booking is enabled");
-    }
-
-    // catalog validation
     if (v.mode === "catalog") {
-      if (!v.catalogFile && !v.catalogUrl) {
-        return alert("Catalog file or URL is required for catalog mode");
-      }
-      const h = v.retailHighlights || [];
-      if (h.length > 8) return alert("Retail highlights max 8 items");
+      if (!v.catalogFile && !v.catalogUrl) return alert("Catalog file or URL required");
+      if ((v.retailHighlights || []).length > 8) return alert("Retail highlights max 8 items");
     }
 
-    // status helper: if validTo passed, you can set expired manually but don't auto force
-    const payload = {
-      header: v.header.trim(),
-      campaignType: v.campaignType,
-      category: v.category,
-      slot: v.slot,
-      mode: v.mode,
-
-      status: v.status,
-      active: !!v.active,
-      featured: !!v.featured,
-
-      discovery: {
-        tags: v.discoveryTags || [],
-        sections: v.feedSections || [],
-      },
-
-      imageFile: v.imageFile,
-      imageUrl: v.imageUrl,
-
-      partner: {
-        partnerId: (v.partnerId || "").trim(),
-        merchantId: (v.merchantId || "").trim(),
-      },
-
-      venue: {
-        name: v.venueName.trim(),
-        locationLabel: v.venueLocationLabel.trim(),
-        lat: v.lat === "" ? null : Number(v.lat),
-        lng: v.lng === "" ? null : Number(v.lng),
-      },
-
-      descriptionHtml: v.descriptionHtml || "",
-
-      schedule: {
-        activeDays: v.daysActive || [],
-        validFrom: v.validFrom || "",
-        validTo: v.validTo || "",
-        timeWindow:
-          v.timeWindowStart && v.timeWindowEnd
-            ? { start: v.timeWindowStart, end: v.timeWindowEnd }
-            : null,
-      },
-
-      redemption: {
-        method: v.redemptionMethod,
-        requiresStudentId: !!v.requiresStudentId,
-        oneClaimPerStudent: !!v.oneClaimPerStudent,
-        claimLimit: v.claimLimit === "" ? null : Number(v.claimLimit),
-        promoCode: v.redemptionMethod === "promo" ? v.promoCode.trim() : "",
-        instructions: (v.instructions || "").trim(),
-      },
-
-      booking: {
-        enabled: !!v.bookingEnabled,
-        bookingLink: v.bookingEnabled ? v.bookingLink.trim() : "",
-        sessionLabel: (v.sessionLabel || "").trim(),
-      },
-
-      retail:
-        v.mode === "catalog"
-          ? {
-            saleType: v.saleType || "storewide",
-            discountRangeLabel: (v.discountRangeLabel || "").trim(),
-            catalogFile: v.catalogFile || null,
-            catalogUrl: v.catalogUrl || "",
-            highlights: (v.retailHighlights || []).slice(0, 8).map((x) => ({
-              title: (x.title || "").trim(),
-              priceLabel: (x.priceLabel || "").trim(),
-              imageUrl: (x.imageUrl || "").trim(),
-            })),
-          }
-          : null,
-
-      daysLeft,
-    };
-
-    await onSubmit(payload);
+    // ✅ send flat values back to DealPage for payload build
+    await onSubmit({ ...v, daysLeft });
   };
 
   return (
@@ -379,9 +269,7 @@ export default function DealForm({
             <label className={labelCls}>Campaign Type *</label>
             <select value={v.campaignType} onChange={set("campaignType")} className={selectCls}>
               {CAMPAIGN_TYPES.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
+                <option key={t.id} value={t.id}>{t.label}</option>
               ))}
             </select>
           </div>
@@ -390,16 +278,11 @@ export default function DealForm({
             <label className={labelCls}>Category *</label>
             <select
               value={v.category}
-              onChange={(e) => {
-                const next = e.target.value;
-                setV((p) => ({ ...p, category: next, slot: "" }));
-              }}
+              onChange={(e) => setV((p) => ({ ...p, category: e.target.value, slot: "" }))}
               className={selectCls}
             >
               {CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
+                <option key={c.id} value={c.id}>{c.label}</option>
               ))}
             </select>
           </div>
@@ -409,9 +292,7 @@ export default function DealForm({
             <select value={v.slot} onChange={set("slot")} className={selectCls}>
               <option value="">Select Slot</option>
               {slotOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
+                <option key={s} value={s}>{s}</option>
               ))}
             </select>
           </div>
@@ -431,13 +312,11 @@ export default function DealForm({
               className={selectCls}
             >
               {MODES.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
+                <option key={m.id} value={m.id}>{m.label}</option>
               ))}
             </select>
             <div className="mt-2 text-xs text-gray-500">
-              Simple = one offer. Menu = multiple offer blocks. Catalog = retail campaign with catalog.
+              Simple = one offer. Menu = multiple offer blocks. Catalog = retail campaign.
             </div>
           </div>
 
@@ -445,24 +324,16 @@ export default function DealForm({
             <label className={labelCls}>Lifecycle Status</label>
             <select value={v.status} onChange={set("status")} className={selectCls}>
               {STATUS.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
+                <option key={s.id} value={s.id}>{s.label}</option>
               ))}
             </select>
-            <div className="mt-2 text-xs text-gray-500">
-              Tip: keep Draft until ready. Active for live feed. Archived to hide.
-            </div>
           </div>
         </div>
       </div>
 
-      {/* 2) Discovery (tags + feed sections) */}
+      {/* 2) Discovery */}
       <div className={cardCls}>
         <div className="text-sm font-semibold text-gray-900">Discovery Settings</div>
-        <div className="mt-3 text-xs text-gray-500">
-          Tags and feed sections help with filters + ranking in the app.
-        </div>
 
         <div className="mt-4">
           <div className="text-xs font-semibold text-gray-700">Discovery Tags</div>
@@ -470,12 +341,7 @@ export default function DealForm({
             {DISCOVERY_TAGS.map((t) => {
               const on = (v.discoveryTags || []).includes(t);
               return (
-                <button
-                  key={t}
-                  type="button"
-                  className={on ? chipOn : chipOff}
-                  onClick={() => toggleTag(t)}
-                >
+                <button key={t} type="button" className={on ? chipOn : chipOff} onClick={() => toggleTag(t)}>
                   {t}
                 </button>
               );
@@ -489,12 +355,7 @@ export default function DealForm({
             {FEED_SECTIONS.map((t) => {
               const on = (v.feedSections || []).includes(t);
               return (
-                <button
-                  key={t}
-                  type="button"
-                  className={on ? chipOn : chipOff}
-                  onClick={() => toggleSection(t)}
-                >
+                <button key={t} type="button" className={on ? chipOn : chipOff} onClick={() => toggleSection(t)}>
                   {t}
                 </button>
               );
@@ -503,12 +364,12 @@ export default function DealForm({
         </div>
       </div>
 
-      {/* 3) Poster Image */}
+      {/* 3) Poster */}
       <div className={cardCls}>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-sm font-semibold text-gray-900">Poster Image *</div>
-            <div className="text-xs text-gray-500">Allowed: .jpg, .jpeg, .png, .gif, .webp</div>
+            <div className="text-xs text-gray-500">Allowed: jpg/jpeg/png/gif/webp</div>
           </div>
           <input type="file" accept="image/*" onChange={onPickImage} className="text-sm" />
         </div>
@@ -518,7 +379,7 @@ export default function DealForm({
             <img
               alt="preview"
               className="h-44 w-full object-cover"
-              src={v.imageFile ? URL.createObjectURL(v.imageFile) : v.imageUrl}
+              src={v.imageFile ? previewUrl : v.imageUrl}
             />
           </div>
         )}
@@ -528,44 +389,6 @@ export default function DealForm({
           <input value={v.imageUrl} onChange={set("imageUrl")} className={inputCls} placeholder="https://..." />
         </div>
       </div>
-
-      {/* 4) Partner Linking (future) */}
-      {/* <div className={cardCls}>
-        <div className="text-sm font-semibold text-gray-900">Partner Linking (optional)</div>
-        <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label className={labelCls}>Partner ID</label>
-            <input value={v.partnerId} onChange={set("partnerId")} className={inputCls} placeholder="partner_001" />
-          </div>
-          <div>
-            <label className={labelCls}>Merchant ID</label>
-            <input value={v.merchantId} onChange={set("merchantId")} className={inputCls} placeholder="merchant_abc" />
-          </div>
-        </div>
-      </div> */}
-
-      {/* 5) Venue */}
-      {/* <div className={cardCls}>
-        <div className="text-sm font-semibold text-gray-900">Venue / Partner Details</div>
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label className={labelCls}>Venue Name</label>
-            <input value={v.venueName} onChange={set("venueName")} className={inputCls} placeholder="B Lucky & Sons" />
-          </div>
-          <div>
-            <label className={labelCls}>Venue Location Label</label>
-            <input value={v.venueLocationLabel} onChange={set("venueLocationLabel")} className={inputCls} placeholder="Melbourne Central" />
-          </div>
-          <div>
-            <label className={labelCls}>Latitude</label>
-            <input value={v.lat} onChange={set("lat")} className={inputCls} placeholder="-37.8136" />
-          </div>
-          <div>
-            <label className={labelCls}>Longitude</label>
-            <input value={v.lng} onChange={set("lng")} className={inputCls} placeholder="144.9631" />
-          </div>
-        </div>
-      </div> */}
 
       {/* 6) Description */}
       <div className={cardCls}>
@@ -580,10 +403,6 @@ export default function DealForm({
             ✍️ Open Editor
           </button>
           <div className="text-xs text-gray-500">{v.descriptionHtml ? "Description added ✅" : "No description yet"}</div>
-        </div>
-
-        <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
-          {v.descriptionHtml ? "Preview saved (HTML)" : "Tip: Use editor to add formatted content."}
         </div>
       </div>
 
@@ -640,7 +459,7 @@ export default function DealForm({
         </div>
       </div>
 
-      {/* 8) Redemption / Voucher Rules */}
+      {/* 8) Redemption */}
       <div className={cardCls}>
         <div className="text-sm font-semibold text-gray-900">Redemption / Voucher Rules</div>
 
@@ -649,9 +468,7 @@ export default function DealForm({
             <label className={labelCls}>Redemption Method *</label>
             <select value={v.redemptionMethod} onChange={set("redemptionMethod")} className={selectCls}>
               {REDEMPTION_METHODS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
+                <option key={m.id} value={m.id}>{m.label}</option>
               ))}
             </select>
           </div>
@@ -659,16 +476,6 @@ export default function DealForm({
           <div>
             <label className={labelCls}>Claim Limit (optional)</label>
             <input value={v.claimLimit} onChange={set("claimLimit")} className={inputCls} placeholder="200" />
-          </div>
-
-          <div className="flex items-center gap-3">
-            <input type="checkbox" checked={!!v.requiresStudentId} onChange={set("requiresStudentId")} className="h-4 w-4 rounded" />
-            <div className="text-sm text-gray-900">Require Student Verification</div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <input type="checkbox" checked={!!v.oneClaimPerStudent} onChange={set("oneClaimPerStudent")} className="h-4 w-4 rounded" />
-            <div className="text-sm text-gray-900">One claim per student</div>
           </div>
 
           {v.redemptionMethod === "promo" && (
@@ -685,7 +492,7 @@ export default function DealForm({
               onChange={set("instructions")}
               className={inputCls}
               rows={3}
-              placeholder="Show QR to staff. Valid before 10pm. One per student."
+              placeholder="Show QR to staff. Valid before 10pm."
             />
           </div>
         </div>
@@ -750,25 +557,20 @@ export default function DealForm({
             </div>
           </div>
 
-          {/* Retail Highlights */}
           <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-4">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold text-gray-900">Retail Highlights</div>
-                <div className="text-xs text-gray-500">Add 3–8 highlight tiles (title + price + image URL).</div>
+                <div className="text-xs text-gray-500">Max 8 tiles.</div>
               </div>
               <button
                 type="button"
                 onClick={addHighlight}
                 className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
               >
-                + Add Highlight
+                + Add
               </button>
             </div>
-
-            {(v.retailHighlights || []).length === 0 && (
-              <div className="mt-3 text-xs text-gray-600">No highlights yet (optional).</div>
-            )}
 
             <div className="mt-4 space-y-3">
               {(v.retailHighlights || []).slice(0, 8).map((h, idx) => (
@@ -787,30 +589,15 @@ export default function DealForm({
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div>
                       <div className="text-xs text-gray-600">Title</div>
-                      <input
-                        className={inputCls}
-                        value={h.title}
-                        onChange={(e) => setHighlight(idx, "title", e.target.value)}
-                        placeholder="Nike Air Max"
-                      />
+                      <input className={inputCls} value={h.title} onChange={(e) => setHighlight(idx, "title", e.target.value)} />
                     </div>
                     <div>
-                      <div className="text-xs text-gray-600">Price Label</div>
-                      <input
-                        className={inputCls}
-                        value={h.priceLabel}
-                        onChange={(e) => setHighlight(idx, "priceLabel", e.target.value)}
-                        placeholder="$79 (was $159)"
-                      />
+                      <div className="text-xs text-gray-600">Price</div>
+                      <input className={inputCls} value={h.priceLabel} onChange={(e) => setHighlight(idx, "priceLabel", e.target.value)} />
                     </div>
                     <div>
                       <div className="text-xs text-gray-600">Image URL</div>
-                      <input
-                        className={inputCls}
-                        value={h.imageUrl}
-                        onChange={(e) => setHighlight(idx, "imageUrl", e.target.value)}
-                        placeholder="https://..."
-                      />
+                      <input className={inputCls} value={h.imageUrl} onChange={(e) => setHighlight(idx, "imageUrl", e.target.value)} />
                     </div>
                   </div>
                 </div>
@@ -823,12 +610,12 @@ export default function DealForm({
       {/* 11) Featured / Active */}
       <div className="flex items-center gap-6">
         <label className="flex items-center gap-2 text-sm text-gray-900">
-          <input type="checkbox" checked={v.featured} onChange={set("featured")} className="h-4 w-4 rounded" />
+          <input type="checkbox" checked={!!v.featured} onChange={set("featured")} className="h-4 w-4 rounded" />
           Featured
         </label>
 
         <label className="flex items-center gap-2 text-sm text-gray-900">
-          <input type="checkbox" checked={v.active} onChange={set("active")} className="h-4 w-4 rounded" />
+          <input type="checkbox" checked={!!v.active} onChange={set("active")} className="h-4 w-4 rounded" />
           Active
         </label>
       </div>
@@ -839,11 +626,7 @@ export default function DealForm({
           <div className="w-full max-w-4xl rounded-2xl bg-white shadow-xl overflow-hidden">
             <div className="flex items-center justify-between border-b border-gray-100 p-4">
               <div className="text-sm font-semibold text-gray-900">Description</div>
-              <button
-                type="button"
-                onClick={() => setOpenEditor(false)}
-                className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
-              >
+              <button type="button" onClick={() => setOpenEditor(false)} className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50">
                 Close
               </button>
             </div>
@@ -852,18 +635,10 @@ export default function DealForm({
               <EditorPro value={v.descriptionHtml} onChange={(html) => setV((p) => ({ ...p, descriptionHtml: html }))} />
 
               <div className="mt-4 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setOpenEditor(false)}
-                  className="rounded-xl border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50"
-                >
+                <button type="button" onClick={() => setOpenEditor(false)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50">
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setOpenEditor(false)}
-                  className="rounded-xl bg-yellow-300 px-4 py-2 text-sm font-semibold text-gray-900 hover:opacity-90"
-                >
+                <button type="button" onClick={() => setOpenEditor(false)} className="rounded-xl bg-yellow-300 px-4 py-2 text-sm font-semibold text-gray-900 hover:opacity-90">
                   Save
                 </button>
               </div>

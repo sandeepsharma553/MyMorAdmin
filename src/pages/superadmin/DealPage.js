@@ -20,6 +20,152 @@ import "react-toastify/dist/ReactToastify.css";
 import DealForm from "./DealForm";
 import OfferBlocksEditor from "./OfferBlocksEditor";
 
+/** ---------------- helpers: Firestore row -> DealForm flat values ---------------- */
+const dealToFormValues = (r) => {
+  if (!r) return {};
+
+  return {
+    header: r.header || "",
+    campaignType: r.campaignType || "single_offer",
+    category: r.category || "dining",
+    slot: r.slot || "",
+    mode: r.mode || "simple",
+
+    status: r.status || "draft",
+    active: !!r.active,
+    featured: !!r.featured,
+
+    discoveryTags: r?.discovery?.tags || [],
+    feedSections: r?.discovery?.sections || [],
+
+    // ✅ important: form uses imageUrl, firestore uses posterUrl
+    imageUrl: r.posterUrl || "",
+    imageFile: null,
+
+    venueName: r?.venue?.name || "",
+    venueLocationLabel: r?.venue?.locationLabel || "",
+    lat: r?.venue?.lat == null ? "" : String(r.venue.lat),
+    lng: r?.venue?.lng == null ? "" : String(r.venue.lng),
+
+    descriptionHtml: r.descriptionHtml || "",
+
+    validFrom: r?.schedule?.validFrom || "",
+    validTo: r?.schedule?.validTo || "",
+    daysActive: r?.schedule?.activeDays || ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    timeWindowStart: r?.schedule?.timeWindow?.start || "",
+    timeWindowEnd: r?.schedule?.timeWindow?.end || "",
+
+    redemptionMethod: r?.redemption?.method || "student_id",
+    requiresStudentId: r?.redemption?.requiresStudentId ?? true,
+    oneClaimPerStudent: r?.redemption?.oneClaimPerStudent ?? true,
+    claimLimit: r?.redemption?.claimLimit == null ? "" : String(r.redemption.claimLimit),
+    promoCode: r?.redemption?.promoCode || "",
+    instructions: r?.redemption?.instructions || "",
+
+    bookingEnabled: r?.booking?.enabled ?? false,
+    bookingLink: r?.booking?.bookingLink || "",
+    sessionLabel: r?.booking?.sessionLabel || "",
+
+    // catalog
+    saleType: r?.retail?.saleType || "storewide",
+    discountRangeLabel: r?.retail?.discountRangeLabel || "",
+    catalogUrl: r?.retail?.catalogUrl || "",
+    catalogFile: null,
+    retailHighlights: r?.retail?.highlights || [],
+  };
+};
+
+/** ---------------- helpers: form values -> Firestore payload (your schema) ---------------- */
+const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUrl, catalogPath }) => {
+  // timeWindow
+  const timeWindow =
+    values.timeWindowStart && values.timeWindowEnd
+      ? { start: values.timeWindowStart, end: values.timeWindowEnd }
+      : null;
+
+  // daysLeft
+  const daysLeft = typeof values.daysLeft === "number" ? values.daysLeft : null;
+
+  return {
+    header: values.header || "",
+    campaignType: values.campaignType || "single_offer",
+    category: values.category || "dining",
+    slot: values.slot || "",
+    mode: values.mode || "simple",
+
+    status: values.status || "draft",
+    active: !!values.active,
+    featured: !!values.featured,
+
+    discovery: {
+      tags: values.discoveryTags || [],
+      sections: values.feedSections || [],
+    },
+
+    venue: {
+      id: "",
+      name: (values.venueName || "").trim(),
+      locationLabel: (values.venueLocationLabel || "").trim(),
+      lat: values.lat === "" ? null : Number(values.lat),
+      lng: values.lng === "" ? null : Number(values.lng),
+    },
+
+    descriptionHtml: values.descriptionHtml || "",
+
+    schedule: {
+      activeDays: values.daysActive || [],
+      validFrom: values.validFrom || "",
+      validTo: values.validTo || "",
+      timeWindow,
+    },
+
+    redemption: {
+      method: values.redemptionMethod || "student_id",
+      requiresStudentId: !!values.requiresStudentId,
+      oneClaimPerStudent: !!values.oneClaimPerStudent,
+      claimLimit: values.claimLimit === "" ? null : Number(values.claimLimit),
+      promoCode: values.redemptionMethod === "promo" ? (values.promoCode || "").trim() : "",
+      instructions: (values.instructions || "").trim(),
+    },
+
+    booking: {
+      enabled: !!values.bookingEnabled,
+      bookingLink: values.bookingEnabled ? (values.bookingLink || "").trim() : "",
+      sessionLabel: (values.sessionLabel || "").trim(),
+    },
+
+    retail:
+      values.mode === "catalog"
+        ? {
+            saleType: values.saleType || "storewide",
+            discountRangeLabel: (values.discountRangeLabel || "").trim(),
+            catalogUrl: catalogUrl || values.catalogUrl || "",
+            catalogPath: catalogPath || editing?.retail?.catalogPath || "",
+            highlights: (values.retailHighlights || []).slice(0, 8).map((x) => ({
+              title: (x.title || "").trim(),
+              priceLabel: (x.priceLabel || "").trim(),
+              imageUrl: (x.imageUrl || "").trim(),
+            })),
+          }
+        : null,
+
+    posterUrl: posterUrl || values.imageUrl || editing?.posterUrl || "",
+    posterPath: posterPath || editing?.posterPath || "",
+
+    metrics: editing?.metrics || {
+      views: 0,
+      opens: 0,
+      saves: 0,
+      claims: 0,
+      redemptions: 0,
+      bookingClicks: 0,
+    },
+
+    daysLeft,
+    updatedAt: serverTimestamp(),
+  };
+};
+
 export default function DealPage({ navbarHeight }) {
   const [rows, setRows] = useState([]);
   const [qText, setQText] = useState("");
@@ -59,8 +205,6 @@ export default function DealPage({ navbarHeight }) {
         r.mode,
         r.status,
         r.venue?.name,
-        r.partner?.partnerId,
-        r.partner?.merchantId,
       ]
         .filter(Boolean)
         .join(" ")
@@ -71,10 +215,7 @@ export default function DealPage({ navbarHeight }) {
 
   const toggle = async (id, key, val) => {
     try {
-      await updateDoc(doc(db, "deals", id), {
-        [key]: val,
-        updatedAt: serverTimestamp(),
-      });
+      await updateDoc(doc(db, "deals", id), { [key]: val, updatedAt: serverTimestamp() });
       toast.success("Updated ✅");
     } catch (e) {
       console.error(e);
@@ -94,121 +235,34 @@ export default function DealPage({ navbarHeight }) {
     setSaving(true);
     try {
       // Poster upload
-      let posterUrl = values.imageUrl || "";
+      let posterUrl = values.imageUrl || editing?.posterUrl || "";
       let posterPath = editing?.posterPath || "";
 
       if (values.imageFile) {
         const up = await uploadIfFile(values.imageFile, "deals/posters");
         posterUrl = up.url;
         posterPath = up.path;
-      } else if (!posterUrl && editing?.posterUrl) {
-        posterUrl = editing.posterUrl;
       }
 
-      // Catalog upload (if catalog mode)
-      let catalogUrl = values?.retail?.catalogUrl || "";
+      // Catalog upload
+      let catalogUrl = values.catalogUrl || editing?.retail?.catalogUrl || "";
       let catalogPath = editing?.retail?.catalogPath || "";
 
-      if (values?.retail?.catalogFile) {
-        const up2 = await uploadIfFile(values.retail.catalogFile, "deals/catalogs");
+      if (values.mode === "catalog" && values.catalogFile) {
+        const up2 = await uploadIfFile(values.catalogFile, "deals/catalogs");
         catalogUrl = up2.url;
         catalogPath = up2.path;
-      } else if (!catalogUrl && editing?.retail?.catalogUrl) {
-        catalogUrl = editing.retail.catalogUrl;
       }
 
-      const payload = {
-        header: values.header || "",
-        campaignType: values.campaignType || "single_offer",
-        category: values.category || "dining",
-        slot: values.slot || "",
-        mode: values.mode || "simple",
-
-        status: values.status || "draft",
-        active: !!values.active,
-        featured: !!values.featured,
-
-        discovery: {
-          tags: values?.discovery?.tags || [],
-          sections: values?.discovery?.sections || [],
-        },
-
-        partner: {
-          partnerId: values?.partner?.partnerId || "",
-          merchantId: values?.partner?.merchantId || "",
-        },
-
-        venue: {
-          id: "",
-          name: values?.venue?.name || "",
-          locationLabel: values?.venue?.locationLabel || "",
-          lat: typeof values?.venue?.lat === "number" ? values.venue.lat : null,
-          lng: typeof values?.venue?.lng === "number" ? values.venue.lng : null,
-        },
-
-        descriptionHtml: values.descriptionHtml || "",
-
-        schedule: values.schedule || {
-          activeDays: [],
-          validFrom: "",
-          validTo: "",
-          timeWindow: null,
-        },
-
-        redemption: values.redemption || {
-          method: "student_id",
-          requiresStudentId: true,
-          oneClaimPerStudent: true,
-          claimLimit: null,
-          promoCode: "",
-          instructions: "",
-        },
-
-        booking: values.booking || {
-          enabled: false,
-          bookingLink: "",
-          sessionLabel: "",
-        },
-
-        retail:
-          values.mode === "catalog"
-            ? {
-                saleType: values?.retail?.saleType || "storewide",
-                discountRangeLabel: values?.retail?.discountRangeLabel || "",
-                catalogUrl: catalogUrl || "",
-                catalogPath: catalogPath || "",
-                highlights: values?.retail?.highlights || [],
-              }
-            : null,
-
-        posterUrl: posterUrl || "",
-        posterPath: posterPath || "",
-
-        metrics: editing?.metrics || {
-          views: 0,
-          opens: 0,
-          saves: 0,
-          claims: 0,
-          redemptions: 0,
-          bookingClicks: 0,
-        },
-
-        daysLeft: typeof values.daysLeft === "number" ? values.daysLeft : null,
-
-        updatedAt: serverTimestamp(),
-      };
+      const payload = formValuesToPayload(values, editing, { posterUrl, posterPath, catalogUrl, catalogPath });
 
       if (editing?.id) {
         await updateDoc(doc(db, "deals", editing.id), payload);
         toast.success("Deal updated ✅");
       } else {
-        const ref = await addDoc(collection(db, "deals"), {
-          ...payload,
-          createdAt: serverTimestamp(),
-        });
+        const ref = await addDoc(collection(db, "deals"), { ...payload, createdAt: serverTimestamp() });
         toast.success("Deal created ✅");
-
-        // keep modal open + enable offer blocks for menu mode
+        // ✅ keep editing in modal so OfferBlocksEditor can work
         setEditing({ id: ref.id, ...payload });
       }
     } catch (e) {
@@ -237,6 +291,7 @@ export default function DealPage({ navbarHeight }) {
   };
 
   const openEdit = (row) => {
+    // ✅ keep full row in editing (for metrics/posterPath etc)
     setEditing(row);
     setOpenModal(true);
   };
@@ -306,9 +361,6 @@ export default function DealPage({ navbarHeight }) {
                       <div className="min-w-0">
                         <div className="font-semibold text-gray-900 truncate">{r.header || "Untitled"}</div>
                         <div className="text-gray-500 truncate">{r.venue?.name || "—"}</div>
-                        <div className="text-[11px] text-gray-400 truncate">
-                          {r.partner?.partnerId ? `Partner: ${r.partner.partnerId}` : "—"}
-                        </div>
                       </div>
                     </div>
                   </td>
@@ -387,13 +439,14 @@ export default function DealPage({ navbarHeight }) {
 
             <div className="p-5 max-h-[78vh] overflow-auto">
               <DealForm
-                initialValues={editing || {}}
+                // ✅ IMPORTANT: map firestore row -> flat form values
+                initialValues={dealToFormValues(editing)}
                 onSubmit={handleSubmitDeal}
                 loading={saving}
                 submitText={editing ? "Save Changes" : "Create Deal"}
               />
 
-              {/* Offer Blocks only when deal exists + mode menu OR multi offer */}
+              {/* Offer Blocks */}
               {editing?.id && (editing?.mode === "menu" || editing?.campaignType === "multi_offer_campaign") && (
                 <OfferBlocksEditor dealId={editing.id} disabled={saving} />
               )}
@@ -417,17 +470,11 @@ export default function DealPage({ navbarHeight }) {
               <p className="mt-2 text-sm text-gray-500">This action cannot be undone.</p>
 
               <div className="mt-6 flex justify-end gap-3">
-                <button
-                  onClick={() => setDeleteId(null)}
-                  className="rounded-xl border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50"
-                >
+                <button onClick={() => setDeleteId(null)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50">
                   Cancel
                 </button>
 
-                <button
-                  onClick={confirmDelete}
-                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-                >
+                <button onClick={confirmDelete} className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
                   Delete
                 </button>
               </div>

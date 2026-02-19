@@ -202,7 +202,149 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
     return () => unsub();
   }, [modalOpen, editingBiz?.id]);
-
+  const dealToFormValues = (d) => {
+    if (!d) return {};
+  
+    return {
+      header: d.header || "",
+      campaignType: d.campaignType || "single_offer",
+      category: d.category || "dining",
+      slot: d.slot || "",
+      mode: d.mode || "simple",
+  
+      status: d.status || "draft",
+      active: !!d.active,
+      featured: !!d.featured,
+  
+      discoveryTags: d?.discovery?.tags || [],
+      feedSections: d?.discovery?.sections || [],
+  
+      imageUrl: d.posterUrl || "",
+      imageFile: null,
+  
+      venueName: d?.venue?.name || d?.businessName || "",
+      venueLocationLabel: d?.venue?.locationLabel || d?.businessAddress || "",
+      lat: d?.venue?.lat == null ? "" : String(d.venue.lat),
+      lng: d?.venue?.lng == null ? "" : String(d.venue.lng),
+  
+      descriptionHtml: d.descriptionHtml || "",
+  
+      validFrom: d?.schedule?.validFrom || "",
+      validTo: d?.schedule?.validTo || "",
+      daysActive: d?.schedule?.activeDays || ["mon","tue","wed","thu","fri","sat","sun"],
+      timeWindowStart: d?.schedule?.timeWindow?.start || "",
+      timeWindowEnd: d?.schedule?.timeWindow?.end || "",
+  
+      redemptionMethod: d?.redemption?.method || "student_id",
+      requiresStudentId: d?.redemption?.requiresStudentId ?? true,
+      oneClaimPerStudent: d?.redemption?.oneClaimPerStudent ?? true,
+      claimLimit: d?.redemption?.claimLimit == null ? "" : String(d.redemption.claimLimit),
+      promoCode: d?.redemption?.promoCode || "",
+      instructions: d?.redemption?.instructions || "",
+  
+      bookingEnabled: d?.booking?.enabled ?? false,
+      bookingLink: d?.booking?.bookingLink || "",
+      sessionLabel: d?.booking?.sessionLabel || "",
+  
+      saleType: d?.retail?.saleType || "storewide",
+      discountRangeLabel: d?.retail?.discountRangeLabel || "",
+      catalogUrl: d?.retail?.catalogUrl || "",
+      catalogFile: null,
+      retailHighlights: d?.retail?.highlights || [],
+    };
+  };
+  
+  const formToDealPayload = ({ values, editingBiz, form, dealEditing, posterUrl, posterPath, catalogUrl, catalogPath }) => {
+    const timeWindow =
+      values.timeWindowStart && values.timeWindowEnd
+        ? { start: values.timeWindowStart, end: values.timeWindowEnd }
+        : null;
+  
+    return {
+      businessId: editingBiz.id,
+      businessName: form.name || "",
+      businessAddress: [form.address?.line1, form.address?.city, form.address?.state, form.address?.postcode]
+        .filter(Boolean)
+        .join(", "),
+      businessLat: form.address?.lat ?? null,
+      businessLng: form.address?.lng ?? null,
+  
+      header: (values.header || "").trim(),
+      campaignType: values.campaignType || "single_offer",
+      category: values.category || "dining",
+      slot: values.slot || "",
+      mode: values.mode || "simple",
+  
+      status: values.status || "draft",
+      active: !!values.active,
+      featured: !!values.featured,
+  
+      discovery: {
+        tags: values.discoveryTags || [],
+        sections: values.feedSections || [],
+      },
+  
+      partner: {
+        partnerId: "", // optional
+        merchantId: editingBiz.id,
+      },
+  
+      venue: {
+        id: editingBiz.id,
+        name: (values.venueName || form.name || "").trim(),
+        locationLabel:
+          (values.venueLocationLabel || [form.address?.city, form.address?.state].filter(Boolean).join(", ")).trim(),
+        lat: values.lat === "" ? (form.address?.lat ?? null) : Number(values.lat),
+        lng: values.lng === "" ? (form.address?.lng ?? null) : Number(values.lng),
+      },
+  
+      descriptionHtml: values.descriptionHtml || "",
+  
+      schedule: {
+        activeDays: values.daysActive || [],
+        validFrom: values.validFrom || "",
+        validTo: values.validTo || "",
+        timeWindow,
+      },
+  
+      redemption: {
+        method: values.redemptionMethod || "student_id",
+        requiresStudentId: !!values.requiresStudentId,
+        oneClaimPerStudent: !!values.oneClaimPerStudent,
+        claimLimit: values.claimLimit === "" ? null : Number(values.claimLimit),
+        promoCode: values.redemptionMethod === "promo" ? (values.promoCode || "").trim() : "",
+        instructions: (values.instructions || "").trim(),
+      },
+  
+      booking: {
+        enabled: !!values.bookingEnabled,
+        bookingLink: values.bookingEnabled ? (values.bookingLink || "").trim() : "",
+        sessionLabel: (values.sessionLabel || "").trim(),
+      },
+  
+      retail:
+        values.mode === "catalog"
+          ? {
+              saleType: values.saleType || "storewide",
+              discountRangeLabel: (values.discountRangeLabel || "").trim(),
+              catalogUrl: catalogUrl || values.catalogUrl || "",
+              catalogPath: catalogPath || dealEditing?.retail?.catalogPath || "",
+              highlights: (values.retailHighlights || []).slice(0, 8).map((x) => ({
+                title: (x.title || "").trim(),
+                priceLabel: (x.priceLabel || "").trim(),
+                imageUrl: (x.imageUrl || "").trim(),
+              })),
+            }
+          : null,
+  
+      posterUrl: posterUrl || values.imageUrl || dealEditing?.posterUrl || "",
+      posterPath: posterPath || dealEditing?.posterPath || "",
+  
+      daysLeft: typeof values.daysLeft === "number" ? values.daysLeft : null,
+      updatedAt: serverTimestamp(),
+    };
+  };
+  
   const openCreate = () => {
     setEditingBiz(null);
     setForm(initialForm);
@@ -422,124 +564,59 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
   const saveDealForBusiness = async (values) => {
     if (!editingBiz?.id) return toast.error("Create business first, then add deals.");
-
+  
     setDealSaving(true);
     try {
-      let posterUrl = values.imageUrl || values.posterUrl || "";
+      // poster
+      let posterUrl = values.imageUrl || dealEditing?.posterUrl || "";
       let posterPath = dealEditing?.posterPath || "";
-
+  
       if (values.imageFile) {
         const up = await uploadIfFile(values.imageFile, "deals/posters");
         posterUrl = up.url;
         posterPath = up.path;
-      } else if (!posterUrl && dealEditing?.posterUrl) {
-        posterUrl = dealEditing.posterUrl;
       }
-
-      let catalogUrl = values?.retail?.catalogUrl || "";
+  
+      // catalog
+      let catalogUrl = values.catalogUrl || dealEditing?.retail?.catalogUrl || "";
       let catalogPath = dealEditing?.retail?.catalogPath || "";
-
-      if (values?.retail?.catalogFile) {
-        const up2 = await uploadIfFile(values.retail.catalogFile, "deals/catalogs");
+  
+      if (values.mode === "catalog" && values.catalogFile) {
+        const up2 = await uploadIfFile(values.catalogFile, "deals/catalogs");
         catalogUrl = up2.url;
         catalogPath = up2.path;
-      } else if (!catalogUrl && dealEditing?.retail?.catalogUrl) {
-        catalogUrl = dealEditing.retail.catalogUrl;
       }
-
-      const dealPayload = {
-        businessId: editingBiz.id,
-        businessName: form.name || "",
-        businessAddress: [form.address?.line1, form.address?.city, form.address?.state, form.address?.postcode]
-          .filter(Boolean)
-          .join(", "),
-        businessLat: form.address?.lat ?? null,
-        businessLng: form.address?.lng ?? null,
-
-        header: values.header?.trim() || "",
-        campaignType: values.campaignType || "single_offer",
-        category: values.category || "dining",
-        slot: values.slot || "",
-        mode: values.mode || "simple",
-
-        status: values.status || "draft",
-        active: !!values.active,
-        featured: !!values.featured,
-
-        discovery: {
-          tags: values?.discovery?.tags || [],
-          sections: values?.discovery?.sections || [],
-        },
-
-        partner: {
-          partnerId: values?.partner?.partnerId || "",
-          merchantId: values?.partner?.merchantId || editingBiz.id,
-        },
-
-        venue: {
-          id: editingBiz.id,
-          name: values?.venue?.name || form.name || "",
-          locationLabel:
-            values?.venue?.locationLabel ||
-            [form.address?.city, form.address?.state].filter(Boolean).join(", "),
-          lat: typeof values?.venue?.lat === "number" ? values.venue.lat : form.address?.lat ?? null,
-          lng: typeof values?.venue?.lng === "number" ? values.venue.lng : form.address?.lng ?? null,
-        },
-
-        descriptionHtml: values.descriptionHtml || "",
-
-        schedule: values.schedule || { activeDays: [], validFrom: "", validTo: "", timeWindow: null },
-
-        redemption: values.redemption || {
-          method: "student_id",
-          requiresStudentId: true,
-          oneClaimPerStudent: true,
-          claimLimit: null,
-          promoCode: "",
-          instructions: "",
-        },
-
-        booking: values.booking || { enabled: false, bookingLink: "", sessionLabel: "" },
-
-        retail:
-          values.mode === "catalog"
-            ? {
-                saleType: values?.retail?.saleType || "storewide",
-                discountRangeLabel: values?.retail?.discountRangeLabel || "",
-                catalogUrl: catalogUrl || "",
-                catalogPath: catalogPath || "",
-                highlights: values?.retail?.highlights || [],
-              }
-            : null,
-
-        posterUrl: posterUrl || "",
-        posterPath: posterPath || "",
-        daysLeft: typeof values.daysLeft === "number" ? values.daysLeft : null,
-
-        updatedAt: serverTimestamp(),
-      };
-
+  
+      const dealPayload = formToDealPayload({
+        values,
+        editingBiz,
+        form,
+        dealEditing,
+        posterUrl,
+        posterPath,
+        catalogUrl,
+        catalogPath,
+      });
+  
       if (dealEditing?.id) {
         await updateDoc(doc(db, "deals", dealEditing.id), dealPayload);
         toast.success("Deal updated ✅");
       } else {
-        // ✅ CREATE deal
         const dealRef = await addDoc(collection(db, "deals"), {
           ...dealPayload,
           createdAt: serverTimestamp(),
           metrics: { views: 0, opens: 0, saves: 0, claims: 0, redemptions: 0, bookingClicks: 0 },
         });
-
-        // ✅ BIND to business
+  
         await updateDoc(doc(db, "businesses", editingBiz.id), {
           dealIds: arrayUnion(dealRef.id),
           dealsCount: increment(1),
           lastDealAt: serverTimestamp(),
         });
-
+  
         toast.success("Deal created ✅");
       }
-
+  
       setDealModalOpen(false);
       setDealEditing(null);
     } catch (e) {
@@ -549,6 +626,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       setDealSaving(false);
     }
   };
+  
 
   const confirmDeleteDeal = async () => {
     if (!dealDeleteId) return;
@@ -969,12 +1047,12 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
             </div>
 
             <div className="p-5 max-h-[75vh] overflow-auto">
-              <DealForm
-                initialValues={dealEditing || {}}
-                onSubmit={saveDealForBusiness}
-                loading={dealSaving}
-                submitText={dealEditing?.id ? "Update Deal" : "Create Deal"}
-              />
+            <DealForm
+  initialValues={dealToFormValues(dealEditing)}
+  onSubmit={saveDealForBusiness}
+  loading={dealSaving}
+  submitText={dealEditing?.id ? "Update Deal" : "Create Deal"}
+/>
             </div>
           </div>
         </div>
