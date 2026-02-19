@@ -11,6 +11,9 @@ import UniclubEmployeePage from "../pages/superadmin/UniclubEmployeePage";
 import UniclubPage from "../pages/superadmin/UniclubPage";
 import PoiPage from "../pages/superadmin/PoiPage";
 import ContactPage from "../pages/ContactPage";
+import DealPage from "../pages/superadmin/DealPage";
+import DealForm from "../pages/superadmin/DealForm";
+import BusinessesListPage from "../pages/superadmin/BusinessesListPage";
 export default function SuperAdminRoutes() {
   return (
     <Routes>
@@ -23,6 +26,9 @@ export default function SuperAdminRoutes() {
       <Route path="/changepassword" element={<ChangePasswordPage />} />
       <Route path="/event" element={<EventPage />} />
       <Route path="/eventbooking" element={<EventBookingPage />} />
+      <Route path="/deal" element={<DealPage />} />
+      <Route path="/dealcreate" element={<DealForm />} />
+      <Route path="/business" element={<BusinessesListPage />} />
       <Route path="/setting" element={<SettingPage />} />
       <Route path="/uniclub" element={<UniclubPage />} />
       <Route path="/poi" element={<PoiPage />} />
