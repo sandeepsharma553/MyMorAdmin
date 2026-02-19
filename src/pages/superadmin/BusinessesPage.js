@@ -10,6 +10,8 @@ import {
   doc,
   serverTimestamp,
   where,
+  arrayUnion,
+  increment,
 } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase";
@@ -30,17 +32,21 @@ const initialForm = {
   website: "",
   note: "",
   address: {
-    line1: "", line2: "",
+    line1: "",
+    line2: "",
+    postcode: "",
     countryCode: "",
     countryName: "",
     stateCode: "",
     stateName: "",
     cityName: "",
-    postcode: "", lat: null, lng: null
+    city: "",
+    state: "",
+    lat: null,
+    lng: null,
   },
 
   booking: { type: "email", value: "" },
-
   customerCommunication: { contactNumber: "", contactEmail: "" },
 
   hours: {
@@ -67,14 +73,25 @@ const initialForm = {
     sameAsPhone: false,
     email: "",
     phone: "",
-    address: { line1: "", line2: "", postcode: "", city: "", state: "" },
+    address: {
+      line1: "",
+      line2: "",
+      postcode: "",
+      countryCode: "",
+      countryName: "",
+      stateCode: "",
+      stateName: "",
+      cityName: "",
+      city: "",
+      state: "",
+    },
   },
 };
 
 const labelCls = "text-sm font-semibold text-gray-900";
 const inputCls =
   "mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-200";
-/** ---------------- Helpers ---------------- */
+
 function Section({ title, open, onToggle, children }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
@@ -109,24 +126,18 @@ async function uploadImage(file, folder) {
   return { url, path };
 }
 
-/** ---------------- Page ---------------- */
 export default function BusinessesAndDealsPage({ navbarHeight }) {
-  // list
   const [rows, setRows] = useState([]);
   const [qText, setQText] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // business modal
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingBiz, setEditingBiz] = useState(null); // {id,...} | null
+  const [editingBiz, setEditingBiz] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  // delete business modal
   const [deleteBizId, setDeleteBizId] = useState(null);
-
-  // business form
   const [form, setForm] = useState(initialForm);
-  // advanced sections toggle
+
   const [open, setOpen] = useState({
     details: true,
     hours: false,
@@ -135,14 +146,12 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     deals: true,
   });
 
-  // deals for selected business (inside business modal)
   const [bizDeals, setBizDeals] = useState([]);
   const [dealModalOpen, setDealModalOpen] = useState(false);
-  const [dealEditing, setDealEditing] = useState(null); // deal object | null
+  const [dealEditing, setDealEditing] = useState(null);
   const [dealSaving, setDealSaving] = useState(false);
   const [dealDeleteId, setDealDeleteId] = useState(null);
 
-  /** ---------- Load businesses list ---------- */
   useEffect(() => {
     const qy = query(collection(db, "businesses"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(
@@ -160,7 +169,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     return () => unsub();
   }, []);
 
-  /** ---------- Search filter ---------- */
   const filtered = useMemo(() => {
     const t = qText.trim().toLowerCase();
     if (!t) return rows;
@@ -173,7 +181,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     );
   }, [rows, qText]);
 
-  /** ---------- Load deals when business modal opened & has id ---------- */
   useEffect(() => {
     if (!modalOpen) return;
     if (!editingBiz?.id) {
@@ -190,15 +197,12 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     const unsub = onSnapshot(
       qy,
       (snap) => setBizDeals(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      (err) => {
-        console.error(err);
-      }
+      (err) => console.error(err)
     );
 
     return () => unsub();
   }, [modalOpen, editingBiz?.id]);
 
-  /** ---------- Open modal: create ---------- */
   const openCreate = () => {
     setEditingBiz(null);
     setForm(initialForm);
@@ -207,7 +211,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     setModalOpen(true);
   };
 
-  /** ---------- Open modal: edit ---------- */
   const openEdit = (b) => {
     setEditingBiz(b);
     const data = b || {};
@@ -234,7 +237,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     setModalOpen(true);
   };
 
-  /** ---------- Setters ---------- */
   const set = (key) => (e) => {
     const val = e?.target?.type === "checkbox" ? e.target.checked : e?.target?.value ?? e;
     setForm((p) => ({ ...p, [key]: val }));
@@ -260,7 +262,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
   const toggleOpen = (k) => setOpen((p) => ({ ...p, [k]: !p[k] }));
 
-  /** ---------- Hours setters ---------- */
   const setHoursMode = (mode) => setForm((p) => ({ ...p, hours: { ...(p.hours || {}), mode } }));
 
   const setWeekHours = (bucket, key) => (e) => {
@@ -291,7 +292,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     }));
   };
 
-  /** ---------- Upload media ---------- */
   const onPickPortrait = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -320,7 +320,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     }
   };
 
-  /** ---------- Save business (create/update) ---------- */
   const onSaveBusiness = async () => {
     if (!form.name.trim()) return toast.error("Business name is required");
     if (!form.email.trim()) return toast.error("Email is required");
@@ -339,20 +338,9 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         note: form.note?.trim() || "",
 
         address: {
-          line1: form.address?.line1 || "",
-          line2: form.address?.line2 || "",
+          ...form.address,
           city: form.address?.city || form.address?.cityName || "",
           state: form.address?.state || form.address?.stateName || "",
-          postcode: form.address?.postcode || "",
-
-          countryCode: form.address?.countryCode || "",
-          countryName: form.address?.countryName || "",
-          stateCode: form.address?.stateCode || "",
-          stateName: form.address?.stateName || "",
-          cityName: form.address?.cityName || "",
-
-          lat: form.address?.lat ?? null,
-          lng: form.address?.lng ?? null,
         },
 
         customerCommunication: {
@@ -380,15 +368,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           email: billingEmail,
           phone: billingPhone,
           address: {
-            line1: form.billing?.address?.line1 || "",
-            line2: form.billing?.address?.line2 || "",
-            postcode: form.billing?.address?.postcode || "",
-
-            countryCode: form.billing?.address?.countryCode || "",
-            countryName: form.billing?.address?.countryName || "",
-            stateCode: form.billing?.address?.stateCode || "",
-            stateName: form.billing?.address?.stateName || "",
-            cityName: form.billing?.address?.cityName || "",
+            ...form.billing?.address,
             city: form.billing?.address?.city || form.billing?.address?.cityName || "",
             state: form.billing?.address?.state || form.billing?.address?.stateName || "",
           },
@@ -397,19 +377,17 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         updatedAt: serverTimestamp(),
       };
 
-      // ✅ create
       if (!editingBiz?.id) {
         const ref = await addDoc(collection(db, "businesses"), {
           ...payload,
           createdAt: serverTimestamp(),
+          dealsCount: 0,
+          dealIds: [],
         });
         toast.success("Business created ✅");
 
-        // IMPORTANT: modal same page, so set editingBiz now (so you can add deals)
-        const newBiz = { id: ref.id, ...payload };
-        setEditingBiz(newBiz);
+        setEditingBiz({ id: ref.id, ...payload });
       } else {
-        // ✅ update
         await updateDoc(doc(db, "businesses", editingBiz.id), payload);
         toast.success("Business saved ✅");
         setEditingBiz((p) => ({ ...(p || {}), ...payload, id: editingBiz.id }));
@@ -422,7 +400,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     }
   };
 
-  /** ---------- Delete business ---------- */
   const confirmDeleteBusiness = async () => {
     if (!deleteBizId) return;
     try {
@@ -435,8 +412,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     }
   };
 
-  /** ---------- Deals: create/update for selected business ---------- */
-  /** ---------- Deals: create/update for selected business ---------- */
   const uploadIfFile = async (file, folder) => {
     const path = `${folder}/${editingBiz.id}/${Date.now()}_${file.name}`;
     const r = storageRef(storage, path);
@@ -446,14 +421,10 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
   };
 
   const saveDealForBusiness = async (values) => {
-    if (!editingBiz?.id) {
-      toast.error("Create business first, then add deals.");
-      return;
-    }
+    if (!editingBiz?.id) return toast.error("Create business first, then add deals.");
 
     setDealSaving(true);
     try {
-      // 1) Poster upload
       let posterUrl = values.imageUrl || values.posterUrl || "";
       let posterPath = dealEditing?.posterPath || "";
 
@@ -465,7 +436,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         posterUrl = dealEditing.posterUrl;
       }
 
-      // 2) Catalog upload (only if mode=catalog)
       let catalogUrl = values?.retail?.catalogUrl || "";
       let catalogPath = dealEditing?.retail?.catalogPath || "";
 
@@ -477,12 +447,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         catalogUrl = dealEditing.retail.catalogUrl;
       }
 
-      // ✅ FIX: offerType must be saved (your table uses it)
-      const offerType =
-        values.offerType ||
-        (values?.redemption?.method === "voucher" ? "voucher" : "free");
-
-      // 3) Build deal payload
       const dealPayload = {
         businessId: editingBiz.id,
         businessName: form.name || "",
@@ -501,8 +465,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         status: values.status || "draft",
         active: !!values.active,
         featured: !!values.featured,
-
-        offerType, // ✅ added
 
         discovery: {
           tags: values?.discovery?.tags || [],
@@ -526,12 +488,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
         descriptionHtml: values.descriptionHtml || "",
 
-        schedule: values.schedule || {
-          activeDays: [],
-          validFrom: "",
-          validTo: "",
-          timeWindow: null,
-        },
+        schedule: values.schedule || { activeDays: [], validFrom: "", validTo: "", timeWindow: null },
 
         redemption: values.redemption || {
           method: "student_id",
@@ -542,61 +499,43 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           instructions: "",
         },
 
-        booking: values.booking || {
-          enabled: false,
-          bookingLink: "",
-          sessionLabel: "",
-        },
+        booking: values.booking || { enabled: false, bookingLink: "", sessionLabel: "" },
 
         retail:
           values.mode === "catalog"
             ? {
-              saleType: values?.retail?.saleType || "storewide",
-              discountRangeLabel: values?.retail?.discountRangeLabel || "",
-              catalogUrl: catalogUrl || "",
-              catalogPath: catalogPath || "",
-              highlights: values?.retail?.highlights || [],
-            }
+                saleType: values?.retail?.saleType || "storewide",
+                discountRangeLabel: values?.retail?.discountRangeLabel || "",
+                catalogUrl: catalogUrl || "",
+                catalogPath: catalogPath || "",
+                highlights: values?.retail?.highlights || [],
+              }
             : null,
 
         posterUrl: posterUrl || "",
         posterPath: posterPath || "",
-
         daysLeft: typeof values.daysLeft === "number" ? values.daysLeft : null,
 
         updatedAt: serverTimestamp(),
       };
 
       if (dealEditing?.id) {
-        // UPDATE
         await updateDoc(doc(db, "deals", dealEditing.id), dealPayload);
-
-        // ✅ instant bind (optimistic)
-        setBizDeals((prev) =>
-          prev.map((d) => (d.id === dealEditing.id ? { ...d, ...dealPayload } : d))
-        );
-
         toast.success("Deal updated ✅");
       } else {
-        // CREATE
-        const ref = await addDoc(collection(db, "deals"), {
+        // ✅ CREATE deal
+        const dealRef = await addDoc(collection(db, "deals"), {
           ...dealPayload,
           createdAt: serverTimestamp(),
-          metrics: {
-            views: 0,
-            opens: 0,
-            saves: 0,
-            claims: 0,
-            redemptions: 0,
-            bookingClicks: 0,
-          },
+          metrics: { views: 0, opens: 0, saves: 0, claims: 0, redemptions: 0, bookingClicks: 0 },
         });
 
-        // ✅ instant bind (optimistic)
-        setBizDeals((prev) => [
-          { id: ref.id, ...dealPayload, createdAt: new Date() },
-          ...prev,
-        ]);
+        // ✅ BIND to business
+        await updateDoc(doc(db, "businesses", editingBiz.id), {
+          dealIds: arrayUnion(dealRef.id),
+          dealsCount: increment(1),
+          lastDealAt: serverTimestamp(),
+        });
 
         toast.success("Deal created ✅");
       }
@@ -623,25 +562,19 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     }
   };
 
-  /** ---------------- UI ---------------- */
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
-      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-semibold">Businesses</h1>
-          <p className="text-sm text-gray-500">List + Add/Edit (Advanced) + Deals — all in one page.</p>
+          <p className="text-sm text-gray-500">List + Add/Edit + Deals — all in one page.</p>
         </div>
 
-        <button
-          onClick={openCreate}
-          className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-        >
+        <button onClick={openCreate} className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
           + Add Business
         </button>
       </div>
 
-      {/* Search */}
       <div className="flex gap-3 mb-3">
         <input
           className="w-full sm:w-96 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-200"
@@ -651,11 +584,10 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         />
       </div>
 
-      {/* Table */}
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
         {loading ? (
           <div className="flex items-center justify-center h-56">
-             <FadeLoader color="#36d7b7" loading />
+            <FadeLoader color="#111827" loading />
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -695,13 +627,9 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
                   <td className="p-3">
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => openEdit(b)}
-                        className="rounded-lg border border-gray-200 px-3 py-1.5 hover:bg-gray-50"
-                      >
+                      <button onClick={() => openEdit(b)} className="rounded-lg border border-gray-200 px-3 py-1.5 hover:bg-gray-50">
                         Open
                       </button>
-
                       <button
                         onClick={() => setDeleteBizId(b.id)}
                         className="rounded-lg border border-gray-200 px-3 py-1.5 hover:bg-red-50 hover:border-red-200 hover:text-red-700"
@@ -725,33 +653,26 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         )}
       </div>
 
-      {/* ---------------- Business Modal (Simple + Advanced + Deals) ---------------- */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-5xl rounded-2xl bg-white shadow-xl overflow-hidden">
-            {/* header */}
             <div className="flex items-center justify-between border-b border-gray-100 p-5">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  {editingBiz?.id ? "Edit Business" : "Create Business"}
-                </h2>
+                <h2 className="text-lg font-semibold text-gray-900">{editingBiz?.id ? "Edit Business" : "Create Business"}</h2>
                 <p className="text-xs text-gray-500">
                   {editingBiz?.id ? `Business ID: ${editingBiz.id}` : "Create first, then add deals inside this modal."}
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => !saving && (setModalOpen(false), setDealModalOpen(false), setDealEditing(null))}
-                  className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
-                  disabled={saving}
-                >
-                  Close
-                </button>
-              </div>
+              <button
+                onClick={() => !saving && (setModalOpen(false), setDealModalOpen(false), setDealEditing(null))}
+                className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+                disabled={saving}
+              >
+                Close
+              </button>
             </div>
 
-            {/* body */}
             <div className="p-5 max-h-[80vh] overflow-auto bg-gray-50">
               <div className="flex items-center justify-end gap-3 mb-4">
                 <button
@@ -764,7 +685,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
               </div>
 
               <div className="space-y-4">
-                {/* DETAILS */}
                 <Section title="Details" open={open.details} onToggle={() => toggleOpen("details")}>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
@@ -800,18 +720,12 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                       <label className={labelCls}>Address Line 2</label>
                       <input value={form.address.line2} onChange={setAddress("line2")} className={inputCls} placeholder="Line 2" />
                     </div>
+
                     <div className="md:col-span-2">
-                      <div>
-                        <label className={labelCls}>Postcode</label>
-                        <input
-                          value={form.address.postcode}
-                          onChange={setAddress("postcode")}
-                          className={inputCls}
-                          placeholder="3000"
-                        />
-                      </div>
+                      <label className={labelCls}>Postcode</label>
+                      <input value={form.address.postcode} onChange={setAddress("postcode")} className={inputCls} placeholder="3000" />
                     </div>
-                    {/* Country/State/City dropdowns */}
+
                     <div className="md:col-span-2">
                       <LocationPicker
                         value={{
@@ -820,146 +734,32 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                           cityName: form.address.cityName || "",
                         }}
                         onChange={(loc) => {
-                          const nextAddress = {
-                            ...form.address,
-                            countryCode: loc.country?.code || "",
-                            countryName: loc.country?.name || "",
-                            stateCode: loc.state?.code || "",
-                            stateName: loc.state?.name || "",
-                            cityName: loc.city?.name || "",
-                            // sync same into generic city/state used by tables/search
-                            city: loc.city?.name || "",
-                            state: loc.state?.name || "",
-                            lat: loc.coords?.lat ?? form.address.lat ?? null,
-                            lng: loc.coords?.lng ?? form.address.lng ?? null,
-                          };
-
-                          setForm((prev) => ({ ...prev, address: nextAddress }));
+                          setForm((prev) => ({
+                            ...prev,
+                            address: {
+                              ...(prev.address || {}),
+                              countryCode: loc.country?.code || "",
+                              countryName: loc.country?.name || "",
+                              stateCode: loc.state?.code || "",
+                              stateName: loc.state?.name || "",
+                              cityName: loc.city?.name || "",
+                              city: loc.city?.name || "",
+                              state: loc.state?.name || "",
+                              lat: loc.coords?.lat ?? prev.address?.lat ?? null,
+                              lng: loc.coords?.lng ?? prev.address?.lng ?? null,
+                            },
+                          }));
                         }}
                       />
                     </div>
 
-
-
-
-
-
-
                     <div className="md:col-span-2">
                       <label className={labelCls}>Note</label>
-
                       <textarea value={form.note} onChange={set("note")} className={inputCls + " h-24 mt-2 resize-none"} placeholder="Optional note..." />
                     </div>
                   </div>
                 </Section>
 
-                {/* HOURS */}
-                <Section title="Business Hours" open={open.hours} onToggle={() => toggleOpen("hours")}>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setHoursMode("week")}
-                      className={[
-                        "rounded-xl px-5 py-2 text-sm font-semibold border",
-                        form.hours.mode === "week" ? "bg-black text-white border-black" : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50",
-                      ].join(" ")}
-                    >
-                      Week
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHoursMode("custom")}
-                      className={[
-                        "rounded-xl px-5 py-2 text-sm font-semibold border",
-                        form.hours.mode === "custom" ? "bg-black text-white border-black" : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50",
-                      ].join(" ")}
-                    >
-                      Custom
-                    </button>
-                  </div>
-
-                  {form.hours.mode === "week" && (
-                    <div className="mt-4 space-y-4">
-                      <div className="rounded-2xl border border-gray-200 p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="font-semibold text-gray-900">Weekdays</div>
-                          <label className="flex items-center gap-2 text-sm">
-                            <span className="text-gray-700">Open</span>
-                            <input
-                              type="checkbox"
-                              checked={!!form.hours.week.weekdays.open}
-                              onChange={setWeekHours("weekdays", "open")}
-                              className="h-4 w-4"
-                            />
-                          </label>
-                        </div>
-                        <div className="mt-3 grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-xs text-gray-500">From</label>
-                            <input type="time" value={form.hours.week.weekdays.from} onChange={setWeekHours("weekdays", "from")} className={inputCls} />
-                          </div>
-                          <div>
-                            <label className="text-xs text-gray-500">To</label>
-                            <input type="time" value={form.hours.week.weekdays.to} onChange={setWeekHours("weekdays", "to")} className={inputCls} />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-gray-200 p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="font-semibold text-gray-900">Weekend</div>
-                          <label className="flex items-center gap-2 text-sm">
-                            <span className="text-gray-700">Open</span>
-                            <input
-                              type="checkbox"
-                              checked={!!form.hours.week.weekend.open}
-                              onChange={setWeekHours("weekend", "open")}
-                              className="h-4 w-4"
-                            />
-                          </label>
-                        </div>
-                        <div className="mt-3 grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-xs text-gray-500">From</label>
-                            <input type="time" value={form.hours.week.weekend.from} onChange={setWeekHours("weekend", "from")} className={inputCls} />
-                          </div>
-                          <div>
-                            <label className="text-xs text-gray-500">To</label>
-                            <input type="time" value={form.hours.week.weekend.to} onChange={setWeekHours("weekend", "to")} className={inputCls} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {form.hours.mode === "custom" && (
-                    <div className="mt-4 space-y-3">
-                      {DAYS.map((d) => (
-                        <div key={d} className="rounded-2xl border border-gray-200 p-4">
-                          <div className="flex items-center justify-between">
-                            <div className="font-semibold text-gray-900 capitalize">{d}</div>
-                            <label className="flex items-center gap-2 text-sm">
-                              <span className="text-gray-700">Open</span>
-                              <input type="checkbox" checked={!!form.hours.custom[d].open} onChange={setCustomHours(d, "open")} className="h-4 w-4" />
-                            </label>
-                          </div>
-                          <div className="mt-3 grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-xs text-gray-500">From</label>
-                              <input type="time" value={form.hours.custom[d].from} onChange={setCustomHours(d, "from")} className={inputCls} />
-                            </div>
-                            <div>
-                              <label className="text-xs text-gray-500">To</label>
-                              <input type="time" value={form.hours.custom[d].to} onChange={setCustomHours(d, "to")} className={inputCls} />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Section>
-
-                {/* BILLING */}
                 <Section title="Billing Address" open={open.billing} onToggle={() => toggleOpen("billing")}>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div className="md:col-span-2">
@@ -1024,22 +824,17 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                       <label className={labelCls}>Billing Address Line 1</label>
                       <input className={inputCls} value={form.billing?.address?.line1 || ""} onChange={setBillingAddr("line1")} />
                     </div>
+
                     <div className="md:col-span-2">
                       <label className={labelCls}>Billing Address Line 2</label>
                       <input className={inputCls} value={form.billing?.address?.line2 || ""} onChange={setBillingAddr("line2")} />
                     </div>
+
                     <div className="md:col-span-2">
-                      <div>
-                        <label className={labelCls}>Postcode</label>
-                        <input
-                          className={inputCls}
-                          value={form.billing?.address?.postcode || ""}
-                          onChange={setBillingAddr("postcode")}
-                          placeholder="3000"
-                        />
-                      </div>
+                      <label className={labelCls}>Postcode</label>
+                      <input className={inputCls} value={form.billing?.address?.postcode || ""} onChange={setBillingAddr("postcode")} placeholder="3000" />
                     </div>
-                    {/* Country/State/City dropdowns */}
+
                     <div className="md:col-span-2">
                       <LocationPicker
                         value={{
@@ -1059,7 +854,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                                 stateCode: loc.state?.code || "",
                                 stateName: loc.state?.name || "",
                                 cityName: loc.city?.name || "",
-                                // keep legacy fields for export/invoices
                                 city: loc.city?.name || "",
                                 state: loc.state?.name || "",
                               },
@@ -1068,42 +862,12 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                         }}
                       />
                     </div>
-
-
                   </div>
                 </Section>
 
-                {/* MEDIA */}
-                <Section title="Media" open={open.media} onToggle={() => toggleOpen("media")}>
-                  <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                    <div className="rounded-2xl border border-gray-200 p-4 bg-white">
-                      <div className="text-sm font-semibold text-gray-900">Portrait</div>
-                      <input type="file" accept="image/*" onChange={onPickPortrait} className="mt-3 text-sm" />
-                      {form.media.portraitUrl && (
-                        <div className="mt-3 overflow-hidden rounded-xl border border-gray-200">
-                          <img src={form.media.portraitUrl} alt="" className="h-44 w-full object-cover" />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="rounded-2xl border border-gray-200 p-4 bg-white">
-                      <div className="text-sm font-semibold text-gray-900">Banner</div>
-                      <input type="file" accept="image/*" onChange={onPickBanner} className="mt-3 text-sm" />
-                      {form.media.bannerUrl && (
-                        <div className="mt-3 overflow-hidden rounded-xl border border-gray-200">
-                          <img src={form.media.bannerUrl} alt="" className="h-44 w-full object-cover" />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </Section>
-
-                {/* DEALS INSIDE SAME MODAL */}
                 <Section title="Deals of this Business" open={open.deals} onToggle={() => toggleOpen("deals")}>
                   <div className="flex items-center justify-between">
-                    <div className="text-sm text-gray-600">
-                      {editingBiz?.id ? "Create offers linked to this business." : "Save business first to add deals."}
-                    </div>
+                    <div className="text-sm text-gray-600">{editingBiz?.id ? "Create offers linked to this business." : "Save business first to add deals."}</div>
 
                     <button
                       onClick={() => {
@@ -1134,11 +898,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                           <tr key={d.id} className="border-t border-gray-100">
                             <td className="p-3">
                               <div className="flex items-center gap-3">
-                                <img
-                                  className="h-10 w-16 rounded-xl object-cover border border-gray-100"
-                                  src={d.posterUrl || d.imageUrl}
-                                  alt=""
-                                />
+                                <img className="h-10 w-16 rounded-xl object-cover border border-gray-100" src={d.posterUrl || d.imageUrl} alt="" />
                                 <div className="min-w-0">
                                   <div className="font-semibold text-gray-900 truncate">{d.header || d.title || "—"}</div>
                                   <div className="text-xs text-gray-500 truncate">{d.category || d.campaignType || "—"}</div>
@@ -1146,7 +906,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                               </div>
                             </td>
                             <td className="p-3 text-gray-700">{d.slot || "—"}</td>
-                            <td className="p-3 text-gray-700">{d.offerType || "—"}</td>
+                            <td className="p-3 text-gray-700">{d.offerType || d.mode || "—"}</td>
                             <td className="p-3">
                               <span className={`rounded-full px-2 py-1 text-xs font-semibold ${d.active ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"}`}>
                                 {d.active ? "Active" : "Inactive"}
@@ -1191,7 +951,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         </div>
       )}
 
-      {/* ---------------- Deal Modal (inside same page) ---------------- */}
       {dealModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-4xl rounded-2xl bg-white shadow-xl overflow-hidden">
@@ -1221,7 +980,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         </div>
       )}
 
-      {/* ---------------- Delete Business Modal ---------------- */}
       {deleteBizId && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl">
@@ -1230,16 +988,10 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
               <p className="mt-2 text-sm text-gray-500">This action cannot be undone.</p>
 
               <div className="mt-6 flex justify-end gap-3">
-                <button
-                  onClick={() => setDeleteBizId(null)}
-                  className="rounded-xl border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50"
-                >
+                <button onClick={() => setDeleteBizId(null)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50">
                   Cancel
                 </button>
-                <button
-                  onClick={confirmDeleteBusiness}
-                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-                >
+                <button onClick={confirmDeleteBusiness} className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
                   Delete
                 </button>
               </div>
@@ -1248,7 +1000,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         </div>
       )}
 
-      {/* ---------------- Delete Deal Modal ---------------- */}
       {dealDeleteId && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl">
@@ -1257,16 +1008,10 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
               <p className="mt-2 text-sm text-gray-500">This action cannot be undone.</p>
 
               <div className="mt-6 flex justify-end gap-3">
-                <button
-                  onClick={() => setDealDeleteId(null)}
-                  className="rounded-xl border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50"
-                >
+                <button onClick={() => setDealDeleteId(null)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50">
                   Cancel
                 </button>
-                <button
-                  onClick={confirmDeleteDeal}
-                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-                >
+                <button onClick={confirmDeleteDeal} className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
                   Delete
                 </button>
               </div>
