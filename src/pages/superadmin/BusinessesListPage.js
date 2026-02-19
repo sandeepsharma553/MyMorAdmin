@@ -190,7 +190,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       (snap) => setBizDeals(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
       (err) => {
         console.error(err);
-        toast.error("Failed to load deals");
       }
     );
 
