@@ -276,7 +276,7 @@ export default function DealPage({ navbarHeight }) {
       <div className="overflow-x-auto bg-white rounded-2xl shadow border border-gray-200">
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
-            <FadeLoader color="#111827" loading={isLoading} />
+            <FadeLoader color="#36d7b7" loading={isLoading} />
           </div>
         ) : (
           <table className="min-w-[1200px] w-full text-sm">

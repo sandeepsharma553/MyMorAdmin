@@ -12,27 +12,32 @@ import {
   where,
 } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-
 import { db, storage } from "../../firebase";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import DealForm from "./DealForm";
+import LocationPicker from "./LocationPicker";
 
-import DealForm from "./DealForm"; // ✅ adjust path
-
-/** ---------------- Defaults ---------------- */
 const blankDay = () => ({ open: true, from: "00:00", to: "00:00" });
 const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
-const defaults = {
+const initialForm = {
   name: "",
   phone: "",
   email: "",
   abn: "",
   website: "",
   note: "",
-
-  address: { line1: "", line2: "", city: "", state: "", postcode: "", lat: null, lng: null },
+  address: {
+    line1: "", line2: "",
+    countryCode: "",
+    countryName: "",
+    stateCode: "",
+    stateName: "",
+    cityName: "",
+    postcode: "", lat: null, lng: null
+  },
 
   booking: { type: "email", value: "" },
 
@@ -69,8 +74,6 @@ const defaults = {
 const labelCls = "text-sm font-semibold text-gray-900";
 const inputCls =
   "mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-200";
-const selectCls = inputCls;
-
 /** ---------------- Helpers ---------------- */
 function Section({ title, open, onToggle, children }) {
   return (
@@ -122,8 +125,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
   const [deleteBizId, setDeleteBizId] = useState(null);
 
   // business form
-  const [v, setV] = useState(defaults);
-
+  const [form, setForm] = useState(initialForm);
   // advanced sections toggle
   const [open, setOpen] = useState({
     details: true,
@@ -199,7 +201,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
   /** ---------- Open modal: create ---------- */
   const openCreate = () => {
     setEditingBiz(null);
-    setV(defaults);
+    setForm(initialForm);
     setOpen({ details: true, hours: false, billing: false, media: false, deals: true });
     setBizDeals([]);
     setModalOpen(true);
@@ -209,24 +211,24 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
   const openEdit = (b) => {
     setEditingBiz(b);
     const data = b || {};
-    setV({
-      ...defaults,
+    setForm({
+      ...initialForm,
       ...data,
-      address: { ...defaults.address, ...(data.address || {}) },
-      booking: { ...defaults.booking, ...(data.booking || {}) },
-      customerCommunication: { ...defaults.customerCommunication, ...(data.customerCommunication || {}) },
+      address: { ...initialForm.address, ...(data.address || {}) },
+      booking: { ...initialForm.booking, ...(data.booking || {}) },
+      customerCommunication: { ...initialForm.customerCommunication, ...(data.customerCommunication || {}) },
       hours: {
-        ...defaults.hours,
+        ...initialForm.hours,
         ...(data.hours || {}),
-        week: { ...defaults.hours.week, ...(data.hours?.week || {}) },
-        custom: { ...defaults.hours.custom, ...(data.hours?.custom || {}) },
+        week: { ...initialForm.hours.week, ...(data.hours?.week || {}) },
+        custom: { ...initialForm.hours.custom, ...(data.hours?.custom || {}) },
       },
       billing: {
-        ...defaults.billing,
+        ...initialForm.billing,
         ...(data.billing || {}),
-        address: { ...defaults.billing.address, ...(data.billing?.address || {}) },
+        address: { ...initialForm.billing.address, ...(data.billing?.address || {}) },
       },
-      media: { ...defaults.media, ...(data.media || {}) },
+      media: { ...initialForm.media, ...(data.media || {}) },
     });
     setOpen({ details: true, hours: false, billing: false, media: false, deals: true });
     setModalOpen(true);
@@ -235,22 +237,22 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
   /** ---------- Setters ---------- */
   const set = (key) => (e) => {
     const val = e?.target?.type === "checkbox" ? e.target.checked : e?.target?.value ?? e;
-    setV((p) => ({ ...p, [key]: val }));
+    setForm((p) => ({ ...p, [key]: val }));
   };
 
   const setAddress = (key) => (e) => {
     const val = e?.target?.value ?? "";
-    setV((p) => ({ ...p, address: { ...(p.address || {}), [key]: val } }));
+    setForm((p) => ({ ...p, address: { ...(p.address || {}), [key]: val } }));
   };
 
   const setBilling = (key) => (e) => {
     const val = e?.target?.type === "checkbox" ? e.target.checked : e?.target?.value ?? "";
-    setV((p) => ({ ...p, billing: { ...(p.billing || {}), [key]: val } }));
+    setForm((p) => ({ ...p, billing: { ...(p.billing || {}), [key]: val } }));
   };
 
   const setBillingAddr = (key) => (e) => {
     const val = e?.target?.value ?? "";
-    setV((p) => ({
+    setForm((p) => ({
       ...p,
       billing: { ...(p.billing || {}), address: { ...((p.billing || {}).address || {}), [key]: val } },
     }));
@@ -259,11 +261,11 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
   const toggleOpen = (k) => setOpen((p) => ({ ...p, [k]: !p[k] }));
 
   /** ---------- Hours setters ---------- */
-  const setHoursMode = (mode) => setV((p) => ({ ...p, hours: { ...(p.hours || {}), mode } }));
+  const setHoursMode = (mode) => setForm((p) => ({ ...p, hours: { ...(p.hours || {}), mode } }));
 
   const setWeekHours = (bucket, key) => (e) => {
     const val = e?.target?.type === "checkbox" ? e.target.checked : e?.target?.value ?? "";
-    setV((p) => ({
+    setForm((p) => ({
       ...p,
       hours: {
         ...(p.hours || {}),
@@ -277,7 +279,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
   const setCustomHours = (day, key) => (e) => {
     const val = e?.target?.type === "checkbox" ? e.target.checked : e?.target?.value ?? "";
-    setV((p) => ({
+    setForm((p) => ({
       ...p,
       hours: {
         ...(p.hours || {}),
@@ -296,7 +298,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     try {
       toast.info("Uploading portrait...");
       const res = await uploadImage(file, "businesses/portrait");
-      setV((p) => ({ ...p, media: { ...(p.media || {}), portraitUrl: res.url, portraitPath: res.path } }));
+      setForm((p) => ({ ...p, media: { ...(p.media || {}), portraitUrl: res.url, portraitPath: res.path } }));
       toast.success("Portrait uploaded ✅");
     } catch (err) {
       console.error(err);
@@ -310,7 +312,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     try {
       toast.info("Uploading banner...");
       const res = await uploadImage(file, "businesses/banner");
-      setV((p) => ({ ...p, media: { ...(p.media || {}), bannerUrl: res.url, bannerPath: res.path } }));
+      setForm((p) => ({ ...p, media: { ...(p.media || {}), bannerUrl: res.url, bannerPath: res.path } }));
       toast.success("Banner uploaded ✅");
     } catch (err) {
       console.error(err);
@@ -320,62 +322,75 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
   /** ---------- Save business (create/update) ---------- */
   const onSaveBusiness = async () => {
-    if (!v.name.trim()) return toast.error("Business name is required");
-    if (!v.email.trim()) return toast.error("Email is required");
+    if (!form.name.trim()) return toast.error("Business name is required");
+    if (!form.email.trim()) return toast.error("Email is required");
 
     setSaving(true);
     try {
-      const billingEmail = v.billing?.sameAsEmail ? (v.email || "") : (v.billing?.email || "");
-      const billingPhone = v.billing?.sameAsPhone ? (v.phone || "") : (v.billing?.phone || "");
+      const billingEmail = form.billing?.sameAsEmail ? (form.email || "") : (form.billing?.email || "");
+      const billingPhone = form.billing?.sameAsPhone ? (form.phone || "") : (form.billing?.phone || "");
 
       const payload = {
-        name: v.name?.trim() || "",
-        phone: v.phone?.trim() || "",
-        email: v.email?.trim() || "",
-        abn: v.abn?.trim() || "",
-        website: v.website?.trim() || "",
-        note: v.note?.trim() || "",
+        name: form.name?.trim() || "",
+        phone: form.phone?.trim() || "",
+        email: form.email?.trim() || "",
+        abn: form.abn?.trim() || "",
+        website: form.website?.trim() || "",
+        note: form.note?.trim() || "",
 
         address: {
-          line1: v.address?.line1 || "",
-          line2: v.address?.line2 || "",
-          city: v.address?.city || "",
-          state: v.address?.state || "",
-          postcode: v.address?.postcode || "",
-          lat: v.address?.lat ?? null,
-          lng: v.address?.lng ?? null,
+          line1: form.address?.line1 || "",
+          line2: form.address?.line2 || "",
+          city: form.address?.city || form.address?.cityName || "",
+          state: form.address?.state || form.address?.stateName || "",
+          postcode: form.address?.postcode || "",
+
+          countryCode: form.address?.countryCode || "",
+          countryName: form.address?.countryName || "",
+          stateCode: form.address?.stateCode || "",
+          stateName: form.address?.stateName || "",
+          cityName: form.address?.cityName || "",
+
+          lat: form.address?.lat ?? null,
+          lng: form.address?.lng ?? null,
         },
 
         customerCommunication: {
-          contactNumber: v.customerCommunication?.contactNumber || "",
-          contactEmail: v.customerCommunication?.contactEmail || "",
+          contactNumber: form.customerCommunication?.contactNumber || "",
+          contactEmail: form.customerCommunication?.contactEmail || "",
         },
 
         hours: {
-          mode: v.hours?.mode || "week",
+          mode: form.hours?.mode || "week",
           week: {
-            weekdays: { ...(v.hours?.week?.weekdays || blankDay()) },
-            weekend: { ...(v.hours?.week?.weekend || blankDay()) },
+            weekdays: { ...(form.hours?.week?.weekdays || blankDay()) },
+            weekend: { ...(form.hours?.week?.weekend || blankDay()) },
           },
           custom: DAYS.reduce((acc, d) => {
-            acc[d] = { ...(v.hours?.custom?.[d] || blankDay()) };
+            acc[d] = { ...(form.hours?.custom?.[d] || blankDay()) };
             return acc;
           }, {}),
         },
 
-        media: { ...(v.media || {}) },
+        media: { ...(form.media || {}) },
 
         billing: {
-          sameAsEmail: !!v.billing?.sameAsEmail,
-          sameAsPhone: !!v.billing?.sameAsPhone,
+          sameAsEmail: !!form.billing?.sameAsEmail,
+          sameAsPhone: !!form.billing?.sameAsPhone,
           email: billingEmail,
           phone: billingPhone,
           address: {
-            line1: v.billing?.address?.line1 || "",
-            line2: v.billing?.address?.line2 || "",
-            postcode: v.billing?.address?.postcode || "",
-            city: v.billing?.address?.city || "",
-            state: v.billing?.address?.state || "",
+            line1: form.billing?.address?.line1 || "",
+            line2: form.billing?.address?.line2 || "",
+            postcode: form.billing?.address?.postcode || "",
+
+            countryCode: form.billing?.address?.countryCode || "",
+            countryName: form.billing?.address?.countryName || "",
+            stateCode: form.billing?.address?.stateCode || "",
+            stateName: form.billing?.address?.stateName || "",
+            cityName: form.billing?.address?.cityName || "",
+            city: form.billing?.address?.city || form.billing?.address?.cityName || "",
+            state: form.billing?.address?.state || form.billing?.address?.stateName || "",
           },
         },
 
@@ -421,6 +436,15 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
   };
 
   /** ---------- Deals: create/update for selected business ---------- */
+  /** ---------- Deals: create/update for selected business ---------- */
+  const uploadIfFile = async (file, folder) => {
+    const path = `${folder}/${editingBiz.id}/${Date.now()}_${file.name}`;
+    const r = storageRef(storage, path);
+    await uploadBytes(r, file);
+    const url = await getDownloadURL(r);
+    return { url, path };
+  };
+
   const saveDealForBusiness = async (values) => {
     if (!editingBiz?.id) {
       toast.error("Create business first, then add deals.");
@@ -429,64 +453,151 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
     setDealSaving(true);
     try {
-      let imageUrl = values.imageUrl || "";
-      let imagePath = "";
+      // 1) Poster upload
+      let posterUrl = values.imageUrl || values.posterUrl || "";
+      let posterPath = dealEditing?.posterPath || "";
 
       if (values.imageFile) {
-        imagePath = `deals/${editingBiz.id}/${Date.now()}_${values.imageFile.name}`;
-        const r = storageRef(storage, imagePath);
-        await uploadBytes(r, values.imageFile);
-        imageUrl = await getDownloadURL(r);
+        const up = await uploadIfFile(values.imageFile, "deals/posters");
+        posterUrl = up.url;
+        posterPath = up.path;
+      } else if (!posterUrl && dealEditing?.posterUrl) {
+        posterUrl = dealEditing.posterUrl;
       }
 
+      // 2) Catalog upload (only if mode=catalog)
+      let catalogUrl = values?.retail?.catalogUrl || "";
+      let catalogPath = dealEditing?.retail?.catalogPath || "";
+
+      if (values?.retail?.catalogFile) {
+        const up2 = await uploadIfFile(values.retail.catalogFile, "deals/catalogs");
+        catalogUrl = up2.url;
+        catalogPath = up2.path;
+      } else if (!catalogUrl && dealEditing?.retail?.catalogUrl) {
+        catalogUrl = dealEditing.retail.catalogUrl;
+      }
+
+      // ✅ FIX: offerType must be saved (your table uses it)
+      const offerType =
+        values.offerType ||
+        (values?.redemption?.method === "voucher" ? "voucher" : "free");
+
+      // 3) Build deal payload
       const dealPayload = {
         businessId: editingBiz.id,
-        businessName: v.name || "",
-        businessAddress: [v.address?.line1, v.address?.city, v.address?.state].filter(Boolean).join(", "),
-        businessLat: v.address?.lat ?? null,
-        businessLng: v.address?.lng ?? null,
+        businessName: form.name || "",
+        businessAddress: [form.address?.line1, form.address?.city, form.address?.state, form.address?.postcode]
+          .filter(Boolean)
+          .join(", "),
+        businessLat: form.address?.lat ?? null,
+        businessLng: form.address?.lng ?? null,
 
-        // new (app style)
-        dealType: values.dealType || "",
         header: values.header?.trim() || "",
+        campaignType: values.campaignType || "single_offer",
+        category: values.category || "dining",
         slot: values.slot || "",
-        mapIcon: values.mapIcon || "",
-        descriptionHtml: values.descriptionHtml || "",
-        bookingLink: values.bookingLink?.trim() || "",
-        offerType: values.offerType || "free",
-        priceValue: values.priceValue ?? null,
-        discountPercent: values.discountPercent ?? null,
-        daysActive: values.daysActive || [],
+        mode: values.mode || "simple",
 
-        // compat
-        title: values.title?.trim() || values.header?.trim() || "",
-        subtitle: values.subtitle?.trim() || "",
-        categoryId: values.categoryId || "food",
-        categoryLabel: values.categoryLabel || "",
-        featured: !!values.featured,
+        status: values.status || "draft",
         active: !!values.active,
+        featured: !!values.featured,
 
-        validFrom: values.validFrom || "",
-        validTo: values.validTo || "",
+        offerType, // ✅ added
+
+        discovery: {
+          tags: values?.discovery?.tags || [],
+          sections: values?.discovery?.sections || [],
+        },
+
+        partner: {
+          partnerId: values?.partner?.partnerId || "",
+          merchantId: values?.partner?.merchantId || editingBiz.id,
+        },
+
+        venue: {
+          id: editingBiz.id,
+          name: values?.venue?.name || form.name || "",
+          locationLabel:
+            values?.venue?.locationLabel ||
+            [form.address?.city, form.address?.state].filter(Boolean).join(", "),
+          lat: typeof values?.venue?.lat === "number" ? values.venue.lat : form.address?.lat ?? null,
+          lng: typeof values?.venue?.lng === "number" ? values.venue.lng : form.address?.lng ?? null,
+        },
+
+        descriptionHtml: values.descriptionHtml || "",
+
+        schedule: values.schedule || {
+          activeDays: [],
+          validFrom: "",
+          validTo: "",
+          timeWindow: null,
+        },
+
+        redemption: values.redemption || {
+          method: "student_id",
+          requiresStudentId: true,
+          oneClaimPerStudent: true,
+          claimLimit: null,
+          promoCode: "",
+          instructions: "",
+        },
+
+        booking: values.booking || {
+          enabled: false,
+          bookingLink: "",
+          sessionLabel: "",
+        },
+
+        retail:
+          values.mode === "catalog"
+            ? {
+              saleType: values?.retail?.saleType || "storewide",
+              discountRangeLabel: values?.retail?.discountRangeLabel || "",
+              catalogUrl: catalogUrl || "",
+              catalogPath: catalogPath || "",
+              highlights: values?.retail?.highlights || [],
+            }
+            : null,
+
+        posterUrl: posterUrl || "",
+        posterPath: posterPath || "",
+
         daysLeft: typeof values.daysLeft === "number" ? values.daysLeft : null,
-
-        // billing/content/terms etc
-        terms: values.terms?.trim() || "",
-        address: values.address?.trim() || "",
-        lat: typeof values.lat === "number" ? values.lat : null,
-        lng: typeof values.lng === "number" ? values.lng : null,
-
-        imageUrl: imageUrl || "",
-        imagePath: imagePath || "",
 
         updatedAt: serverTimestamp(),
       };
 
       if (dealEditing?.id) {
+        // UPDATE
         await updateDoc(doc(db, "deals", dealEditing.id), dealPayload);
+
+        // ✅ instant bind (optimistic)
+        setBizDeals((prev) =>
+          prev.map((d) => (d.id === dealEditing.id ? { ...d, ...dealPayload } : d))
+        );
+
         toast.success("Deal updated ✅");
       } else {
-        await addDoc(collection(db, "deals"), { ...dealPayload, createdAt: serverTimestamp() });
+        // CREATE
+        const ref = await addDoc(collection(db, "deals"), {
+          ...dealPayload,
+          createdAt: serverTimestamp(),
+          metrics: {
+            views: 0,
+            opens: 0,
+            saves: 0,
+            claims: 0,
+            redemptions: 0,
+            bookingClicks: 0,
+          },
+        });
+
+        // ✅ instant bind (optimistic)
+        setBizDeals((prev) => [
+          { id: ref.id, ...dealPayload, createdAt: new Date() },
+          ...prev,
+        ]);
+
         toast.success("Deal created ✅");
       }
 
@@ -494,7 +605,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       setDealEditing(null);
     } catch (e) {
       console.error(e);
-      toast.error("Save deal failed");
+      toast.error(e?.message || "Save deal failed");
     } finally {
       setDealSaving(false);
     }
@@ -544,7 +655,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
         {loading ? (
           <div className="flex items-center justify-center h-56">
-            <FadeLoader color="#111827" loading />
+             <FadeLoader color="#36d7b7" loading />
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -658,73 +769,86 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
                       <label className={labelCls}>Name *</label>
-                      <input value={v.name} onChange={set("name")} className={inputCls} placeholder="Nandos" />
+                      <input value={form.name} onChange={set("name")} className={inputCls} placeholder="Nandos" />
                     </div>
 
                     <div>
                       <label className={labelCls}>Phone</label>
-                      <input value={v.phone} onChange={set("phone")} className={inputCls} placeholder="0466..." />
+                      <input value={form.phone} onChange={set("phone")} className={inputCls} placeholder="0466..." />
                     </div>
 
                     <div>
                       <label className={labelCls}>Email *</label>
-                      <input value={v.email} onChange={set("email")} className={inputCls} placeholder="email@domain.com" />
+                      <input value={form.email} onChange={set("email")} className={inputCls} placeholder="email@domain.com" />
                     </div>
 
                     <div>
                       <label className={labelCls}>ABN</label>
-                      <input value={v.abn} onChange={set("abn")} className={inputCls} placeholder="20079066407" />
+                      <input value={form.abn} onChange={set("abn")} className={inputCls} placeholder="20079066407" />
                     </div>
 
                     <div className="md:col-span-2">
                       <label className={labelCls}>Website</label>
-                      <input value={v.website} onChange={set("website")} className={inputCls} placeholder="https://..." />
+                      <input value={form.website} onChange={set("website")} className={inputCls} placeholder="https://..." />
                     </div>
 
                     <div className="md:col-span-2">
                       <label className={labelCls}>Address Line 1</label>
-                      <input value={v.address.line1} onChange={setAddress("line1")} className={inputCls} placeholder="Line 1" />
+                      <input value={form.address.line1} onChange={setAddress("line1")} className={inputCls} placeholder="Line 1" />
                     </div>
                     <div className="md:col-span-2">
                       <label className={labelCls}>Address Line 2</label>
-                      <input value={v.address.line2} onChange={setAddress("line2")} className={inputCls} placeholder="Line 2" />
+                      <input value={form.address.line2} onChange={setAddress("line2")} className={inputCls} placeholder="Line 2" />
                     </div>
+                    <div className="md:col-span-2">
+                      <div>
+                        <label className={labelCls}>Postcode</label>
+                        <input
+                          value={form.address.postcode}
+                          onChange={setAddress("postcode")}
+                          className={inputCls}
+                          placeholder="3000"
+                        />
+                      </div>
+                    </div>
+                    {/* Country/State/City dropdowns */}
+                    <div className="md:col-span-2">
+                      <LocationPicker
+                        value={{
+                          countryCode: form.address.countryCode || "",
+                          stateCode: form.address.stateCode || "",
+                          cityName: form.address.cityName || "",
+                        }}
+                        onChange={(loc) => {
+                          const nextAddress = {
+                            ...form.address,
+                            countryCode: loc.country?.code || "",
+                            countryName: loc.country?.name || "",
+                            stateCode: loc.state?.code || "",
+                            stateName: loc.state?.name || "",
+                            cityName: loc.city?.name || "",
+                            // sync same into generic city/state used by tables/search
+                            city: loc.city?.name || "",
+                            state: loc.state?.name || "",
+                            lat: loc.coords?.lat ?? form.address.lat ?? null,
+                            lng: loc.coords?.lng ?? form.address.lng ?? null,
+                          };
 
-                    <div>
-                      <label className={labelCls}>City</label>
-                      <input value={v.address.city} onChange={setAddress("city")} className={inputCls} placeholder="Melbourne" />
-                    </div>
-                    <div>
-                      <label className={labelCls}>State</label>
-                      <input value={v.address.state} onChange={setAddress("state")} className={inputCls} placeholder="VIC" />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Postcode</label>
-                      <input value={v.address.postcode} onChange={setAddress("postcode")} className={inputCls} placeholder="3000" />
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>Lat</label>
-                      <input
-                        value={v.address.lat ?? ""}
-                        onChange={(e) => setV((p) => ({ ...p, address: { ...p.address, lat: e.target.value === "" ? null : Number(e.target.value) } }))}
-                        className={inputCls}
-                        placeholder="-37.8136"
+                          setForm((prev) => ({ ...prev, address: nextAddress }));
+                        }}
                       />
                     </div>
-                    <div>
-                      <label className={labelCls}>Lng</label>
-                      <input
-                        value={v.address.lng ?? ""}
-                        onChange={(e) => setV((p) => ({ ...p, address: { ...p.address, lng: e.target.value === "" ? null : Number(e.target.value) } }))}
-                        className={inputCls}
-                        placeholder="144.9631"
-                      />
-                    </div>
+
+
+
+
+
+
 
                     <div className="md:col-span-2">
                       <label className={labelCls}>Note</label>
-                      <input value={v.note} onChange={set("note")} className={inputCls} placeholder="Optional note..." />
+
+                      <textarea value={form.note} onChange={set("note")} className={inputCls + " h-24 mt-2 resize-none"} placeholder="Optional note..." />
                     </div>
                   </div>
                 </Section>
@@ -737,7 +861,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                       onClick={() => setHoursMode("week")}
                       className={[
                         "rounded-xl px-5 py-2 text-sm font-semibold border",
-                        v.hours.mode === "week" ? "bg-black text-white border-black" : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50",
+                        form.hours.mode === "week" ? "bg-black text-white border-black" : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50",
                       ].join(" ")}
                     >
                       Week
@@ -747,14 +871,14 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                       onClick={() => setHoursMode("custom")}
                       className={[
                         "rounded-xl px-5 py-2 text-sm font-semibold border",
-                        v.hours.mode === "custom" ? "bg-black text-white border-black" : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50",
+                        form.hours.mode === "custom" ? "bg-black text-white border-black" : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50",
                       ].join(" ")}
                     >
                       Custom
                     </button>
                   </div>
 
-                  {v.hours.mode === "week" && (
+                  {form.hours.mode === "week" && (
                     <div className="mt-4 space-y-4">
                       <div className="rounded-2xl border border-gray-200 p-4">
                         <div className="flex items-center justify-between">
@@ -763,7 +887,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                             <span className="text-gray-700">Open</span>
                             <input
                               type="checkbox"
-                              checked={!!v.hours.week.weekdays.open}
+                              checked={!!form.hours.week.weekdays.open}
                               onChange={setWeekHours("weekdays", "open")}
                               className="h-4 w-4"
                             />
@@ -772,11 +896,11 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                         <div className="mt-3 grid grid-cols-2 gap-3">
                           <div>
                             <label className="text-xs text-gray-500">From</label>
-                            <input type="time" value={v.hours.week.weekdays.from} onChange={setWeekHours("weekdays", "from")} className={inputCls} />
+                            <input type="time" value={form.hours.week.weekdays.from} onChange={setWeekHours("weekdays", "from")} className={inputCls} />
                           </div>
                           <div>
                             <label className="text-xs text-gray-500">To</label>
-                            <input type="time" value={v.hours.week.weekdays.to} onChange={setWeekHours("weekdays", "to")} className={inputCls} />
+                            <input type="time" value={form.hours.week.weekdays.to} onChange={setWeekHours("weekdays", "to")} className={inputCls} />
                           </div>
                         </div>
                       </div>
@@ -788,7 +912,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                             <span className="text-gray-700">Open</span>
                             <input
                               type="checkbox"
-                              checked={!!v.hours.week.weekend.open}
+                              checked={!!form.hours.week.weekend.open}
                               onChange={setWeekHours("weekend", "open")}
                               className="h-4 w-4"
                             />
@@ -797,18 +921,18 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                         <div className="mt-3 grid grid-cols-2 gap-3">
                           <div>
                             <label className="text-xs text-gray-500">From</label>
-                            <input type="time" value={v.hours.week.weekend.from} onChange={setWeekHours("weekend", "from")} className={inputCls} />
+                            <input type="time" value={form.hours.week.weekend.from} onChange={setWeekHours("weekend", "from")} className={inputCls} />
                           </div>
                           <div>
                             <label className="text-xs text-gray-500">To</label>
-                            <input type="time" value={v.hours.week.weekend.to} onChange={setWeekHours("weekend", "to")} className={inputCls} />
+                            <input type="time" value={form.hours.week.weekend.to} onChange={setWeekHours("weekend", "to")} className={inputCls} />
                           </div>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {v.hours.mode === "custom" && (
+                  {form.hours.mode === "custom" && (
                     <div className="mt-4 space-y-3">
                       {DAYS.map((d) => (
                         <div key={d} className="rounded-2xl border border-gray-200 p-4">
@@ -816,17 +940,17 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                             <div className="font-semibold text-gray-900 capitalize">{d}</div>
                             <label className="flex items-center gap-2 text-sm">
                               <span className="text-gray-700">Open</span>
-                              <input type="checkbox" checked={!!v.hours.custom[d].open} onChange={setCustomHours(d, "open")} className="h-4 w-4" />
+                              <input type="checkbox" checked={!!form.hours.custom[d].open} onChange={setCustomHours(d, "open")} className="h-4 w-4" />
                             </label>
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-3">
                             <div>
                               <label className="text-xs text-gray-500">From</label>
-                              <input type="time" value={v.hours.custom[d].from} onChange={setCustomHours(d, "from")} className={inputCls} />
+                              <input type="time" value={form.hours.custom[d].from} onChange={setCustomHours(d, "from")} className={inputCls} />
                             </div>
                             <div>
                               <label className="text-xs text-gray-500">To</label>
-                              <input type="time" value={v.hours.custom[d].to} onChange={setCustomHours(d, "to")} className={inputCls} />
+                              <input type="time" value={form.hours.custom[d].to} onChange={setCustomHours(d, "to")} className={inputCls} />
                             </div>
                           </div>
                         </div>
@@ -842,17 +966,17 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                       <label className={labelCls}>Billing Email</label>
                       <input
                         className={inputCls}
-                        value={v.billing?.sameAsEmail ? (v.email || "") : (v.billing?.email || "")}
-                        disabled={!!v.billing?.sameAsEmail}
+                        value={form.billing?.sameAsEmail ? (form.email || "") : (form.billing?.email || "")}
+                        disabled={!!form.billing?.sameAsEmail}
                         onChange={setBilling("email")}
                         placeholder="billing@email.com"
                       />
                       <label className="mt-2 flex items-center gap-2 text-sm text-gray-900">
                         <input
                           type="checkbox"
-                          checked={!!v.billing?.sameAsEmail}
+                          checked={!!form.billing?.sameAsEmail}
                           onChange={(e) =>
-                            setV((p) => ({
+                            setForm((p) => ({
                               ...p,
                               billing: {
                                 ...(p.billing || {}),
@@ -871,17 +995,17 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                       <label className={labelCls}>Billing Phone</label>
                       <input
                         className={inputCls}
-                        value={v.billing?.sameAsPhone ? (v.phone || "") : (v.billing?.phone || "")}
-                        disabled={!!v.billing?.sameAsPhone}
+                        value={form.billing?.sameAsPhone ? (form.phone || "") : (form.billing?.phone || "")}
+                        disabled={!!form.billing?.sameAsPhone}
                         onChange={setBilling("phone")}
                         placeholder="billing phone"
                       />
                       <label className="mt-2 flex items-center gap-2 text-sm text-gray-900">
                         <input
                           type="checkbox"
-                          checked={!!v.billing?.sameAsPhone}
+                          checked={!!form.billing?.sameAsPhone}
                           onChange={(e) =>
-                            setV((p) => ({
+                            setForm((p) => ({
                               ...p,
                               billing: {
                                 ...(p.billing || {}),
@@ -898,24 +1022,54 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
                     <div className="md:col-span-2">
                       <label className={labelCls}>Billing Address Line 1</label>
-                      <input className={inputCls} value={v.billing?.address?.line1 || ""} onChange={setBillingAddr("line1")} />
+                      <input className={inputCls} value={form.billing?.address?.line1 || ""} onChange={setBillingAddr("line1")} />
                     </div>
                     <div className="md:col-span-2">
                       <label className={labelCls}>Billing Address Line 2</label>
-                      <input className={inputCls} value={v.billing?.address?.line2 || ""} onChange={setBillingAddr("line2")} />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Postcode</label>
-                      <input className={inputCls} value={v.billing?.address?.postcode || ""} onChange={setBillingAddr("postcode")} />
-                    </div>
-                    <div>
-                      <label className={labelCls}>City</label>
-                      <input className={inputCls} value={v.billing?.address?.city || ""} onChange={setBillingAddr("city")} />
+                      <input className={inputCls} value={form.billing?.address?.line2 || ""} onChange={setBillingAddr("line2")} />
                     </div>
                     <div className="md:col-span-2">
-                      <label className={labelCls}>State</label>
-                      <input className={inputCls} value={v.billing?.address?.state || ""} onChange={setBillingAddr("state")} />
+                      <div>
+                        <label className={labelCls}>Postcode</label>
+                        <input
+                          className={inputCls}
+                          value={form.billing?.address?.postcode || ""}
+                          onChange={setBillingAddr("postcode")}
+                          placeholder="3000"
+                        />
+                      </div>
                     </div>
+                    {/* Country/State/City dropdowns */}
+                    <div className="md:col-span-2">
+                      <LocationPicker
+                        value={{
+                          countryCode: form.billing?.address?.countryCode || "",
+                          stateCode: form.billing?.address?.stateCode || "",
+                          cityName: form.billing?.address?.cityName || "",
+                        }}
+                        onChange={(loc) => {
+                          setForm((prev) => ({
+                            ...prev,
+                            billing: {
+                              ...(prev.billing || {}),
+                              address: {
+                                ...(prev.billing?.address || {}),
+                                countryCode: loc.country?.code || "",
+                                countryName: loc.country?.name || "",
+                                stateCode: loc.state?.code || "",
+                                stateName: loc.state?.name || "",
+                                cityName: loc.city?.name || "",
+                                // keep legacy fields for export/invoices
+                                city: loc.city?.name || "",
+                                state: loc.state?.name || "",
+                              },
+                            },
+                          }));
+                        }}
+                      />
+                    </div>
+
+
                   </div>
                 </Section>
 
@@ -925,9 +1079,9 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                     <div className="rounded-2xl border border-gray-200 p-4 bg-white">
                       <div className="text-sm font-semibold text-gray-900">Portrait</div>
                       <input type="file" accept="image/*" onChange={onPickPortrait} className="mt-3 text-sm" />
-                      {v.media.portraitUrl && (
+                      {form.media.portraitUrl && (
                         <div className="mt-3 overflow-hidden rounded-xl border border-gray-200">
-                          <img src={v.media.portraitUrl} alt="" className="h-44 w-full object-cover" />
+                          <img src={form.media.portraitUrl} alt="" className="h-44 w-full object-cover" />
                         </div>
                       )}
                     </div>
@@ -935,9 +1089,9 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                     <div className="rounded-2xl border border-gray-200 p-4 bg-white">
                       <div className="text-sm font-semibold text-gray-900">Banner</div>
                       <input type="file" accept="image/*" onChange={onPickBanner} className="mt-3 text-sm" />
-                      {v.media.bannerUrl && (
+                      {form.media.bannerUrl && (
                         <div className="mt-3 overflow-hidden rounded-xl border border-gray-200">
-                          <img src={v.media.bannerUrl} alt="" className="h-44 w-full object-cover" />
+                          <img src={form.media.bannerUrl} alt="" className="h-44 w-full object-cover" />
                         </div>
                       )}
                     </div>
@@ -982,12 +1136,12 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                               <div className="flex items-center gap-3">
                                 <img
                                   className="h-10 w-16 rounded-xl object-cover border border-gray-100"
-                                  src={d.imageUrl || "https://via.placeholder.com/160x96"}
+                                  src={d.posterUrl || d.imageUrl}
                                   alt=""
                                 />
                                 <div className="min-w-0">
                                   <div className="font-semibold text-gray-900 truncate">{d.header || d.title || "—"}</div>
-                                  <div className="text-xs text-gray-500 truncate">{d.dealType || d.categoryLabel || "—"}</div>
+                                  <div className="text-xs text-gray-500 truncate">{d.category || d.campaignType || "—"}</div>
                                 </div>
                               </div>
                             </td>
@@ -1044,7 +1198,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
             <div className="flex items-center justify-between border-b border-gray-100 p-5">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">{dealEditing?.id ? "Edit Deal" : "Add Deal"}</h2>
-                <p className="text-xs text-gray-500">Linked to: {v.name || "Business"}</p>
+                <p className="text-xs text-gray-500">Linked to: {form.name || "Business"}</p>
               </div>
               <button
                 onClick={() => !dealSaving && (setDealModalOpen(false), setDealEditing(null))}
