@@ -8,6 +8,7 @@ import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import DiscoverSettingPage from "./DiscoverSettingPage";
 import MarketSettingPage from "./MarketSettingPage";
+import DealSettingPage from "./DealSettingPage";
 
 const EventSettingPage = lazy(() =>
   import("./EventSettingPage")
@@ -38,6 +39,7 @@ const SettingPage = () => {
     { key: "event", label: "Event Setting" },
     { key: "discover", label: "Discover Setting" },
     { key: "market", label: "Market Setting" },
+    { key: "deal", label: "Deal Setting" },
   ];
   const [activeKey, setActiveKey] = useState("event");
   // Sidebar click
@@ -122,6 +124,17 @@ const SettingPage = () => {
           }>
             <div className="bg-white rounded shadow p-4">
               <MarketSettingPage uid={uid} embedded />
+            </div>
+          </Suspense>
+        )}
+        {activeKey === "deal" && (
+          <Suspense fallback={
+            <div className="flex justify-center items-center h-64">
+              <FadeLoader color="#36d7b7" />
+            </div>
+          }>
+            <div className="bg-white rounded shadow p-4">
+              <DealSettingPage uid={uid} embedded />
             </div>
           </Suspense>
         )}

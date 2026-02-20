@@ -1,82 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
 import EditorPro from "../../components/EditorPro";
-
-// ====== OPTIONS (admin) ======
-const CAMPAIGN_TYPES = [
-  { id: "single_offer", label: "Single Offer" },
-  { id: "weekly_student_night", label: "Weekly Student Night" },
-  { id: "multi_offer_campaign", label: "Multi Offer Campaign" },
-  { id: "seasonal_sale", label: "Seasonal Sale" },
-];
-
-const CATEGORIES = [
-  { id: "dining", label: "Dining" },
-  { id: "drinks", label: "Drinks" },
-  { id: "experience", label: "Experience" },
-  { id: "retail", label: "Retail" },
-];
-
-const MODES = [
-  { id: "simple", label: "Simple (Single Offer)" },
-  { id: "menu", label: "Menu (Offer Blocks)" },
-  { id: "catalog", label: "Catalog (Retail Sale)" },
-];
-
-const STATUS = [
-  { id: "draft", label: "Draft" },
-  { id: "active", label: "Active" },
-  { id: "expired", label: "Expired" },
-  { id: "archived", label: "Archived" },
-];
-
-const SLOTS_BY_CATEGORY = {
-  dining: ["Breakfast", "Lunch", "Dinner", "High Tea", "Bottomless", "All Day"],
-  drinks: ["Happy Hour", "Student Night", "Cocktails", "Beer", "Wine", "All Day"],
-  experience: ["Cooking Class", "Wine Tour", "Sip Events", "Cocktail Class", "Buffet", "Dinner & Show"],
-  retail: ["Storewide Sale", "Clearance", "New Season", "Members Deal"],
-};
-
-const REDEMPTION_METHODS = [
-  { id: "student_id", label: "Show Student ID" },
-  { id: "qr", label: "QR Scan" },
-  { id: "promo", label: "Promo Code" },
-];
-
-const DAYS = [
-  { id: "mon", label: "M" },
-  { id: "tue", label: "T" },
-  { id: "wed", label: "W" },
-  { id: "thu", label: "T" },
-  { id: "fri", label: "F" },
-  { id: "sat", label: "S" },
-  { id: "sun", label: "S" },
-];
-
-const DISCOVERY_TAGS = [
-  "Free",
-  "Under $10",
-  "Under $20",
-  "50% Off",
-  "BOGO",
-  "Bottomless",
-  "Happy Hour",
-  "Tonight Only",
-  "Weekend",
-  "Near Campus",
-  "CBD",
-  "Group Friendly",
-  "Limited Spots",
-];
-
-const FEED_SECTIONS = [
-  "Featured This Week",
-  "Tonight",
-  "Student Nights",
-  "Food Deals",
-  "Drinks Deals",
-  "Experiences",
-  "Retail Drops",
-];
+import useDealSettings from "../../hooks/useDealSettings";
 
 // ====== STYLES ======
 const labelCls = "text-sm font-semibold text-gray-900";
@@ -88,55 +13,68 @@ const cardCls = "rounded-2xl border border-gray-200 bg-white p-4";
 const chipOn = "rounded-full border border-black bg-black px-3 py-1 text-xs font-semibold text-white";
 const chipOff = "rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-900 hover:bg-gray-50";
 
-export default function DealForm({ initialValues, onSubmit, loading, submitText = "Save Deal" }) {
+const DAYS = [
+  { id: "mon", label: "M" },
+  { id: "tue", label: "T" },
+  { id: "wed", label: "W" },
+  { id: "thu", label: "T" },
+  { id: "fri", label: "F" },
+  { id: "sat", label: "S" },
+  { id: "sun", label: "S" },
+];
+
+export default function DealForm({ initialValues, onSubmit, loading, submitText = "Save Deal", formId = "deal-form",
+  hideSubmit = false, }) {
+  const uid = useSelector((s) => s.auth.user?.uid);
+
+  const {
+    loading: settingsLoading,
+    categories,
+    modes,
+    status,
+    slotsByCategoryId,
+    redemptionMethods,
+    discoveryTags,
+    feedSections,
+  } = useDealSettings(uid);
+
   const defaults = useMemo(
     () => ({
       header: "",
-      campaignType: "single_offer",
-      category: "dining",
-      slot: "",
-      mode: "simple",
-
-      status: "draft",
+      categoryId: "",
+      slotId: "",
+      modeKey: "simple", 
+      status: "", 
       active: true,
       featured: false,
-
       discoveryTags: [],
       feedSections: [],
-
       imageFile: null,
       imageUrl: "",
-
       venueName: "",
       venueLocationLabel: "",
       lat: "",
       lng: "",
-
       descriptionHtml: "",
-
       validFrom: "",
       validTo: "",
       daysActive: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
       timeWindowStart: "",
       timeWindowEnd: "",
-
-      redemptionMethod: "student_id",
+      redemptionMethodKey: "student_id",
       requiresStudentId: true,
       oneClaimPerStudent: true,
       claimLimit: "",
       promoCode: "",
       instructions: "",
-
       bookingEnabled: false,
       bookingLink: "",
       sessionLabel: "",
-
       saleType: "storewide",
       discountRangeLabel: "",
       catalogFile: null,
       catalogUrl: "",
       retailHighlights: [],
-
       ...(initialValues || {}),
     }),
     [initialValues]
@@ -147,7 +85,19 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
 
   useEffect(() => setV(defaults), [defaults]);
 
-  const slotOptions = useMemo(() => SLOTS_BY_CATEGORY[v.category] || [], [v.category]);
+  // Set first category automatically (once categories arrive) if empty
+  useEffect(() => {
+    if (settingsLoading) return;
+    if (!v.categoryId && categories?.length) {
+      setV((p) => ({ ...p, categoryId: categories[0].id, slotId: "" }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsLoading, categories]);
+
+  const slotOptions = useMemo(() => {
+    if (!v.categoryId) return [];
+    return slotsByCategoryId[v.categoryId] || [];
+  }, [v.categoryId, slotsByCategoryId]);
 
   const daysLeft = useMemo(() => {
     if (!v.validTo) return null;
@@ -157,7 +107,6 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
     return Number.isFinite(diff) ? Math.max(diff, 0) : null;
   }, [v.validTo]);
 
-  // ✅ preview URL memory leak fix
   const previewUrl = useMemo(() => {
     if (!v.imageFile) return "";
     return URL.createObjectURL(v.imageFile);
@@ -181,17 +130,17 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
     });
   };
 
-  const toggleTag = (tag) => {
+  const toggleTag = (tagName) => {
     setV((p) => {
-      const has = (p.discoveryTags || []).includes(tag);
-      return { ...p, discoveryTags: has ? p.discoveryTags.filter((t) => t !== tag) : [...(p.discoveryTags || []), tag] };
+      const has = (p.discoveryTags || []).includes(tagName);
+      return { ...p, discoveryTags: has ? p.discoveryTags.filter((t) => t !== tagName) : [...(p.discoveryTags || []), tagName] };
     });
   };
 
-  const toggleSection = (sec) => {
+  const toggleSection = (secName) => {
     setV((p) => {
-      const has = (p.feedSections || []).includes(sec);
-      return { ...p, feedSections: has ? p.feedSections.filter((t) => t !== sec) : [...(p.feedSections || []), sec] };
+      const has = (p.feedSections || []).includes(secName);
+      return { ...p, feedSections: has ? p.feedSections.filter((t) => t !== secName) : [...(p.feedSections || []), secName] };
     });
   };
 
@@ -233,29 +182,38 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
     });
   };
 
+  const isCatalog = v.modeKey === "catalog";
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!v.header.trim()) return alert("Header is required");
     if (!v.imageFile && !v.imageUrl) return alert("Poster image is required");
-    if (!v.category) return alert("Category is required");
-    if (!v.slot) return alert("Slot is required");
+    if (!v.categoryId) return alert("Category is required");
+    if (!v.slotId) return alert("Slot is required");
 
-    if (v.redemptionMethod === "promo" && !String(v.promoCode).trim()) return alert("Promo code is required");
+    if (v.redemptionMethodKey === "promo" && !String(v.promoCode).trim()) return alert("Promo code is required");
     if (v.bookingEnabled && !String(v.bookingLink).trim()) return alert("Booking link required");
 
-    if (v.mode === "catalog") {
+    if (isCatalog) {
       if (!v.catalogFile && !v.catalogUrl) return alert("Catalog file or URL required");
       if ((v.retailHighlights || []).length > 8) return alert("Retail highlights max 8 items");
     }
 
-    // ✅ send flat values back to DealPage for payload build
     await onSubmit({ ...v, daysLeft });
   };
 
+  // show minimal loading state for options
+  if (settingsLoading) {
+    return (
+      <div className="rounded-2xl border border-gray-200 bg-white p-6">
+        <div className="text-sm text-gray-600">Loading deal settings…</div>
+      </div>
+    );
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* 1) Campaign Basics */}
+    <form id={formId} onSubmit={handleSubmit} className="space-y-6">
       <div className={cardCls}>
         <div className="text-sm font-semibold text-gray-900">Campaign Basics</div>
 
@@ -266,33 +224,25 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
           </div>
 
           <div>
-            <label className={labelCls}>Campaign Type *</label>
-            <select value={v.campaignType} onChange={set("campaignType")} className={selectCls}>
-              {CAMPAIGN_TYPES.map((t) => (
-                <option key={t.id} value={t.id}>{t.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
             <label className={labelCls}>Category *</label>
             <select
-              value={v.category}
-              onChange={(e) => setV((p) => ({ ...p, category: e.target.value, slot: "" }))}
+              value={v.categoryId}
+              onChange={(e) => setV((p) => ({ ...p, categoryId: e.target.value, slotId: "" }))}
               className={selectCls}
             >
-              {CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>{c.label}</option>
+              <option value="">Select Category</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
 
           <div>
             <label className={labelCls}>Slot *</label>
-            <select value={v.slot} onChange={set("slot")} className={selectCls}>
+            <select value={v.slotId} onChange={set("slotId")} className={selectCls}>
               <option value="">Select Slot</option>
               {slotOptions.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
@@ -300,19 +250,21 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
           <div>
             <label className={labelCls}>Detail Mode *</label>
             <select
-              value={v.mode}
+              value={v.modeKey}
               onChange={(e) => {
                 const next = e.target.value;
                 setV((p) => ({
                   ...p,
-                  mode: next,
-                  category: next === "catalog" ? "retail" : p.category,
+                  modeKey: next,
+                  // if catalog -> auto pick first category named Retail if you want, else keep current
                 }));
               }}
               className={selectCls}
             >
-              {MODES.map((m) => (
-                <option key={m.id} value={m.id}>{m.label}</option>
+              {modes.map((m) => (
+                <option key={m.id} value={m.key || m.name?.toLowerCase()}>
+                  {m.name}
+                </option>
               ))}
             </select>
             <div className="mt-2 text-xs text-gray-500">
@@ -323,26 +275,29 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
           <div>
             <label className={labelCls}>Lifecycle Status</label>
             <select value={v.status} onChange={set("status")} className={selectCls}>
-              {STATUS.map((s) => (
-                <option key={s.id} value={s.id}>{s.label}</option>
+              {status.map((s) => (
+                <option key={s.id} value={s.key || s.name?.toLowerCase()}>
+                  {s.name}
+                </option>
               ))}
             </select>
           </div>
         </div>
       </div>
 
-      {/* 2) Discovery */}
+      {/* Discovery */}
       <div className={cardCls}>
         <div className="text-sm font-semibold text-gray-900">Discovery Settings</div>
 
         <div className="mt-4">
           <div className="text-xs font-semibold text-gray-700">Discovery Tags</div>
           <div className="mt-2 flex flex-wrap gap-2">
-            {DISCOVERY_TAGS.map((t) => {
-              const on = (v.discoveryTags || []).includes(t);
+            {discoveryTags.map((t) => {
+              const name = t.name;
+              const on = (v.discoveryTags || []).includes(name);
               return (
-                <button key={t} type="button" className={on ? chipOn : chipOff} onClick={() => toggleTag(t)}>
-                  {t}
+                <button key={t.id} type="button" className={on ? chipOn : chipOff} onClick={() => toggleTag(name)}>
+                  {name}
                 </button>
               );
             })}
@@ -352,11 +307,12 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
         <div className="mt-5">
           <div className="text-xs font-semibold text-gray-700">Feed Sections</div>
           <div className="mt-2 flex flex-wrap gap-2">
-            {FEED_SECTIONS.map((t) => {
-              const on = (v.feedSections || []).includes(t);
+            {feedSections.map((t) => {
+              const name = t.name;
+              const on = (v.feedSections || []).includes(name);
               return (
-                <button key={t} type="button" className={on ? chipOn : chipOff} onClick={() => toggleSection(t)}>
-                  {t}
+                <button key={t.id} type="button" className={on ? chipOn : chipOff} onClick={() => toggleSection(name)}>
+                  {name}
                 </button>
               );
             })}
@@ -364,7 +320,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
         </div>
       </div>
 
-      {/* 3) Poster */}
+      {/* Poster */}
       <div className={cardCls}>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
@@ -376,11 +332,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
 
         {(v.imageFile || v.imageUrl) && (
           <div className="mt-4 overflow-hidden rounded-xl border border-gray-200">
-            <img
-              alt="preview"
-              className="h-44 w-full object-cover"
-              src={v.imageFile ? previewUrl : v.imageUrl}
-            />
+            <img alt="preview" className="h-44 w-full object-cover" src={v.imageFile ? previewUrl : v.imageUrl} />
           </div>
         )}
 
@@ -390,7 +342,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
         </div>
       </div>
 
-      {/* 6) Description */}
+      {/* Description */}
       <div className={cardCls}>
         <div className="text-sm font-semibold text-gray-900">Description</div>
 
@@ -406,7 +358,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
         </div>
       </div>
 
-      {/* 7) Schedule */}
+      {/* Schedule */}
       <div className={cardCls}>
         <div className="text-sm font-semibold text-gray-900">Schedule</div>
 
@@ -459,16 +411,18 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
         </div>
       </div>
 
-      {/* 8) Redemption */}
+      {/* Redemption */}
       <div className={cardCls}>
         <div className="text-sm font-semibold text-gray-900">Redemption / Voucher Rules</div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label className={labelCls}>Redemption Method *</label>
-            <select value={v.redemptionMethod} onChange={set("redemptionMethod")} className={selectCls}>
-              {REDEMPTION_METHODS.map((m) => (
-                <option key={m.id} value={m.id}>{m.label}</option>
+            <select value={v.redemptionMethodKey} onChange={set("redemptionMethodKey")} className={selectCls}>
+              {redemptionMethods.map((m) => (
+                <option key={m.id} value={m.key || m.name?.toLowerCase()}>
+                  {m.name}
+                </option>
               ))}
             </select>
           </div>
@@ -478,7 +432,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
             <input value={v.claimLimit} onChange={set("claimLimit")} className={inputCls} placeholder="200" />
           </div>
 
-          {v.redemptionMethod === "promo" && (
+          {v.redemptionMethodKey === "promo" && (
             <div className="md:col-span-2">
               <label className={labelCls}>Promo Code *</label>
               <input value={v.promoCode} onChange={set("promoCode")} className={inputCls} placeholder="MYMOR50" />
@@ -498,7 +452,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
         </div>
       </div>
 
-      {/* 9) Booking */}
+      {/* Booking */}
       <div className={cardCls}>
         <div className="text-sm font-semibold text-gray-900">Booking</div>
 
@@ -521,8 +475,8 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
         )}
       </div>
 
-      {/* 10) Retail Catalog */}
-      {v.mode === "catalog" && (
+      {/* Retail Catalog */}
+      {isCatalog && (
         <div className={cardCls}>
           <div className="text-sm font-semibold text-gray-900">Retail Catalog</div>
 
@@ -607,7 +561,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
         </div>
       )}
 
-      {/* 11) Featured / Active */}
+      {/* Featured / Active */}
       <div className="flex items-center gap-6">
         <label className="flex items-center gap-2 text-sm text-gray-900">
           <input type="checkbox" checked={!!v.featured} onChange={set("featured")} className="h-4 w-4 rounded" />
@@ -633,7 +587,6 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
 
             <div className="p-4">
               <EditorPro value={v.descriptionHtml} onChange={(html) => setV((p) => ({ ...p, descriptionHtml: html }))} />
-
               <div className="mt-4 flex justify-end gap-3">
                 <button type="button" onClick={() => setOpenEditor(false)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50">
                   Cancel
@@ -648,13 +601,15 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
       )}
 
       {/* Submit */}
-      <button
-        disabled={loading}
-        className="w-full rounded-2xl bg-black px-4 py-3 text-white text-sm font-semibold transition hover:opacity-90 disabled:opacity-60"
-        type="submit"
-      >
-        {loading ? "Saving..." : submitText}
-      </button>
+      {!hideSubmit && (
+        <button
+          disabled={loading}
+          className="w-full rounded-2xl bg-black px-4 py-3 text-white text-sm font-semibold transition hover:opacity-90 disabled:opacity-60"
+          type="submit"
+        >
+          {loading ? "Saving..." : submitText}
+        </button>
+      )}
     </form>
   );
 }

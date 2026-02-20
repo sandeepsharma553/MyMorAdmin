@@ -85,7 +85,7 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
 
   // daysLeft
   const daysLeft = typeof values.daysLeft === "number" ? values.daysLeft : null;
-
+  alert(values.status)
   return {
     header: values.header || "",
     campaignType: values.campaignType || "single_offer",
@@ -93,7 +93,7 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
     slot: values.slot || "",
     mode: values.mode || "simple",
 
-    status: values.status || "draft",
+    status: values.status || "",
     active: !!values.active,
     featured: !!values.featured,
 
@@ -137,16 +137,16 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
     retail:
       values.mode === "catalog"
         ? {
-            saleType: values.saleType || "storewide",
-            discountRangeLabel: (values.discountRangeLabel || "").trim(),
-            catalogUrl: catalogUrl || values.catalogUrl || "",
-            catalogPath: catalogPath || editing?.retail?.catalogPath || "",
-            highlights: (values.retailHighlights || []).slice(0, 8).map((x) => ({
-              title: (x.title || "").trim(),
-              priceLabel: (x.priceLabel || "").trim(),
-              imageUrl: (x.imageUrl || "").trim(),
-            })),
-          }
+          saleType: values.saleType || "storewide",
+          discountRangeLabel: (values.discountRangeLabel || "").trim(),
+          catalogUrl: catalogUrl || values.catalogUrl || "",
+          catalogPath: catalogPath || editing?.retail?.catalogPath || "",
+          highlights: (values.retailHighlights || []).slice(0, 8).map((x) => ({
+            title: (x.title || "").trim(),
+            priceLabel: (x.priceLabel || "").trim(),
+            imageUrl: (x.imageUrl || "").trim(),
+          })),
+        }
         : null,
 
     posterUrl: posterUrl || values.imageUrl || editing?.posterUrl || "",
@@ -253,7 +253,8 @@ export default function DealPage({ navbarHeight }) {
         catalogUrl = up2.url;
         catalogPath = up2.path;
       }
-
+  console.log(values)
+  console.log(editing)
       const payload = formValuesToPayload(values, editing, { posterUrl, posterPath, catalogUrl, catalogPath });
 
       if (editing?.id) {
@@ -301,7 +302,73 @@ export default function DealPage({ navbarHeight }) {
     setOpenModal(false);
     setEditing(null);
   };
+  const getStatusBadge = (row) => {
+    // If active true → always show Active (green)
+    if (row.active) {
+      return (
+        <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
+          Active
+        </span>
+      );
+    }
 
+    const status = (row.status || "draft").toLowerCase();
+
+    switch (status) {
+      case "draft":
+        return (
+          <span className="inline-flex items-center rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
+            Draft
+          </span>
+        );
+
+      case "expired":
+        return (
+          <span className="inline-flex items-center rounded-full bg-gray-200 px-3 py-1 text-xs font-semibold text-gray-700">
+            Expired
+          </span>
+        );
+      case "archived":
+        return (
+          <span className="inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+            Archived
+          </span>
+        );
+      case "active":
+        return (
+          <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
+            Active
+          </span>
+        );
+      case "scheduled":
+        return (
+          <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
+            Scheduled
+          </span>
+        );
+
+      case "paused":
+        return (
+          <span className="inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+            Paused
+          </span>
+        );
+
+      case "expired":
+        return (
+          <span className="inline-flex items-center rounded-full bg-gray-200 px-3 py-1 text-xs font-semibold text-gray-700">
+            Expired
+          </span>
+        );
+
+      default:
+        return (
+          <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
+            {row.status || "Draft"}
+          </span>
+        );
+    }
+  };
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       <div className="flex justify-between items-center mb-4">
@@ -367,7 +434,9 @@ export default function DealPage({ navbarHeight }) {
 
                   <td className="p-3 text-gray-700">{r.category || "—"}</td>
                   <td className="p-3 text-gray-700">{r.mode || "—"}</td>
-                  <td className="p-3 text-gray-700">{r.status || "draft"}</td>
+                  <td className="p-3">
+                    {getStatusBadge(r)}
+                  </td>
                   <td className="p-3 text-gray-700">{r.slot || "—"}</td>
 
                   <td className="p-3">
@@ -432,18 +501,36 @@ export default function DealPage({ navbarHeight }) {
                 </p>
               </div>
 
-              <button onClick={closeModal} className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50">
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {/* ✅ TOP SUBMIT BUTTON */}
+                <button
+                  type="submit"
+                  form="deal-form" // must match DealForm formId
+                  disabled={saving}
+                  className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                >
+                  {saving ? "Saving..." : (editing ? "Save Changes" : "Create Deal")}
+                </button>
+
+                {/* Close */}
+                <button
+                  onClick={closeModal}
+                  className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             <div className="p-5 max-h-[78vh] overflow-auto">
               <DealForm
-                // ✅ IMPORTANT: map firestore row -> flat form values
+
                 initialValues={dealToFormValues(editing)}
                 onSubmit={handleSubmitDeal}
                 loading={saving}
                 submitText={editing ? "Save Changes" : "Create Deal"}
+                formId="deal-form"
+                hideSubmit={true}
               />
 
               {/* Offer Blocks */}
