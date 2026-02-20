@@ -978,6 +978,13 @@ const DealSettingPage = () => {
         addButtonLabel="+ Add Feed Section"
         duplicateWhere={(uid) => [where("uid", "==", uid)]}
       />
+      <br />
+      <SimpleCrudSection
+        title="Deal Offer Type"
+        collectionName="dealoffertype"
+        addButtonLabel="+ Add Offer Type"
+        duplicateWhere={(uid) => [where("uid", "==", uid)]}
+      />
 
 
       <ToastContainer />

@@ -19,6 +19,7 @@ import "react-toastify/dist/ReactToastify.css";
 
 import DealForm from "./DealForm";
 import OfferBlocksEditor from "./OfferBlocksEditor";
+import { useSelector } from "react-redux";
 
 /** ---------------- helpers: Firestore row -> DealForm flat values ---------------- */
 const dealToFormValues = (r) => {
@@ -26,12 +27,14 @@ const dealToFormValues = (r) => {
 
   return {
     header: r.header || "",
-    campaignType: r.campaignType || "single_offer",
-    category: r.category || "dining",
+    categoryId: r.categoryId || "",
+    slotId: r.slotId || "",
+    category: r.category || "",
     slot: r.slot || "",
+    modeKey: r.modeKey || "simple",
+    statusKey: r.statusKey || "",
     mode: r.mode || "simple",
-
-    status: r.status || "draft",
+    status: r.status || "",
     active: !!r.active,
     featured: !!r.featured,
 
@@ -85,23 +88,22 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
 
   // daysLeft
   const daysLeft = typeof values.daysLeft === "number" ? values.daysLeft : null;
-  alert(values.status)
   return {
     header: values.header || "",
-    campaignType: values.campaignType || "single_offer",
+    categoryId: values.categoryId || "",
+    slotId: values.slotId || "",
+    modeKey: values.modeKey || "simple",
+    statusKey: values.statusKey || "",
     category: values.category || "dining",
     slot: values.slot || "",
     mode: values.mode || "simple",
-
     status: values.status || "",
     active: !!values.active,
     featured: !!values.featured,
-
     discovery: {
       tags: values.discoveryTags || [],
       sections: values.feedSections || [],
     },
-
     venue: {
       id: "",
       name: (values.venueName || "").trim(),
@@ -109,9 +111,7 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
       lat: values.lat === "" ? null : Number(values.lat),
       lng: values.lng === "" ? null : Number(values.lng),
     },
-
     descriptionHtml: values.descriptionHtml || "",
-
     schedule: {
       activeDays: values.daysActive || [],
       validFrom: values.validFrom || "",
@@ -120,6 +120,7 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
     },
 
     redemption: {
+      methodKey: values.redemptionMethodKey || "student_id",
       method: values.redemptionMethod || "student_id",
       requiresStudentId: !!values.requiresStudentId,
       oneClaimPerStudent: !!values.oneClaimPerStudent,
@@ -175,7 +176,7 @@ export default function DealPage({ navbarHeight }) {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
-
+  const uid = useSelector((s) => s.auth.user?.uid);
   useEffect(() => {
     const qy = query(collection(db, "deals"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(
@@ -253,8 +254,7 @@ export default function DealPage({ navbarHeight }) {
         catalogUrl = up2.url;
         catalogPath = up2.path;
       }
-  console.log(values)
-  console.log(editing)
+
       const payload = formValuesToPayload(values, editing, { posterUrl, posterPath, catalogUrl, catalogPath });
 
       if (editing?.id) {
@@ -303,17 +303,7 @@ export default function DealPage({ navbarHeight }) {
     setEditing(null);
   };
   const getStatusBadge = (row) => {
-    // If active true → always show Active (green)
-    if (row.active) {
-      return (
-        <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
-          Active
-        </span>
-      );
-    }
-
-    const status = (row.status || "draft").toLowerCase();
-
+    const status = (row.status || row.statusKey || "").toLowerCase();
     switch (status) {
       case "draft":
         return (
@@ -535,7 +525,7 @@ export default function DealPage({ navbarHeight }) {
 
               {/* Offer Blocks */}
               {editing?.id && (editing?.mode === "menu" || editing?.campaignType === "multi_offer_campaign") && (
-                <OfferBlocksEditor dealId={editing.id} disabled={saving} />
+                <OfferBlocksEditor dealId={editing.id} disabled={saving} uid={uid} />
               )}
 
               {editing?.id && editing?.mode !== "menu" && editing?.campaignType !== "multi_offer_campaign" && (

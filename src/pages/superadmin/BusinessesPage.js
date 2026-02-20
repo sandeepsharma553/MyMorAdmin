@@ -665,7 +665,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
         {loading ? (
           <div className="flex items-center justify-center h-56">
-            <FadeLoader color="#111827" loading />
+            <FadeLoader color="#36d7b7" loading />
           </div>
         ) : (
           <table className="w-full text-sm">

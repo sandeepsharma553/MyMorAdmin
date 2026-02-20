@@ -14,6 +14,7 @@ export default function useDealSettings(uid) {
   const [redemptionMethods, setRedemptionMethods] = useState([]);
   const [discoveryTags, setDiscoveryTags] = useState([]);
   const [feedSections, setFeedSections] = useState([]);
+  const [offerTypes, setOfferTypes] = useState([]);
 
   const fetchAll = async () => {
     if (!uid) return;
@@ -29,6 +30,7 @@ export default function useDealSettings(uid) {
         rSnap,
         tagSnap,
         feedSnap,
+        offertypeSnap,
       ] = await Promise.all([
         getDocs(query(collection(db, "dealcategory"), ...w)),
         getDocs(query(collection(db, "dealmode"), ...w)),
@@ -37,6 +39,7 @@ export default function useDealSettings(uid) {
         getDocs(query(collection(db, "dealredemptionmethod"), ...w)),
         getDocs(query(collection(db, "dealdiscoverytag"), ...w)),
         getDocs(query(collection(db, "dealmfeedsection"), ...w)),
+        getDocs(query(collection(db, "dealoffertype"), ...w)),
       ]);
 
       setCategories(mapDocs(cSnap));
@@ -46,6 +49,7 @@ export default function useDealSettings(uid) {
       setRedemptionMethods(mapDocs(rSnap));
       setDiscoveryTags(mapDocs(tagSnap));
       setFeedSections(mapDocs(feedSnap));
+      setOfferTypes(mapDocs(offertypeSnap));
     } finally {
       setLoading(false);
     }
@@ -77,5 +81,6 @@ export default function useDealSettings(uid) {
     redemptionMethods,
     discoveryTags,
     feedSections,
+    offerTypes
   };
 }
