@@ -45,9 +45,9 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
       category: "",
       slotId: "",
       slot: "",
-      modeKey: "simple",
+      modeid: "",
       mode: "",
-      statusKey: "",
+      statusid: "",
       status: "",
       active: true,
       featured: false,
@@ -186,7 +186,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
     });
   };
 
-  const isCatalog = form.modeKey === "catalog";
+  const isCatalog = form.mode === "catalog";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -215,7 +215,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
       </div>
     );
   }
-
+  console.log("form", form);
   return (
     <form id={formId} onSubmit={handleSubmit} className="space-y-6">
       <div className={cardCls}>
@@ -254,19 +254,19 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
           <div>
             <label className={labelCls}>Detail Mode *</label>
             <select
-              value={form.modeKey}
+              value={form.modeid}
               onChange={(e) => {
                 const next = e.target.value;
                 setForm((p) => ({
                   ...p,
-                  modeKey: next,
-                  // if catalog -> auto pick first category named Retail if you want, else keep current
+                  modeid: next,
+                  mode: modes.find((m) => m.id === next)?.name?.toLowerCase() || "",
                 }));
               }}
               className={selectCls}
             >
               {modes.map((m) => (
-                <option key={m.id} value={m.key || m.name?.toLowerCase()}>
+                <option key={m.id} value={m.id}>
                   {m.name}
                 </option>
               ))}
@@ -280,7 +280,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
             <label className={labelCls}>Lifecycle Status</label>
             <select value={form.status} onChange={set("status")} className={selectCls}>
               {status.map((s) => (
-                <option key={s.id} value={s.key || s.name?.toLowerCase()}>
+                <option key={s.id} value={s.name?.toLowerCase()}>
                   {s.name}
                 </option>
               ))}

@@ -31,9 +31,9 @@ const dealToFormValues = (r) => {
     slotId: r.slotId || "",
     category: r.category || "",
     slot: r.slot || "",
-    modeKey: r.modeKey || "simple",
-    statusKey: r.statusKey || "",
-    mode: r.mode || "simple",
+    modeid: r.modeid || "",
+    statusid: r.statusid || "",
+    mode: r.mode || "",
     status: r.status || "",
     active: !!r.active,
     featured: !!r.featured,
@@ -92,11 +92,11 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
     header: values.header || "",
     categoryId: values.categoryId || "",
     slotId: values.slotId || "",
-    modeKey: values.modeKey || "simple",
-    statusKey: values.statusKey || "",
+    modeid: values.modeid || "",
+    statusid: values.statusid || "",
     category: values.category || "dining",
     slot: values.slot || "",
-    mode: values.mode || "simple",
+    mode: values.mode || "",
     status: values.status || "",
     active: !!values.active,
     featured: !!values.featured,
@@ -235,6 +235,7 @@ export default function DealPage({ navbarHeight }) {
   const handleSubmitDeal = async (values) => {
     setSaving(true);
     try {
+
       // Poster upload
       let posterUrl = values.imageUrl || editing?.posterUrl || "";
       let posterPath = editing?.posterPath || "";
@@ -303,7 +304,7 @@ export default function DealPage({ navbarHeight }) {
     setEditing(null);
   };
   const getStatusBadge = (row) => {
-    const status = (row.status || row.statusKey || "").toLowerCase();
+    const status = (row.status || row.statusid || "").toLowerCase();
     switch (status) {
       case "draft":
         return (
@@ -359,6 +360,7 @@ export default function DealPage({ navbarHeight }) {
         );
     }
   };
+  console.log(!editing?.mode?.toLowerCase().includes("menu"))
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       <div className="flex justify-between items-center mb-4">
@@ -514,7 +516,6 @@ export default function DealPage({ navbarHeight }) {
 
             <div className="p-5 max-h-[78vh] overflow-auto">
               <DealForm
-
                 initialValues={dealToFormValues(editing)}
                 onSubmit={handleSubmitDeal}
                 loading={saving}
@@ -524,11 +525,11 @@ export default function DealPage({ navbarHeight }) {
               />
 
               {/* Offer Blocks */}
-              {editing?.id && (editing?.mode === "menu" || editing?.campaignType === "multi_offer_campaign") && (
+              {editing?.id && (editing?.mode?.toLowerCase().includes("menu")) && (
                 <OfferBlocksEditor dealId={editing.id} disabled={saving} uid={uid} />
               )}
 
-              {editing?.id && editing?.mode !== "menu" && editing?.campaignType !== "multi_offer_campaign" && (
+              {editing?.id && !editing?.mode?.toLowerCase().includes("menu") && (
                 <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
                   Offer Blocks available only in <b>Menu mode</b> (or multi-offer campaign).
                 </div>
