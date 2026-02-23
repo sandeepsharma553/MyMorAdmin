@@ -197,7 +197,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
     if (!form.slotId) return alert("Slot is required");
 
     if (form.redemptionMethodKey === "promo" && !String(form.promoCode).trim()) return alert("Promo code is required");
-    if (form.bookingEnabled && !String(form.bookingLink).trim()) return alert("Booking link required");
+    // if (form.bookingEnabled && !String(form.bookingLink).trim()) return alert("Booking link required");
 
     if (isCatalog) {
       if (!form.catalogFile && !form.catalogUrl) return alert("Catalog file or URL required");
@@ -456,7 +456,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
       </div>
 
       {/* Booking */}
-      <div className={cardCls}>
+      {/* <div className={cardCls}>
         <div className="text-sm font-semibold text-gray-900">Booking</div>
 
         <div className="mt-3 flex items-center gap-3">
@@ -476,7 +476,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
             </div>
           </div>
         )}
-      </div>
+      </div> */}
 
       {/* Retail Catalog */}
       {isCatalog && (
