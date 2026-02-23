@@ -15,14 +15,51 @@ import {
 } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase";
+
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+
 import DealForm from "./DealForm";
 import LocationPicker from "./LocationPicker";
+import MapLocationInput from "../../components/MapLocationInput";
 
-const blankDay = () => ({ open: true, from: "00:00", to: "00:00" });
+import { MapPin } from "lucide-react";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
+import Button from "@mui/material/Button";
+
+/** ---------------- Helpers ---------------- */
 const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+const blankSlot = () => ({ from: "09:00", to: "17:00" });
+
+const blankDay = () => ({
+  open: true,
+  slots: [blankSlot()], // ✅ multi windows
+});
+
+// Backward-compat: if old data has {from,to} convert to slots
+const normalizeDay = (d) => {
+  if (!d) return blankDay();
+  if (Array.isArray(d.slots) && d.slots.length) return { open: !!d.open, slots: d.slots };
+  // old schema
+  if (typeof d.from === "string" && typeof d.to === "string") {
+    return { open: d.open ?? true, slots: [{ from: d.from, to: d.to }] };
+  }
+  return { open: d.open ?? true, slots: [blankSlot()] };
+};
+
+const normalizeWeekBucket = (b) => {
+  if (!b) return { open: true, slots: [blankSlot()] };
+  if (Array.isArray(b.slots) && b.slots.length) return { open: !!b.open, slots: b.slots };
+  if (typeof b.from === "string" && typeof b.to === "string") {
+    return { open: b.open ?? true, slots: [{ from: b.from, to: b.to }] };
+  }
+  return { open: b.open ?? true, slots: [blankSlot()] };
+};
 
 const initialForm = {
   name: "",
@@ -44,16 +81,18 @@ const initialForm = {
     state: "",
     lat: null,
     lng: null,
+    mapLocation: "",
   },
 
   booking: { type: "email", value: "" },
   customerCommunication: { contactNumber: "", contactEmail: "" },
 
+  // ✅ MULTI-SLOT HOURS
   hours: {
-    mode: "week",
+    mode: "week", // "week" | "custom"
     week: {
-      weekdays: { open: true, from: "00:00", to: "00:00" },
-      weekend: { open: true, from: "00:00", to: "00:00" },
+      weekdays: { open: true, slots: [blankSlot()] },
+      weekend: { open: true, slots: [blankSlot()] },
     },
     custom: {
       sunday: blankDay(),
@@ -84,6 +123,9 @@ const initialForm = {
       cityName: "",
       city: "",
       state: "",
+      lat: null,
+      lng: null,
+      mapLocation: "",
     },
   },
 };
@@ -136,6 +178,8 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
   const [saving, setSaving] = useState(false);
 
   const [deleteBizId, setDeleteBizId] = useState(null);
+
+  const [showMapModal, setShowMapModal] = useState(false);
   const [form, setForm] = useState(initialForm);
 
   const [open, setOpen] = useState({
@@ -152,6 +196,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
   const [dealSaving, setDealSaving] = useState(false);
   const [dealDeleteId, setDealDeleteId] = useState(null);
 
+  /** ---------------- Firestore: Businesses ---------------- */
   useEffect(() => {
     const qy = query(collection(db, "businesses"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(
@@ -181,6 +226,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     );
   }, [rows, qText]);
 
+  /** ---------------- Firestore: Deals by business ---------------- */
   useEffect(() => {
     if (!modalOpen) return;
     if (!editingBiz?.id) {
@@ -202,50 +248,52 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
     return () => unsub();
   }, [modalOpen, editingBiz?.id]);
+
+  /** ---------------- Deals mapping (as your code) ---------------- */
   const dealToFormValues = (d) => {
     if (!d) return {};
-  
     return {
       header: d.header || "",
-      campaignType: d.campaignType || "single_offer",
-      category: d.category || "dining",
+      category: d.category || "",
+      slotId: d.slotId || "",
+      modeid: d.modeid || "",
       slot: d.slot || "",
-      mode: d.mode || "simple",
-  
+      mode: d.mode || "",
+      statusid: d.statusid || "",
       status: d.status || "draft",
       active: !!d.active,
       featured: !!d.featured,
-  
+
       discoveryTags: d?.discovery?.tags || [],
       feedSections: d?.discovery?.sections || [],
-  
+
       imageUrl: d.posterUrl || "",
       imageFile: null,
-  
+
       venueName: d?.venue?.name || d?.businessName || "",
       venueLocationLabel: d?.venue?.locationLabel || d?.businessAddress || "",
       lat: d?.venue?.lat == null ? "" : String(d.venue.lat),
       lng: d?.venue?.lng == null ? "" : String(d.venue.lng),
-  
+
       descriptionHtml: d.descriptionHtml || "",
-  
+
       validFrom: d?.schedule?.validFrom || "",
       validTo: d?.schedule?.validTo || "",
-      daysActive: d?.schedule?.activeDays || ["mon","tue","wed","thu","fri","sat","sun"],
+      daysActive: d?.schedule?.activeDays || ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
       timeWindowStart: d?.schedule?.timeWindow?.start || "",
       timeWindowEnd: d?.schedule?.timeWindow?.end || "",
-  
+
       redemptionMethod: d?.redemption?.method || "student_id",
       requiresStudentId: d?.redemption?.requiresStudentId ?? true,
       oneClaimPerStudent: d?.redemption?.oneClaimPerStudent ?? true,
       claimLimit: d?.redemption?.claimLimit == null ? "" : String(d.redemption.claimLimit),
       promoCode: d?.redemption?.promoCode || "",
       instructions: d?.redemption?.instructions || "",
-  
+
       bookingEnabled: d?.booking?.enabled ?? false,
       bookingLink: d?.booking?.bookingLink || "",
       sessionLabel: d?.booking?.sessionLabel || "",
-  
+
       saleType: d?.retail?.saleType || "storewide",
       discountRangeLabel: d?.retail?.discountRangeLabel || "",
       catalogUrl: d?.retail?.catalogUrl || "",
@@ -253,13 +301,11 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       retailHighlights: d?.retail?.highlights || [],
     };
   };
-  
+
   const formToDealPayload = ({ values, editingBiz, form, dealEditing, posterUrl, posterPath, catalogUrl, catalogPath }) => {
     const timeWindow =
-      values.timeWindowStart && values.timeWindowEnd
-        ? { start: values.timeWindowStart, end: values.timeWindowEnd }
-        : null;
-  
+      values.timeWindowStart && values.timeWindowEnd ? { start: values.timeWindowStart, end: values.timeWindowEnd } : null;
+
     return {
       businessId: editingBiz.id,
       businessName: form.name || "",
@@ -268,45 +314,44 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         .join(", "),
       businessLat: form.address?.lat ?? null,
       businessLng: form.address?.lng ?? null,
-  
+
       header: (values.header || "").trim(),
       campaignType: values.campaignType || "single_offer",
-      category: values.category || "dining",
+      category: values.category || "",
       slot: values.slot || "",
-      mode: values.mode || "simple",
-  
-      status: values.status || "draft",
+      mode: values.mode || "",
+
+      status: values.status || "",
       active: !!values.active,
       featured: !!values.featured,
-  
+
       discovery: {
         tags: values.discoveryTags || [],
         sections: values.feedSections || [],
       },
-  
+
       partner: {
-        partnerId: "", // optional
+        partnerId: "",
         merchantId: editingBiz.id,
       },
-  
+
       venue: {
         id: editingBiz.id,
         name: (values.venueName || form.name || "").trim(),
-        locationLabel:
-          (values.venueLocationLabel || [form.address?.city, form.address?.state].filter(Boolean).join(", ")).trim(),
+        locationLabel: (values.venueLocationLabel || [form.address?.city, form.address?.state].filter(Boolean).join(", ")).trim(),
         lat: values.lat === "" ? (form.address?.lat ?? null) : Number(values.lat),
         lng: values.lng === "" ? (form.address?.lng ?? null) : Number(values.lng),
       },
-  
+
       descriptionHtml: values.descriptionHtml || "",
-  
+
       schedule: {
         activeDays: values.daysActive || [],
         validFrom: values.validFrom || "",
         validTo: values.validTo || "",
         timeWindow,
       },
-  
+
       redemption: {
         method: values.redemptionMethod || "student_id",
         requiresStudentId: !!values.requiresStudentId,
@@ -315,36 +360,37 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         promoCode: values.redemptionMethod === "promo" ? (values.promoCode || "").trim() : "",
         instructions: (values.instructions || "").trim(),
       },
-  
+
       booking: {
         enabled: !!values.bookingEnabled,
         bookingLink: values.bookingEnabled ? (values.bookingLink || "").trim() : "",
         sessionLabel: (values.sessionLabel || "").trim(),
       },
-  
+
       retail:
         values.mode === "catalog"
           ? {
-              saleType: values.saleType || "storewide",
-              discountRangeLabel: (values.discountRangeLabel || "").trim(),
-              catalogUrl: catalogUrl || values.catalogUrl || "",
-              catalogPath: catalogPath || dealEditing?.retail?.catalogPath || "",
-              highlights: (values.retailHighlights || []).slice(0, 8).map((x) => ({
-                title: (x.title || "").trim(),
-                priceLabel: (x.priceLabel || "").trim(),
-                imageUrl: (x.imageUrl || "").trim(),
-              })),
-            }
+            saleType: values.saleType || "storewide",
+            discountRangeLabel: (values.discountRangeLabel || "").trim(),
+            catalogUrl: catalogUrl || values.catalogUrl || "",
+            catalogPath: catalogPath || dealEditing?.retail?.catalogPath || "",
+            highlights: (values.retailHighlights || []).slice(0, 8).map((x) => ({
+              title: (x.title || "").trim(),
+              priceLabel: (x.priceLabel || "").trim(),
+              imageUrl: (x.imageUrl || "").trim(),
+            })),
+          }
           : null,
-  
+
       posterUrl: posterUrl || values.imageUrl || dealEditing?.posterUrl || "",
       posterPath: posterPath || dealEditing?.posterPath || "",
-  
+
       daysLeft: typeof values.daysLeft === "number" ? values.daysLeft : null,
       updatedAt: serverTimestamp(),
     };
   };
-  
+
+  /** ---------------- Business modal open/close ---------------- */
   const openCreate = () => {
     setEditingBiz(null);
     setForm(initialForm);
@@ -356,18 +402,27 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
   const openEdit = (b) => {
     setEditingBiz(b);
     const data = b || {};
+
+    // ✅ normalize MULTI-slot hours (and migrate old schema if needed)
+    const hours = {
+      mode: data?.hours?.mode || "week",
+      week: {
+        weekdays: normalizeWeekBucket(data?.hours?.week?.weekdays),
+        weekend: normalizeWeekBucket(data?.hours?.week?.weekend),
+      },
+      custom: DAYS.reduce((acc, day) => {
+        acc[day] = normalizeDay(data?.hours?.custom?.[day]);
+        return acc;
+      }, {}),
+    };
+
     setForm({
       ...initialForm,
       ...data,
       address: { ...initialForm.address, ...(data.address || {}) },
       booking: { ...initialForm.booking, ...(data.booking || {}) },
       customerCommunication: { ...initialForm.customerCommunication, ...(data.customerCommunication || {}) },
-      hours: {
-        ...initialForm.hours,
-        ...(data.hours || {}),
-        week: { ...initialForm.hours.week, ...(data.hours?.week || {}) },
-        custom: { ...initialForm.hours.custom, ...(data.hours?.custom || {}) },
-      },
+      hours,
       billing: {
         ...initialForm.billing,
         ...(data.billing || {}),
@@ -375,10 +430,12 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       },
       media: { ...initialForm.media, ...(data.media || {}) },
     });
+
     setOpen({ details: true, hours: false, billing: false, media: false, deals: true });
     setModalOpen(true);
   };
 
+  /** ---------------- Form setters ---------------- */
   const set = (key) => (e) => {
     const val = e?.target?.type === "checkbox" ? e.target.checked : e?.target?.value ?? e;
     setForm((p) => ({ ...p, [key]: val }));
@@ -403,37 +460,148 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
   };
 
   const toggleOpen = (k) => setOpen((p) => ({ ...p, [k]: !p[k] }));
-
   const setHoursMode = (mode) => setForm((p) => ({ ...p, hours: { ...(p.hours || {}), mode } }));
 
-  const setWeekHours = (bucket, key) => (e) => {
-    const val = e?.target?.type === "checkbox" ? e.target.checked : e?.target?.value ?? "";
+  const setWeekHoursOpen = (bucket) => (e) => {
+    const checked = !!e?.target?.checked;
     setForm((p) => ({
       ...p,
       hours: {
         ...(p.hours || {}),
         week: {
           ...(p.hours?.week || {}),
-          [bucket]: { ...(p.hours?.week?.[bucket] || {}), [key]: val },
+          [bucket]: {
+            ...normalizeWeekBucket(p.hours?.week?.[bucket]),
+            open: checked,
+          },
         },
       },
     }));
   };
 
-  const setCustomHours = (day, key) => (e) => {
-    const val = e?.target?.type === "checkbox" ? e.target.checked : e?.target?.value ?? "";
+  const setCustomHoursOpen = (day) => (e) => {
+    const checked = !!e?.target?.checked;
     setForm((p) => ({
       ...p,
       hours: {
         ...(p.hours || {}),
         custom: {
           ...(p.hours?.custom || {}),
-          [day]: { ...(p.hours?.custom?.[day] || {}), [key]: val },
+          [day]: {
+            ...normalizeDay(p.hours?.custom?.[day]),
+            open: checked,
+          },
         },
       },
     }));
   };
 
+  /** ---------------- Slots: add/remove/update ---------------- */
+  const addWeekSlot = (bucket) => {
+    setForm((p) => {
+      const prev = normalizeWeekBucket(p.hours?.week?.[bucket]);
+      return {
+        ...p,
+        hours: {
+          ...(p.hours || {}),
+          week: {
+            ...(p.hours?.week || {}),
+            [bucket]: { ...prev, slots: [...(prev.slots || []), blankSlot()] },
+          },
+        },
+      };
+    });
+  };
+
+  const removeWeekSlot = (bucket, idx) => {
+    setForm((p) => {
+      const prev = normalizeWeekBucket(p.hours?.week?.[bucket]);
+      const nextSlots = (prev.slots || []).filter((_, i) => i !== idx);
+      return {
+        ...p,
+        hours: {
+          ...(p.hours || {}),
+          week: {
+            ...(p.hours?.week || {}),
+            [bucket]: { ...prev, slots: nextSlots.length ? nextSlots : [blankSlot()] },
+          },
+        },
+      };
+    });
+  };
+
+  const setWeekSlot = (bucket, idx, key) => (e) => {
+    const val = e?.target?.value ?? "";
+    setForm((p) => {
+      const prev = normalizeWeekBucket(p.hours?.week?.[bucket]);
+      const slots = [...(prev.slots || [blankSlot()])];
+      slots[idx] = { ...(slots[idx] || blankSlot()), [key]: val };
+      return {
+        ...p,
+        hours: {
+          ...(p.hours || {}),
+          week: {
+            ...(p.hours?.week || {}),
+            [bucket]: { ...prev, slots },
+          },
+        },
+      };
+    });
+  };
+
+  const addCustomSlot = (day) => {
+    setForm((p) => {
+      const prev = normalizeDay(p.hours?.custom?.[day]);
+      return {
+        ...p,
+        hours: {
+          ...(p.hours || {}),
+          custom: {
+            ...(p.hours?.custom || {}),
+            [day]: { ...prev, slots: [...(prev.slots || []), blankSlot()] },
+          },
+        },
+      };
+    });
+  };
+
+  const removeCustomSlot = (day, idx) => {
+    setForm((p) => {
+      const prev = normalizeDay(p.hours?.custom?.[day]);
+      const nextSlots = (prev.slots || []).filter((_, i) => i !== idx);
+      return {
+        ...p,
+        hours: {
+          ...(p.hours || {}),
+          custom: {
+            ...(p.hours?.custom || {}),
+            [day]: { ...prev, slots: nextSlots.length ? nextSlots : [blankSlot()] },
+          },
+        },
+      };
+    });
+  };
+
+  const setCustomSlot = (day, idx, key) => (e) => {
+    const val = e?.target?.value ?? "";
+    setForm((p) => {
+      const prev = normalizeDay(p.hours?.custom?.[day]);
+      const slots = [...(prev.slots || [blankSlot()])];
+      slots[idx] = { ...(slots[idx] || blankSlot()), [key]: val };
+      return {
+        ...p,
+        hours: {
+          ...(p.hours || {}),
+          custom: {
+            ...(p.hours?.custom || {}),
+            [day]: { ...prev, slots },
+          },
+        },
+      };
+    });
+  };
+
+  /** ---------------- Media uploads ---------------- */
   const onPickPortrait = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -462,14 +630,15 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     }
   };
 
+  /** ---------------- Save business ---------------- */
   const onSaveBusiness = async () => {
     if (!form.name.trim()) return toast.error("Business name is required");
     if (!form.email.trim()) return toast.error("Email is required");
 
     setSaving(true);
     try {
-      const billingEmail = form.billing?.sameAsEmail ? (form.email || "") : (form.billing?.email || "");
-      const billingPhone = form.billing?.sameAsPhone ? (form.phone || "") : (form.billing?.phone || "");
+      const billingEmail = form.billing?.sameAsEmail ? form.email || "" : form.billing?.email || "";
+      const billingPhone = form.billing?.sameAsPhone ? form.phone || "" : form.billing?.phone || "";
 
       const payload = {
         name: form.name?.trim() || "",
@@ -483,6 +652,9 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           ...form.address,
           city: form.address?.city || form.address?.cityName || "",
           state: form.address?.state || form.address?.stateName || "",
+          lat: form.address?.lat == null ? null : Number(form.address.lat),
+          lng: form.address?.lng == null ? null : Number(form.address.lng),
+          mapLocation: form.address?.mapLocation || "",
         },
 
         customerCommunication: {
@@ -490,14 +662,31 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           contactEmail: form.customerCommunication?.contactEmail || "",
         },
 
+        // ✅ MULTI SLOT HOURS save
         hours: {
           mode: form.hours?.mode || "week",
           week: {
-            weekdays: { ...(form.hours?.week?.weekdays || blankDay()) },
-            weekend: { ...(form.hours?.week?.weekend || blankDay()) },
+            weekdays: {
+              open: !!form.hours?.week?.weekdays?.open,
+              slots: (normalizeWeekBucket(form.hours?.week?.weekdays).slots || [blankSlot()]).map((s) => ({
+                from: s.from || "00:00",
+                to: s.to || "00:00",
+              })),
+            },
+            weekend: {
+              open: !!form.hours?.week?.weekend?.open,
+              slots: (normalizeWeekBucket(form.hours?.week?.weekend).slots || [blankSlot()]).map((s) => ({
+                from: s.from || "00:00",
+                to: s.to || "00:00",
+              })),
+            },
           },
-          custom: DAYS.reduce((acc, d) => {
-            acc[d] = { ...(form.hours?.custom?.[d] || blankDay()) };
+          custom: DAYS.reduce((acc, day) => {
+            const d = normalizeDay(form.hours?.custom?.[day]);
+            acc[day] = {
+              open: !!d.open,
+              slots: (d.slots || [blankSlot()]).map((s) => ({ from: s.from || "00:00", to: s.to || "00:00" })),
+            };
             return acc;
           }, {}),
         },
@@ -527,7 +716,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           dealIds: [],
         });
         toast.success("Business created ✅");
-
         setEditingBiz({ id: ref.id, ...payload });
       } else {
         await updateDoc(doc(db, "businesses", editingBiz.id), payload);
@@ -542,6 +730,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     }
   };
 
+  /** ---------------- Delete business ---------------- */
   const confirmDeleteBusiness = async () => {
     if (!deleteBizId) return;
     try {
@@ -554,6 +743,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     }
   };
 
+  /** ---------------- Deals: upload helper ---------------- */
   const uploadIfFile = async (file, folder) => {
     const path = `${folder}/${editingBiz.id}/${Date.now()}_${file.name}`;
     const r = storageRef(storage, path);
@@ -562,31 +752,32 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     return { url, path };
   };
 
+  /** ---------------- Save deal ---------------- */
   const saveDealForBusiness = async (values) => {
     if (!editingBiz?.id) return toast.error("Create business first, then add deals.");
-  
+
     setDealSaving(true);
     try {
       // poster
       let posterUrl = values.imageUrl || dealEditing?.posterUrl || "";
       let posterPath = dealEditing?.posterPath || "";
-  
+
       if (values.imageFile) {
         const up = await uploadIfFile(values.imageFile, "deals/posters");
         posterUrl = up.url;
         posterPath = up.path;
       }
-  
+
       // catalog
       let catalogUrl = values.catalogUrl || dealEditing?.retail?.catalogUrl || "";
       let catalogPath = dealEditing?.retail?.catalogPath || "";
-  
+
       if (values.mode === "catalog" && values.catalogFile) {
         const up2 = await uploadIfFile(values.catalogFile, "deals/catalogs");
         catalogUrl = up2.url;
         catalogPath = up2.path;
       }
-  
+
       const dealPayload = formToDealPayload({
         values,
         editingBiz,
@@ -597,7 +788,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         catalogUrl,
         catalogPath,
       });
-  
+
       if (dealEditing?.id) {
         await updateDoc(doc(db, "deals", dealEditing.id), dealPayload);
         toast.success("Deal updated ✅");
@@ -607,16 +798,16 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           createdAt: serverTimestamp(),
           metrics: { views: 0, opens: 0, saves: 0, claims: 0, redemptions: 0, bookingClicks: 0 },
         });
-  
+
         await updateDoc(doc(db, "businesses", editingBiz.id), {
           dealIds: arrayUnion(dealRef.id),
           dealsCount: increment(1),
           lastDealAt: serverTimestamp(),
         });
-  
+
         toast.success("Deal created ✅");
       }
-  
+
       setDealModalOpen(false);
       setDealEditing(null);
     } catch (e) {
@@ -626,8 +817,8 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       setDealSaving(false);
     }
   };
-  
 
+  /** ---------------- Delete deal ---------------- */
   const confirmDeleteDeal = async () => {
     if (!dealDeleteId) return;
     try {
@@ -640,6 +831,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     }
   };
 
+  /** ---------------- UI ---------------- */
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
       <div className="flex items-center justify-between mb-4">
@@ -696,6 +888,11 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
                   <td className="p-3 text-gray-700">
                     {[b.address?.city, b.address?.state, b.address?.postcode].filter(Boolean).join(", ") || "—"}
+                    {typeof b.address?.lat === "number" && typeof b.address?.lng === "number" && (
+                      <span className="ml-2 text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                        Pinned
+                      </span>
+                    )}
                   </td>
 
                   <td className="p-3 text-gray-700">
@@ -731,6 +928,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         )}
       </div>
 
+      {/* ===================== BUSINESS MODAL ===================== */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-5xl rounded-2xl bg-white shadow-xl overflow-hidden">
@@ -741,28 +939,29 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                   {editingBiz?.id ? `Business ID: ${editingBiz.id}` : "Create first, then add deals inside this modal."}
                 </p>
               </div>
-
-              <button
-                onClick={() => !saving && (setModalOpen(false), setDealModalOpen(false), setDealEditing(null))}
-                className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
-                disabled={saving}
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="p-5 max-h-[80vh] overflow-auto bg-gray-50">
               <div className="flex items-center justify-end gap-3 mb-4">
                 <button
                   onClick={onSaveBusiness}
-                  className="rounded-xl bg-yellow-300 px-5 py-2 text-sm font-semibold text-gray-900 hover:opacity-90 disabled:opacity-60"
+                  className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
                   disabled={saving}
                 >
                   {saving ? "Saving..." : "Save Business"}
                 </button>
+                <button
+                  onClick={() => !saving && (setModalOpen(false), setDealModalOpen(false), setDealEditing(null))}
+                  className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+                  disabled={saving}
+                >
+                  Close
+                </button>
               </div>
 
+            </div>
+
+            <div className="p-5 max-h-[80vh] overflow-auto bg-gray-50">
+
               <div className="space-y-4">
+                {/* ---------------- Details ---------------- */}
                 <Section title="Details" open={open.details} onToggle={() => toggleOpen("details")}>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
@@ -831,20 +1030,212 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                       />
                     </div>
 
+                    {/* ✅ MAP PICKER */}
+                    <div className="relative md:col-span-2">
+                      <label className={labelCls}>Map Location</label>
+                      <input
+                        name="mapLocation"
+                        readOnly
+                        placeholder="Select on map"
+                        value={form.address?.mapLocation || ""}
+                        onClick={() => setShowMapModal(true)}
+                        className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer mt-2"
+                      />
+                      <MapPin className="absolute left-3 top-[58%] -translate-y-1/2 text-gray-500 pointer-events-none" />
+                      <div className="mt-2 text-xs text-gray-500">
+                        {typeof form.address?.lat === "number" && typeof form.address?.lng === "number"
+                          ? `Saved: ${form.address.lat.toFixed(6)}, ${form.address.lng.toFixed(6)}`
+                          : "No coordinates saved yet"}
+                      </div>
+                    </div>
+
                     <div className="md:col-span-2">
                       <label className={labelCls}>Note</label>
-                      <textarea value={form.note} onChange={set("note")} className={inputCls + " h-24 mt-2 resize-none"} placeholder="Optional note..." />
+                      <textarea
+                        value={form.note}
+                        onChange={set("note")}
+                        className={inputCls + " h-24 mt-2 resize-none"}
+                        placeholder="Optional note..."
+                      />
                     </div>
                   </div>
                 </Section>
 
+                {/* ---------------- Shop Hours (MULTI SLOT) ---------------- */}
+                <Section title="Shop Hours" open={open.hours} onToggle={() => toggleOpen("hours")}>
+                  <div className="flex gap-2 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setHoursMode("week")}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold border ${form.hours?.mode === "week" ? "bg-black text-white border-black" : "bg-white text-gray-900 border-gray-200"
+                        }`}
+                    >
+                      Weekdays / Weekend
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setHoursMode("custom")}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold border ${form.hours?.mode === "custom" ? "bg-black text-white border-black" : "bg-white text-gray-900 border-gray-200"
+                        }`}
+                    >
+                      Custom (per day)
+                    </button>
+                  </div>
+
+                  {/* WEEK MODE */}
+                  {form.hours?.mode === "week" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {["weekdays", "weekend"].map((bucket) => {
+                        const bucketData = normalizeWeekBucket(form.hours?.week?.[bucket]);
+                        const slots = bucketData.slots?.length ? bucketData.slots : [blankSlot()];
+
+                        return (
+                          <div key={bucket} className="rounded-xl border border-gray-200 p-4 bg-white">
+                            <div className="flex items-center justify-between">
+                              <div className="font-semibold text-gray-900">
+                                {bucket === "weekdays" ? "Weekdays (Mon–Fri)" : "Weekend (Sat–Sun)"}
+                              </div>
+
+                              <label className="flex items-center gap-2 text-sm">
+                                <input type="checkbox" checked={!!bucketData.open} onChange={setWeekHoursOpen(bucket)} />
+                                Open
+                              </label>
+                            </div>
+
+                            <div className="mt-3 space-y-3">
+                              {slots.map((s, idx) => (
+                                <div key={idx} className="grid grid-cols-2 gap-3 items-end">
+                                  <div>
+                                    <label className={labelCls}>From</label>
+                                    <input
+                                      type="time"
+                                      className={inputCls}
+                                      value={s.from || "00:00"}
+                                      onChange={setWeekSlot(bucket, idx, "from")}
+                                      disabled={!bucketData.open}
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className={labelCls}>To</label>
+                                    <input
+                                      type="time"
+                                      className={inputCls}
+                                      value={s.to || "00:00"}
+                                      onChange={setWeekSlot(bucket, idx, "to")}
+                                      disabled={!bucketData.open}
+                                    />
+                                  </div>
+
+                                  <div className="col-span-2 flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+                                      onClick={() => addWeekSlot(bucket)}
+                                      disabled={!bucketData.open}
+                                    >
+                                      + Add time
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm hover:bg-red-50 hover:border-red-200 hover:text-red-700"
+                                      onClick={() => removeWeekSlot(bucket, idx)}
+                                      disabled={!bucketData.open}
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* CUSTOM MODE */}
+                  {form.hours?.mode === "custom" && (
+                    <div className="space-y-3">
+                      {DAYS.map((day) => {
+                        const d = normalizeDay(form.hours?.custom?.[day]);
+                        const slots = d.slots?.length ? d.slots : [blankSlot()];
+
+                        return (
+                          <div key={day} className="rounded-xl border border-gray-200 p-4 bg-white">
+                            <div className="flex items-center justify-between">
+                              <div className="font-semibold text-gray-900 capitalize">{day}</div>
+
+                              <label className="flex items-center gap-2 text-sm">
+                                <input type="checkbox" checked={!!d.open} onChange={setCustomHoursOpen(day)} />
+                                Open
+                              </label>
+                            </div>
+
+                            <div className="mt-3 space-y-3">
+                              {slots.map((s, idx) => (
+                                <div key={idx} className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+                                  <div className="md:col-span-2">
+                                    <label className={labelCls}>From</label>
+                                    <input
+                                      type="time"
+                                      className={inputCls}
+                                      value={s.from || "00:00"}
+                                      onChange={setCustomSlot(day, idx, "from")}
+                                      disabled={!d.open}
+                                    />
+                                  </div>
+
+                                  <div className="md:col-span-2">
+                                    <label className={labelCls}>To</label>
+                                    <input
+                                      type="time"
+                                      className={inputCls}
+                                      value={s.to || "00:00"}
+                                      onChange={setCustomSlot(day, idx, "to")}
+                                      disabled={!d.open}
+                                    />
+                                  </div>
+
+                                  <div className="col-span-2 md:col-span-4 flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+                                      onClick={() => addCustomSlot(day)}
+                                      disabled={!d.open}
+                                    >
+                                      + Add time
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm hover:bg-red-50 hover:border-red-200 hover:text-red-700"
+                                      onClick={() => removeCustomSlot(day, idx)}
+                                      disabled={!d.open}
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Section>
+
+                {/* ---------------- Billing ---------------- */}
                 <Section title="Billing Address" open={open.billing} onToggle={() => toggleOpen("billing")}>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div className="md:col-span-2">
                       <label className={labelCls}>Billing Email</label>
                       <input
                         className={inputCls}
-                        value={form.billing?.sameAsEmail ? (form.email || "") : (form.billing?.email || "")}
+                        value={form.billing?.sameAsEmail ? form.email || "" : form.billing?.email || ""}
                         disabled={!!form.billing?.sameAsEmail}
                         onChange={setBilling("email")}
                         placeholder="billing@email.com"
@@ -859,7 +1250,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                               billing: {
                                 ...(p.billing || {}),
                                 sameAsEmail: e.target.checked,
-                                email: e.target.checked ? (p.email || "") : (p.billing?.email || ""),
+                                email: e.target.checked ? p.email || "" : p.billing?.email || "",
                               },
                             }))
                           }
@@ -873,7 +1264,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                       <label className={labelCls}>Billing Phone</label>
                       <input
                         className={inputCls}
-                        value={form.billing?.sameAsPhone ? (form.phone || "") : (form.billing?.phone || "")}
+                        value={form.billing?.sameAsPhone ? form.phone || "" : form.billing?.phone || ""}
                         disabled={!!form.billing?.sameAsPhone}
                         onChange={setBilling("phone")}
                         placeholder="billing phone"
@@ -888,7 +1279,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                               billing: {
                                 ...(p.billing || {}),
                                 sameAsPhone: e.target.checked,
-                                phone: e.target.checked ? (p.phone || "") : (p.billing?.phone || ""),
+                                phone: e.target.checked ? p.phone || "" : p.billing?.phone || "",
                               },
                             }))
                           }
@@ -943,9 +1334,12 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                   </div>
                 </Section>
 
+                {/* ---------------- Deals ---------------- */}
                 <Section title="Deals of this Business" open={open.deals} onToggle={() => toggleOpen("deals")}>
                   <div className="flex items-center justify-between">
-                    <div className="text-sm text-gray-600">{editingBiz?.id ? "Create offers linked to this business." : "Save business first to add deals."}</div>
+                    <div className="text-sm text-gray-600">
+                      {editingBiz?.id ? "Create offers linked to this business." : "Save business first to add deals."}
+                    </div>
 
                     <button
                       onClick={() => {
@@ -986,7 +1380,10 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                             <td className="p-3 text-gray-700">{d.slot || "—"}</td>
                             <td className="p-3 text-gray-700">{d.offerType || d.mode || "—"}</td>
                             <td className="p-3">
-                              <span className={`rounded-full px-2 py-1 text-xs font-semibold ${d.active ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                              <span
+                                className={`rounded-full px-2 py-1 text-xs font-semibold ${d.active ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"
+                                  }`}
+                              >
                                 {d.active ? "Active" : "Inactive"}
                               </span>
                             </td>
@@ -1029,6 +1426,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         </div>
       )}
 
+      {/* ===================== DEAL MODAL ===================== */}
       {dealModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-4xl rounded-2xl bg-white shadow-xl overflow-hidden">
@@ -1037,27 +1435,40 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                 <h2 className="text-lg font-semibold text-gray-900">{dealEditing?.id ? "Edit Deal" : "Add Deal"}</h2>
                 <p className="text-xs text-gray-500">Linked to: {form.name || "Business"}</p>
               </div>
-              <button
-                onClick={() => !dealSaving && (setDealModalOpen(false), setDealEditing(null))}
-                className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
-                disabled={dealSaving}
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  form="deal-form"
+                  disabled={dealSaving}
+                  className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                >
+                  {dealSaving ? "Saving..." : (dealEditing ? "Save Changes" : "Create Deal")}
+                </button>
+                <button
+                  onClick={() => !dealSaving && (setDealModalOpen(false), setDealEditing(null))}
+                  className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+                  disabled={dealSaving}
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             <div className="p-5 max-h-[75vh] overflow-auto">
-            <DealForm
-  initialValues={dealToFormValues(dealEditing)}
-  onSubmit={saveDealForBusiness}
-  loading={dealSaving}
-  submitText={dealEditing?.id ? "Update Deal" : "Create Deal"}
-/>
+              <DealForm
+                initialValues={dealToFormValues(dealEditing)}
+                onSubmit={saveDealForBusiness}
+                loading={dealSaving}
+                submitText={dealEditing?.id ? "Update Deal" : "Create Deal"}
+                formId="deal-form"
+                hideSubmit={true}
+              />
             </div>
           </div>
         </div>
       )}
 
+      {/* ===================== CONFIRM DELETE BUSINESS ===================== */}
       {deleteBizId && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl">
@@ -1078,6 +1489,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         </div>
       )}
 
+      {/* ===================== CONFIRM DELETE DEAL ===================== */}
       {dealDeleteId && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl">
@@ -1097,6 +1509,45 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           </div>
         </div>
       )}
+
+      {/* ===================== MAP MODAL ===================== */}
+      <Dialog open={showMapModal} onClose={() => setShowMapModal(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Pick a Location</DialogTitle>
+        <DialogContent dividers sx={{ overflow: "hidden" }}>
+          <MapLocationInput
+            value={form.address?.mapLocation || ""}
+            onChange={(val) => {
+              // expected: val = { lat, lng, label/place_name }
+              const lat = val?.lat == null ? null : Number(val.lat);
+              const lng = val?.lng == null ? null : Number(val.lng);
+              const label =
+                val?.label ||
+                val?.place_name ||
+                (lat != null && lng != null ? `${lat.toFixed(6)}, ${lng.toFixed(6)}` : "");
+
+              setForm((p) => ({
+                ...p,
+                address: {
+                  ...(p.address || {}),
+                  lat,
+                  lng,
+                  mapLocation: label,
+                },
+              }));
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowMapModal(false)}>Close</Button>
+          <Button
+            variant="contained"
+            onClick={() => setShowMapModal(false)}
+            disabled={!(typeof form.address?.lat === "number" && typeof form.address?.lng === "number")}
+          >
+            Save location
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <ToastContainer />
     </main>

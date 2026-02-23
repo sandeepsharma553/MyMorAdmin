@@ -14,48 +14,68 @@ import { db } from "../../firebase";
 import useDealSettings from "../../hooks/useDealSettings";
 
 const DAYS = [
-  { id: "mon", label: "M" },
-  { id: "tue", label: "T" },
-  { id: "wed", label: "W" },
-  { id: "thu", label: "T" },
-  { id: "fri", label: "F" },
-  { id: "sat", label: "S" },
-  { id: "sun", label: "S" },
+  { id: "mon", label: "Mon" },
+  { id: "tue", label: "Tue" },
+  { id: "wed", label: "Wed" },
+  { id: "thu", label: "Thu" },
+  { id: "fri", label: "Fri" },
+  { id: "sat", label: "Sat" },
+  { id: "sun", label: "Sun" },
 ];
+
+const DAYS_SHORT = { mon: "M", tue: "T", wed: "W", thu: "T", fri: "F", sat: "S", sun: "S" };
 
 const inputCls =
   "w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-200";
 const cardCls = "rounded-2xl border border-gray-200 bg-white p-4";
 
-const dayBtnOn =
-  "h-9 w-10 rounded-lg border text-sm font-semibold bg-black text-white border-black";
-const dayBtnOff =
-  "h-9 w-10 rounded-lg border text-sm font-semibold bg-white text-gray-900 border-gray-200 hover:bg-gray-50";
+const dayPillOn =
+  "inline-flex items-center justify-center rounded-xl border border-blue-600 bg-blue-600 px-3 py-2 text-xs font-semibold text-white";
+const dayPillOff =
+  "inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-900 hover:bg-gray-50";
+
+const initDaySchedules = (allActive = true) =>
+  DAYS.reduce((acc, d) => {
+    acc[d.id] = {
+      active: allActive,
+      slots: [{ start: "", end: "" }], // allow multiple
+    };
+    return acc;
+  }, {});
 
 const emptyForm = {
   label: "",
   type: "fixed_price",
-  value: "",
-  unit: "$", // ✅ $, %, AUD, special
+
+  // ✅ ALWAYS MULTI pricing
+  lineItems: [{ title: "", price: "", unit: "$", note: "", highlight: false }],
+
   notes: "",
   timeOverride: "",
   redemptionOverride: "",
 
+  // ✅ Schedule hidden + optional
+  scheduleEnabled: false,
   validFrom: "",
   validTo: "",
-  daysActive: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-  timeWindowStart: "",
-  timeWindowEnd: "",
+
+  // ✅ per-day schedules
+  daySchedules: initDaySchedules(true),
 };
 
 export default function OfferBlocksEditor({ dealId, disabled, uid }) {
   const [offers, setOffers] = useState([]);
-
   const [v, setV] = useState(emptyForm);
   const [editingOfferId, setEditingOfferId] = useState(null);
 
+  // ✅ Schedule UI (collapsible)
+  const [showSchedule, setShowSchedule] = useState(false);
+
+  // ✅ Day accordion open state
+  const [openDay, setOpenDay] = useState("mon");
+
   const settings = useDealSettings(uid);
-  const settingsOfferTypes = settings?.offerTypes || []; // ✅ safe
+  const settingsOfferTypes = settings?.offerTypes || [];
 
   useEffect(() => {
     if (!dealId) return;
@@ -70,74 +90,215 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
 
   const set = (k) => (e) => setV((p) => ({ ...p, [k]: e.target.value }));
 
-  const toggleDay = (dayId) => {
+  // ---------- Line Items ----------
+  const addLineItem = () => {
+    setV((p) => ({
+      ...p,
+      lineItems: [
+        ...(p.lineItems || []),
+        { title: "", price: "", unit: "$", note: "", highlight: false },
+      ],
+    }));
+  };
+
+  const removeLineItem = (idx) => {
+    setV((p) => ({
+      ...p,
+      lineItems: (p.lineItems || []).filter((_, i) => i !== idx),
+    }));
+  };
+
+  const setLineItem = (idx, key, val) => {
+    setV((p) => ({
+      ...p,
+      lineItems: (p.lineItems || []).map((it, i) =>
+        i === idx ? { ...it, [key]: val } : it
+      ),
+    }));
+  };
+
+  // ---------- Per-day schedule helpers ----------
+  const toggleDayActive = (dayId) => {
     setV((p) => {
-      const has = (p.daysActive || []).includes(dayId);
+      const next = !p.daySchedules?.[dayId]?.active;
+      const curr = p.daySchedules?.[dayId] || { active: false, slots: [{ start: "", end: "" }] };
       return {
         ...p,
-        daysActive: has
-          ? p.daysActive.filter((d) => d !== dayId)
-          : [...p.daysActive, dayId],
+        daySchedules: {
+          ...(p.daySchedules || {}),
+          [dayId]: {
+            ...curr,
+            active: next,
+            slots: curr.slots?.length ? curr.slots : [{ start: "", end: "" }],
+          },
+        },
       };
     });
   };
 
-  const isSpecial = v.unit === "special";
+  const addSlot = (dayId) => {
+    setV((p) => {
+      const curr = p.daySchedules?.[dayId] || { active: true, slots: [] };
+      return {
+        ...p,
+        daySchedules: {
+          ...(p.daySchedules || {}),
+          [dayId]: {
+            ...curr,
+            slots: [...(curr.slots || []), { start: "", end: "" }],
+          },
+        },
+      };
+    });
+  };
 
+  const removeSlot = (dayId, slotIdx) => {
+    setV((p) => {
+      const curr = p.daySchedules?.[dayId] || { active: true, slots: [] };
+      const nextSlots = (curr.slots || []).filter((_, i) => i !== slotIdx);
+      return {
+        ...p,
+        daySchedules: {
+          ...(p.daySchedules || {}),
+          [dayId]: {
+            ...curr,
+            slots: nextSlots.length ? nextSlots : [{ start: "", end: "" }],
+          },
+        },
+      };
+    });
+  };
+
+  const setSlot = (dayId, slotIdx, key, val) => {
+    setV((p) => {
+      const curr = p.daySchedules?.[dayId] || { active: true, slots: [{ start: "", end: "" }] };
+      const slots = (curr.slots || []).map((s, i) => (i === slotIdx ? { ...s, [key]: val } : s));
+      return {
+        ...p,
+        daySchedules: {
+          ...(p.daySchedules || {}),
+          [dayId]: { ...curr, slots },
+        },
+      };
+    });
+  };
+
+  // ✅ Copy Monday → all active days
+  const copyMondayToAll = () => {
+    setV((p) => {
+      const mon = p.daySchedules?.mon || { active: true, slots: [{ start: "", end: "" }] };
+      const monSlots = (mon.slots || []).map((s) => ({ start: s.start || "", end: s.end || "" }));
+
+      const ds = { ...(p.daySchedules || {}) };
+      DAYS.forEach((d) => {
+        const cur = ds[d.id] || { active: false, slots: [{ start: "", end: "" }] };
+        if (cur.active) {
+          ds[d.id] = { ...cur, slots: monSlots.length ? monSlots : [{ start: "", end: "" }] };
+        }
+      });
+
+      return { ...p, daySchedules: ds };
+    });
+  };
+
+  // ---------- scheduleOverride ----------
   const scheduleOverride = useMemo(() => {
-    const timeWindow =
-      v.timeWindowStart && v.timeWindowEnd
-        ? { start: v.timeWindowStart, end: v.timeWindowEnd }
-        : null;
+    if (!v.scheduleEnabled) return null;
+
+    const daysObj = {};
+    const ds = v.daySchedules || {};
+
+    DAYS.forEach((d) => {
+      const day = ds[d.id];
+      if (!day?.active) return;
+
+      const cleanSlots = (day.slots || [])
+        .map((s) => ({ start: (s.start || "").trim(), end: (s.end || "").trim() }))
+        .filter((s) => s.start && s.end);
+
+      if (cleanSlots.length) daysObj[d.id] = cleanSlots;
+    });
 
     return {
       validFrom: v.validFrom || "",
       validTo: v.validTo || "",
-      activeDays: v.daysActive || [],
-      timeWindow,
+      days: daysObj,
     };
-  }, [v.validFrom, v.validTo, v.daysActive, v.timeWindowStart, v.timeWindowEnd]);
+  }, [v.scheduleEnabled, v.validFrom, v.validTo, v.daySchedules]);
 
   const resetForm = () => {
     setV(emptyForm);
     setEditingOfferId(null);
+    setShowSchedule(false);
+    setOpenDay("mon");
   };
 
-  // ✅ NEW: Validation (days + time required)
+  // ---------- validation ----------
   const validateOffer = () => {
     if (!v.label.trim()) return "Offer label required";
 
-    // Special -> no value needed
-    if (!isSpecial) {
-      // if you want strict price required uncomment:
-      // if (String(v.value).trim() === "") return "Value required OR choose SPECIAL";
+    const items = v.lineItems || [];
+    if (!items.length) return "Add at least 1 line item";
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (!String(it.title || "").trim()) return `Line item ${i + 1}: title required`;
+
+      const unit = it.unit || "$";
+      if (unit !== "special") {
+        if (String(it.price || "").trim() === "") return `Line item ${i + 1}: price required`;
+        if (Number.isNaN(Number(it.price))) return `Line item ${i + 1}: price must be a number`;
+      }
     }
 
-    if (!v.daysActive?.length) return "Select at least 1 active day";
-    if (!v.timeWindowStart || !v.timeWindowEnd)
-      return "Time window start & end required for this offer";
+    if (v.scheduleEnabled) {
+      const ds = v.daySchedules || {};
+      const activeDays = DAYS.filter((d) => ds[d.id]?.active);
+      if (!activeDays.length) return "Select at least 1 active day";
+
+      for (const d of activeDays) {
+        const slots = ds[d.id]?.slots || [];
+        const ok = slots.some((s) => (s.start || "").trim() && (s.end || "").trim());
+        if (!ok) return `Add start & end time for ${d.label}`;
+      }
+    }
 
     return null;
   };
 
+  const normalizeLineItems = (lineItems = []) =>
+    (lineItems || []).map((it) => ({
+      title: (it.title || "").trim(),
+      price:
+        (it.unit || "$") === "special"
+          ? null
+          : it.price === "" || it.price == null
+          ? null
+          : Number(it.price),
+      unit: it.unit || "$",
+      note: (it.note || "").trim(),
+      highlight: !!it.highlight,
+    }));
+
+  // ---------- create/update ----------
   const addOffer = async () => {
     if (!dealId) return;
-
     const err = validateOffer();
     if (err) return alert(err);
 
-    const order = offers.length
-      ? Math.max(...offers.map((o) => o.order || 0)) + 1
-      : 1;
+    const order = offers.length ? Math.max(...offers.map((o) => o.order || 0)) + 1 : 1;
 
     await addDoc(collection(db, "deals", dealId, "offers"), {
       label: v.label.trim(),
       type: v.type,
-      value: isSpecial ? null : (v.value === "" ? null : Number(v.value)),
-      unit: v.unit,
+
+      pricingMode: "multiple",
+      lineItems: normalizeLineItems(v.lineItems),
+
       notes: v.notes.trim(),
       timeOverride: v.timeOverride.trim(),
       redemptionOverride: v.redemptionOverride.trim(),
+
       scheduleOverride,
       order,
       createdAt: serverTimestamp(),
@@ -148,41 +309,86 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
   };
 
   const startEdit = (offer) => {
-    const sch = offer?.scheduleOverride || {};
+    const sch = offer?.scheduleOverride || null;
+
+    const nextDaySchedules = initDaySchedules(false);
+
+    if (sch?.days && typeof sch.days === "object") {
+      DAYS.forEach((d) => {
+        const slots = Array.isArray(sch.days[d.id]) ? sch.days[d.id] : [];
+        if (slots.length) {
+          nextDaySchedules[d.id] = {
+            active: true,
+            slots: slots.map((s) => ({ start: s.start || "", end: s.end || "" })),
+          };
+        }
+      });
+    } else {
+      const active = sch?.activeDays?.length ? sch.activeDays : [];
+      const twStart = sch?.timeWindow?.start || "";
+      const twEnd = sch?.timeWindow?.end || "";
+      active.forEach((dayId) => {
+        nextDaySchedules[dayId] = { active: true, slots: [{ start: twStart, end: twEnd }] };
+      });
+    }
+
+    const hasSchedule =
+      !!sch &&
+      (sch.validFrom || sch.validTo || (sch.days && Object.keys(sch.days).length) || (sch.activeDays && sch.activeDays.length));
+
+    // pricing backward compat
+    const hasLineItems = offer.lineItems?.length;
+    const fallbackSingleToLineItem = () => {
+      const unit = offer.unit || "$";
+      if (unit === "special") return [{ title: offer.label || "Special", price: "", unit: "special", note: "", highlight: false }];
+      if (offer.value == null) return [{ title: offer.label || "", price: "", unit: "$", note: "", highlight: false }];
+      return [{ title: offer.label || "", price: String(offer.value), unit: unit || "$", note: "", highlight: false }];
+    };
+
     setEditingOfferId(offer.id);
+    setShowSchedule(!!hasSchedule);
+
+    // open first active day (accordion)
+    const firstActive =
+      DAYS.find((d) => nextDaySchedules[d.id]?.active) || DAYS[0];
+    setOpenDay(firstActive?.id || "mon");
+
     setV({
       label: offer.label || "",
       type: offer.type || "fixed_price",
-      value: offer.value == null ? "" : String(offer.value),
-      unit: offer.unit || "$",
+      lineItems: (hasLineItems ? offer.lineItems : fallbackSingleToLineItem()).map((it) => ({
+        title: it.title || "",
+        price: it.price == null ? "" : String(it.price),
+        unit: it.unit || "$",
+        note: it.note || "",
+        highlight: !!it.highlight,
+      })),
       notes: offer.notes || "",
       timeOverride: offer.timeOverride || "",
       redemptionOverride: offer.redemptionOverride || "",
-
-      validFrom: sch.validFrom || "",
-      validTo: sch.validTo || "",
-      daysActive: sch.activeDays?.length
-        ? sch.activeDays
-        : ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-      timeWindowStart: sch.timeWindow?.start || "",
-      timeWindowEnd: sch.timeWindow?.end || "",
+      scheduleEnabled: !!hasSchedule,
+      validFrom: sch?.validFrom || "",
+      validTo: sch?.validTo || "",
+      daySchedules: hasSchedule ? nextDaySchedules : initDaySchedules(true),
     });
   };
 
   const updateOffer = async () => {
     if (!dealId || !editingOfferId) return;
-
     const err = validateOffer();
     if (err) return alert(err);
 
     await updateDoc(doc(db, "deals", dealId, "offers", editingOfferId), {
       label: v.label.trim(),
       type: v.type,
-      value: isSpecial ? null : (v.value === "" ? null : Number(v.value)),
-      unit: v.unit,
+
+      pricingMode: "multiple",
+      lineItems: normalizeLineItems(v.lineItems),
+
       notes: v.notes.trim(),
       timeOverride: v.timeOverride.trim(),
       redemptionOverride: v.redemptionOverride.trim(),
+
       scheduleOverride,
       updatedAt: serverTimestamp(),
     });
@@ -195,29 +401,66 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
     if (editingOfferId === offerId) resetForm();
   };
 
-  const renderDays = (arr = []) => {
-    const map = { mon: "M", tue: "T", wed: "W", thu: "T", fri: "F", sat: "S", sun: "S" };
-    return (arr || []).map((d) => map[d] || d).join("");
+  // ---------- table helpers ----------
+  const renderPricingSummary = (o) => {
+    const n = o.lineItems?.length || 0;
+    return n ? `${n} items` : "—";
   };
 
-  const renderTimeWindow = (tw) => {
-    if (!tw?.start || !tw?.end) return "—";
-    return `${tw.start} - ${tw.end}`;
+  const renderLineItemsPreview = (o) => {
+    const items = o.lineItems || [];
+    if (!items.length) return <span className="text-gray-400">—</span>;
+    const first = items[0];
+    const firstText =
+      first.unit === "special" || first.price == null
+        ? `${first.title} (Special)`
+        : `${first.title} — ${first.price}${first.unit || ""}`;
+    const more = items.length - 1;
+    return (
+      <div className="text-xs text-gray-500">
+        {firstText}
+        {more > 0 ? ` +${more} more` : ""}
+      </div>
+    );
   };
 
-  const renderValue = (o) => {
-    if (o.unit === "special") return "Special";
-    if (o.value == null) return "—";
-    return `${o.value} ${o.unit || ""}`.trim();
+  const renderScheduleSummary = (sch) => {
+    if (!sch) return "—";
+    if (sch.days && typeof sch.days === "object") {
+      const dayKeys = Object.keys(sch.days || {}).filter((k) => (sch.days[k] || []).length);
+      if (!dayKeys.length) return "—";
+      const firstDay = dayKeys[0];
+      const firstSlot = (sch.days[firstDay] || [])[0];
+      const firstTxt =
+        firstSlot?.start && firstSlot?.end
+          ? `${firstDay.toUpperCase()} ${firstSlot.start}-${firstSlot.end}`
+          : firstDay.toUpperCase();
+      const moreDays = dayKeys.length - 1;
+      return moreDays > 0 ? `${firstTxt} (+${moreDays}d)` : firstTxt;
+    }
+    if (sch.activeDays?.length && sch.timeWindow?.start && sch.timeWindow?.end) {
+      const first = sch.activeDays[0];
+      const txt = `${first.toUpperCase()} ${sch.timeWindow.start}-${sch.timeWindow.end}`;
+      const more = sch.activeDays.length - 1;
+      return more > 0 ? `${txt} (+${more}d)` : txt;
+    }
+    return "—";
+  };
+
+  const renderDaysShort = (sch) => {
+    if (!sch) return "—";
+    const dayKeys =
+      sch?.days && typeof sch.days === "object"
+        ? Object.keys(sch.days).filter((k) => (sch.days[k] || []).length)
+        : sch?.activeDays || [];
+    return (dayKeys || []).map((k) => DAYS_SHORT[k] || k).join("") || "—";
   };
 
   return (
     <div className="mt-6 space-y-3">
       <div>
         <div className="text-sm font-semibold text-gray-900">Offer Blocks</div>
-        <div className="text-xs text-gray-500">
-          Every offer has its own days + time window.
-        </div>
+        <div className="text-xs text-gray-500">Multi-price line items + optional schedule.</div>
       </div>
 
       {!dealId && (
@@ -251,7 +494,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
               className={inputCls}
               value={v.label}
               onChange={set("label")}
-              placeholder="$4 Beers"
+              placeholder="Champagne Hour / Steak Night"
               disabled={!dealId || disabled}
             />
           </div>
@@ -265,67 +508,108 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
               disabled={!dealId || disabled}
             >
               {(settingsOfferTypes?.length ? settingsOfferTypes : []).map((t) => (
-                <option
-                  key={t.id}
-                  value={t.key || t.id || t.name?.toLowerCase()}
-                >
+                <option key={t.id} value={t.key || t.id || t.name?.toLowerCase()}>
                   {t.name}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* ✅ Hide Value if SPECIAL */}
-          {!isSpecial && (
-            <div>
-              <div className="text-xs text-gray-600">Value (optional)</div>
-              <input
-                className={inputCls}
-                value={v.value}
-                onChange={set("value")}
-                placeholder="4 / 20 / 10"
-                disabled={!dealId || disabled}
-              />
-            </div>
-          )}
-
-          <div>
-            <div className="text-xs text-gray-600">Unit</div>
-            <select
-              className={inputCls}
-              value={v.unit}
-              onChange={(e) => {
-                const next = e.target.value;
-                setV((p) => ({
-                  ...p,
-                  unit: next,
-                  value: next === "special" ? "" : p.value,
-                }));
-              }}
-              disabled={!dealId || disabled}
-            >
-              <option value="$">$</option>
-              <option value="%">%</option>
-              <option value="AUD">AUD</option>
-              <option value="special">SPECIAL (no price)</option>
-            </select>
-
-            {isSpecial && (
-              <div className="mt-2 text-xs text-gray-500">
-                Special selected → no price will be shown.
-              </div>
-            )}
-          </div>
-
+          {/* ✅ Line Items */}
           <div className="md:col-span-2">
-            <div className="text-xs text-gray-600">Notes</div>
-            <input
-              className={inputCls}
-              value={v.notes}
-              onChange={set("notes")}
-              placeholder="Before 10pm, selected taps"
-              disabled={!dealId || disabled}
-            />
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold text-gray-700">Line Items *</div>
+              <button
+                type="button"
+                onClick={addLineItem}
+                disabled={!dealId || disabled}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs hover:bg-gray-50 disabled:opacity-50"
+              >
+                + Add Line Item
+              </button>
+            </div>
+
+            <div className="mt-2 space-y-2">
+              {(v.lineItems || []).map((it, idx) => (
+                <div
+                  key={idx}
+                  className="grid grid-cols-1 gap-2 rounded-xl border border-gray-200 bg-white p-3 md:grid-cols-12"
+                >
+                  <div className="md:col-span-5">
+                    <div className="text-xs text-gray-600">Title *</div>
+                    <input
+                      className={inputCls}
+                      value={it.title}
+                      onChange={(e) => setLineItem(idx, "title", e.target.value)}
+                      placeholder="Monopole Heidsieck – Glass"
+                      disabled={!dealId || disabled}
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <div className="text-xs text-gray-600">Price</div>
+                    <input
+                      className={inputCls}
+                      value={it.price}
+                      onChange={(e) => setLineItem(idx, "price", e.target.value)}
+                      placeholder="15"
+                      disabled={!dealId || disabled || (it.unit || "$") === "special"}
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <div className="text-xs text-gray-600">Unit</div>
+                    <select
+                      className={inputCls}
+                      value={it.unit || "$"}
+                      onChange={(e) => {
+                        const u = e.target.value;
+                        setLineItem(idx, "unit", u);
+                        if (u === "special") setLineItem(idx, "price", "");
+                      }}
+                      disabled={!dealId || disabled}
+                    >
+                      <option value="$">$</option>
+                      <option value="%">%</option>
+                      <option value="AUD">AUD</option>
+                      <option value="special">SPECIAL (no price)</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <div className="text-xs text-gray-600">Note (optional)</div>
+                    <input
+                      className={inputCls}
+                      value={it.note || ""}
+                      onChange={(e) => setLineItem(idx, "note", e.target.value)}
+                      placeholder="From $8 / Limited"
+                      disabled={!dealId || disabled}
+                    />
+                  </div>
+
+                  <div className="md:col-span-1 flex items-end justify-between gap-2">
+                    <label className="flex items-center gap-2 text-xs text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={!!it.highlight}
+                        onChange={(e) => setLineItem(idx, "highlight", e.target.checked)}
+                        disabled={!dealId || disabled}
+                      />
+                      ⭐
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => removeLineItem(idx)}
+                      disabled={!dealId || disabled || (v.lineItems || []).length <= 1}
+                      className="rounded-lg border border-gray-200 px-2 py-1 text-xs hover:bg-red-50 hover:border-red-200 hover:text-red-700 disabled:opacity-50"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div>
@@ -351,78 +635,203 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
           </div>
         </div>
 
-        {/* Offer Schedule (required days+time) */}
-        <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-4">
-          <div className="text-sm font-semibold text-gray-900">
-            Offer Schedule (days + time required)
+        {/* ✅ Schedule toggle */}
+        <div className="mt-6 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold text-gray-900">Offer Schedule</div>
+            <div className="text-xs text-gray-500">Accordion: click day to open.</div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div>
-              <div className="text-xs text-gray-600">Valid From (optional)</div>
-              <input
-                type="date"
-                className={inputCls}
-                value={v.validFrom}
-                onChange={set("validFrom")}
-                disabled={!dealId || disabled}
-              />
+          <button
+            type="button"
+            disabled={!dealId || disabled}
+            onClick={() => {
+              setShowSchedule((s) => !s);
+              setV((p) => ({ ...p, scheduleEnabled: !showSchedule ? true : false }));
+              if (showSchedule) {
+                setV((p) => ({
+                  ...p,
+                  scheduleEnabled: false,
+                  validFrom: "",
+                  validTo: "",
+                  daySchedules: initDaySchedules(true),
+                }));
+              }
+            }}
+            className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
+          >
+            {showSchedule ? "Hide Offer Schedule" : "+ Add Offer Schedule"}
+          </button>
+        </div>
+
+        {/* ✅ Collapsible Schedule */}
+        {showSchedule && (
+          <div className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+            <div className="text-sm font-semibold text-gray-900">Schedule Details</div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <div className="text-xs text-gray-600">Valid From (optional)</div>
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={v.validFrom}
+                  onChange={set("validFrom")}
+                  disabled={!dealId || disabled}
+                />
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-600">Valid To (optional)</div>
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={v.validTo}
+                  onChange={set("validTo")}
+                  disabled={!dealId || disabled}
+                />
+              </div>
             </div>
 
-            <div>
-              <div className="text-xs text-gray-600">Valid To (optional)</div>
-              <input
-                type="date"
-                className={inputCls}
-                value={v.validTo}
-                onChange={set("validTo")}
+            {/* ✅ Copy button */}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs text-gray-600">
+                Tip: Set Monday times then copy to all active days.
+              </div>
+
+              <button
+                type="button"
+                onClick={copyMondayToAll}
                 disabled={!dealId || disabled}
-              />
+                className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                Copy Monday → All Active Days
+              </button>
             </div>
 
-            <div>
-              <div className="text-xs text-gray-600">Time Window Start *</div>
-              <input
-                type="time"
-                className={inputCls}
-                value={v.timeWindowStart}
-                onChange={set("timeWindowStart")}
-                disabled={!dealId || disabled}
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <div className="text-xs text-gray-600">Time Window End *</div>
-              <input
-                type="time"
-                className={inputCls}
-                value={v.timeWindowEnd}
-                onChange={set("timeWindowEnd")}
-                disabled={!dealId || disabled}
-              />
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <div className="text-xs font-semibold text-gray-700">Active Days *</div>
-            <div className="mt-2 flex flex-wrap gap-2">
+            {/* ✅ Accordion days */}
+            <div className="mt-4 space-y-2">
               {DAYS.map((d) => {
-                const on = (v.daysActive || []).includes(d.id);
+                const ds = v.daySchedules?.[d.id] || { active: false, slots: [{ start: "", end: "" }] };
+                const active = !!ds.active;
+                const open = openDay === d.id;
+                const slots = ds.slots || [{ start: "", end: "" }];
+
                 return (
-                  <button
+                  <div
                     key={d.id}
-                    type="button"
-                    onClick={() => toggleDay(d.id)}
-                    disabled={!dealId || disabled}
-                    className={on ? dayBtnOn : dayBtnOff}
+                    className={`overflow-hidden rounded-2xl border ${
+                      active ? "border-blue-200 bg-blue-50" : "border-gray-200 bg-white"
+                    }`}
                   >
-                    {d.label}
-                  </button>
+                    {/* Header */}
+                    <button
+                      type="button"
+                      onClick={() => setOpenDay((cur) => (cur === d.id ? null : d.id))}
+                      disabled={!dealId || disabled}
+                      className="w-full px-3 py-3 text-left"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className={active ? dayPillOn : dayPillOff}>{d.label}</span>
+                          <span className="text-xs text-gray-600">
+                            {active ? "Active" : "Inactive"}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {/* <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              toggleDayActive(d.id);
+                            }}
+                            disabled={!dealId || disabled}
+                            className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                              active
+                                ? "border-blue-200 bg-white text-blue-700 hover:bg-blue-50"
+                                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                            }`}
+                          >
+                            {active ? "Disable" : "Enable"}
+                          </button> */}
+
+                          <span className="text-gray-400">{open ? "▾" : "▸"}</span>
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Body */}
+                    {open && (
+                      <div className="border-t border-gray-200 bg-white px-3 py-3">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-semibold text-gray-700">
+                            Time Slots (multiple allowed)
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => addSlot(d.id)}
+                            disabled={!dealId || disabled || !active}
+                            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50"
+                          >
+                            + Add Time
+                          </button>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          {slots.map((s, idx) => (
+                            <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-12">
+                              <div className="md:col-span-5">
+                                <div className="text-xs text-gray-600">Start</div>
+                                <input
+                                  type="time"
+                                  className={inputCls}
+                                  value={s.start}
+                                  onChange={(e) => setSlot(d.id, idx, "start", e.target.value)}
+                                  disabled={!dealId || disabled || !active}
+                                />
+                              </div>
+
+                              <div className="md:col-span-5">
+                                <div className="text-xs text-gray-600">End</div>
+                                <input
+                                  type="time"
+                                  className={inputCls}
+                                  value={s.end}
+                                  onChange={(e) => setSlot(d.id, idx, "end", e.target.value)}
+                                  disabled={!dealId || disabled || !active}
+                                />
+                              </div>
+
+                              <div className="md:col-span-2 flex items-end justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => removeSlot(d.id, idx)}
+                                  disabled={!dealId || disabled || !active || slots.length <= 1}
+                                  className="rounded-lg border border-gray-200 px-3 py-2 text-xs hover:bg-red-50 hover:border-red-200 hover:text-red-700 disabled:opacity-50"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {!active && (
+                          <div className="mt-2 text-xs text-gray-500">
+                            Enable this day to edit times.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
           </div>
-        </div>
+        )}
 
         {/* Action buttons */}
         <div className="mt-4 flex justify-end gap-2">
@@ -455,9 +864,8 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
             <tr className="text-gray-600">
               <th className="p-3 font-semibold">Label</th>
               <th className="p-3 font-semibold">Type</th>
-              <th className="p-3 font-semibold">Value</th>
-              <th className="p-3 font-semibold">Notes</th>
-              <th className="p-3 font-semibold">Time Window</th>
+              <th className="p-3 font-semibold">Pricing</th>
+              <th className="p-3 font-semibold">Schedule</th>
               <th className="p-3 font-semibold">Days</th>
               <th className="p-3 font-semibold w-44">Actions</th>
             </tr>
@@ -465,24 +873,20 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
 
           <tbody>
             {offers.map((o) => {
-              const sch = o.scheduleOverride || {};
+              const sch = o.scheduleOverride || null;
               return (
                 <tr key={o.id} className="border-t border-gray-100">
                   <td className="p-3 font-semibold text-gray-900">{o.label}</td>
                   <td className="p-3 text-gray-700">{o.type}</td>
 
-                  {/* ✅ SPECIAL render */}
-                  <td className="p-3 text-gray-700">{renderValue(o)}</td>
-
-                  <td className="p-3 text-gray-600">{o.notes || "—"}</td>
-
-                  <td className="p-3 text-gray-600">
-                    {renderTimeWindow(sch.timeWindow)}
+                  <td className="p-3 text-gray-700">
+                    <div className="font-medium">{renderPricingSummary(o)}</div>
+                    {renderLineItemsPreview(o)}
                   </td>
 
-                  <td className="p-3 text-gray-600">
-                    {sch.activeDays?.length ? renderDays(sch.activeDays) : "—"}
-                  </td>
+                  <td className="p-3 text-gray-600">{renderScheduleSummary(sch)}</td>
+
+                  <td className="p-3 text-gray-600">{renderDaysShort(sch)}</td>
 
                   <td className="p-3">
                     <div className="flex gap-2">
@@ -511,7 +915,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
 
             {offers.length === 0 && (
               <tr>
-                <td className="p-6 text-gray-500" colSpan={7}>
+                <td className="p-6 text-gray-500" colSpan={6}>
                   No offer blocks yet.
                 </td>
               </tr>

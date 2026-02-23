@@ -215,7 +215,6 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
       </div>
     );
   }
-  console.log("form", form);
   return (
     <form id={formId} onSubmit={handleSubmit} className="space-y-6">
       <div className={cardCls}>
