@@ -1511,19 +1511,22 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       )}
 
       {/* ===================== MAP MODAL ===================== */}
-      <Dialog open={showMapModal} onClose={() => setShowMapModal(false)} maxWidth="md" fullWidth>
+      <Dialog
+        open={showMapModal}
+        keepMounted
+        onClose={() => setShowMapModal(false)}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>Pick a Location</DialogTitle>
-        <DialogContent dividers sx={{ overflow: "hidden" }}>
+        <DialogContent dividers sx={{ height: 520, overflow: "hidden" }}>
           <MapLocationInput
-            value={form.address?.mapLocation || ""}
+            value={form.address?.mapLocation}
             onChange={(val) => {
-              // expected: val = { lat, lng, label/place_name }
+
               const lat = val?.lat == null ? null : Number(val.lat);
               const lng = val?.lng == null ? null : Number(val.lng);
-              const label =
-                val?.label ||
-                val?.place_name ||
-                (lat != null && lng != null ? `${lat.toFixed(6)}, ${lng.toFixed(6)}` : "");
+              const coordsStr = `${val.lng.toFixed(6)},${val.lat.toFixed(6)}`;
 
               setForm((p) => ({
                 ...p,
@@ -1531,18 +1534,19 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                   ...(p.address || {}),
                   lat,
                   lng,
-                  mapLocation: label,
+                  mapLocation: coordsStr,
                 },
               }));
             }}
           />
         </DialogContent>
+
         <DialogActions>
-          <Button onClick={() => setShowMapModal(false)}>Close</Button>
+          <Button onClick={() => setShowMapModal(false)}>Cancel</Button>
           <Button
             variant="contained"
             onClick={() => setShowMapModal(false)}
-            disabled={!(typeof form.address?.lat === "number" && typeof form.address?.lng === "number")}
+            disabled={!form.address?.mapLocation}
           >
             Save location
           </Button>
