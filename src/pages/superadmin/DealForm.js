@@ -186,7 +186,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
     });
   };
 
-  const isCatalog = form.mode === "catalog";
+  const isCatalog = form.mode?.toLowerCase().includes("catalog");//form.mode === "catalog";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
