@@ -1524,8 +1524,8 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
             value={form.address?.mapLocation}
             onChange={(val) => {
 
-              const lat = val?.lat == null ? null : Number(val.lat);
-              const lng = val?.lng == null ? null : Number(val.lng);
+              const lat = val?.lat == null ? null : val.lat.toFixed(6);
+              const lng = val?.lng == null ? null : val.lng.toFixed(6);
               const coordsStr = `${val.lng.toFixed(6)},${val.lat.toFixed(6)}`;
 
               setForm((p) => ({
