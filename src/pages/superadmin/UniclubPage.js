@@ -503,7 +503,7 @@ export default function UniclubPage({ navbarHeight }) {
         tags: cleanedTags,
         role: "Admin",
         rules: form.rules?.trim() || "",
-        joinQuestions: (form.joinQuestions || []).map((s) => s.trim()).filter(Boolean),
+        joinQuestions: form.joinQuestions,
         category: form.category || "",
         settings: settingsPayload,
         universityid: form.universityid || "",

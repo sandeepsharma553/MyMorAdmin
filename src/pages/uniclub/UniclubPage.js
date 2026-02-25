@@ -777,9 +777,10 @@ export default function UniclubPage({ navbarHeight }) {
         sharedFilesEnabled: !!form.sharedFilesEnabled,
         allowSubGroups: !!form.allowSubGroups,
         allowNotifications: !!form.allowNotifications,
+        enableCommunity: !!form.enableCommunity,
+        enableQuestion: !!form.enableQuestion,
+        enableAnnouncement: !!form.enableAnnouncement,
         maxMembers: form.maxMembers ? Number(form.maxMembers) : null,
-
-        // membership validity
         memberValidFromMs: form.memberValidFromMs || 0,
         memberValidToMs: form.memberValidToMs || 0,
       };
@@ -1286,6 +1287,9 @@ export default function UniclubPage({ navbarHeight }) {
                                 sharedFilesEnabled: !!item?.settings?.sharedFilesEnabled,
                                 allowSubGroups: !!item?.settings?.allowSubGroups,
                                 allowNotifications: item?.settings?.allowNotifications === false ? false : true,
+                                enableCommunity: item?.settings?.enableCommunity,
+                                enableQuestion: item?.settings?.enableQuestion,
+                                enableAnnouncement: item?.settings?.enableAnnouncement,
                                 maxMembers: Number.isFinite(item?.settings?.maxMembers) ? String(item?.settings?.maxMembers) : "",
 
                                 memberValidFromMs: item?.settings?.memberValidFromMs || 0,
@@ -1875,8 +1879,11 @@ export default function UniclubPage({ navbarHeight }) {
                     ["pollsEnabled", "Allow Polls"],
                     ["sharedFilesEnabled", "Allow Shared Files"],
                     ["allowSubGroups", "Allow Sub-Groups/Channels"],
+                    ["enableCommunity", "Enable Community"],
+                    ["enableQuestion", "Enable Ask a Question"],
+                    ["enableAnnouncement", "Enable Announcement"],
                     ["enableChat", "Enable Chat"],
-                    ["allowNotifications", "Allow Notifications to Members"],
+                    // ["allowNotifications", "Allow Notifications to Members"],
                   ].map(([key, label]) => (
                     <label key={key} className="flex items-center justify-between border rounded px-3 py-2">
                       <span className="text-sm">{label}</span>
@@ -2100,12 +2107,12 @@ export default function UniclubPage({ navbarHeight }) {
                                 onChange={(e) => updatePaidTicket(idx, { price: e.target.value })}
                               />
 
-                              <input
+                              {/* <input
                                 className="w-full border border-gray-300 p-2 rounded"
                                 placeholder="Which club/sub-group can buy? (optional id)"
                                 value={t.allowedGroupId || ""}
                                 onChange={(e) => updatePaidTicket(idx, { allowedGroupId: e.target.value })}
-                              />
+                              /> */}
 
                               <input
                                 className="w-full border border-gray-300 p-2 rounded"

@@ -559,6 +559,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
         sharedFilesEnabled: !!form.sharedFilesEnabled,
         allowSubGroups: !!form.allowSubGroups,
         allowNotifications: !!form.allowNotifications,
+        enableCommunity: !!form.enableCommunity,
+        enableQuestion: !!form.enableQuestion,
+        enableAnnouncement: !!form.enableAnnouncement,
         maxMembers: form.maxMembers ? Number(form.maxMembers) : null,
         paymentType: form.paymentType,
         amount: form.paymentType === "paid" ? Number(form.paymentAmount) : 0,
@@ -1072,6 +1075,9 @@ export default function UniclubSubgroup({ navbarHeight }) {
                                 allowSubGroups: !!item?.settings?.allowSubGroups,
                                 allowNotifications:
                                   item?.settings?.allowNotifications === false ? false : true,
+                                enableCommunity: item?.settings?.enableCommunity,
+                                enableQuestion: item?.settings?.enableQuestion,
+                                enableAnnouncement: item?.settings?.enableAnnouncement,
                                 maxMembers: Number.isFinite(item?.settings?.maxMembers)
                                   ? String(item?.settings?.maxMembers)
                                   : "",
@@ -1234,7 +1240,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
                 {/* When */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    When
+                    Sub group vaild from
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
@@ -1597,8 +1603,11 @@ export default function UniclubSubgroup({ navbarHeight }) {
                     ["pollsEnabled", "Allow Polls"],
                     ["sharedFilesEnabled", "Allow Shared Files"],
                     ["allowSubGroups", "Allow Sub-Groups/Channels"],
+                    ["enableCommunity", "Enable Community"],
+                    ["enableQuestion", "Enable Ask a Question"],
+                    ["enableAnnouncement", "Enable Announcement"],
                     ["enableChat", "Enable Chat"],
-                    ["allowNotifications", "Allow Notifications to Members"],
+                    // ["allowNotifications", "Allow Notifications to Members"],
                   ].map(([key, label]) => (
                     <label
                       key={key}

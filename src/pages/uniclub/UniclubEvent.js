@@ -342,7 +342,23 @@ export default function UniclubEventPage({ navbarHeight }) {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setForm((f) => ({ ...f, [name]: type === "checkbox" ? checked : value }));
+    // setForm((f) => ({ ...f, [name]: type === "checkbox" ? checked : value }));
+    setForm((f) => {
+      const next = { ...f, [name]: type === "checkbox" ? checked : value };
+  
+      if (name === "priceType" && value === "Paid") {
+        next.capacity = "";
+        next.maxPurchaseTickets = "";
+        next.freeTicketStartDateTime = "";
+        next.freeTicketEndDateTime = "";
+        next.hasTables = false;
+        next.tableType = "";
+        next.tableCount = "";
+        next.ticketsPerTable = "";
+      }
+  
+      return next;
+    });
   };
 
   const uniquePath = (folder, file) => {
@@ -380,12 +396,18 @@ export default function UniclubEventPage({ navbarHeight }) {
         }
       }
 
-      const capNum = parseInt(form.capacity, 10);
-      const maxPerNum = parseInt(form.maxPurchaseTickets, 10);
-      if (!Number.isNaN(maxPerNum) && maxPerNum < 1)
-        return toast.error("Max purchase tickets must be at least 1.");
-      if (!Number.isNaN(capNum) && !Number.isNaN(maxPerNum) && maxPerNum > capNum)
-        return toast.error("Max purchase tickets cannot be greater than Max Capacity.");
+      if (form.priceType === "Free") {
+        const capNum = parseInt(form.capacity, 10);
+        const maxPerNum = parseInt(form.maxPurchaseTickets, 10);
+      
+        if (!Number.isNaN(maxPerNum) && maxPerNum < 1) {
+          return toast.error("Max purchase tickets must be at least 1.");
+        }
+      
+        if (!Number.isNaN(capNum) && !Number.isNaN(maxPerNum) && maxPerNum > capNum) {
+          return toast.error("Max purchase tickets cannot be greater than Max Capacity.");
+        }
+      }
 
       if (form.priceType === "Paid" && (form.ticketTypes || []).length === 0) {
         toast.warning("You selected Paid event but no tickets are configured. Please add at least one ticket type.");
