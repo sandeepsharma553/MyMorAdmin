@@ -65,7 +65,8 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
       daysActive: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
       timeWindowStart: "",
       timeWindowEnd: "",
-      redemptionMethodKey: "student_id",
+      redemptionMethodId: "",
+      redemptionMethod: "",
       requiresStudentId: true,
       oneClaimPerStudent: true,
       claimLimit: "",
@@ -74,7 +75,7 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
       bookingEnabled: false,
       bookingLink: "",
       sessionLabel: "",
-      saleType: "storewide",
+      saleType: "",
       discountRangeLabel: "",
       catalogFile: null,
       catalogUrl: "",
@@ -196,7 +197,8 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
     if (!form.categoryId) return alert("Category is required");
     if (!form.slotId) return alert("Slot is required");
 
-    if (form.redemptionMethodKey === "promo" && !String(form.promoCode).trim()) return alert("Promo code is required");
+    const isPromo = (form.redemptionMethod || "").toLowerCase().includes("promo");
+    if (isPromo && !String(form.promoCode).trim()) return alert("Promo code is required");
     // if (form.bookingEnabled && !String(form.bookingLink).trim()) return alert("Booking link required");
 
     if (isCatalog) {
@@ -242,7 +244,17 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
 
           <div>
             <label className={labelCls}>Slot *</label>
-            <select value={form.slotId} onChange={set("slotId")} className={selectCls}>
+            <select value={form.slotId}
+              // onChange={set("slotId")} 
+              onChange={(e) => {
+                const next = e.target.value;
+                setForm((p) => ({
+                  ...p,
+                  slotId: next,
+                  slot: slotOptions.find((m) => m.id === next)?.name?.toLowerCase() || "",
+                }));
+              }}
+              className={selectCls}>
               <option value="">Select Slot</option>
               {slotOptions.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
@@ -421,9 +433,22 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label className={labelCls}>Redemption Method *</label>
-            <select value={form.redemptionMethodKey} onChange={set("redemptionMethodKey")} className={selectCls}>
+            <select
+              value={form.redemptionMethodId}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                const methodObj = redemptionMethods.find((m) => m.id === nextId);
+                setForm((p) => ({
+                  ...p,
+                  redemptionMethodId: nextId,
+                  redemptionMethod: (methodObj?.name || "").toLowerCase(),
+                }));
+              }}
+              className={selectCls}
+            >
+              <option value="">Select Method</option>
               {redemptionMethods.map((m) => (
-                <option key={m.id} value={m.key || m.name?.toLowerCase()}>
+                <option key={m.id} value={m.id}>
                   {m.name}
                 </option>
               ))}
@@ -435,13 +460,17 @@ export default function DealForm({ initialValues, onSubmit, loading, submitText 
             <input value={form.claimLimit} onChange={set("claimLimit")} className={inputCls} placeholder="200" />
           </div>
 
-          {form.redemptionMethodKey === "promo" && (
-            <div className="md:col-span-2">
-              <label className={labelCls}>Promo Code *</label>
-              <input value={form.promoCode} onChange={set("promoCode")} className={inputCls} placeholder="MYMOR50" />
-            </div>
-          )}
-
+          {((form.redemptionMethod || "").toLowerCase().includes("promo")) && (
+  <div className="md:col-span-2">
+    <label className={labelCls}>Promo Code *</label>
+    <input
+      value={form.promoCode}
+      onChange={set("promoCode")}
+      className={inputCls}
+      placeholder="MYMOR50"
+    />
+  </div>
+)}
           <div className="md:col-span-2">
             <label className={labelCls}>Voucher Instructions (optional)</label>
             <textarea

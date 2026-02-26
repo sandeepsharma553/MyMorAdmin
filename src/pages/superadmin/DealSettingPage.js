@@ -669,7 +669,7 @@ function RedemptionMethodCrudSection() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
 
-  const initialForm = { id: "", name: "", key: "" };
+  const initialForm = { id: "", name: "" };
   const [form, setForm] = useState(initialForm);
 
   const fetchList = async () => {
@@ -702,35 +702,26 @@ function RedemptionMethodCrudSection() {
 
   const onChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
-  const normalizeKey = (k) =>
-    String(k || "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, "_");
+  const normalize = (v) => String(v || "").trim().toLowerCase();
 
   const onSubmit = async (e) => {
     e.preventDefault();
 
     const name = String(form.name || "").trim();
-    const key = normalizeKey(form.key);
-
     if (!name) return toast.warn("Name required");
-    if (!key) return toast.warn("Key required (student_id / qr / promo)");
-
-    if (!["student_id", "qr", "promo"].includes(key)) {
-      return toast.warn("Key must be: student_id, qr, promo");
-    }
 
     try {
-      // duplicate check (uid + key)
-      const dupQ = query(
-        collection(db, "dealredemptionmethod"),
-        where("uid", "==", uid),
-        where("key", "==", key)
-      );
+      // ✅ Duplicate check by NAME (case-insensitive) for same uid, excluding current doc
+      const dupQ = query(collection(db, "dealredemptionmethod"), where("uid", "==", uid));
       const dupSnap = await getDocs(dupQ);
-      const dup = dupSnap.docs.find((d) => d.id !== form.id);
-      if (dup) return toast.warn("Duplicate key found");
+
+      const isDup = dupSnap.docs.some((d) => {
+        if (editing && d.id === form.id) return false; // exclude self on edit
+        const existingName = normalize(d.data()?.name);
+        return existingName === normalize(name);
+      });
+
+      if (isDup) return toast.warn("Duplicate method found");
 
       if (editing) {
         const ref = doc(db, "dealredemptionmethod", form.id);
@@ -740,19 +731,19 @@ function RedemptionMethodCrudSection() {
         await updateDoc(ref, {
           uid,
           name,
-          key,
           updatedBy: uid,
           updatedDate: new Date(),
         });
+
         toast.success("Updated");
       } else {
         await addDoc(collection(db, "dealredemptionmethod"), {
           uid,
           name,
-          key,
           createdBy: uid,
           createdDate: new Date(),
         });
+
         toast.success("Saved");
       }
 
@@ -806,26 +797,26 @@ function RedemptionMethodCrudSection() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Key</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
+
             <tbody className="divide-y divide-gray-200">
               {slice.map((item) => (
                 <tr key={item.id}>
                   <td className="px-6 py-4 text-sm text-gray-700">{item.name}</td>
-                  <td className="px-6 py-4 text-sm text-gray-700">{item.key}</td>
                   <td className="px-6 py-4 text-sm">
                     <button
                       className="text-blue-600 hover:underline mr-3"
                       onClick={() => {
                         setEditing(item);
-                        setForm({ id: item.id, name: item.name || "", key: item.key || "" });
+                        setForm({ id: item.id, name: item.name || "" }); // ✅ key removed
                         setModalOpen(true);
                       }}
                     >
                       Edit
                     </button>
+
                     <button
                       className="text-red-600 hover:underline"
                       onClick={() => {
@@ -838,6 +829,7 @@ function RedemptionMethodCrudSection() {
                   </td>
                 </tr>
               ))}
+
               {slice.length === 0 && (
                 <tr>
                   <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={3}>
@@ -860,30 +852,15 @@ function RedemptionMethodCrudSection() {
 
             <form onSubmit={onSubmit} className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-gray-700">Name</label>
+                {/* <label className="text-sm font-medium text-gray-700">Name</label> */}
                 <input
                   name="name"
-                  placeholder="Show Student ID"
+                  placeholder="Name"
                   value={form.name}
                   onChange={onChange}
                   className="w-full border border-gray-300 p-2 rounded mt-1"
                   required
                 />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-700">Key</label>
-                <input
-                  name="key"
-                  placeholder="student_id / qr / promo"
-                  value={form.key}
-                  onChange={onChange}
-                  className="w-full border border-gray-300 p-2 rounded mt-1"
-                  required
-                />
-                <div className="text-xs text-gray-500 mt-1">
-                  Must be exactly: <b>student_id</b>, <b>qr</b>, <b>promo</b>
-                </div>
               </div>
 
               <div className="flex justify-end mt-6 space-x-3">

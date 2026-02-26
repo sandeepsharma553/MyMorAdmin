@@ -283,7 +283,8 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       timeWindowStart: d?.schedule?.timeWindow?.start || "",
       timeWindowEnd: d?.schedule?.timeWindow?.end || "",
 
-      redemptionMethod: d?.redemption?.method || "student_id",
+      redemptionMethodId: d?.redemption?.methodId || "",
+      redemptionMethod: d?.redemption?.method || "",
       requiresStudentId: d?.redemption?.requiresStudentId ?? true,
       oneClaimPerStudent: d?.redemption?.oneClaimPerStudent ?? true,
       claimLimit: d?.redemption?.claimLimit == null ? "" : String(d.redemption.claimLimit),
@@ -294,7 +295,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       bookingLink: d?.booking?.bookingLink || "",
       sessionLabel: d?.booking?.sessionLabel || "",
 
-      saleType: d?.retail?.saleType || "storewide",
+      saleType: d?.retail?.saleType || "",
       discountRangeLabel: d?.retail?.discountRangeLabel || "",
       catalogUrl: d?.retail?.catalogUrl || "",
       catalogFile: null,
@@ -304,8 +305,14 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
   const formToDealPayload = ({ values, editingBiz, form, dealEditing, posterUrl, posterPath, catalogUrl, catalogPath }) => {
     const timeWindow =
-      values.timeWindowStart && values.timeWindowEnd ? { start: values.timeWindowStart, end: values.timeWindowEnd } : null;
+      values.timeWindowStart && values.timeWindowEnd
+        ? { start: values.timeWindowStart, end: values.timeWindowEnd }
+        : null;
 
+    // daysLeft
+    const daysLeft = typeof values.daysLeft === "number" ? values.daysLeft : null;
+    const isPromo = String(values.redemptionMethod || "").toLowerCase().includes("promo");
+    const isCatalog = String(values.mode || "").toLowerCase().includes("catalog");
     return {
       businessId: editingBiz.id,
       businessName: form.name || "",
@@ -353,11 +360,12 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       },
 
       redemption: {
-        method: values.redemptionMethod || "student_id",
+        methodId: values.redemptionMethodId || "",
+        method: values.redemptionMethod || "",
         requiresStudentId: !!values.requiresStudentId,
         oneClaimPerStudent: !!values.oneClaimPerStudent,
         claimLimit: values.claimLimit === "" ? null : Number(values.claimLimit),
-        promoCode: values.redemptionMethod === "promo" ? (values.promoCode || "").trim() : "",
+        promoCode: isPromo ? (values.promoCode || "").trim() : "",
         instructions: (values.instructions || "").trim(),
       },
 
@@ -368,7 +376,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       },
 
       retail:
-        values.mode === "catalog"
+        isCatalog === "catalog"
           ? {
             saleType: values.saleType || "storewide",
             discountRangeLabel: (values.discountRangeLabel || "").trim(),
@@ -771,8 +779,10 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       // catalog
       let catalogUrl = values.catalogUrl || dealEditing?.retail?.catalogUrl || "";
       let catalogPath = dealEditing?.retail?.catalogPath || "";
-
-      if (values.mode === "catalog" && values.catalogFile) {
+      const isCatalog = String(values.mode || "")
+        .toLowerCase()
+        .includes("catalog");
+      if (isCatalog && values.catalogFile) {
         const up2 = await uploadIfFile(values.catalogFile, "deals/catalogs");
         catalogUrl = up2.url;
         catalogPath = up2.path;

@@ -58,19 +58,19 @@ const dealToFormValues = (r) => {
     timeWindowStart: r?.schedule?.timeWindow?.start || "",
     timeWindowEnd: r?.schedule?.timeWindow?.end || "",
 
-    redemptionMethod: r?.redemption?.method || "student_id",
+    redemptionMethodId: r?.redemption?.methodId || "",
+    redemptionMethod: r?.redemption?.method || "",
     requiresStudentId: r?.redemption?.requiresStudentId ?? true,
     oneClaimPerStudent: r?.redemption?.oneClaimPerStudent ?? true,
     claimLimit: r?.redemption?.claimLimit == null ? "" : String(r.redemption.claimLimit),
     promoCode: r?.redemption?.promoCode || "",
     instructions: r?.redemption?.instructions || "",
-
     bookingEnabled: r?.booking?.enabled ?? false,
     bookingLink: r?.booking?.bookingLink || "",
     sessionLabel: r?.booking?.sessionLabel || "",
 
     // catalog
-    saleType: r?.retail?.saleType || "storewide",
+    saleType: r?.retail?.saleType || "",
     discountRangeLabel: r?.retail?.discountRangeLabel || "",
     catalogUrl: r?.retail?.catalogUrl || "",
     catalogFile: null,
@@ -88,13 +88,15 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
 
   // daysLeft
   const daysLeft = typeof values.daysLeft === "number" ? values.daysLeft : null;
+  const isPromo = String(values.redemptionMethod || "").toLowerCase().includes("promo");
+  const isCatalog = String(values.mode || "").toLowerCase().includes("catalog");
   return {
     header: values.header || "",
     categoryId: values.categoryId || "",
     slotId: values.slotId || "",
     modeid: values.modeid || "",
     statusid: values.statusid || "",
-    category: values.category || "dining",
+    category: values.category || "",
     slot: values.slot || "",
     mode: values.mode || "",
     status: values.status || "",
@@ -118,14 +120,13 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
       validTo: values.validTo || "",
       timeWindow,
     },
-
     redemption: {
-      methodKey: values.redemptionMethodKey || "student_id",
-      method: values.redemptionMethod || "student_id",
+      methodId: values.redemptionMethodId || "",
+      method: values.redemptionMethod || "", // you are storing lower-case in DealForm already
       requiresStudentId: !!values.requiresStudentId,
       oneClaimPerStudent: !!values.oneClaimPerStudent,
       claimLimit: values.claimLimit === "" ? null : Number(values.claimLimit),
-      promoCode: values.redemptionMethod === "promo" ? (values.promoCode || "").trim() : "",
+      promoCode: isPromo ? (values.promoCode || "").trim() : "",
       instructions: (values.instructions || "").trim(),
     },
 
@@ -135,20 +136,19 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
       sessionLabel: (values.sessionLabel || "").trim(),
     },
 
-    retail:
-      values.mode === "catalog"
-        ? {
-          saleType: values.saleType || "storewide",
-          discountRangeLabel: (values.discountRangeLabel || "").trim(),
-          catalogUrl: catalogUrl || values.catalogUrl || "",
-          catalogPath: catalogPath || editing?.retail?.catalogPath || "",
-          highlights: (values.retailHighlights || []).slice(0, 8).map((x) => ({
-            title: (x.title || "").trim(),
-            priceLabel: (x.priceLabel || "").trim(),
-            imageUrl: (x.imageUrl || "").trim(),
-          })),
-        }
-        : null,
+    retail: isCatalog
+      ? {
+        saleType: values.saleType || "",
+        discountRangeLabel: (values.discountRangeLabel || "").trim(),
+        catalogUrl: catalogUrl || values.catalogUrl || "",
+        catalogPath: catalogPath || editing?.retail?.catalogPath || "",
+        highlights: (values.retailHighlights || []).slice(0, 8).map((x) => ({
+          title: (x.title || "").trim(),
+          priceLabel: (x.priceLabel || "").trim(),
+          imageUrl: (x.imageUrl || "").trim(),
+        })),
+      }
+      : null,
 
     posterUrl: posterUrl || values.imageUrl || editing?.posterUrl || "",
     posterPath: posterPath || editing?.posterPath || "",
@@ -249,8 +249,8 @@ export default function DealPage({ navbarHeight }) {
       // Catalog upload
       let catalogUrl = values.catalogUrl || editing?.retail?.catalogUrl || "";
       let catalogPath = editing?.retail?.catalogPath || "";
-
-      if (values.mode === "catalog" && values.catalogFile) {
+      const isCatalog = String(values.mode || "").toLowerCase().includes("catalog");
+      if (isCatalog && values.catalogFile) {
         const up2 = await uploadIfFile(values.catalogFile, "deals/catalogs");
         catalogUrl = up2.url;
         catalogPath = up2.path;
