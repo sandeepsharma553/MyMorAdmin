@@ -10,7 +10,8 @@ import {
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
-import { db } from "../../firebase";
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { db, storage } from "../../firebase";
 import useDealSettings from "../../hooks/useDealSettings";
 
 const DAYS = [
@@ -53,6 +54,11 @@ const initialForm = {
   bookingEnabled: false,
   bookingLink: "",
   bookingname: "",
+
+  // ✅ Banner (Upload only)
+  bannerUrl: "",
+  bannerPath: "",
+
   scheduleEnabled: false,
   validFrom: "",
   validTo: "",
@@ -75,10 +81,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
 
   useEffect(() => {
     if (!dealId) return;
-    const qy = query(
-      collection(db, "deals", dealId, "offers"),
-      orderBy("order", "asc")
-    );
+    const qy = query(collection(db, "deals", dealId, "offers"), orderBy("order", "asc"));
     return onSnapshot(qy, (snap) => {
       setOffers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
@@ -86,14 +89,56 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
 
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
+  // ---------- Banner helpers (upload only) ----------
+  const uploadOfferBanner = async (file) => {
+    if (!dealId) return null;
+
+    const ext = (file?.name || "banner.jpg").split(".").pop() || "jpg";
+    const path = `deals/${dealId}/offers/banners/${Date.now()}_${Math.random()
+      .toString(16)
+      .slice(2)}.${ext}`;
+
+    const r = storageRef(storage, path);
+    await uploadBytes(r, file);
+    const url = await getDownloadURL(r);
+    return { url, path };
+  };
+
+  const removeBannerFromStorage = async (path) => {
+    if (!path) return;
+    try {
+      await deleteObject(storageRef(storage, path));
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  const onPickBanner = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // old banner delete if exists
+    const oldPath = form.bannerPath;
+    if (oldPath) await removeBannerFromStorage(oldPath);
+
+    const res = await uploadOfferBanner(file);
+    if (!res) return;
+
+    setForm((p) => ({
+      ...p,
+      bannerUrl: res.url,
+      bannerPath: res.path,
+    }));
+
+    // allow re-pick same file
+    e.target.value = "";
+  };
+
   // ---------- Line Items ----------
   const addLineItem = () => {
     setForm((p) => ({
       ...p,
-      lineItems: [
-        ...(p.lineItems || []),
-        { title: "", price: "", unit: "$", note: "", highlight: false },
-      ],
+      lineItems: [...(p.lineItems || []), { title: "", price: "", unit: "$", note: "", highlight: false }],
     }));
   };
 
@@ -107,9 +152,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
   const setLineItem = (idx, key, val) => {
     setForm((p) => ({
       ...p,
-      lineItems: (p.lineItems || []).map((it, i) =>
-        i === idx ? { ...it, [key]: val } : it
-      ),
+      lineItems: (p.lineItems || []).map((it, i) => (i === idx ? { ...it, [key]: val } : it)),
     }));
   };
 
@@ -246,7 +289,9 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
         if (Number.isNaN(Number(it.price))) return `Line item ${i + 1}: price must be a number`;
       }
     }
+
     if (form.bookingEnabled && !String(form.bookingLink || "").trim()) return "Booking link required";
+
     if (form.scheduleEnabled) {
       const ds = form.daySchedules || {};
       const activeDays = DAYS.filter((d) => ds[d.id]?.active);
@@ -269,8 +314,8 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
         (it.unit || "$") === "special"
           ? null
           : it.price === "" || it.price == null
-            ? null
-            : Number(it.price),
+          ? null
+          : Number(it.price),
       unit: it.unit || "$",
       note: (it.note || "").trim(),
       highlight: !!it.highlight,
@@ -294,9 +339,15 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
       notes: form.notes.trim(),
       timeOverride: form.timeOverride.trim(),
       redemptionOverride: form.redemptionOverride.trim(),
+
       bookingEnabled: !!form.bookingEnabled,
       bookingLink: (form.bookingLink || "").trim(),
       bookingname: (form.bookingname || "").trim(),
+
+      // ✅ Banner save (upload only)
+      bannerUrl: (form.bannerUrl || "").trim(),
+      bannerPath: (form.bannerPath || "").trim(),
+
       scheduleOverride,
       order,
       createdAt: serverTimestamp(),
@@ -332,14 +383,19 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
 
     const hasSchedule =
       !!sch &&
-      (sch.validFrom || sch.validTo || (sch.days && Object.keys(sch.days).length) || (sch.activeDays && sch.activeDays.length));
+      (sch.validFrom ||
+        sch.validTo ||
+        (sch.days && Object.keys(sch.days).length) ||
+        (sch.activeDays && sch.activeDays.length));
 
     // pricing backward compat
     const hasLineItems = offer.lineItems?.length;
     const fallbackSingleToLineItem = () => {
       const unit = offer.unit || "$";
-      if (unit === "special") return [{ title: offer.label || "Special", price: "", unit: "special", note: "", highlight: false }];
-      if (offer.value == null) return [{ title: offer.label || "", price: "", unit: "$", note: "", highlight: false }];
+      if (unit === "special")
+        return [{ title: offer.label || "Special", price: "", unit: "special", note: "", highlight: false }];
+      if (offer.value == null)
+        return [{ title: offer.label || "", price: "", unit: "$", note: "", highlight: false }];
       return [{ title: offer.label || "", price: String(offer.value), unit: unit || "$", note: "", highlight: false }];
     };
 
@@ -347,8 +403,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
     setShowSchedule(!!hasSchedule);
 
     // open first active day (accordion)
-    const firstActive =
-      DAYS.find((d) => nextDaySchedules[d.id]?.active) || DAYS[0];
+    const firstActive = DAYS.find((d) => nextDaySchedules[d.id]?.active) || DAYS[0];
     setOpenDay(firstActive?.id || "mon");
 
     setForm({
@@ -364,9 +419,15 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
       notes: offer.notes || "",
       timeOverride: offer.timeOverride || "",
       redemptionOverride: offer.redemptionOverride || "",
+
       bookingEnabled: !!offer.bookingEnabled,
       bookingLink: offer.bookingLink || "",
       bookingname: offer.bookingname || "",
+
+      // ✅ Banner load
+      bannerUrl: offer.bannerUrl || "",
+      bannerPath: offer.bannerPath || "",
+
       scheduleEnabled: !!hasSchedule,
       validFrom: sch?.validFrom || "",
       validTo: sch?.validTo || "",
@@ -389,9 +450,15 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
       notes: form.notes.trim(),
       timeOverride: form.timeOverride.trim(),
       redemptionOverride: form.redemptionOverride.trim(),
+
       bookingEnabled: !!form.bookingEnabled,
       bookingLink: (form.bookingLink || "").trim(),
       bookingname: (form.bookingname || "").trim(),
+
+      // ✅ Banner save (upload only)
+      bannerUrl: (form.bannerUrl || "").trim(),
+      bannerPath: (form.bannerPath || "").trim(),
+
       scheduleOverride,
       updatedAt: serverTimestamp(),
     });
@@ -400,7 +467,12 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
   };
 
   const removeOffer = async (offerId) => {
+    const offer = offers.find((x) => x.id === offerId);
+    const bannerPath = offer?.bannerPath;
+
     await deleteDoc(doc(db, "deals", dealId, "offers", offerId));
+    if (bannerPath) await removeBannerFromStorage(bannerPath);
+
     if (editingOfferId === offerId) resetForm();
   };
 
@@ -435,9 +507,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
       const firstDay = dayKeys[0];
       const firstSlot = (sch.days[firstDay] || [])[0];
       const firstTxt =
-        firstSlot?.start && firstSlot?.end
-          ? `${firstDay.toUpperCase()} ${firstSlot.start}-${firstSlot.end}`
-          : firstDay.toUpperCase();
+        firstSlot?.start && firstSlot?.end ? `${firstDay.toUpperCase()} ${firstSlot.start}-${firstSlot.end}` : firstDay.toUpperCase();
       const moreDays = dayKeys.length - 1;
       return moreDays > 0 ? `${firstTxt} (+${moreDays}d)` : firstTxt;
     }
@@ -474,9 +544,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
 
       <div className={cardCls}>
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold text-gray-900">
-            {editingOfferId ? "Edit Offer Block" : "Add Offer Block"}
-          </div>
+          <div className="text-sm font-semibold text-gray-900">{editingOfferId ? "Edit Offer Block" : "Add Offer Block"}</div>
 
           {editingOfferId && (
             <button
@@ -504,12 +572,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
 
           <div>
             <div className="text-xs text-gray-600">Type</div>
-            <select
-              className={inputCls}
-              value={form.type}
-              onChange={set("type")}
-              disabled={!dealId || disabled}
-            >
+            <select className={inputCls} value={form.type} onChange={set("type")} disabled={!dealId || disabled}>
               {(settingsOfferTypes?.length ? settingsOfferTypes : []).map((t) => (
                 <option key={t.id} value={t.key || t.id || t.name?.toLowerCase()}>
                   {t.name}
@@ -615,6 +678,26 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
             </div>
           </div>
 
+          {/* ✅ Upload Banner ONLY */}
+          <div className="md:col-span-2">
+            <div className="text-xs text-gray-600">Upload Banner (optional)</div>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={onPickBanner}
+              disabled={!dealId || disabled}
+              className="block w-full text-sm"
+            />
+
+            {form.bannerUrl ? (
+              <img
+                src={form.bannerUrl}
+                alt="Offer banner"
+                className="mt-2 h-28 w-full rounded-xl object-cover border border-gray-200"
+              />
+            ) : null}
+          </div>
+
           <div>
             <div className="text-xs text-gray-600">Time Override (optional)</div>
             <input
@@ -636,6 +719,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
               disabled={!dealId || disabled}
             />
           </div>
+
           {/* ✅ Booking (Offer-level) */}
           <div className="md:col-span-2 mt-2 rounded-xl border border-gray-200 bg-white p-3">
             <div className="text-sm font-semibold text-gray-900">Booking</div>
@@ -738,9 +822,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
 
             {/* ✅ Copy button */}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs text-gray-600">
-                Tip: Set Monday times then copy to all active days.
-              </div>
+              <div className="text-xs text-gray-600">Tip: Set Monday times then copy to all active days.</div>
 
               <button
                 type="button"
@@ -763,10 +845,10 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
                 return (
                   <div
                     key={d.id}
-                    className={`overflow-hidden rounded-2xl border ${active ? "border-blue-200 bg-blue-50" : "border-gray-200 bg-white"
-                      }`}
+                    className={`overflow-hidden rounded-2xl border ${
+                      active ? "border-blue-200 bg-blue-50" : "border-gray-200 bg-white"
+                    }`}
                   >
-                    {/* Header */}
                     <button
                       type="button"
                       onClick={() => setOpenDay((cur) => (cur === d.id ? null : d.id))}
@@ -776,9 +858,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className={active ? dayPillOn : dayPillOff}>{d.label}</span>
-                          <span className="text-xs text-gray-600">
-                            {active ? "Active" : "Inactive"}
-                          </span>
+                          <span className="text-xs text-gray-600">{active ? "Active" : "Inactive"}</span>
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -790,10 +870,11 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
                               toggleDayActive(d.id);
                             }}
                             disabled={!dealId || disabled}
-                            className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${active
-                              ? "border-blue-200 bg-white text-blue-700 hover:bg-blue-50"
-                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                              }`}
+                            className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                              active
+                                ? "border-blue-200 bg-white text-blue-700 hover:bg-blue-50"
+                                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                            }`}
                           >
                             {active ? "Disable" : "Enable"}
                           </button>
@@ -803,13 +884,10 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
                       </div>
                     </button>
 
-                    {/* Body */}
                     {open && (
                       <div className="border-t border-gray-200 bg-white px-3 py-3">
                         <div className="flex items-center justify-between">
-                          <div className="text-xs font-semibold text-gray-700">
-                            Time Slots (multiple allowed)
-                          </div>
+                          <div className="text-xs font-semibold text-gray-700">Time Slots (multiple allowed)</div>
 
                           <button
                             type="button"
@@ -860,11 +938,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
                           ))}
                         </div>
 
-                        {!active && (
-                          <div className="mt-2 text-xs text-gray-500">
-                            Enable this day to edit times.
-                          </div>
-                        )}
+                        {!active && <div className="mt-2 text-xs text-gray-500">Enable this day to edit times.</div>}
                       </div>
                     )}
                   </div>
@@ -874,7 +948,6 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
           </div>
         )}
 
-        {/* Action buttons */}
         <div className="mt-4 flex justify-end gap-2">
           {!editingOfferId ? (
             <button
@@ -898,7 +971,6 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
         </div>
       </div>
 
-      {/* List */}
       <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
         <table className="min-w-[1400px] w-full text-sm">
           <thead className="bg-gray-50 text-left">
@@ -927,9 +999,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
                   </td>
 
                   <td className="p-3 text-gray-600">{renderScheduleSummary(sch)}</td>
-                  <td className="p-3 text-gray-600">
-                    {o.bookingEnabled && o.bookingLink ? "Enabled" : "—"}
-                  </td>
+                  <td className="p-3 text-gray-600">{o.bookingEnabled && o.bookingLink ? "Enabled" : "—"}</td>
                   <td className="p-3 text-gray-600">{renderDaysShort(sch)}</td>
 
                   <td className="p-3">
@@ -959,7 +1029,7 @@ export default function OfferBlocksEditor({ dealId, disabled, uid }) {
 
             {offers.length === 0 && (
               <tr>
-                <td className="p-6 text-gray-500" colSpan={6}>
+                <td className="p-6 text-gray-500" colSpan={7}>
                   No offer blocks yet.
                 </td>
               </tr>
