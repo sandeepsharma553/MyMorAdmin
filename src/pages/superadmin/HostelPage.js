@@ -48,6 +48,7 @@ const DEFAULT_FEATURES = {
   uniclub: false,
   explore: false,
   marketplace: false,
+  shop:false
 };
 
 const pageSize = 10;

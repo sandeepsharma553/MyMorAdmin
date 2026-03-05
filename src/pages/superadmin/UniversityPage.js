@@ -53,6 +53,7 @@ const DEFAULT_FEATURES = {
   explore:false,
   uniclubcommunity:false,
   marketplace:false,
+  shop:false
 };
 
 const initialForm = {
