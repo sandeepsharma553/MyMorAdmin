@@ -14,6 +14,7 @@ import ContactPage from "../pages/ContactPage";
 import DealPage from "../pages/superadmin/DealPage";
 import DealForm from "../pages/superadmin/DealForm";
 import BusinessesPage from "../pages/superadmin/BusinessesPage";
+import RestaurantPage from "../pages/superadmin/RestaurantPage";
 export default function SuperAdminRoutes() {
   return (
     <Routes>
@@ -33,6 +34,7 @@ export default function SuperAdminRoutes() {
       <Route path="/uniclub" element={<UniclubPage />} />
       <Route path="/poi" element={<PoiPage />} />
       <Route path="/contact" element={<ContactPage />} />
+      <Route path="/restaurant" element={<RestaurantPage />} />
       {/* <Route path="colleges" element={<Colleges />} /> */}
     </Routes>
   );
