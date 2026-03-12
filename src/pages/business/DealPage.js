@@ -18,7 +18,7 @@ import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 import DealForm from "./DealForm";
-import OfferBlocksEditor from "./OfferBlocksEditor";
+import OfferBlocksEditor from "../superadmin/OfferBlocksEditor";
 import { useSelector } from "react-redux";
 
 /** ---------------- helpers: Firestore row -> DealForm flat values ---------------- */

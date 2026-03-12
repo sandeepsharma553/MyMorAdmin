@@ -11,10 +11,14 @@ import UniclubEmployeePage from "../pages/superadmin/UniclubEmployeePage";
 import UniclubPage from "../pages/superadmin/UniclubPage";
 import PoiPage from "../pages/superadmin/PoiPage";
 import ContactPage from "../pages/ContactPage";
-import DealPage from "../pages/superadmin/DealPage";
-import DealForm from "../pages/superadmin/DealForm";
 import BusinessesPage from "../pages/superadmin/BusinessesPage";
-import RestaurantPage from "../pages/superadmin/RestaurantPage";
+import DealPage from "../pages/business/DealPage";
+import RestaurantPage from "../pages/business/RestaurantPage";
+import RestaurantOrdersPage from "../pages/business/RestaurantOrdersPage";
+import RestaurantReservationsPage from "../pages/business/RestaurantReservationsPage";
+import RestaurantReviewsPage from "../pages/business/RestaurantReviewsPage";
+import RestaurantAnalyticsPage from "../pages/business/RestaurantAnalyticsPage";
+import RestaurantInventoryPage from "../pages/business/RestaurantInventoryPage";
 export default function SuperAdminRoutes() {
   return (
     <Routes>
@@ -28,13 +32,17 @@ export default function SuperAdminRoutes() {
       <Route path="/event" element={<EventPage />} />
       <Route path="/eventbooking" element={<EventBookingPage />} />
       <Route path="/deal" element={<DealPage />} />
-      <Route path="/dealcreate" element={<DealForm />} />
       <Route path="/business" element={<BusinessesPage />} />
       <Route path="/setting" element={<SettingPage />} />
       <Route path="/uniclub" element={<UniclubPage />} />
       <Route path="/poi" element={<PoiPage />} />
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/restaurant" element={<RestaurantPage />} />
+      <Route path="/restaurants/:id/orders" element={<RestaurantOrdersPage />} />
+      <Route path="/restaurants/:id/reservations" element={<RestaurantReservationsPage />} />
+      <Route path="/restaurants/:id/reviews" element={<RestaurantReviewsPage />} />
+      <Route path="/restaurants/:id/analytics" element={<RestaurantAnalyticsPage />} />
+      <Route path="/restaurants/:id/inventory" element={<RestaurantInventoryPage />} />
       {/* <Route path="colleges" element={<Colleges />} /> */}
     </Routes>
   );

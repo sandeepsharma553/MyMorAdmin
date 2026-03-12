@@ -15,10 +15,16 @@ import AdminRoutes from "./routes/AdminRoutes";
 
 import ChooseContextPage from "./pages/admin/ChooseContextPage";
 
+const isValidId = (v) =>
+  v !== undefined &&
+  v !== null &&
+  String(v).trim() !== "" &&
+  String(v).trim().toLowerCase() !== "null" &&
+  String(v).trim().toLowerCase() !== "undefined";
+
 function AppWrapper() {
   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
   const type = useSelector((state) => state.auth.type);
-  const user = useSelector((state) => state.auth.user);
   const employee = useSelector((state) => state.auth.employee);
   const activeOrg = useSelector((state) => state.auth.activeOrg);
 
@@ -31,34 +37,42 @@ function AppWrapper() {
 
   if (checking) return null;
 
-  const hasHostel = !!employee?.hostelid;
-  const hasUniclub = !!employee?.uniclubid;
+  const hasHostel = isValidId(employee?.hostelid);
+  const hasUniclub = isValidId(employee?.uniclubid);
+  const hasBusiness = !hasHostel && !hasUniclub;
 
-  // ✅ Decide where "/" should go for admin
-  const adminDefaultPath =
-    isLoggedIn && type === "admin"
-      ? hasHostel && hasUniclub
-        ? activeOrg === "hostel"
-          ? "/dashboard"
-          : activeOrg === "uniclub"
-            ? "/uniclubdashboard"
-            : "/choose"
-        : hasUniclub
-          ? "/uniclubdashboard"
-          : "/dashboard"
-      : "/dashboard";
+  let adminDefaultPath = "/businessdashboard";
 
+  if (isLoggedIn && type === "admin") {
+    if (hasHostel && hasUniclub) {
+      if (activeOrg === "hostel") {
+        adminDefaultPath = "/dashboard";
+      } else if (activeOrg === "uniclub") {
+        adminDefaultPath = "/uniclubdashboard";
+      } else if (activeOrg === "business") {
+        adminDefaultPath = "/businessdashboard";
+      } else {
+        adminDefaultPath = "/choose";
+      }
+    } 
+    else if (hasUniclub) {
+      adminDefaultPath = "/uniclubdashboard";
+    } else if (hasHostel) {
+      adminDefaultPath = "/dashboard";
+    } else if (hasBusiness) {
+      adminDefaultPath = "/businessdashboard";
+    } else {
+      adminDefaultPath = "/businessdashboard";
+    }
+  }
   return (
     <Routes>
-      {/* Public */}
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/support" element={<SupportPage />} />
       <Route path="/requestdelete" element={<AccountDeletionPage />} />
 
-      {/* Not logged in */}
       {!isLoggedIn && <Route path="*" element={<LoginPage />} />}
 
-      {/* Superadmin */}
       {isLoggedIn && type === "superadmin" && (
         <>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -73,15 +87,10 @@ function AppWrapper() {
         </>
       )}
 
-      {/* Admin */}
       {isLoggedIn && type === "admin" && (
         <>
           <Route path="/" element={<Navigate to={adminDefaultPath} replace />} />
-
-          {/* ✅ chooser page */}
           <Route path="/choose" element={<ChooseContextPage />} />
-
-          {/* all admin pages */}
           <Route
             path="/*"
             element={
@@ -93,7 +102,6 @@ function AppWrapper() {
         </>
       )}
 
-      {/* fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -34,6 +34,13 @@ import SubgroupAnnouncement from "../pages/uniclub/SubgroupAnnouncement";
 import SubgroupEvent from "../pages/uniclub/SubgroupEvent";
 import ContactPage from "../pages/ContactPage";
 import UniclubDashboardPage from "../pages/uniclub/UniclubDashboardPage";
+import RestaurantPage from "../pages/business/RestaurantPage";
+import RestaurantOrdersPage from "../pages/business/RestaurantOrdersPage";
+import RestaurantReservationsPage from "../pages/business/RestaurantReservationsPage";
+import RestaurantReviewsPage from "../pages/business/RestaurantReviewsPage";
+import RestaurantAnalyticsPage from "../pages/business/RestaurantAnalyticsPage";
+import RestaurantInventoryPage from "../pages/business/RestaurantInventoryPage";
+import BusinessDashboard from "../pages/business/BusinessDashboardPage";
 export default function AdminRoutes({ route }) {
 
   return (
@@ -42,6 +49,7 @@ export default function AdminRoutes({ route }) {
       {/* <Route path="dashboard" element={<HomePage />} /> */}
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/uniclubdashboard" element={<UniclubDashboardPage />} />
+      <Route path="/businessdashboard" element={<BusinessDashboard />} />
       <Route path="/diningmenu" element={<DiningMenuPage />} />
       <Route path="/cleaningschedule" element={<CleaningSchedulePage />} />
       <Route path="/tutorialSchedule" element={<TutorialSchedulePage />} />
@@ -75,7 +83,12 @@ export default function AdminRoutes({ route }) {
       <Route path="/subgroupeventbooking" element={<SubgroupEventBooking />} />
       <Route path="/subgroupannouncement" element={<SubgroupAnnouncement />} />
       <Route path="/contact" element={<ContactPage />} />
-      
+      <Route path="/restaurant" element={<RestaurantPage/>} />
+      <Route path="/restaurants/:id/orders" element={<RestaurantOrdersPage />} />
+      <Route path="/restaurants/:id/reservations" element={<RestaurantReservationsPage />} />
+      <Route path="/restaurants/:id/reviews" element={<RestaurantReviewsPage />} />
+      <Route path="/restaurants/:id/analytics" element={<RestaurantAnalyticsPage />} />
+      <Route path="/restaurants/:id/inventory" element={<RestaurantInventoryPage />} />
     </Routes>
   );
 }

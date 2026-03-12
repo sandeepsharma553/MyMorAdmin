@@ -23,13 +23,19 @@ const getLoginErrorMessage = (code) => {
   }
 };
 
+const isValidId = (v) =>
+  v !== undefined &&
+  v !== null &&
+  String(v).trim() !== "" &&
+  String(v).trim().toLowerCase() !== "null" &&
+  String(v).trim().toLowerCase() !== "undefined";
+
 // ✅ Convert Firestore Timestamp (and other non-plain objects) to serializable JSON
 const toSerializable = (value) => {
   if (value == null) return value;
 
-  // Firestore Timestamp has .toMillis()
   if (typeof value?.toMillis === "function") {
-    return value.toMillis(); // store as number (ms)
+    return value.toMillis();
   }
 
   if (Array.isArray(value)) return value.map(toSerializable);
@@ -44,13 +50,12 @@ const toSerializable = (value) => {
 };
 
 const pickDefaultActiveOrg = (employee) => {
-  const hasHostel = !!employee?.hostelid;
-  const hasUniclub = !!employee?.uniclubid;
+  const hasHostel = isValidId(employee?.hostelid);
+  const hasUniclub = isValidId(employee?.uniclubid);
 
-  if (hasHostel && hasUniclub) return null; // show chooser
   if (hasUniclub) return "uniclub";
   if (hasHostel) return "hostel";
-  return null;
+  return "business";
 };
 
 /* ---------------- thunks ---------------- */
@@ -67,10 +72,12 @@ export const getEmployeeByUid = createAsyncThunk(
       }
 
       const raw = { id: docSnap.id, ...(docSnap.data() || {}) };
-      return toSerializable(raw); // ✅ Timestamp -> millis
+      return toSerializable(raw);
     } catch (error) {
       toast.error(getLoginErrorMessage(error.code));
-      return rejectWithValue({ error: error.code || error.message || "Failed to fetch employee" });
+      return rejectWithValue({
+        error: error.code || error.message || "Failed to fetch employee",
+      });
     }
   }
 );
@@ -90,7 +97,6 @@ export const LoginAdmin = createAsyncThunk(
         return rejectWithValue({ error: "Login failed" });
       }
 
-      // ✅ ONLY store plain JSON user in redux
       const safeUser = {
         uid: firebaseUser.uid,
         email: firebaseUser.email,
@@ -148,7 +154,8 @@ const initialState = {
   type: localStorage.getItem("type") || null,
   activeOrg:
     localStorage.getItem("activeOrg") === "hostel" ||
-    localStorage.getItem("activeOrg") === "uniclub"
+    localStorage.getItem("activeOrg") === "uniclub" ||
+    localStorage.getItem("activeOrg") === "business"
       ? localStorage.getItem("activeOrg")
       : null,
 };
@@ -160,7 +167,14 @@ const AuthSlice = createSlice({
   reducers: {
     setActiveOrg: (state, action) => {
       const v = action.payload;
-      if (v !== "hostel" && v !== "uniclub" && v !== null) return;
+      if (
+        v !== "hostel" &&
+        v !== "uniclub" &&
+        v !== "business" &&
+        v !== null
+      )
+        return;
+
       state.activeOrg = v;
       try {
         if (v) localStorage.setItem("activeOrg", v);
@@ -170,7 +184,8 @@ const AuthSlice = createSlice({
     hydrateActiveOrg: (state) => {
       try {
         const v = localStorage.getItem("activeOrg");
-        state.activeOrg = v === "hostel" || v === "uniclub" ? v : null;
+        state.activeOrg =
+          v === "hostel" || v === "uniclub" || v === "business" ? v : null;
       } catch {
         state.activeOrg = null;
       }
@@ -195,18 +210,22 @@ const AuthSlice = createSlice({
         const { user, employee } = action.payload;
 
         state.isLoading = false;
-        state.user = user; // ✅ safe JSON only
-        state.employee = employee; // ✅ timestamp converted
+        state.user = user;
+        state.employee = employee;
         state.type = employee?.type || null;
         state.isLoggedIn = true;
 
         const computed = pickDefaultActiveOrg(employee);
         const stored = state.activeOrg;
-        const hasHostel = !!employee?.hostelid;
-        const hasUniclub = !!employee?.uniclubid;
+
+        const hasHostel = isValidId(employee?.hostelid);
+        const hasUniclub = isValidId(employee?.uniclubid);
+        const hasBusiness = !hasHostel && !hasUniclub;
 
         const storedValid =
-          (stored === "hostel" && hasHostel) || (stored === "uniclub" && hasUniclub);
+          (stored === "hostel" && hasHostel) ||
+          (stored === "uniclub" && hasUniclub) ||
+          (stored === "business" && hasBusiness);
 
         state.activeOrg = storedValid ? stored : computed;
 
@@ -228,11 +247,12 @@ const AuthSlice = createSlice({
       })
       .addCase(getEmployeeByUid.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.employee = action.payload; // ✅ serializable
+        state.employee = action.payload;
       })
       .addCase(getEmployeeByUid.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload?.error || action.error?.message || "Failed to fetch employee";
+        state.error =
+          action.payload?.error || action.error?.message || "Failed to fetch employee";
       })
       .addCase(logoutAdmin.fulfilled, (state) => {
         state.isLoggedIn = false;

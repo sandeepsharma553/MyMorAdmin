@@ -7,7 +7,7 @@ import {
   doc,
   deleteDoc,
   query,
-  Timestamp,
+  Timestamp,  where,
 } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase";
@@ -21,7 +21,8 @@ import DialogActions from "@mui/material/DialogActions";
 import Button from "@mui/material/Button";
 import MapLocationInput from "../../components/MapLocationInput";
 import { MapPin } from "lucide-react";
-
+import { useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
 const DAYS = [
   { key: "mon", label: "Mon" },
   { key: "tue", label: "Tue" },
@@ -416,13 +417,18 @@ export default function RestaurantPage({ navbarHeight }) {
   const [sortConfig, setSortConfig] = useState({ key: "updated", direction: "desc" });
   const [activeTab, setActiveTab] = useState("basic");
   const [form, setForm] = useState(initialFormData);
-
+  const navigate = useNavigate();
+  const uid = useSelector((s) => s.auth.user.uid);
+  const emp = useSelector((s) => s.auth.employee);
   useEffect(() => {
+    if (!uid) return;
+  
     getList();
+  
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, []);
+  }, [uid]);
 
   const setFilterDebounced = (field, value) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -440,15 +446,24 @@ export default function RestaurantPage({ navbarHeight }) {
   };
 
   const getList = async () => {
+    if (!uid) return;
+  
     setIsLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, "restaurants")));
+      const q = query(
+        collection(db, "restaurants"),
+        where("uid", "==", uid)
+      );
+  
+      const snap = await getDocs(q);
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  
       docs.sort(
         (a, b) =>
           (toMillis(b.updatedAt) ?? toMillis(b.createdAt) ?? 0) -
           (toMillis(a.updatedAt) ?? toMillis(a.createdAt) ?? 0)
       );
+  
       setList(docs);
     } catch (e) {
       console.error(e);
@@ -969,6 +984,7 @@ export default function RestaurantPage({ navbarHeight }) {
           minRatingToPublish: Number(form.reviewSettings.minRatingToPublish || 1),
         },
         updatedAt: Timestamp.now(),
+        uid:uid
       };
 
       if (editingData?.id) {
@@ -1130,6 +1146,40 @@ export default function RestaurantPage({ navbarHeight }) {
                       <td className="px-6 py-4 text-sm text-gray-700">{(() => { const ms = toMillis(item.updatedAt) ?? toMillis(item.createdAt); return ms ? dayjs(ms).format("MMM DD, YYYY") : "—"; })()}</td>
                       <td className="px-6 py-4 text-sm">
                         <button className="text-blue-600 hover:underline mr-3" onClick={() => openEdit(item)}>Edit</button>
+                        <button
+                          className="text-gray-700 hover:underline mr-3"
+                          onClick={() => navigate(`/restaurants/${item.id}/orders`)}
+                        >
+                          Orders
+                        </button>
+
+                        <button
+                          className="text-gray-700 hover:underline mr-3"
+                          onClick={() => navigate(`/restaurants/${item.id}/reservations`)}
+                        >
+                          Reservations
+                        </button>
+
+                        <button
+                          className="text-gray-700 hover:underline mr-3"
+                          onClick={() => navigate(`/restaurants/${item.id}/reviews`)}
+                        >
+                          Reviews
+                        </button>
+
+                        <button
+                          className="text-gray-700 hover:underline mr-3"
+                          onClick={() => navigate(`/restaurants/${item.id}/analytics`)}
+                        >
+                          Analytics
+                        </button>
+
+                        <button
+                          className="text-gray-700 hover:underline mr-3"
+                          onClick={() => navigate(`/restaurants/${item.id}/inventory`)}
+                        >
+                          Inventory
+                        </button>
                         <button className="text-red-600 hover:underline" onClick={() => { setDelete(item); setConfirmDeleteOpen(true); }}>Delete</button>
                       </td>
                     </tr>

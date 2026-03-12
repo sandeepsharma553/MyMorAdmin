@@ -10,52 +10,40 @@ import { LoginAdmin } from "../app/features/AuthSlice";
 import logoImage from "../assets/loginimage.jpg";
 import rightimage from "../assets/rightimage.jpg";
 
-
-const LoginPage = ({ onLogin }) => {
+const LoginPage = () => {
   const isLoading = useSelector((state) => state.auth.isLoading);
-  const error = useSelector((state) => state.auth.error);
   const dispatch = useDispatch();
   const navigate = useNavigate();
+
   const initialValues = {
     EmailID: "",
     Password: "",
   };
 
   const showToastMessage = (message) => {
-    toast.error(message, {
-      //position: toast.POSITION.TOP_RIGHT,
-    });
+    toast.error(message);
   };
 
   const validationSchema = Yup.object().shape({
-    // UserName: Yup.string()
-    //   //.matches(/^(\+\d{1,3}[- ]?)?\d{10}$/, "Invalid phone number")
-    //   .required("User Name is required"),
-    EmailID: Yup.string()
-
-      .required("User Name is required"),
+    EmailID: Yup.string().required("User Name is required"),
     Password: Yup.string().required("Password is required"),
   });
-  const handleSubmit = async (values) => {
-    try {
-      const result = await dispatch(LoginAdmin(values)).unwrap();
-      const employee = result.employee;
 
-    if (employee?.uniclubid) {
-      // Uniclub admin
-      navigate("/uniclubdashboard", { replace: true });
-    } else {
-      // Hostel admin (ya normal admin)
-      navigate("/dashboard", { replace: true });
-    }
+  const handleSubmit = async (values, { setSubmitting }) => {
+    try {
+      await dispatch(LoginAdmin(values)).unwrap();
+
+      // Important: App.jsx will decide where to go
+      navigate("/", { replace: true });
     } catch (error) {
-      showToastMessage(error.code || "Failed to login");
+      showToastMessage(error?.error || error?.message || "Failed to login");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
     <div className="flex h-screen">
-
       <div className="w-1/2 bg-black flex flex-col items-center justify-center relative">
         <h1 className="text-white text-4xl font-bold mb-6 z-10">MyMor</h1>
         <img
@@ -65,75 +53,73 @@ const LoginPage = ({ onLogin }) => {
         />
       </div>
 
-
       <div className="w-1/2 bg-white flex flex-col items-center justify-center px-8">
-        <img
-          src={logoImage}
-          alt="Logo"
-          className="w-16 h-16 mb-4"
-        />
+        <img src={logoImage} alt="Logo" className="w-16 h-16 mb-4" />
         <h2 className="text-2xl font-bold text-blue-600 mb-6">Welcome</h2>
+
         <Formik
           initialValues={initialValues}
           validationSchema={validationSchema}
           onSubmit={handleSubmit}
         >
+          {({ isSubmitting }) => (
+            <Form className="w-full max-w-sm space-y-4">
+              <div>
+                <label
+                  htmlFor="EmailID"
+                  className="block text-gray-700 text-sm font-bold mb-2"
+                >
+                  Email/Username
+                </label>
+                <Field
+                  type="text"
+                  id="EmailID"
+                  name="EmailID"
+                  className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                />
+                <ErrorMessage
+                  name="EmailID"
+                  component="p"
+                  className="text-red-500 text-xs italic"
+                />
+              </div>
 
-          <Form className="w-full max-w-sm space-y-4">
-            <div>
-              <label
-                htmlFor="id"
-                className="block text-gray-700 text-sm font-bold mb-2"
+              <div>
+                <label
+                  htmlFor="Password"
+                  className="block text-gray-700 text-sm font-bold mb-2"
+                >
+                  Password
+                </label>
+                <Field
+                  type="password"
+                  id="Password"
+                  name="Password"
+                  className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                />
+                <ErrorMessage
+                  name="Password"
+                  component="p"
+                  className="text-red-500 text-xs italic"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading || isSubmitting}
+                className="w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600 transition disabled:opacity-70"
               >
-                Email/Username
-              </label>
-              <Field
-                type="text"
-                id="EmailID"
-                name="EmailID"
-                className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-              />
-              <ErrorMessage
-                name="EmailID"
-                component="p"
-                className="text-red-500 text-xs italic"
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="Password"
-                className="block text-gray-700 text-sm font-bold mb-2"
-              >
-                Password
-              </label>
-              <Field
-                type="password"
-                id="Password"
-                name="Password"
-                className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-              />
-              <ErrorMessage
-                name="Password"
-                component="p"
-                className="text-red-500 text-xs italic"
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600 transition"
-            // disabled={isSubmitting}
-            >
-              {isLoading ? (
-                <BeatLoader size={8} color={"#ffffff"} loading={true} />
-              ) : (
-                "Login"
-              )}
-            </button>
-          </Form>
+                {isLoading ? (
+                  <BeatLoader size={8} color="#ffffff" loading />
+                ) : (
+                  "Login"
+                )}
+              </button>
+            </Form>
+          )}
         </Formik>
-        {error && showToastMessage(error)}{" "}
-        <ToastContainer />
 
+        <ToastContainer />
       </div>
     </div>
   );

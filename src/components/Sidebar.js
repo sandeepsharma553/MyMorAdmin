@@ -1,9 +1,7 @@
-// Sidebar.jsx — Firestore menu-state badges + RTDB members/joinRequests counts
-
 import React, { useEffect, useMemo, useState } from "react";
 import { BeatLoader } from "react-spinners";
 import dummyProfileImage from "../assets/logo1.png";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   Calendar,
@@ -43,6 +41,13 @@ import { setActiveOrg } from "../app/features/AuthSlice";
 const hasPermission = (perm, key) =>
   Array.isArray(perm) ? perm.includes(key) : !!perm?.[key];
 
+const isValidId = (v) =>
+  v !== undefined &&
+  v !== null &&
+  String(v).trim() !== "" &&
+  String(v).trim().toLowerCase() !== "null" &&
+  String(v).trim().toLowerCase() !== "undefined";
+
 /* ------------------------------- Sections ----------------------------- */
 const SECTIONS = [
   // hostel
@@ -66,7 +71,7 @@ const SECTIONS = [
 
   // uniclub
   { key: "uniclubdashboard", label: "Dashboard", Icon: LayoutDashboard },
-  { key: "uniclub", label: "Uniclub", Icon: Handshake }, // use as join-requests screen
+  { key: "uniclub", label: "Uniclub", Icon: Handshake },
   { key: "uniclubemp", label: "Uni Club Employee", Icon: UserPlus },
   { key: "uniclubstudent", label: "Committee", Icon: UserPlus },
   { key: "uniclubmember", label: "Member", Icon: UserPlus },
@@ -78,6 +83,10 @@ const SECTIONS = [
   { key: "subgroupannouncement", label: "Announcement", Icon: Bell },
   { key: "subgroupevent", label: "Event", Icon: Calendar },
   { key: "subgroupeventbooking", label: "Event Booking", Icon: Calendar },
+
+  // business
+  { key: "businessdashboard", label: "Dashboard", Icon: LayoutDashboard },
+  { key: "restaurant", label: "Restaurant", Icon: Utensils },
 
   // common
   { key: "setting", label: "Setting", Icon: SettingsIcon },
@@ -169,7 +178,6 @@ function useFirestoreBadgeCount({
   enabled = true,
 }) {
   const openedAt = useMenuLastOpenedMs({ uid, menuKey, enabled });
-
   const [docs, setDocs] = useState([]);
 
   useEffect(() => {
@@ -197,7 +205,6 @@ function useFirestoreBadgeCount({
 /* ------------------- RTDB badge: Members joined since lastOpened ------------------- */
 function useRtdbMembersBadgeCount({ uid, menuKey, clubId, enabled = true }) {
   const openedAt = useMenuLastOpenedMs({ uid, menuKey, enabled });
-
   const [members, setMembers] = useState([]);
 
   useEffect(() => {
@@ -223,7 +230,6 @@ function useRtdbMembersBadgeCount({ uid, menuKey, clubId, enabled = true }) {
 /* ------------------- RTDB badge: JoinRequests since lastOpened ------------------- */
 function useRtdbJoinReqBadgeCount({ uid, menuKey, clubId, enabled = true }) {
   const openedAt = useMenuLastOpenedMs({ uid, menuKey, enabled });
-
   const [requests, setRequests] = useState([]);
 
   useEffect(() => {
@@ -260,30 +266,33 @@ async function markMenuOpenedFirestore(uid, menuKey) {
 export default function Sidebar({ onSectionClick, isLoading }) {
   const [activeSection, setActiveSection] = useState("dashboard");
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useDispatch();
 
   const employee = useSelector((s) => s.auth.employee);
   const perms = employee?.permissions ?? null;
 
-  // ✅ MUST be auth.uid for menu state
   const uid = useSelector((s) => s.auth.user?.uid);
 
   const hostelid = employee?.hostelid || null;
   const uniclubid = employee?.uniclubid || null;
-
   const activeOrg = useSelector((s) => s.auth.activeOrg);
 
-  const hasHostel = !!hostelid;
-  const hasUniclub = !!uniclubid;
-
+  const hasHostel = isValidId(hostelid);
+  const hasUniclub = isValidId(uniclubid);
+  const hasBusiness = !hasHostel && !hasUniclub;
   useEffect(() => {
     if (hasHostel && hasUniclub && !activeOrg) navigate("/choose");
   }, [hasHostel, hasUniclub, activeOrg, navigate]);
 
+  useEffect(() => {
+    const pathKey = location.pathname.replace(/^\/+/, "").split("/")[0];
+    if (pathKey) setActiveSection(pathKey);
+  }, [location.pathname]);
+
   const hostelBadgeEnabled = activeOrg === "hostel";
   const uniclubBadgeEnabled = activeOrg === "uniclub";
 
-  /* -------- Hostel badges (Firestore collections) -------- */
   const maintenanceBadge = useFirestoreBadgeCount({
     uid,
     menuKey: "maintenance",
@@ -339,7 +348,6 @@ export default function Sidebar({ onSectionClick, isLoading }) {
     enabled: hostelBadgeEnabled,
   });
 
-  /* -------- UniClub badges (RTDB list compared to Firestore lastOpened) -------- */
   const uniclubMemberBadge = useRtdbMembersBadgeCount({
     uid,
     menuKey: "uniclubmember",
@@ -359,7 +367,6 @@ export default function Sidebar({ onSectionClick, isLoading }) {
     onSectionClick?.(sectionKey);
     navigate(`/${sectionKey}`);
 
-    // ✅ On click, clear badge by writing lastOpened to Firestore
     const hostelClearKeys = new Set([
       "maintenance",
       "reportincident",
@@ -417,33 +424,44 @@ export default function Sidebar({ onSectionClick, isLoading }) {
       "faq",
     ]);
 
+    const businessKeys = new Set(["businessdashboard", "restaurant"]);
+
     const byOrg = SECTIONS.filter((s) => {
       if (activeOrg === "hostel") {
-        if (uniclubKeys.has(s.key)) return false;
         return hostelKeys.has(s.key) || s.key === "setting" || s.key === "contact";
       }
+
       if (activeOrg === "uniclub") {
-        if (hostelKeys.has(s.key)) return false;
         return uniclubKeys.has(s.key) || s.key === "setting" || s.key === "contact";
       }
+
+      if (activeOrg === "business") {
+        return businessKeys.has(s.key) || s.key === "setting" || s.key === "contact";
+      }
+
       return s.key === "setting" || s.key === "contact";
     });
 
     return byOrg.filter((s) => {
       if (!perms) return true;
-      const permKey = s.key === "uniclubdashboard" ? "dashboard" : s.key;
+      const permKey =
+        s.key === "uniclubdashboard"
+          ? "dashboard"
+          : s.key === "businessdashboard"
+          ? "dashboard"
+          : s.key;
       return hasPermission(perms, permKey);
     });
   }, [activeOrg, perms]);
 
   useEffect(() => {
     if (activeOrg === "uniclub") setActiveSection("uniclubdashboard");
-    if (activeOrg === "hostel") setActiveSection("dashboard");
+    else if (activeOrg === "hostel") setActiveSection("dashboard");
+    else if (activeOrg === "business") setActiveSection("businessdashboard");
   }, [activeOrg]);
 
   return (
     <aside className="bg-gray-200 flex flex-col h-dvh shadow w-[220px] lg:w-[240px] xl:w-[260px]">
-      {/* Header */}
       <div className="flex flex-col items-center justify-center gap-2 py-4 px-2 shrink-0">
         {isLoading ? (
           <BeatLoader size={8} color="#666" />
@@ -461,38 +479,54 @@ export default function Sidebar({ onSectionClick, isLoading }) {
         )}
       </div>
 
-      {/* Switch org */}
-      {hasHostel && hasUniclub && (
+      {(hasHostel || hasUniclub) && (
         <div className="px-2 pb-2">
           <div className="bg-white rounded-lg p-2 shadow-sm flex gap-2">
-            <button
-              className={`flex-1 py-2 rounded font-semibold text-sm ${
-                activeOrg === "hostel" ? "bg-black text-white" : "bg-gray-100"
-              }`}
-              onClick={() => {
-                dispatch(setActiveOrg("hostel"));
-                navigate("/dashboard");
-              }}
-            >
-              Hostel
-            </button>
+            {hasHostel && (
+              <button
+                className={`flex-1 py-2 rounded font-semibold text-sm ${
+                  activeOrg === "hostel" ? "bg-black text-white" : "bg-gray-100"
+                }`}
+                onClick={() => {
+                  dispatch(setActiveOrg("hostel"));
+                  navigate("/dashboard");
+                }}
+              >
+                Hostel
+              </button>
+            )}
 
-            <button
-              className={`flex-1 py-2 rounded font-semibold text-sm ${
-                activeOrg === "uniclub" ? "bg-blue-600 text-white" : "bg-gray-100"
-              }`}
-              onClick={() => {
-                dispatch(setActiveOrg("uniclub"));
-                navigate("/uniclubdashboard");
-              }}
-            >
-              UniClub
-            </button>
+            {hasUniclub && (
+              <button
+                className={`flex-1 py-2 rounded font-semibold text-sm ${
+                  activeOrg === "uniclub" ? "bg-blue-600 text-white" : "bg-gray-100"
+                }`}
+                onClick={() => {
+                  dispatch(setActiveOrg("uniclub"));
+                  navigate("/uniclubdashboard");
+                }}
+              >
+                UniClub
+              </button>
+            )}
+
+            {hasBusiness && (
+              <button
+                className={`flex-1 py-2 rounded font-semibold text-sm ${
+                  activeOrg === "business" ? "bg-emerald-600 text-white" : "bg-gray-100"
+                }`}
+                onClick={() => {
+                  dispatch(setActiveOrg("business"));
+                  navigate("/businessdashboard");
+                }}
+              >
+                Business
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {/* Menu */}
       <nav className="flex-1 min-h-0 overflow-y-auto px-2 custom-scroll">
         {visibleSections.map(({ key, label, Icon }) => {
           const isActive = activeSection === key;

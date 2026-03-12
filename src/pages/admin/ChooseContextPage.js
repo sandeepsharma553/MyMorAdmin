@@ -2,9 +2,20 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { setActiveOrg } from "../../app/features/AuthSlice";
-import { Building2, GraduationCap, CheckCircle2 } from "lucide-react";
+import {
+  Building2,
+  GraduationCap,
+  CheckCircle2,
+} from "lucide-react";
 
-const LS_KEY = "activeOrg"; // "hostel" | "uniclub"
+const LS_KEY = "activeOrg";
+
+const isValidId = (v) =>
+  v !== undefined &&
+  v !== null &&
+  String(v).trim() !== "" &&
+  String(v).trim().toLowerCase() !== "null" &&
+  String(v).trim().toLowerCase() !== "undefined";
 
 export default function ChooseContextPage() {
   const dispatch = useDispatch();
@@ -13,11 +24,12 @@ export default function ChooseContextPage() {
   const employee = useSelector((s) => s.auth.employee);
   const activeOrg = useSelector((s) => s.auth.activeOrg);
 
-  const hasHostel = !!employee?.hostelid;
-  const hasUniclub = !!employee?.uniclubid;
+  const hasHostel = isValidId(employee?.hostelid);
+  const hasUniclub = isValidId(employee?.uniclubid);
+  const hasBusiness = !hasHostel && !hasUniclub;
 
   const [remember, setRemember] = useState(true);
-  const [hovered, setHovered] = useState(null); // "hostel" | "uniclub" | null
+  const [hovered, setHovered] = useState(null);
 
   const displayName = useMemo(() => {
     return employee?.name || employee?.fullName || employee?.email || "Admin";
@@ -31,62 +43,67 @@ export default function ChooseContextPage() {
     return `${a}${b}`.trim();
   }, [displayName]);
 
-  // restore choice from localStorage (optional)
   useEffect(() => {
     const saved = localStorage.getItem(LS_KEY);
-    if (!activeOrg && (saved === "hostel" || saved === "uniclub")) {
+    if (!activeOrg && (saved === "hostel" || saved === "uniclub" || saved === "business")) {
       dispatch(setActiveOrg(saved));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeOrg, dispatch]);
 
-  // Already selected => redirect
   useEffect(() => {
     if (activeOrg === "hostel") navigate("/dashboard", { replace: true });
-    if (activeOrg === "uniclub") navigate("/uniclubdashboard", { replace: true });
+    else if (activeOrg === "uniclub") navigate("/uniclubdashboard", { replace: true });
+    else if (activeOrg === "business") navigate("/businessdashboard", { replace: true });
   }, [activeOrg, navigate]);
 
-  // If only one access, auto pick
   useEffect(() => {
     if (!hasHostel && hasUniclub) {
       dispatch(setActiveOrg("uniclub"));
       localStorage.setItem(LS_KEY, "uniclub");
       navigate("/uniclubdashboard", { replace: true });
-    }
-    if (!hasUniclub && hasHostel) {
+    } else if (!hasUniclub && hasHostel) {
       dispatch(setActiveOrg("hostel"));
       localStorage.setItem(LS_KEY, "hostel");
       navigate("/dashboard", { replace: true });
+    } else if (hasBusiness) {
+      dispatch(setActiveOrg("business"));
+      localStorage.setItem(LS_KEY, "business");
+      navigate("/businessdashboard", { replace: true });
     }
-  }, [hasHostel, hasUniclub, dispatch, navigate]);
+  }, [hasHostel, hasUniclub, hasBusiness, dispatch, navigate]);
 
   const pick = (org) => {
     dispatch(setActiveOrg(org));
+
     if (remember) localStorage.setItem(LS_KEY, org);
     else localStorage.removeItem(LS_KEY);
 
-    navigate(org === "hostel" ? "/dashboard" : "/uniclubdashboard", { replace: true });
+    if (org === "hostel") {
+      navigate("/dashboard", { replace: true });
+    } else if (org === "uniclub") {
+      navigate("/uniclubdashboard", { replace: true });
+    } else {
+      navigate("/businessdashboard", { replace: true });
+    }
   };
 
-  if (!hasHostel && !hasUniclub) {
+  if (!hasHostel && !hasUniclub && !hasBusiness) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-6">
         <div className="bg-white rounded-2xl shadow p-6 w-full max-w-md border border-gray-200">
           <h1 className="text-xl font-bold mb-2 text-gray-900">No Access</h1>
           <p className="text-sm text-gray-600">
-            This admin has no hostel/uniclub access.
+            This admin has no valid workspace access.
           </p>
         </div>
       </div>
     );
   }
 
-  // If not both, we auto redirected above
   if (!(hasHostel && hasUniclub)) return null;
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-gray-50 via-gray-50 to-gray-100 p-4">
-      {/* soft background blobs */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -top-24 -left-24 h-80 w-80 rounded-full bg-blue-200/40 blur-3xl" />
         <div className="absolute top-1/3 -right-24 h-96 w-96 rounded-full bg-indigo-200/40 blur-3xl" />
@@ -95,7 +112,6 @@ export default function ChooseContextPage() {
 
       <div className="relative w-full max-w-2xl">
         <div className="rounded-3xl bg-white/85 backdrop-blur-xl border border-gray-200 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.25)] p-8 md:p-10">
-          {/* header */}
           <div className="flex items-start gap-4">
             <div className="h-14 w-14 rounded-2xl bg-black text-white flex items-center justify-center shadow">
               <span className="text-lg font-extrabold">{initials}</span>
@@ -113,7 +129,6 @@ export default function ChooseContextPage() {
             </div>
           </div>
 
-          {/* options */}
           <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
             <OptionCard
               title="Hostel Admin"
@@ -138,7 +153,6 @@ export default function ChooseContextPage() {
             />
           </div>
 
-          {/* footer controls */}
           <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <label className="flex items-center gap-3 cursor-pointer select-none">
               <input
@@ -174,12 +188,11 @@ export default function ChooseContextPage() {
   );
 }
 
-/* ---------- UI card ---------- */
 function OptionCard({
   title,
   subtitle,
   Icon,
-  variant = "dark", // "dark" | "blue"
+  variant = "dark",
   active,
   onClick,
   ...rest
