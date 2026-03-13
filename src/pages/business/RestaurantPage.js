@@ -7,7 +7,8 @@ import {
   doc,
   deleteDoc,
   query,
-  Timestamp,  where,
+  Timestamp,
+  where,
 } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase";
@@ -23,6 +24,7 @@ import MapLocationInput from "../../components/MapLocationInput";
 import { MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
+
 const DAYS = [
   { key: "mon", label: "Mon" },
   { key: "tue", label: "Tue" },
@@ -38,6 +40,42 @@ const PAYMENT_STATUSES = ["pending", "paid", "partially_paid", "failed", "refund
 const RESERVATION_MODES = ["native", "redirect", "waitlist_only", "disabled"];
 const SERVICE_MODES = ["delivery", "pickup", "dineIn", "menuOnly"];
 const SPLIT_MODES = ["single", "equal", "by_item", "manual"];
+
+const CUISINE_OPTIONS = [
+  "Indian",
+  "Chinese",
+  "Italian",
+  "Thai",
+  "Japanese",
+  "Korean",
+  "Mexican",
+  "American",
+  "Australian",
+  "Mediterranean",
+  "Middle Eastern",
+  "Vietnamese",
+  "Malaysian",
+  "Indonesian",
+  "Sri Lankan",
+  "Nepalese",
+  "Turkish",
+  "Greek",
+  "Lebanese",
+  "French",
+  "Spanish",
+  "Burger",
+  "Pizza",
+  "Seafood",
+  "Desserts",
+  "Cafe",
+  "Bakery",
+  "Healthy",
+  "Vegan",
+  "Vegetarian",
+  "BBQ",
+  "Steakhouse",
+  "Fusion",
+];
 
 const makeDefaultHours = () => ({
   mon: { closed: false, open: "09:00", close: "22:00" },
@@ -65,7 +103,7 @@ const newModifierGroup = () => ({
   id: createId("modgrp"),
   name: "",
   description: "",
-  selectionType: "single", // single | multi
+  selectionType: "single",
   isRequired: false,
   minSelect: 0,
   maxSelect: 1,
@@ -88,7 +126,7 @@ const newMenuItem = () => ({
   image: "",
   imageFile: null,
   notesEnabled: true,
-  availabilityState: "active", // active | sold_out | hidden | scheduled | archived
+  availabilityState: "active",
   appliesToServiceModes: ["delivery", "pickup", "dineIn"],
   modifierGroups: [],
   schedule: {
@@ -109,7 +147,7 @@ const newMenuCategory = () => ({
 const newMenu = () => ({
   id: createId("menu"),
   name: "Main Menu",
-  type: "all_day", // all_day | breakfast | lunch | dinner | late_night | specials
+  type: "all_day",
   description: "",
   isActive: true,
   appliesToServiceModes: ["delivery", "pickup", "dineIn"],
@@ -143,7 +181,7 @@ const newStaffRole = () => ({
   id: createId("staff"),
   name: "",
   email: "",
-  role: "staff", // brand_owner | branch_manager | staff | kitchen
+  role: "staff",
   branchScope: "current",
   canManageOrders: true,
   canManageStock: true,
@@ -162,7 +200,6 @@ const newTable = () => ({
 const initialFormData = {
   id: "",
 
-  // brand / branch identity
   brandId: "",
   brandName: "",
   brandSlug: "",
@@ -170,15 +207,14 @@ const initialFormData = {
   branchCode: "",
   shortDesc: "",
   description: "",
-  cuisines: "",
-  tags: "",
+  cuisines: [],
+  tags: [],
   priceRange: "$$",
   logo: null,
   logoFile: null,
   coverImage: null,
   coverImageFile: null,
 
-  // discovery / storefront
   avgCostForTwo: "",
   costForTwo: "",
   deliveryTime: "",
@@ -204,7 +240,6 @@ const initialFormData = {
   isFeatured: false,
   allowPreorderWhenClosed: false,
 
-  // service modes
   services: {
     delivery: true,
     pickup: true,
@@ -214,12 +249,11 @@ const initialFormData = {
 
   hours: makeDefaultHours(),
 
-  // delivery settings
   deliverySettings: {
     enabled: true,
     radiusKm: "5",
     minimumOrder: "",
-    feeType: "flat", // flat | distance
+    feeType: "flat",
     flatFee: "",
     perKmFee: "",
     freeDeliveryAbove: "",
@@ -231,7 +265,6 @@ const initialFormData = {
     contactPhoneRequired: false,
   },
 
-  // pickup settings
   pickupSettings: {
     enabled: true,
     asapEnabled: true,
@@ -241,7 +274,6 @@ const initialFormData = {
     pickupNotesEnabled: true,
   },
 
-  // reservations
   reservationSettings: {
     mode: "redirect",
     enabled: true,
@@ -258,7 +290,6 @@ const initialFormData = {
     autoConfirm: false,
   },
 
-  // dine in / qr
   qrSettings: {
     enabled: false,
     manualTableEntryEnabled: true,
@@ -268,7 +299,6 @@ const initialFormData = {
     tables: [],
   },
 
-  // group ordering
   groupOrderSettings: {
     enabled: false,
     joinByQr: true,
@@ -281,15 +311,10 @@ const initialFormData = {
     hostCanLockCart: true,
   },
 
-  // menus
   menus: [newMenu()],
-
   deals: [],
-
-  // staff / permissions
   staff: [],
 
-  // analytics placeholders / settings
   analytics: {
     promotedPlacement: false,
     acceptReviews: true,
@@ -403,6 +428,30 @@ function SectionCard({ title, subtitle, right, children }) {
   );
 }
 
+function ChipList({ items = [], onRemove }) {
+  if (!items.length) return null;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item) => (
+        <span
+          key={item}
+          className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 text-sm border"
+        >
+          {item}
+          <button
+            type="button"
+            onClick={() => onRemove(item)}
+            className="text-gray-500 hover:text-red-600"
+          >
+            ✕
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function RestaurantPage({ navbarHeight }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
@@ -417,14 +466,18 @@ export default function RestaurantPage({ navbarHeight }) {
   const [sortConfig, setSortConfig] = useState({ key: "updated", direction: "desc" });
   const [activeTab, setActiveTab] = useState("basic");
   const [form, setForm] = useState(initialFormData);
+  const [selectedCuisine, setSelectedCuisine] = useState("");
+  const [tagInput, setTagInput] = useState("");
+
   const navigate = useNavigate();
   const uid = useSelector((s) => s.auth.user.uid);
   const emp = useSelector((s) => s.auth.employee);
+
   useEffect(() => {
     if (!uid) return;
-  
+
     getList();
-  
+
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -447,23 +500,19 @@ export default function RestaurantPage({ navbarHeight }) {
 
   const getList = async () => {
     if (!uid) return;
-  
+
     setIsLoading(true);
     try {
-      const q = query(
-        collection(db, "restaurants"),
-        where("uid", "==", uid)
-      );
-  
+      const q = query(collection(db, "restaurants"), where("uid", "==", uid));
       const snap = await getDocs(q);
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  
+
       docs.sort(
         (a, b) =>
           (toMillis(b.updatedAt) ?? toMillis(b.createdAt) ?? 0) -
           (toMillis(a.updatedAt) ?? toMillis(a.createdAt) ?? 0)
       );
-  
+
       setList(docs);
     } catch (e) {
       console.error(e);
@@ -481,13 +530,54 @@ export default function RestaurantPage({ navbarHeight }) {
     }));
   };
 
+  const addCuisine = () => {
+    if (!selectedCuisine) return;
+    setForm((prev) => {
+      const next = Array.isArray(prev.cuisines) ? prev.cuisines : [];
+      if (next.includes(selectedCuisine)) return prev;
+      return { ...prev, cuisines: [...next, selectedCuisine] };
+    });
+    setSelectedCuisine("");
+  };
+
+  const removeCuisine = (value) => {
+    setForm((prev) => ({
+      ...prev,
+      cuisines: (prev.cuisines || []).filter((x) => x !== value),
+    }));
+  };
+
+  const addTag = () => {
+    const value = tagInput.trim();
+    if (!value) return;
+
+    setForm((prev) => {
+      const next = Array.isArray(prev.tags) ? prev.tags : [];
+      if (next.some((x) => x.toLowerCase() === value.toLowerCase())) return prev;
+      return { ...prev, tags: [...next, value] };
+    });
+
+    setTagInput("");
+  };
+
+  const removeTag = (value) => {
+    setForm((prev) => ({
+      ...prev,
+      tags: (prev.tags || []).filter((x) => x !== value),
+    }));
+  };
+
   const openCreate = () => {
     setActiveTab("basic");
     setEditing(null);
+    setSelectedCuisine("");
+    setTagInput("");
     setForm({
       ...initialFormData,
       hours: makeDefaultHours(),
       menus: [newMenu()],
+      cuisines: [],
+      tags: [],
     });
     setModalOpen(true);
   };
@@ -495,12 +585,14 @@ export default function RestaurantPage({ navbarHeight }) {
   const openEdit = (item) => {
     setActiveTab("basic");
     setEditing(item);
+    setSelectedCuisine("");
+    setTagInput("");
     setForm({
       ...initialFormData,
       ...item,
       id: item.id,
-      cuisines: Array.isArray(item.cuisines) ? item.cuisines.join(", ") : item.cuisines || "",
-      tags: Array.isArray(item.tags) ? item.tags.join(", ") : item.tags || "",
+      cuisines: Array.isArray(item.cuisines) ? item.cuisines : parseCsv(item.cuisines),
+      tags: Array.isArray(item.tags) ? item.tags : parseCsv(item.tags),
       images: Array.isArray(item.images) ? item.images : [],
       imageFiles: [],
       mapLocation: item.mapLocation
@@ -640,10 +732,13 @@ export default function RestaurantPage({ navbarHeight }) {
 
   const addModifierGroup = (menuId, catId, itemId) =>
     updateItem(menuId, catId, itemId, {
-      modifierGroups: [...(form.menus
-        .find((m) => m.id === menuId)
-        ?.categories.find((c) => c.id === catId)
-        ?.items.find((it) => it.id === itemId)?.modifierGroups || []), newModifierGroup()],
+      modifierGroups: [
+        ...(form.menus
+          .find((m) => m.id === menuId)
+          ?.categories.find((c) => c.id === catId)
+          ?.items.find((it) => it.id === itemId)?.modifierGroups || []),
+        newModifierGroup(),
+      ],
     });
 
   const updateModifierGroup = (menuId, catId, itemId, groupId, patch) => {
@@ -744,7 +839,10 @@ export default function RestaurantPage({ navbarHeight }) {
 
     const results = await Promise.all(
       uploads.map(async (u) => {
-        const path = uniquePath(`restaurant_menu_items/${form.brandName || form.branchName || "restaurant"}/${u.menuId}/${u.catId}`, u.file);
+        const path = uniquePath(
+          `restaurant_menu_items/${form.brandName || form.branchName || "restaurant"}/${u.menuId}/${u.catId}`,
+          u.file
+        );
         const sRef = storageRef(storage, path);
         await uploadBytes(sRef, u.file);
         const url = await getDownloadURL(sRef);
@@ -777,7 +875,7 @@ export default function RestaurantPage({ navbarHeight }) {
           if (!(item.name || "").trim()) return "Each menu item needs a name";
           for (const group of item.modifierGroups || []) {
             if (group.isRequired && (!group.maxSelect || Number(group.maxSelect) < 1)) {
-              return `Modifier group \"${group.name || "Untitled"}\" must allow at least 1 selection`;
+              return `Modifier group "${group.name || "Untitled"}" must allow at least 1 selection`;
             }
           }
         }
@@ -808,8 +906,14 @@ export default function RestaurantPage({ navbarHeight }) {
           )
         : [];
 
-      const logoUrl = form.logoFile ? await uploadFileIfAny(form.logoFile, `restaurant_brand_logos/${form.brandName || "brand"}`) : form.logo;
-      const coverUrl = form.coverImageFile ? await uploadFileIfAny(form.coverImageFile, `restaurant_cover_images/${form.brandName || "brand"}`) : form.coverImage;
+      const logoUrl = form.logoFile
+        ? await uploadFileIfAny(form.logoFile, `restaurant_brand_logos/${form.brandName || "brand"}`)
+        : form.logo;
+
+      const coverUrl = form.coverImageFile
+        ? await uploadFileIfAny(form.coverImageFile, `restaurant_cover_images/${form.brandName || "brand"}`)
+        : form.coverImage;
+
       const menusWithImages = await uploadMenuItemImagesIfAny(form.menus || []);
 
       const menusClean = (menusWithImages || []).map((menu) => ({
@@ -882,8 +986,8 @@ export default function RestaurantPage({ navbarHeight }) {
         branchCode: form.branchCode.trim(),
         shortDesc: form.shortDesc.trim(),
         description: form.description.trim(),
-        cuisines: parseCsv(form.cuisines),
-        tags: parseCsv(form.tags),
+        cuisines: Array.isArray(form.cuisines) ? form.cuisines : parseCsv(form.cuisines),
+        tags: Array.isArray(form.tags) ? form.tags : parseCsv(form.tags),
         priceRange: form.priceRange,
         logo: logoUrl || null,
         coverImage: coverUrl || null,
@@ -975,7 +1079,8 @@ export default function RestaurantPage({ navbarHeight }) {
         operations: {
           ...form.operations,
           prepBufferMins: form.operations.prepBufferMins === "" ? null : Number(form.operations.prepBufferMins),
-          maxSimultaneousOrders: form.operations.maxSimultaneousOrders === "" ? null : Number(form.operations.maxSimultaneousOrders),
+          maxSimultaneousOrders:
+            form.operations.maxSimultaneousOrders === "" ? null : Number(form.operations.maxSimultaneousOrders),
           supportPhone: form.operations.supportPhone?.trim?.() || "",
           supportEmail: form.operations.supportEmail?.trim?.() || "",
         },
@@ -984,7 +1089,7 @@ export default function RestaurantPage({ navbarHeight }) {
           minRatingToPublish: Number(form.reviewSettings.minRatingToPublish || 1),
         },
         updatedAt: Timestamp.now(),
-        uid:uid
+        uid: uid,
       };
 
       if (editingData?.id) {
@@ -997,6 +1102,8 @@ export default function RestaurantPage({ navbarHeight }) {
 
       setModalOpen(false);
       setEditing(null);
+      setSelectedCuisine("");
+      setTagInput("");
       setForm(initialFormData);
       await getList();
     } catch (err) {
@@ -1027,7 +1134,8 @@ export default function RestaurantPage({ navbarHeight }) {
     return list.filter((r) => {
       const label = `${r.brandName || ""} ${r.branchName || r.name || ""}`.toLowerCase();
       const okName = !nameQ || label.includes(nameQ);
-      const okCuisine = !cuisineQ || (Array.isArray(r.cuisines) ? r.cuisines.join(", ") : r.cuisines || "").toLowerCase().includes(cuisineQ);
+      const cuisineLabel = Array.isArray(r.cuisines) ? r.cuisines.join(", ") : r.cuisines || "";
+      const okCuisine = !cuisineQ || cuisineLabel.toLowerCase().includes(cuisineQ);
       const okLoc = !locQ || `${r.address || ""} ${r.location || ""}`.toLowerCase().includes(locQ);
       return okName && okCuisine && okLoc;
     });
@@ -1035,7 +1143,7 @@ export default function RestaurantPage({ navbarHeight }) {
 
   const getSortVal = (r, key) => {
     if (key === "name") return `${r.brandName || ""} ${r.branchName || r.name || ""}`.toLowerCase();
-    if (key === "cuisine") return (r.cuisines || []).join(", ").toLowerCase();
+    if (key === "cuisine") return (Array.isArray(r.cuisines) ? r.cuisines : []).join(", ").toLowerCase();
     if (key === "location") return (r.address || "").toLowerCase();
     if (key === "updated") return toMillis(r.updatedAt) ?? toMillis(r.createdAt) ?? 0;
     return "";
@@ -1219,7 +1327,7 @@ export default function RestaurantPage({ navbarHeight }) {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-              {activeTab === "basic" && (
+            {activeTab === "basic" && (
                 <div className="space-y-4">
                   <SectionCard title="Brand & Branch Identity" subtitle="PRD-aligned multi-branch structure">
                     <div className="grid grid-cols-2 gap-3">
@@ -1233,18 +1341,65 @@ export default function RestaurantPage({ navbarHeight }) {
                   <SectionCard title="Storefront Content">
                     <input name="shortDesc" value={form.shortDesc} onChange={handleChange} placeholder="Short description" className="w-full border border-gray-300 p-2 rounded" />
                     <textarea name="description" value={form.description} onChange={handleChange} placeholder="Full description" className="w-full border border-gray-300 p-2 rounded" rows={4} />
-                    <div className="grid grid-cols-2 gap-3">
-                      <input name="cuisines" value={form.cuisines} onChange={handleChange} placeholder="Cuisines (comma separated)" className="w-full border border-gray-300 p-2 rounded" />
-                      <input name="tags" value={form.tags} onChange={handleChange} placeholder="Tags (comma separated)" className="w-full border border-gray-300 p-2 rounded" />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium">Cuisines</label>
+                        <div className="flex gap-2">
+                          <select
+                            value={selectedCuisine}
+                            onChange={(e) => setSelectedCuisine(e.target.value)}
+                            className="w-full border border-gray-300 p-2 rounded"
+                          >
+                            <option value="">Select cuisine</option>
+                            {CUISINE_OPTIONS.filter((c) => !(form.cuisines || []).includes(c)).map((cuisine) => (
+                              <option key={cuisine} value={cuisine}>
+                                {cuisine}
+                              </option>
+                            ))}
+                          </select>
+                          <button type="button" onClick={addCuisine} className="px-4 py-2 rounded bg-black text-white whitespace-nowrap">
+                            Add
+                          </button>
+                        </div>
+                        <ChipList items={form.cuisines || []} onRemove={removeCuisine} />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium">Tags</label>
+                        <div className="flex gap-2">
+                          <input
+                            value={tagInput}
+                            onChange={(e) => setTagInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                addTag();
+                              }
+                            }}
+                            placeholder="Enter tag"
+                            className="w-full border border-gray-300 p-2 rounded"
+                          />
+                          <button type="button" onClick={addTag} className="px-4 py-2 rounded bg-black text-white whitespace-nowrap">
+                            Add
+                          </button>
+                        </div>
+                        <ChipList items={form.tags || []} onRemove={removeTag} />
+                      </div>
                     </div>
+
                     <div className="grid grid-cols-4 gap-3">
                       <select name="priceRange" value={form.priceRange} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded">
-                        <option value="$">$</option><option value="$$">$$</option><option value="$$$">$$$</option><option value="$$$$">$$$$</option>
+                        <option value="$">$</option>
+                        <option value="$$">$$</option>
+                        <option value="$$$">$$$</option>
+                        <option value="$$$$">$$$$</option>
                       </select>
                       <input name="avgCostForTwo" value={form.avgCostForTwo} onChange={handleChange} placeholder="Avg cost for 2" className="w-full border border-gray-300 p-2 rounded" />
                       <input name="costForTwo" value={form.costForTwo} onChange={handleChange} placeholder="Cost for two label" className="w-full border border-gray-300 p-2 rounded" />
                       <input name="rating" value={form.rating} onChange={handleChange} placeholder="Rating" className="w-full border border-gray-300 p-2 rounded" />
                     </div>
+
                     <div className="grid grid-cols-3 gap-3">
                       <input name="offerText" value={form.offerText} onChange={handleChange} placeholder="Offer text" className="w-full border border-gray-300 p-2 rounded" />
                       <input name="deliveryTime" value={form.deliveryTime} onChange={handleChange} placeholder="Delivery ETA label" className="w-full border border-gray-300 p-2 rounded" />
@@ -1321,7 +1476,6 @@ export default function RestaurantPage({ navbarHeight }) {
                   </SectionCard>
                 </div>
               )}
-
               {activeTab === "hours" && (
                 <SectionCard title="Weekly Hours" subtitle="Used for discovery, ordering availability, and scheduled validation">
                   {DAYS.map((d) => {
