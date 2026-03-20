@@ -61,6 +61,9 @@ const BUSINESS_PERMISSION_OPTIONS = [
   { key: "dashboard", label: "Dashboard" },
   { key: "deal", label: "Deal" },
   { key: "restaurant", label: "Restaurant" },
+  { key: "product", label: "Product" },
+  { key: "service", label: "Service" },
+  { key: "salon", label: "Salon" },
 ];
 
 const blankSlot = () => ({ from: "09:00", to: "17:00" });

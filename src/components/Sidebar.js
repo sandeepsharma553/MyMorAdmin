@@ -18,7 +18,7 @@ import {
   Settings as SettingsIcon,
   HelpCircle,
   Handshake,
-  Layers,
+  Layers,ShoppingBag,Cog,Scissors
 } from "lucide-react";
 
 import { useSelector, useDispatch } from "react-redux";
@@ -87,6 +87,9 @@ const SECTIONS = [
   // business
   { key: "businessdashboard", label: "Dashboard", Icon: LayoutDashboard },
   { key: "restaurant", label: "Restaurant", Icon: Utensils },
+  { key: "product", label: "Product", Icon: ShoppingBag },
+  { key: "service", label: "Service", Icon: Cog },
+  { key: "salon", label: "Salon", Icon: Scissors },
 
   // common
   { key: "setting", label: "Setting", Icon: SettingsIcon },
@@ -424,7 +427,12 @@ export default function Sidebar({ onSectionClick, isLoading }) {
       "faq",
     ]);
 
-    const businessKeys = new Set(["businessdashboard", "restaurant"]);
+    const businessKeys = new Set(["businessdashboard", 
+      "restaurant",
+      "product",
+      "service",
+      "salon"
+    ]);
 
     const byOrg = SECTIONS.filter((s) => {
       if (activeOrg === "hostel") {
