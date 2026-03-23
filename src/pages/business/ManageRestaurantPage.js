@@ -227,9 +227,15 @@ const initialFormData = {
   timings: "",
   isOpen: true,
   rating: "",
-  phone: "",
-  website: "",
-  bookingUrl: "",
+  phone: [""],
+  website: {
+    name: "",
+    url: "",
+  },
+  booking: {
+    name: "",
+    url: "",
+  },
   address: "",
   mapLocation: "",
   images: [],
@@ -685,6 +691,7 @@ export default function ManageRestaurantPage({ navbarHeight }) {
       menus: [newMenu()],
       cuisines: [],
       tags: [],
+      phone: [""],
     });
     setModalOpen(true);
   };
@@ -719,10 +726,54 @@ export default function ManageRestaurantPage({ navbarHeight }) {
       groupOrderSettings: item.groupOrderSettings || initialFormData.groupOrderSettings,
       services: item.services || initialFormData.services,
       analytics: item.analytics || initialFormData.analytics,
+      phone: Array.isArray(item.phone)
+        ? item.phone
+        : item.phone
+          ? [item.phone]
+          : [""],
+          website: item.website
+  ? typeof item.website === "object"
+    ? item.website
+    : { name: "", url: item.website }
+  : item.websiteUrl
+  ? { name: "", url: item.websiteUrl }
+  : { name: "", url: "" },
+
+booking: item.booking
+  ? typeof item.booking === "object"
+    ? item.booking
+    : { name: "", url: item.booking }
+  : item.bookingLink || item.bookingUrl
+  ? { name: "", url: item.bookingLink || item.bookingUrl }
+  : { name: "", url: "" },
     });
     setModalOpen(true);
   };
-
+  const addPhoneField = () => {
+    setForm((prev) => ({
+      ...prev,
+      phone: [...(prev.phone || []), ""],
+    }));
+  };
+  
+  const updatePhoneField = (index, value) => {
+    setForm((prev) => ({
+      ...prev,
+      phone: (prev.phone || []).map((p, i) => (i === index ? value : p)),
+    }));
+  };
+  
+  const removePhoneField = (index) => {
+    setForm((prev) => {
+      const next = [...(prev.phone || [])];
+      next.splice(index, 1);
+  
+      return {
+        ...prev,
+        phone: next.length ? next : [""],
+      };
+    });
+  };
   const removeImageAt = (index, key) => {
     setForm((prev) => {
       const next = [...(prev[key] || [])];
@@ -1073,9 +1124,22 @@ export default function ManageRestaurantPage({ navbarHeight }) {
         timings: form.timings.trim() || deriveTimings(form.hours),
         isOpen: !!form.isOpen,
         rating: form.rating === "" ? null : Number(form.rating),
-        phone: form.phone.trim(),
-        website: form.website.trim(),
-        bookingUrl: form.bookingUrl.trim(),
+        // phone: form.phone.trim(),
+        phone: Array.isArray(form.phone)
+  ? form.phone.map((p) => String(p || "").trim()).filter(Boolean)
+  : String(form.phone || "").trim()
+  ? [String(form.phone || "").trim()]
+  : [],
+  website: {
+    name: (form.website?.name || "").trim(),
+    url: (form.website?.url || "").trim(),
+  },
+  booking: {
+    name: (form.booking?.name || "").trim(),
+    url: (form.booking?.url || "").trim(),
+  },
+        // website: form.website.trim(),
+        // bookingUrl: form.bookingUrl.trim(),
         address: form.address.trim(),
         mapLocation: form.mapLocation
           ? (() => {
@@ -1488,9 +1552,93 @@ export default function ManageRestaurantPage({ navbarHeight }) {
 
                   <SectionCard title="Contact & Location">
                     <div className="grid grid-cols-2 gap-3">
-                      <input name="phone" value={form.phone} onChange={handleChange} placeholder="Phone" className="w-full border border-gray-300 p-2 rounded" />
-                      <input name="website" value={form.website} onChange={handleChange} placeholder="Website" className="w-full border border-gray-300 p-2 rounded" />
-                      <input name="bookingUrl" value={form.bookingUrl} onChange={handleChange} placeholder="Booking URL" className="w-full border border-gray-300 p-2 rounded" />
+                      <div className="col-span-2 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-sm font-medium">Phone</label>
+                          <button
+                            type="button"
+                            onClick={addPhoneField}
+                            className="px-3 py-1 rounded bg-black text-white text-xs"
+                          >
+                            + Add Phone
+                          </button>
+                        </div>
+
+                        {(form.phone || [""]).map((phoneValue, index) => (
+                          <div key={index} className="flex gap-2">
+                            <input
+                              name="phone"
+                              value={phoneValue}
+                              onChange={(e) => updatePhoneField(index, e.target.value)}
+                              placeholder={`Phone ${index + 1}`}
+                              className="w-full border border-gray-300 p-2 rounded"
+                            />
+                            {(form.phone || []).length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removePhoneField(index)}
+                                className="px-3 py-2 border rounded text-red-600"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+  {/* Website */}
+  <input
+    value={form.website.name}
+    onChange={(e) =>
+      setForm((prev) => ({
+        ...prev,
+        website: { ...prev.website, name: e.target.value },
+      }))
+    }
+    placeholder="Website Name (e.g. Google)"
+    className="w-full border border-gray-300 p-2 rounded"
+  />
+  <input
+    type="url"
+    value={form.website.url}
+    onChange={(e) =>
+      setForm((prev) => ({
+        ...prev,
+        website: { ...prev.website, url: e.target.value },
+      }))
+    }
+    placeholder="Website URL"
+    className="w-full border border-gray-300 p-2 rounded"
+  />
+
+  {/* Booking */}
+  <input
+    value={form.booking.name}
+    onChange={(e) =>
+      setForm((prev) => ({
+        ...prev,
+        booking: { ...prev.booking, name: e.target.value },
+      }))
+    }
+    placeholder="Booking Name (e.g. Reserve Table)"
+    className="w-full border border-gray-300 p-2 rounded"
+  />
+  <input
+    type="url"
+    value={form.booking.url}
+    onChange={(e) =>
+      setForm((prev) => ({
+        ...prev,
+        booking: { ...prev.booking, url: e.target.value },
+      }))
+    }
+    placeholder="Booking URL"
+    className="w-full border border-gray-300 p-2 rounded"
+  />
+</div>
+                      {/* <input name="phone" value={form.phone} onChange={handleChange} placeholder="Phone" className="w-full border border-gray-300 p-2 rounded" /> */}
+                      {/* <input name="website" value={form.website} onChange={handleChange} placeholder="Website" className="w-full border border-gray-300 p-2 rounded" />
+                      <input name="bookingUrl" value={form.bookingUrl} onChange={handleChange} placeholder="Booking URL" className="w-full border border-gray-300 p-2 rounded" /> */}
                       <input name="location" value={form.location} onChange={handleChange} placeholder="Location label" className="w-full border border-gray-300 p-2 rounded" />
                     </div>
                     <input name="address" value={form.address} onChange={handleChange} placeholder="Full address" className="w-full border border-gray-300 p-2 rounded" required />
