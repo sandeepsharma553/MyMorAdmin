@@ -19,7 +19,7 @@ const SECTIONS = [
     { key: "eventbooking", label: "Event Booking", Icon: Calendar },
     { key: "business", label: "Business", Icon: Building2 },
     { key: "deal", label: "Deal", Icon: Tag },
-    { key: "restaurant", label: "Restaurant", Icon: Utensils },
+    // { key: "restaurant", label: "Restaurant", Icon: Utensils },
     { key: "poi", label: "Poi", Icon: MapIcon },
     { key: "setting", label: "Setting", Icon: SettingsIcon },
     { key: "contact", label: "Contact", Icon: HelpCircle },

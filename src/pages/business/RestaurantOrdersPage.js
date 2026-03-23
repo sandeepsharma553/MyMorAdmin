@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   collection,
   getDocs,
@@ -8,13 +8,13 @@ import {
   doc,
   updateDoc,
   Timestamp,
+  getDoc,
 } from "firebase/firestore";
-import { useNavigate, useParams } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { db } from "../../firebase";
 import {
   ORDER_STATUSES,
   PAYMENT_STATUSES,
-  getRestaurantById,
 } from "../../components/RestaurantShared";
 import { toast, ToastContainer } from "react-toastify";
 
@@ -31,15 +31,19 @@ function StatusPill({ value }) {
   };
 
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-medium ${map[value] || "bg-gray-100 text-gray-700"}`}>
+    <span
+      className={`px-2 py-1 rounded-full text-xs font-medium ${
+        map[value] || "bg-gray-100 text-gray-700"
+      }`}
+    >
       {value || "—"}
     </span>
   );
 }
 
 export default function RestaurantOrdersPage({ navbarHeight }) {
-  const { id } = useParams();
-  const navigate = useNavigate();
+  const emp = useSelector((s) => s.auth.employee);
+  const restaurantId = emp?.restaurantid || null;
 
   const [restaurant, setRestaurant] = useState(null);
   const [orders, setOrders] = useState([]);
@@ -50,19 +54,33 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
   });
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, [id]);
+  const loadData = useCallback(async () => {
+    if (!restaurantId) {
+      setRestaurant(null);
+      setOrders([]);
+      return;
+    }
 
-  const loadData = async () => {
     setLoading(true);
     try {
-      const restaurantDoc = await getRestaurantById(id);
-      setRestaurant(restaurantDoc);
+      const restaurantRef = doc(db, "restaurants", restaurantId);
+      const restaurantSnap = await getDoc(restaurantRef);
+
+      if (!restaurantSnap.exists()) {
+        setRestaurant(null);
+        setOrders([]);
+        toast.error("Restaurant not found");
+        return;
+      }
+
+      setRestaurant({
+        id: restaurantSnap.id,
+        ...restaurantSnap.data(),
+      });
 
       const q = query(
         collection(db, "orders"),
-        where("restaurantId", "==", id),
+        where("restaurantId", "==", restaurantId),
         orderBy("createdAt", "desc")
       );
 
@@ -70,17 +88,23 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
       setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (e) {
       console.error(e);
-      toast.error("Failed to load orders");
+    
     } finally {
       setLoading(false);
     }
-  };
+  }, [restaurantId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((row) => {
       const okStatus = !filters.status || row.status === filters.status;
       const okType = !filters.type || row.type === filters.type;
-      const okPayment = !filters.paymentStatus || row.paymentStatus === filters.paymentStatus;
+      const okPayment =
+        !filters.paymentStatus || row.paymentStatus === filters.paymentStatus;
+
       return okStatus && okType && okPayment;
     });
   }, [orders, filters]);
@@ -99,25 +123,39 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
     }
   };
 
+  if (!restaurantId) {
+    return (
+      <main
+        className="flex-1 p-6 bg-gray-100 overflow-auto"
+        style={{ paddingTop: navbarHeight || 0 }}
+      >
+        <div className="bg-white rounded-xl shadow p-6">
+          <h1 className="text-2xl font-semibold mb-2">Live Orders Management</h1>
+          <p className="text-sm text-red-600">Employee restaurant id not found.</p>
+        </div>
+        <ToastContainer />
+      </main>
+    );
+  }
+
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
+    <main
+      className="flex-1 p-6 bg-gray-100 overflow-auto"
+      style={{ paddingTop: navbarHeight || 0 }}
+    >
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-semibold">Live Orders Management</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {restaurant ? `${restaurant.brandName || ""} / ${restaurant.branchName || ""}` : "Restaurant Orders"}
+            {restaurant
+              ? `${restaurant.brandName || ""} / ${restaurant.branchName || ""}`
+              : "Restaurant Orders"}
           </p>
         </div>
-        <button
-          className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-          onClick={() => navigate("/restaurant")}
-        >
-          Back
-        </button>
       </div>
 
       <div className="bg-white rounded-xl shadow p-4 space-y-4">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <select
             className="border p-2 rounded"
             value={filters.status}
@@ -145,7 +183,9 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
           <select
             className="border p-2 rounded"
             value={filters.paymentStatus}
-            onChange={(e) => setFilters((p) => ({ ...p, paymentStatus: e.target.value }))}
+            onChange={(e) =>
+              setFilters((p) => ({ ...p, paymentStatus: e.target.value }))
+            }
           >
             <option value="">All payment statuses</option>
             {PAYMENT_STATUSES.map((status) => (
@@ -160,8 +200,21 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                {["Order ID", "Customer", "Type", "Items", "Total", "Status", "Payment", "Created", "Actions"].map((x) => (
-                  <th key={x} className="px-4 py-3 text-left text-sm font-medium text-gray-600">
+                {[
+                  "Order ID",
+                  "Customer",
+                  "Type",
+                  "Items",
+                  "Total",
+                  "Status",
+                  "Payment",
+                  "Created",
+                  "Actions",
+                ].map((x) => (
+                  <th
+                    key={x}
+                    className="px-4 py-3 text-left text-sm font-medium text-gray-600"
+                  >
                     {x}
                   </th>
                 ))}
@@ -181,7 +234,9 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                   </td>
                   <td className="px-4 py-3 text-sm">{row.paymentStatus || "—"}</td>
                   <td className="px-4 py-3 text-sm">
-                    {row.createdAt?.toDate ? row.createdAt.toDate().toLocaleString() : "—"}
+                    {row.createdAt?.toDate
+                      ? row.createdAt.toDate().toLocaleString()
+                      : "—"}
                   </td>
                   <td className="px-4 py-3 text-sm">
                     <div className="flex gap-2 flex-wrap">
@@ -222,6 +277,14 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                 <tr>
                   <td colSpan="9" className="px-4 py-8 text-center text-gray-500">
                     No orders found.
+                  </td>
+                </tr>
+              )}
+
+              {loading && (
+                <tr>
+                  <td colSpan="9" className="px-4 py-8 text-center text-gray-500">
+                    Loading...
                   </td>
                 </tr>
               )}

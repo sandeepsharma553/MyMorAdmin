@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { doc, getDoc } from "firebase/firestore";
-import { useNavigate, useParams } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { db } from "../../firebase";
-import { getRestaurantById } from "../../components/RestaurantShared";
 
 function StatCard({ title, value, subtext }) {
   return (
@@ -15,31 +14,60 @@ function StatCard({ title, value, subtext }) {
 }
 
 export default function RestaurantAnalyticsPage({ navbarHeight }) {
-  const { id } = useParams();
-  const navigate = useNavigate();
+  const emp = useSelector((s) => s.auth.employee);
+  const restaurantId = emp?.restaurantid || null;
 
   const [restaurant, setRestaurant] = useState(null);
   const [analytics, setAnalytics] = useState({});
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, [id]);
+  const loadData = useCallback(async () => {
+    if (!restaurantId) {
+      setRestaurant(null);
+      setAnalytics({});
+      return;
+    }
 
-  const loadData = async () => {
     setLoading(true);
     try {
-      const restaurantDoc = await getRestaurantById(id);
-      setRestaurant(restaurantDoc);
+      const restaurantSnap = await getDoc(doc(db, "restaurants", restaurantId));
 
-      const snap = await getDoc(doc(db, "restaurantAnalytics", id));
-      setAnalytics(snap.exists() ? snap.data() : {});
+      if (restaurantSnap.exists()) {
+        setRestaurant({
+          id: restaurantSnap.id,
+          ...restaurantSnap.data(),
+        });
+      } else {
+        setRestaurant(null);
+      }
+
+      const analyticsSnap = await getDoc(doc(db, "restaurantAnalytics", restaurantId));
+      setAnalytics(analyticsSnap.exists() ? analyticsSnap.data() : {});
     } catch (e) {
       console.error("Failed to load analytics:", e);
+      setAnalytics({});
     } finally {
       setLoading(false);
     }
-  };
+  }, [restaurantId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  if (!restaurantId) {
+    return (
+      <main
+        className="flex-1 p-6 bg-gray-100 overflow-auto"
+        style={{ paddingTop: navbarHeight || 0 }}
+      >
+        <div className="bg-white rounded-xl shadow p-6">
+          <h1 className="text-2xl font-semibold mb-2">Analytics Dashboard</h1>
+          <p className="text-sm text-red-600">Employee restaurant id not found.</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main
@@ -55,21 +83,18 @@ export default function RestaurantAnalyticsPage({ navbarHeight }) {
               : "Restaurant Analytics"}
           </p>
         </div>
-
-        <button
-          className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-          onClick={() => navigate("/restaurant")}
-        >
-          Back
-        </button>
       </div>
 
       {loading ? (
         <div className="text-sm text-gray-500">Loading analytics...</div>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-4 gap-3">
-            <StatCard title="Impressions" value={analytics?.impressions ?? 0} subtext="Last 30 days" />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            <StatCard
+              title="Impressions"
+              value={analytics?.impressions ?? 0}
+              subtext="Last 30 days"
+            />
             <StatCard title="Restaurant Views" value={analytics?.restaurantViews ?? 0} />
             <StatCard title="Menu Views" value={analytics?.menuViews ?? 0} />
             <StatCard title="Add To Cart" value={analytics?.addToCart ?? 0} />
@@ -81,7 +106,7 @@ export default function RestaurantAnalyticsPage({ navbarHeight }) {
 
           <div className="border rounded-xl bg-white p-4">
             <div className="font-semibold mb-3">Dashboard sections</div>
-            <div className="grid grid-cols-3 gap-3 text-sm text-gray-600">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-sm text-gray-600">
               <div className="border rounded p-3">Discovery funnel</div>
               <div className="border rounded p-3">Menu performance</div>
               <div className="border rounded p-3">Order conversion</div>

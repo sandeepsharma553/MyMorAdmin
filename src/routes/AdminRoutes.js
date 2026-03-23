@@ -45,6 +45,10 @@ import BusinessDashboard from "../pages/business/BusinessDashboardPage";
 import ProductPage from "../pages/business/ProductPage";
 import ServicePage from "../pages/business/ServicePage";
 import SalonPage from "../pages/business/SalonPage";
+import ManageRestaurantPage from '../pages/business/ManageRestaurantPage'
+import RestaurantQrTablesPage from "../pages/business/RestaurantQrTablesPage";
+import RestaurantMenuPage from "../pages/business/RestaurantMenuPage";
+import RestaurantDealsPage from "../pages/business/RestaurantDealsPage";
 export default function AdminRoutes({ route }) {
 
   return (
@@ -89,14 +93,18 @@ export default function AdminRoutes({ route }) {
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/business" element={<BusinessesPage />} />
       <Route path="/restaurant" element={<RestaurantPage />} />
-      <Route path="/restaurants/:id/orders" element={<RestaurantOrdersPage />} />
-      <Route path="/restaurants/:id/reservations" element={<RestaurantReservationsPage />} />
-      <Route path="/restaurants/:id/reviews" element={<RestaurantReviewsPage />} />
-      <Route path="/restaurants/:id/analytics" element={<RestaurantAnalyticsPage />} />
-      <Route path="/restaurants/:id/inventory" element={<RestaurantInventoryPage />} />
+      <Route path="/orders" element={<RestaurantOrdersPage />} />
+      <Route path="/reservations" element={<RestaurantReservationsPage />} />
+      <Route path="/reviews" element={<RestaurantReviewsPage />} />
+      <Route path="/analytics" element={<RestaurantAnalyticsPage />} />
+      <Route path="/inventory" element={<RestaurantInventoryPage />} />
       <Route path="/product" element={<ProductPage />} />
       <Route path="/service" element={<ServicePage />} />
       <Route path="/salon" element={<SalonPage />} />
+      <Route path="/managerestaurant" element={<ManageRestaurantPage />} />
+      <Route path="/qr" element={<RestaurantQrTablesPage />} />
+      <Route path="/menu" element={<RestaurantMenuPage />} />
+      <Route path="/deals" element={<RestaurantDealsPage />} />
     </Routes>
   );
 }

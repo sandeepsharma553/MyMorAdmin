@@ -1766,7 +1766,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                 </Section>
 
                 {/* ---------------- Shop Hours ---------------- */}
-                <Section
+                {/* <Section
                   title="Shop Hours"
                   open={open.hours}
                   onToggle={() => toggleOpen("hours")}
@@ -1964,10 +1964,10 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                       })}
                     </div>
                   )}
-                </Section>
+                </Section> */}
 
                 {/* ---------------- Billing ---------------- */}
-                <Section
+                {/* <Section
                   title="Billing Address"
                   open={open.billing}
                   onToggle={() => toggleOpen("billing")}
@@ -2099,7 +2099,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                       />
                     </div>
                   </div>
-                </Section>
+                </Section> */}
 
                 {/* ---------------- Media ---------------- */}
                 <Section
@@ -2145,7 +2145,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                 </Section>
 
                 {/* ---------------- Deals ---------------- */}
-                <Section
+                {/* <Section
                   title="Deals of this Business"
                   open={open.deals}
                   onToggle={() => toggleOpen("deals")}
@@ -2248,7 +2248,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                       </tbody>
                     </table>
                   </div>
-                </Section>
+                </Section> */}
               </div>
             </div>
           </div>

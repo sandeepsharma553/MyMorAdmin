@@ -18,8 +18,8 @@ import {
   Settings as SettingsIcon,
   HelpCircle,
   Handshake,
-  Layers,ShoppingBag,Cog,Scissors
-} from "lucide-react";
+  Layers, ShoppingBag, Cog, Scissors,CalendarRange,QrCode,UtensilsCrossed,
+  BadgePercent,Package} from "lucide-react";
 
 import { useSelector, useDispatch } from "react-redux";
 
@@ -90,7 +90,19 @@ const SECTIONS = [
   { key: "product", label: "Product", Icon: ShoppingBag },
   { key: "service", label: "Service", Icon: Cog },
   { key: "salon", label: "Salon", Icon: Scissors },
-
+  { key: "managerestaurant", label: "Restaurant",Icon: Utensils },
+  { key: "hours", label: "Hours",Icon: Utensils },
+  { key: "serviceModes", label: "Service Modes",Icon: Utensils },
+  { key: "delivery", label: "Delivery / Pickup",Icon: Utensils },
+  { key: "reservations", label: "Reservations",Icon: CalendarRange },
+  { key: "qr", label: "QR / Tables",Icon: QrCode },
+  { key: "menu", label: "Menus / Modifiers",Icon: UtensilsCrossed },
+  { key: "deals", label: "Deals",Icon: BadgePercent },
+  { key: "ops", label: "Operations",Icon: Utensils },
+  { key: "reviews", label: "Reviews",Icon: Utensils },
+  { key: "analytics", label: "Analytics",Icon: Utensils },
+  { key: "orders", label: "Orders",Icon: ShoppingBag  },
+  { key: "inventory", label: "Inventory",Icon: Package  },
   // common
   { key: "setting", label: "Setting", Icon: SettingsIcon },
   { key: "contact", label: "Contact", Icon: HelpCircle },
@@ -162,7 +174,7 @@ function useMenuLastOpenedMs({ uid, menuKey, enabled = true }) {
       try {
         localStorage.setItem(storageKey, String(ms));
         setLocalMs(ms);
-      } catch {}
+      } catch { }
     }
   }, [enabled, storageKey, fsTs]);
 
@@ -427,11 +439,24 @@ export default function Sidebar({ onSectionClick, isLoading }) {
       "faq",
     ]);
 
-    const businessKeys = new Set(["businessdashboard", 
+    const businessKeys = new Set(["businessdashboard",
       "restaurant",
       "product",
       "service",
-      "salon"
+      "salon",
+      "managerestaurant",
+      "hours",
+      "serviceModes",
+      "delivery",
+      "reservations",
+      "qr",
+      "menu",
+      "deals",
+      "ops",
+      "reviews",
+      "analytics",
+      "orders",
+      "inventory",
     ]);
 
     const byOrg = SECTIONS.filter((s) => {
@@ -456,8 +481,8 @@ export default function Sidebar({ onSectionClick, isLoading }) {
         s.key === "uniclubdashboard"
           ? "dashboard"
           : s.key === "businessdashboard"
-          ? "dashboard"
-          : s.key;
+            ? "dashboard"
+            : s.key;
       return hasPermission(perms, permKey);
     });
   }, [activeOrg, perms]);
@@ -492,9 +517,8 @@ export default function Sidebar({ onSectionClick, isLoading }) {
           <div className="bg-white rounded-lg p-2 shadow-sm flex gap-2">
             {hasHostel && (
               <button
-                className={`flex-1 py-2 rounded font-semibold text-sm ${
-                  activeOrg === "hostel" ? "bg-black text-white" : "bg-gray-100"
-                }`}
+                className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "hostel" ? "bg-black text-white" : "bg-gray-100"
+                  }`}
                 onClick={() => {
                   dispatch(setActiveOrg("hostel"));
                   navigate("/dashboard");
@@ -506,9 +530,8 @@ export default function Sidebar({ onSectionClick, isLoading }) {
 
             {hasUniclub && (
               <button
-                className={`flex-1 py-2 rounded font-semibold text-sm ${
-                  activeOrg === "uniclub" ? "bg-blue-600 text-white" : "bg-gray-100"
-                }`}
+                className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "uniclub" ? "bg-blue-600 text-white" : "bg-gray-100"
+                  }`}
                 onClick={() => {
                   dispatch(setActiveOrg("uniclub"));
                   navigate("/uniclubdashboard");
@@ -520,9 +543,8 @@ export default function Sidebar({ onSectionClick, isLoading }) {
 
             {hasBusiness && (
               <button
-                className={`flex-1 py-2 rounded font-semibold text-sm ${
-                  activeOrg === "business" ? "bg-emerald-600 text-white" : "bg-gray-100"
-                }`}
+                className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "business" ? "bg-emerald-600 text-white" : "bg-gray-100"
+                  }`}
                 onClick={() => {
                   dispatch(setActiveOrg("business"));
                   navigate("/businessdashboard");

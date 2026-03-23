@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   collection,
   getDocs,
@@ -7,35 +7,51 @@ import {
   doc,
   updateDoc,
   Timestamp,
+  getDoc,
 } from "firebase/firestore";
-import { useNavigate, useParams } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { db } from "../../firebase";
-import {
-  REVIEW_STATUSES,
-  getRestaurantById,
-} from "../../components/RestaurantShared";
+import { REVIEW_STATUSES } from "../../components/RestaurantShared";
 import { toast, ToastContainer } from "react-toastify";
 
 export default function RestaurantReviewsPage({ navbarHeight }) {
-  const { id } = useParams();
-  const navigate = useNavigate();
+  const emp = useSelector((s) => s.auth.employee);
+  const restaurantId = emp?.restaurantid || null;
 
   const [restaurant, setRestaurant] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [filters, setFilters] = useState({ status: "", rating: "" });
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, [id]);
+  const loadData = useCallback(async () => {
+    if (!restaurantId) {
+      setRestaurant(null);
+      setReviews([]);
+      return;
+    }
 
-  const loadData = async () => {
     setLoading(true);
     try {
-      const restaurantDoc = await getRestaurantById(id);
-      setRestaurant(restaurantDoc);
+      const restaurantRef = doc(db, "restaurants", restaurantId);
+      const restaurantSnap = await getDoc(restaurantRef);
 
-      const q = query(collection(db, "reviews"), where("restaurantId", "==", id));
+      if (!restaurantSnap.exists()) {
+        setRestaurant(null);
+        setReviews([]);
+        toast.error("Restaurant not found");
+        return;
+      }
+
+      setRestaurant({
+        id: restaurantSnap.id,
+        ...restaurantSnap.data(),
+      });
+
+      const q = query(
+        collection(db, "reviews"),
+        where("restaurantId", "==", restaurantId)
+      );
+
       const snap = await getDocs(q);
       setReviews(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (e) {
@@ -44,7 +60,11 @@ export default function RestaurantReviewsPage({ navbarHeight }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [restaurantId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const filteredReviews = useMemo(() => {
     return reviews.filter((row) => {
@@ -68,25 +88,39 @@ export default function RestaurantReviewsPage({ navbarHeight }) {
     }
   };
 
+  if (!restaurantId) {
+    return (
+      <main
+        className="flex-1 p-6 bg-gray-100 overflow-auto"
+        style={{ paddingTop: navbarHeight || 0 }}
+      >
+        <div className="bg-white rounded-xl shadow p-6">
+          <h1 className="text-2xl font-semibold mb-2">Reviews Moderation List</h1>
+          <p className="text-sm text-red-600">Employee restaurant id not found.</p>
+        </div>
+        <ToastContainer />
+      </main>
+    );
+  }
+
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
+    <main
+      className="flex-1 p-6 bg-gray-100 overflow-auto"
+      style={{ paddingTop: navbarHeight || 0 }}
+    >
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-semibold">Reviews Moderation List</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {restaurant ? `${restaurant.brandName || ""} / ${restaurant.branchName || ""}` : "Restaurant Reviews"}
+            {restaurant
+              ? `${restaurant.brandName || ""} / ${restaurant.branchName || ""}`
+              : "Restaurant Reviews"}
           </p>
         </div>
-        <button
-          className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-          onClick={() => navigate("/restaurant")}
-        >
-          Back
-        </button>
       </div>
 
       <div className="bg-white rounded-xl shadow p-4 space-y-4">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <select
             className="border p-2 rounded"
             value={filters.status}
@@ -150,6 +184,10 @@ export default function RestaurantReviewsPage({ navbarHeight }) {
 
           {!loading && filteredReviews.length === 0 && (
             <div className="text-center text-gray-500 py-8">No reviews found.</div>
+          )}
+
+          {loading && (
+            <div className="text-center text-gray-500 py-8">Loading...</div>
           )}
         </div>
       </div>

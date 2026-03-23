@@ -1,35 +1,69 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useSelector } from "react-redux";
 import { toast, ToastContainer } from "react-toastify";
+import { doc, getDoc, updateDoc, Timestamp } from "firebase/firestore";
+import { db } from "../../firebase";
 import {
-  getRestaurantById,
   inventoryRowsFromMenus,
   INVENTORY_BULK_ACTIONS,
-  updateRestaurantDoc,
 } from "../../components/RestaurantShared";
 
 export default function RestaurantInventoryPage({ navbarHeight }) {
-  const { id } = useParams();
-  const navigate = useNavigate();
+  const emp = useSelector((s) => s.auth.employee);
+  const restaurantId = emp?.restaurantid || null;
 
   const [restaurant, setRestaurant] = useState(null);
   const [menus, setMenus] = useState([]);
   const [inventorySelection, setInventorySelection] = useState([]);
   const [inventoryBulkAction, setInventoryBulkAction] = useState("mark_sold_out");
+  const [loading, setLoading] = useState(false);
+
+  const loadData = useCallback(async () => {
+    if (!restaurantId) {
+      setRestaurant(null);
+      setMenus([]);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const restaurantRef = doc(db, "restaurants", restaurantId);
+      const restaurantSnap = await getDoc(restaurantRef);
+
+      if (!restaurantSnap.exists()) {
+        setRestaurant(null);
+        setMenus([]);
+        toast.error("Restaurant not found");
+        return;
+      }
+
+      const restaurantData = {
+        id: restaurantSnap.id,
+        ...restaurantSnap.data(),
+      };
+
+      setRestaurant(restaurantData);
+      setMenus(Array.isArray(restaurantData?.menus) ? restaurantData.menus : []);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load inventory");
+    } finally {
+      setLoading(false);
+    }
+  }, [restaurantId]);
 
   useEffect(() => {
     loadData();
-  }, [id]);
+  }, [loadData]);
 
-  const loadData = async () => {
-    const data = await getRestaurantById(id);
-    setRestaurant(data);
-    setMenus(data?.menus || []);
-  };
-
-  const inventoryRows = useMemo(() => inventoryRowsFromMenus(menus), [menus]);
+  const inventoryRows = useMemo(() => inventoryRowsFromMenus(menus || []), [menus]);
 
   const applyInventoryBulkAction = async () => {
+    if (!restaurantId) {
+      toast.error("Employee restaurant id not found");
+      return;
+    }
+
     if (!inventorySelection.length) {
       toast.error("Select at least one item");
       return;
@@ -57,7 +91,11 @@ export default function RestaurantInventoryPage({ navbarHeight }) {
     }));
 
     try {
-      await updateRestaurantDoc(id, { menus: nextMenus });
+      await updateDoc(doc(db, "restaurants", restaurantId), {
+        menus: nextMenus,
+        updatedAt: Timestamp.now(),
+      });
+
       setMenus(nextMenus);
       setInventorySelection([]);
       toast.success("Inventory updated");
@@ -67,21 +105,37 @@ export default function RestaurantInventoryPage({ navbarHeight }) {
     }
   };
 
+  if (!restaurantId) {
+    return (
+      <main
+        className="flex-1 p-6 bg-gray-100 overflow-auto"
+        style={{ paddingTop: navbarHeight || 0 }}
+      >
+        <div className="bg-white rounded-xl shadow p-6">
+          <h1 className="text-2xl font-semibold mb-2">
+            Inventory / Sold-Out Bulk Actions
+          </h1>
+          <p className="text-sm text-red-600">Employee restaurant id not found.</p>
+        </div>
+        <ToastContainer />
+      </main>
+    );
+  }
+
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
+    <main
+      className="flex-1 p-6 bg-gray-100 overflow-auto"
+      style={{ paddingTop: navbarHeight || 0 }}
+    >
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-semibold">Inventory / Sold-Out Bulk Actions</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {restaurant ? `${restaurant.brandName || ""} / ${restaurant.branchName || ""}` : "Restaurant Inventory"}
+            {restaurant
+              ? `${restaurant.brandName || ""} / ${restaurant.branchName || ""}`
+              : "Restaurant Inventory"}
           </p>
         </div>
-        <button
-          className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-          onClick={() => navigate("/restaurant")}
-        >
-          Back
-        </button>
       </div>
 
       <div className="bg-white rounded-xl shadow p-4 space-y-4">
@@ -122,6 +176,7 @@ export default function RestaurantInventoryPage({ navbarHeight }) {
             <tbody className="divide-y divide-gray-200 bg-white">
               {inventoryRows.map((row) => {
                 const checked = inventorySelection.includes(row.id);
+
                 return (
                   <tr key={row.id}>
                     <td className="px-4 py-3 text-sm">
@@ -130,7 +185,9 @@ export default function RestaurantInventoryPage({ navbarHeight }) {
                         checked={checked}
                         onChange={(e) =>
                           setInventorySelection((prev) =>
-                            e.target.checked ? [...prev, row.id] : prev.filter((x) => x !== row.id)
+                            e.target.checked
+                              ? [...prev, row.id]
+                              : prev.filter((x) => x !== row.id)
                           )
                         }
                       />
@@ -144,10 +201,18 @@ export default function RestaurantInventoryPage({ navbarHeight }) {
                 );
               })}
 
-              {inventoryRows.length === 0 && (
+              {!loading && inventoryRows.length === 0 && (
                 <tr>
                   <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
                     No inventory items found.
+                  </td>
+                </tr>
+              )}
+
+              {loading && (
+                <tr>
+                  <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
+                    Loading...
                   </td>
                 </tr>
               )}
