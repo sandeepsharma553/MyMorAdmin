@@ -34,8 +34,8 @@ import DialogActions from "@mui/material/DialogActions";
 import Button from "@mui/material/Button";
 import MapLocationInput from "../../components/MapLocationInput";
 import { MapPin } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
+import LocationPicker from "../superadmin/LocationPicker";
 
 const CUISINE_OPTIONS = [
   "Indian",
@@ -75,19 +75,15 @@ const CUISINE_OPTIONS = [
 
 const PERMISSION_MODULES = [
   { key: "managerestaurant", label: "Restaurant" },
-  // { key: "hours", label: "Hours" },
-  // { key: "serviceModes", label: "Service Modes" },
-  // { key: "delivery", label: "Delivery / Pickup" },
   { key: "reservations", label: "Reservations" },
   { key: "qr", label: "QR / Tables" },
   { key: "menu", label: "Menus / Modifiers" },
   { key: "deals", label: "Deals" },
-  // { key: "ops", label: "Operations" },
-  // { key: "reviews", label: "Reviews" },
-  // { key: "analytics", label: "Analytics" },
   { key: "orders", label: "Orders" },
   { key: "inventory", label: "Inventory" },
 ];
+
+const emptyLinkRow = () => ({ name: "", url: "" });
 
 const initialFormData = {
   id: "",
@@ -116,9 +112,10 @@ const initialFormData = {
   deliveryTime: "",
   pickupTime: "",
 
-  phone: "",
-  website: "",
-  bookingUrl: "",
+  phone: [""],
+  website: [emptyLinkRow()],
+  booking: [emptyLinkRow()],
+
   location: "",
   address: "",
   suburb: "",
@@ -127,6 +124,16 @@ const initialFormData = {
   country: "Australia",
   postcode: "",
   mapLocation: "",
+
+  locationMeta: {
+    countryCode: "",
+    countryName: "",
+    stateCode: "",
+    stateName: "",
+    cityName: "",
+    lat: null,
+    lng: null,
+  },
 
   logo: null,
   logoFile: null,
@@ -182,8 +189,34 @@ function normalizePermissions(raw) {
   return [];
 }
 
-function mergePermissions(oldPerms = [], newPerms = []) {
-  return Array.from(new Set([...normalizePermissions(oldPerms), ...normalizePermissions(newPerms)]));
+function normalizeLinks(raw, fallbackUrl = "") {
+  if (Array.isArray(raw)) {
+    const cleaned = raw
+      .map((item) => ({
+        name: item?.name || "",
+        url: item?.url || "",
+      }))
+      .filter((item) => item.name || item.url);
+    return cleaned.length ? cleaned : [emptyLinkRow()];
+  }
+
+  if (raw && typeof raw === "object") {
+    const one = {
+      name: raw.name || "",
+      url: raw.url || "",
+    };
+    return one.name || one.url ? [one] : [emptyLinkRow()];
+  }
+
+  if (typeof raw === "string" && raw.trim()) {
+    return [{ name: "", url: raw.trim() }];
+  }
+
+  if (fallbackUrl && String(fallbackUrl).trim()) {
+    return [{ name: "", url: String(fallbackUrl).trim() }];
+  }
+
+  return [emptyLinkRow()];
 }
 
 async function uploadFileIfAny(file, folder) {
@@ -249,11 +282,8 @@ export default function RestaurantPage({ navbarHeight }) {
   const [selectedCuisine, setSelectedCuisine] = useState("");
   const [tagInput, setTagInput] = useState("");
 
-  const navigate = useNavigate();
   const loggedInUid = useSelector((s) => s.auth?.user?.uid);
-  const emp = useSelector((s) => s.auth?.employee);
-  const authUser = useSelector((state) => state.auth.user);
-  const uid = authUser?.uid;
+
   useEffect(() => {
     if (!loggedInUid) return;
 
@@ -288,12 +318,12 @@ export default function RestaurantPage({ navbarHeight }) {
 
   const getList = async () => {
     if (!loggedInUid) return;
-  
+
     setIsLoading(true);
     try {
       const q = query(collection(db, "restaurants"), where("createdBy", "==", loggedInUid));
       const snap = await getDocs(q);
-  
+
       const docs = await Promise.all(
         snap.docs.map(async (d) => {
           const restaurantData = d.data();
@@ -303,7 +333,7 @@ export default function RestaurantPage({ navbarHeight }) {
             restaurantData.ownerUid ||
             restaurantData.restaurantUid ||
             "";
-  
+
           let employeePermissions = [];
           if (authUid) {
             const empSnap = await getDoc(doc(db, "employees", authUid));
@@ -312,7 +342,7 @@ export default function RestaurantPage({ navbarHeight }) {
               employeePermissions = normalizePermissions(empData.permissions);
             }
           }
-  
+
           return {
             id: d.id,
             restaurantdocid: d.id,
@@ -322,13 +352,13 @@ export default function RestaurantPage({ navbarHeight }) {
           };
         })
       );
-  
+
       docs.sort(
         (a, b) =>
           (toMillis(b.updatedAt) ?? toMillis(b.createdAt) ?? 0) -
           (toMillis(a.updatedAt) ?? toMillis(a.createdAt) ?? 0)
       );
-  
+
       setList(docs);
     } catch (e) {
       console.error(e);
@@ -337,6 +367,7 @@ export default function RestaurantPage({ navbarHeight }) {
       setIsLoading(false);
     }
   };
+
   const findRestaurantByEmail = async (emailLower) => {
     const q = query(
       collection(db, "restaurants"),
@@ -421,6 +452,86 @@ export default function RestaurantPage({ navbarHeight }) {
     }));
   };
 
+  const addPhoneField = () => {
+    setForm((prev) => ({
+      ...prev,
+      phone: [...(prev.phone || []), ""],
+    }));
+  };
+
+  const updatePhoneField = (index, value) => {
+    setForm((prev) => ({
+      ...prev,
+      phone: (prev.phone || []).map((p, i) => (i === index ? value : p)),
+    }));
+  };
+
+  const removePhoneField = (index) => {
+    setForm((prev) => {
+      const next = [...(prev.phone || [])];
+      next.splice(index, 1);
+
+      return {
+        ...prev,
+        phone: next.length ? next : [""],
+      };
+    });
+  };
+
+  const addWebsiteField = () => {
+    setForm((prev) => ({
+      ...prev,
+      website: [...(prev.website || []), emptyLinkRow()],
+    }));
+  };
+
+  const updateWebsiteField = (index, key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      website: (prev.website || []).map((item, i) =>
+        i === index ? { ...item, [key]: value } : item
+      ),
+    }));
+  };
+
+  const removeWebsiteField = (index) => {
+    setForm((prev) => {
+      const next = [...(prev.website || [])];
+      next.splice(index, 1);
+      return {
+        ...prev,
+        website: next.length ? next : [emptyLinkRow()],
+      };
+    });
+  };
+
+  const addBookingField = () => {
+    setForm((prev) => ({
+      ...prev,
+      booking: [...(prev.booking || []), emptyLinkRow()],
+    }));
+  };
+
+  const updateBookingField = (index, key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      booking: (prev.booking || []).map((item, i) =>
+        i === index ? { ...item, [key]: value } : item
+      ),
+    }));
+  };
+
+  const removeBookingField = (index) => {
+    setForm((prev) => {
+      const next = [...(prev.booking || [])];
+      next.splice(index, 1);
+      return {
+        ...prev,
+        booking: next.length ? next : [emptyLinkRow()],
+      };
+    });
+  };
+
   const handlePermissionToggle = (key, checked) => {
     setForm((prev) => {
       const current = new Set(prev.permissions || []);
@@ -451,6 +562,18 @@ export default function RestaurantPage({ navbarHeight }) {
       permissions: [],
       cuisines: [],
       tags: [],
+      phone: [""],
+      website: [emptyLinkRow()],
+      booking: [emptyLinkRow()],
+      locationMeta: {
+        countryCode: "",
+        countryName: "",
+        stateCode: "",
+        stateName: "",
+        cityName: "",
+        lat: null,
+        lng: null,
+      },
     });
   };
 
@@ -464,6 +587,18 @@ export default function RestaurantPage({ navbarHeight }) {
       permissions: [],
       cuisines: [],
       tags: [],
+      phone: [""],
+      website: [emptyLinkRow()],
+      booking: [emptyLinkRow()],
+      locationMeta: {
+        countryCode: "",
+        countryName: "",
+        stateCode: "",
+        stateName: "",
+        cityName: "",
+        lat: null,
+        lng: null,
+      },
     });
     setModalOpen(true);
   };
@@ -473,13 +608,13 @@ export default function RestaurantPage({ navbarHeight }) {
     setEditing(item);
     setSelectedCuisine("");
     setTagInput("");
-  
+
     const authUid =
       item.authUid || item.uid || item.ownerUid || item.restaurantUid || "";
-  
+
     let employeePermissions = [];
     let employeePassword = item.defaultPassword || "";
-  
+
     if (authUid) {
       try {
         const empSnap = await getDoc(doc(db, "employees", authUid));
@@ -492,7 +627,7 @@ export default function RestaurantPage({ navbarHeight }) {
         console.error("Failed to load employee permissions:", err);
       }
     }
-  
+
     setForm({
       ...initialFormData,
       ...item,
@@ -514,8 +649,27 @@ export default function RestaurantPage({ navbarHeight }) {
         : "",
       permissions: employeePermissions,
       defaultPassword: employeePassword,
+
+      phone: Array.isArray(item.phone)
+        ? item.phone
+        : item.phone
+        ? [item.phone]
+        : [""],
+
+      website: normalizeLinks(item.website, item.websiteUrl),
+      booking: normalizeLinks(item.booking, item.bookingUrl || item.bookingLink),
+
+      locationMeta: {
+        countryCode: item.locationMeta?.countryCode || "",
+        countryName: item.locationMeta?.countryName || item.country || "",
+        stateCode: item.locationMeta?.stateCode || "",
+        stateName: item.locationMeta?.stateName || item.state || "",
+        cityName: item.locationMeta?.cityName || item.city || "",
+        lat: item.locationMeta?.lat ?? item.mapLocation?.lat ?? null,
+        lng: item.locationMeta?.lng ?? item.mapLocation?.lng ?? null,
+      },
     });
-  
+
     setModalOpen(true);
   };
 
@@ -540,26 +694,39 @@ export default function RestaurantPage({ navbarHeight }) {
       }
 
       const emailLower = (form.email || "").trim().toLowerCase();
-      const password =
-        form.defaultPassword?.trim() || "Restaurant@123";
+      const password = form.defaultPassword?.trim() || "Restaurant@123";
 
       const logoUrl = form.logoFile
         ? await uploadFileIfAny(
-          form.logoFile,
-          `restaurant_brand_logos/${form.branchName || "restaurant"}`
-        )
+            form.logoFile,
+            `restaurant_brand_logos/${form.branchName || "restaurant"}`
+          )
         : form.logo;
 
       const parsedMapLocation = form.mapLocation
         ? (() => {
-          const [lng, lat] = String(form.mapLocation)
-            .split(",")
-            .map((n) => Number(n));
-          return Number.isFinite(lat) && Number.isFinite(lng)
-            ? { lat, lng }
-            : null;
-        })()
+            const [lng, lat] = String(form.mapLocation)
+              .split(",")
+              .map((n) => Number(n));
+            return Number.isFinite(lat) && Number.isFinite(lng)
+              ? { lat, lng }
+              : null;
+          })()
         : null;
+
+      const cleanedWebsite = (form.website || [])
+        .map((w) => ({
+          name: (w.name || "").trim(),
+          url: (w.url || "").trim(),
+        }))
+        .filter((w) => w.name || w.url);
+
+      const cleanedBooking = (form.booking || [])
+        .map((b) => ({
+          name: (b.name || "").trim(),
+          url: (b.url || "").trim(),
+        }))
+        .filter((b) => b.name || b.url);
 
       const restaurantBasePayload = {
         name: (form.name || "").trim(),
@@ -583,9 +750,16 @@ export default function RestaurantPage({ navbarHeight }) {
         deliveryTime: (form.deliveryTime || "").trim(),
         pickupTime: (form.pickupTime || "").trim(),
 
-        phone: (form.phone || "").trim(),
-        website: (form.website || "").trim(),
-        bookingUrl: (form.bookingUrl || "").trim(),
+        phone: Array.isArray(form.phone)
+          ? form.phone.map((p) => String(p || "").trim()).filter(Boolean)
+          : String(form.phone || "").trim()
+          ? [String(form.phone || "").trim()]
+          : [],
+
+        website: cleanedWebsite,
+        booking: cleanedBooking,
+        bookingUrl: cleanedBooking[0]?.url || "",
+
         location: (form.location || "").trim(),
         address: (form.address || "").trim(),
         suburb: (form.suburb || "").trim(),
@@ -593,6 +767,16 @@ export default function RestaurantPage({ navbarHeight }) {
         state: (form.state || "").trim(),
         country: (form.country || "Australia").trim(),
         postcode: (form.postcode || "").trim(),
+
+        locationMeta: {
+          countryCode: form.locationMeta?.countryCode || "",
+          countryName: form.locationMeta?.countryName || (form.country || "").trim(),
+          stateCode: form.locationMeta?.stateCode || "",
+          stateName: form.locationMeta?.stateName || (form.state || "").trim(),
+          cityName: form.locationMeta?.cityName || (form.city || "").trim(),
+          lat: form.locationMeta?.lat ?? null,
+          lng: form.locationMeta?.lng ?? null,
+        },
 
         mapLocation: parsedMapLocation,
         logo: logoUrl || null,
@@ -607,9 +791,6 @@ export default function RestaurantPage({ navbarHeight }) {
         updatedAt: serverTimestamp(),
       };
 
-      // =========================
-      // EDIT MODE
-      // =========================
       if (editingData?.id) {
         const restaurantdocid = editingData.restaurantdocid || editingData.id;
         const authUid =
@@ -618,7 +799,7 @@ export default function RestaurantPage({ navbarHeight }) {
           editingData.ownerUid ||
           editingData.restaurantUid ||
           "";
-      
+
         await updateDoc(doc(db, "restaurants", restaurantdocid), {
           ...restaurantBasePayload,
           authUid,
@@ -628,11 +809,11 @@ export default function RestaurantPage({ navbarHeight }) {
           restaurantid: restaurantdocid,
           restaurantdocid,
         });
-      
+
         if (authUid) {
           const existingEmpSnap = await getDoc(doc(db, "employees", authUid));
           const existingEmp = existingEmpSnap.exists() ? existingEmpSnap.data() : {};
-      
+
           await setDoc(
             doc(db, "employees", authUid),
             {
@@ -658,10 +839,10 @@ export default function RestaurantPage({ navbarHeight }) {
             },
             { merge: true }
           );
-      
+
           const existingUserSnap = await getDoc(doc(db, "users", authUid));
           const existingUser = existingUserSnap.exists() ? existingUserSnap.data() : {};
-      
+
           await setDoc(
             doc(db, "users", authUid),
             {
@@ -688,16 +869,12 @@ export default function RestaurantPage({ navbarHeight }) {
             { merge: true }
           );
         }
-      
+
         toast.success("Restaurant updated ✅");
         resetFormState();
         await getList();
         return;
       }
-
-      // =========================
-      // CREATE MODE
-      // =========================
 
       const existingRestaurant = await findRestaurantByEmail(emailLower);
       if (existingRestaurant) {
@@ -709,19 +886,13 @@ export default function RestaurantPage({ navbarHeight }) {
       const existingEmployee = await findEmployeeByEmail(emailLower);
 
       let authUid = "";
-      let existingUserData = existingUser?.data || {};
-      let existingEmployeeData = existingEmployee?.data || {};
+      const existingUserData = existingUser?.data || {};
 
-      // 1) If user doc exists, use that uid
       if (existingUser?.id) {
         authUid = existingUser.id;
-      }
-      // 2) Else if employee doc exists, use that uid
-      else if (existingEmployee?.id) {
+      } else if (existingEmployee?.id) {
         authUid = existingEmployee.id;
-      }
-      // 3) Else create new auth
-      else {
+      } else {
         tempApp = initializeApp(firebaseConfig, `restaurant_temp_${Date.now()}`);
         const tempAuth = getAuth(tempApp);
 
@@ -796,28 +967,28 @@ export default function RestaurantPage({ navbarHeight }) {
         },
         { merge: true }
       );
+
       await setDoc(
-        doc(db, "users", authUid),
+        doc(db, "employees", authUid),
         {
-          ...existingUserData,
-          uid: uid,
-          firstname: (form.name || "").trim(),
-          lastname: existingUserData.lastname || "",
-          username: (form.name || "").trim(),
+          uid: authUid,
+          authUid,
           email: emailLower,
+          name: (form.name || "").trim(),
           mobileNo: (form.mobileNo || "").trim(),
           role: form.role || "branchmanager",
-          livingtype: "restaurant",
+          type: "admin",
+          empType: "restaurant",
           restaurantid: restaurantdocid,
           restaurantdocid,
           restaurantname: (form.branchName || "").trim(),
           branchName: (form.branchName || "").trim(),
           brandName: (form.brandName || "").trim(),
-          imageUrl: logoUrl || existingUserData.imageUrl || "",
-          password: existingUserData.password || password,
+          permissions: normalizePermissions(form.permissions),
           isActive: !!form.isActive,
-          createdBy: existingUserData.createdBy || loggedInUid,
-          createdAt: existingUserData.createdAt || serverTimestamp(),
+          password,
+          createdBy: loggedInUid,
+          createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -1019,8 +1190,8 @@ export default function RestaurantPage({ navbarHeight }) {
               ) : (
                 sorted.map((item) => {
                   const activePermissionCount = Array.isArray(item.employeePermissions)
-                  ? item.employeePermissions.length
-                  : 0;
+                    ? item.employeePermissions.length
+                    : 0;
 
                   return (
                     <tr key={item.id}>
@@ -1031,8 +1202,6 @@ export default function RestaurantPage({ navbarHeight }) {
                         <div className="text-xs text-gray-400">
                           {item.defaultPassword || "—"}
                         </div>
-
-
                       </td>
 
                       <td className="px-6 py-4 text-sm text-gray-700">
@@ -1051,10 +1220,11 @@ export default function RestaurantPage({ navbarHeight }) {
 
                       <td className="px-6 py-4 text-sm">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs font-semibold ${item.isActive
-                            ? "bg-green-100 text-green-700"
-                            : "bg-red-100 text-red-700"
-                            }`}
+                          className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                            item.isActive
+                              ? "bg-green-100 text-green-700"
+                              : "bg-red-100 text-red-700"
+                          }`}
                         >
                           {item.isActive ? "Active" : "Inactive"}
                         </span>
@@ -1088,41 +1258,6 @@ export default function RestaurantPage({ navbarHeight }) {
                         >
                           Edit
                         </button>
-
-                        {/* <button
-                          className="text-gray-700 hover:underline mr-3"
-                          onClick={() => navigate(`/restaurants/${item.id}/orders`)}
-                        >
-                          Orders
-                        </button>
-
-                        <button
-                          className="text-gray-700 hover:underline mr-3"
-                          onClick={() => navigate(`/restaurants/${item.id}/reservations`)}
-                        >
-                          Reservations
-                        </button>
-
-                        <button
-                          className="text-gray-700 hover:underline mr-3"
-                          onClick={() => navigate(`/restaurants/${item.id}/reviews`)}
-                        >
-                          Reviews
-                        </button>
-
-                        <button
-                          className="text-gray-700 hover:underline mr-3"
-                          onClick={() => navigate(`/restaurants/${item.id}/analytics`)}
-                        >
-                          Analytics
-                        </button>
-
-                        <button
-                          className="text-gray-700 hover:underline mr-3"
-                          onClick={() => navigate(`/restaurants/${item.id}/inventory`)}
-                        >
-                          Inventory
-                        </button> */}
 
                         <button
                           className="text-red-600 hover:underline"
@@ -1165,10 +1300,11 @@ export default function RestaurantPage({ navbarHeight }) {
                   key={k}
                   type="button"
                   onClick={() => setActiveTab(k)}
-                  className={`px-3 py-1.5 rounded-full text-sm border ${activeTab === k
-                    ? "bg-black text-white border-black"
-                    : "bg-white text-gray-700 border-gray-300"
-                    }`}
+                  className={`px-3 py-1.5 rounded-full text-sm border ${
+                    activeTab === k
+                      ? "bg-black text-white border-black"
+                      : "bg-white text-gray-700 border-gray-300"
+                  }`}
                 >
                   {t}
                 </button>
@@ -1234,7 +1370,14 @@ export default function RestaurantPage({ navbarHeight }) {
 
                   <SectionCard title="Restaurant / Branch">
                     <div className="grid grid-cols-2 gap-3">
-                    
+                      {/* <input
+                        name="brandName"
+                        value={form.brandName}
+                        onChange={handleChange}
+                        placeholder="Brand name"
+                        className="w-full border border-gray-300 p-2 rounded"
+                      /> */}
+
                       <input
                         name="branchName"
                         value={form.branchName}
@@ -1252,17 +1395,15 @@ export default function RestaurantPage({ navbarHeight }) {
                         className="w-full border border-gray-300 p-2 rounded"
                       />
 
-                   
+                     
                     </div>
-
                     <input
-                      name="shortDesc"
-                      value={form.shortDesc}
-                      onChange={handleChange}
-                      placeholder="Short description"
-                      className="w-full border border-gray-300 p-2 rounded"
-                    />
-
+                        name="shortDesc"
+                        value={form.shortDesc}
+                        onChange={handleChange}
+                        placeholder="Short description"
+                        className="w-full border border-gray-300 p-2 rounded"
+                      />
                     <textarea
                       name="description"
                       value={form.description}
@@ -1333,8 +1474,8 @@ export default function RestaurantPage({ navbarHeight }) {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-3">
-                    <select
+                    <div className="grid grid-cols-5 gap-3">
+                      <select
                         name="priceRange"
                         value={form.priceRange}
                         onChange={handleChange}
@@ -1345,6 +1486,7 @@ export default function RestaurantPage({ navbarHeight }) {
                         <option value="$$$">$$$</option>
                         <option value="$$$$">$$$$</option>
                       </select>
+
                       <input
                         name="avgCostForTwo"
                         value={form.avgCostForTwo}
@@ -1352,6 +1494,7 @@ export default function RestaurantPage({ navbarHeight }) {
                         placeholder="Avg cost for 2"
                         className="w-full border border-gray-300 p-2 rounded"
                       />
+
                       <input
                         name="costForTwo"
                         value={form.costForTwo}
@@ -1359,13 +1502,15 @@ export default function RestaurantPage({ navbarHeight }) {
                         placeholder="Cost for two label"
                         className="w-full border border-gray-300 p-2 rounded"
                       />
-                      <input
+
+                      {/* <input
                         name="rating"
                         value={form.rating}
                         onChange={handleChange}
                         placeholder="Rating"
                         className="w-full border border-gray-300 p-2 rounded"
-                      />
+                      /> */}
+
                       <input
                         name="offerText"
                         value={form.offerText}
@@ -1393,88 +1538,251 @@ export default function RestaurantPage({ navbarHeight }) {
                     </div>
                   </SectionCard>
 
-                  <SectionCard title="Contact & Location">
-                    <div className="grid grid-cols-2 gap-3">
-                      <input
-                        name="phone"
-                        value={form.phone}
-                        onChange={handleChange}
-                        placeholder="Phone"
-                        className="w-full border border-gray-300 p-2 rounded"
-                      />
-                      <input
-                        name="website"
-                        value={form.website}
-                        onChange={handleChange}
-                        placeholder="Website"
-                        className="w-full border border-gray-300 p-2 rounded"
-                      />
-                      <input
-                        name="bookingUrl"
-                        value={form.bookingUrl}
-                        onChange={handleChange}
-                        placeholder="Booking URL"
-                        className="w-full border border-gray-300 p-2 rounded"
-                      />
-                      <input
-                        name="location"
-                        value={form.location}
-                        onChange={handleChange}
-                        placeholder="Location label"
-                        className="w-full border border-gray-300 p-2 rounded"
-                      />
-                    </div>
+                  <SectionCard
+                    title="Contact & Location"
+                    subtitle="Zomato / Swiggy style contact and address structure"
+                  >
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-sm font-medium">Phone</label>
+                          <button
+                            type="button"
+                            onClick={addPhoneField}
+                            className="px-3 py-1 rounded bg-black text-white text-xs"
+                          >
+                            + Add Phone
+                          </button>
+                        </div>
 
-                    <input
-                      name="address"
-                      value={form.address}
-                      onChange={handleChange}
-                      placeholder="Full address"
-                      className="w-full border border-gray-300 p-2 rounded"
-                      required
-                    />
+                        {(form.phone || [""]).map((phoneValue, index) => (
+                          <div key={index} className="flex gap-2">
+                            <input
+                              value={phoneValue}
+                              onChange={(e) => updatePhoneField(index, e.target.value)}
+                              placeholder={`Phone ${index + 1}`}
+                              className="w-full border border-gray-300 p-3 rounded-lg"
+                            />
+                            {(form.phone || []).length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removePhoneField(index)}
+                                className="px-3 py-2 border rounded-lg text-red-600 hover:bg-red-50"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
 
-                    <div className="grid grid-cols-4 gap-3">
-                      <input
-                        name="suburb"
-                        value={form.suburb}
-                        onChange={handleChange}
-                        placeholder="Suburb"
-                        className="w-full border border-gray-300 p-2 rounded"
-                      />
-                      <input
-                        name="city"
-                        value={form.city}
-                        onChange={handleChange}
-                        placeholder="City"
-                        className="w-full border border-gray-300 p-2 rounded"
-                      />
-                      <input
-                        name="state"
-                        value={form.state}
-                        onChange={handleChange}
-                        placeholder="State"
-                        className="w-full border border-gray-300 p-2 rounded"
-                      />
-                      <input
-                        name="postcode"
-                        value={form.postcode}
-                        onChange={handleChange}
-                        placeholder="Postcode"
-                        className="w-full border border-gray-300 p-2 rounded"
-                      />
-                    </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-sm font-medium">Website</label>
+                          <button
+                            type="button"
+                            onClick={addWebsiteField}
+                            className="px-3 py-1 rounded bg-black text-white text-xs"
+                          >
+                            + Add Website
+                          </button>
+                        </div>
 
-                    <div className="relative">
-                      <input
-                        name="mapLocation"
-                        readOnly
-                        value={form.mapLocation}
-                        onClick={() => setShowMapModal(true)}
-                        placeholder="Select on map"
-                        className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer"
-                      />
-                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                        {(form.website || []).map((item, index) => (
+                          <div
+                            key={index}
+                            className="grid grid-cols-1 md:grid-cols-[1fr_1fr_110px] gap-2"
+                          >
+                            <input
+                              value={item.name}
+                              onChange={(e) =>
+                                updateWebsiteField(index, "name", e.target.value)
+                              }
+                              placeholder="Website name (e.g. Official Site)"
+                              className="w-full border border-gray-300 p-3 rounded-lg"
+                            />
+                            <input
+                              type="url"
+                              value={item.url}
+                              onChange={(e) =>
+                                updateWebsiteField(index, "url", e.target.value)
+                              }
+                              placeholder="Website URL"
+                              className="w-full border border-gray-300 p-3 rounded-lg"
+                            />
+                            {(form.website || []).length > 1 ? (
+                              <button
+                                type="button"
+                                onClick={() => removeWebsiteField(index)}
+                                className="px-3 py-2 border rounded-lg text-red-600 hover:bg-red-50"
+                              >
+                                Remove
+                              </button>
+                            ) : (
+                              <div />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-sm font-medium">Booking</label>
+                          <button
+                            type="button"
+                            onClick={addBookingField}
+                            className="px-3 py-1 rounded bg-black text-white text-xs"
+                          >
+                            + Add Booking
+                          </button>
+                        </div>
+
+                        {(form.booking || []).map((item, index) => (
+                          <div
+                            key={index}
+                            className="grid grid-cols-1 md:grid-cols-[1fr_1fr_110px] gap-2"
+                          >
+                            <input
+                              value={item.name}
+                              onChange={(e) =>
+                                updateBookingField(index, "name", e.target.value)
+                              }
+                              placeholder="Booking name (e.g. Reserve Table)"
+                              className="w-full border border-gray-300 p-3 rounded-lg"
+                            />
+                            <input
+                              type="url"
+                              value={item.url}
+                              onChange={(e) =>
+                                updateBookingField(index, "url", e.target.value)
+                              }
+                              placeholder="Booking URL"
+                              className="w-full border border-gray-300 p-3 rounded-lg"
+                            />
+                            {(form.booking || []).length > 1 ? (
+                              <button
+                                type="button"
+                                onClick={() => removeBookingField(index)}
+                                className="px-3 py-2 border rounded-lg text-red-600 hover:bg-red-50"
+                              >
+                                Remove
+                              </button>
+                            ) : (
+                              <div />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium">
+                          Country / State / City
+                        </label>
+                        <LocationPicker
+                          value={{
+                            countryCode: form.locationMeta?.countryCode || "",
+                            stateCode: form.locationMeta?.stateCode || "",
+                            cityName: form.locationMeta?.cityName || form.city || "",
+                          }}
+                          onChange={(loc) => {
+                            setForm((prev) => ({
+                              ...prev,
+                              country: loc.country?.name || prev.country || "",
+                              state: loc.state?.name || prev.state || "",
+                              city: loc.city?.name || prev.city || "",
+                              locationMeta: {
+                                countryCode: loc.country?.code || "",
+                                countryName: loc.country?.name || "",
+                                stateCode: loc.state?.code || "",
+                                stateName: loc.state?.name || "",
+                                cityName: loc.city?.name || "",
+                                lat: loc.coords?.lat ?? prev.locationMeta?.lat ?? null,
+                                lng: loc.coords?.lng ?? prev.locationMeta?.lng ?? null,
+                              },
+                            }));
+                          }}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <input
+                          name="country"
+                          value={form.country}
+                          onChange={handleChange}
+                          placeholder="Country"
+                          className="w-full border border-gray-300 p-3 rounded-lg"
+                        />
+                        <input
+                          name="state"
+                          value={form.state}
+                          onChange={handleChange}
+                          placeholder="State / Region"
+                          className="w-full border border-gray-300 p-3 rounded-lg"
+                        />
+                        <input
+                          name="city"
+                          value={form.city}
+                          onChange={handleChange}
+                          placeholder="City"
+                          className="w-full border border-gray-300 p-3 rounded-lg"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          name="suburb"
+                          value={form.suburb}
+                          onChange={handleChange}
+                          placeholder="Suburb / Area"
+                          className="w-full border border-gray-300 p-3 rounded-lg"
+                        />
+                        <input
+                          name="postcode"
+                          value={form.postcode}
+                          onChange={handleChange}
+                          placeholder="Postcode"
+                          className="w-full border border-gray-300 p-3 rounded-lg"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium">Full Address</label>
+                        <textarea
+                          name="address"
+                          value={form.address}
+                          onChange={handleChange}
+                          placeholder="Flat / shop no, street, landmark, full address"
+                          className="w-full border border-gray-300 p-3 rounded-lg"
+                          rows={3}
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium">Location Label</label>
+                        <input
+                          name="location"
+                          value={form.location}
+                          onChange={handleChange}
+                          placeholder="e.g. Near City Mall, MG Road Branch"
+                          className="w-full border border-gray-300 p-3 rounded-lg"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium">Pin on Map</label>
+                        <div className="relative">
+                          <input
+                            name="mapLocation"
+                            readOnly
+                            value={form.mapLocation}
+                            onClick={() => setShowMapModal(true)}
+                            placeholder="Select on map"
+                            className="w-full border border-gray-300 p-3 pl-10 rounded-lg cursor-pointer"
+                          />
+                          <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                        </div>
+                      </div>
                     </div>
                   </SectionCard>
 
@@ -1628,7 +1936,15 @@ export default function RestaurantPage({ navbarHeight }) {
             value={form.mapLocation}
             onChange={(val) => {
               const coordsStr = `${val.lng.toFixed(6)},${val.lat.toFixed(6)}`;
-              setForm((prev) => ({ ...prev, mapLocation: coordsStr }));
+              setForm((prev) => ({
+                ...prev,
+                mapLocation: coordsStr,
+                locationMeta: {
+                  ...(prev.locationMeta || {}),
+                  lat: val.lat,
+                  lng: val.lng,
+                },
+              }));
             }}
           />
         </DialogContent>
