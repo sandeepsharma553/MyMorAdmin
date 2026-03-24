@@ -1,7 +1,9 @@
 // src/pages/restaurants/RestaurantMenuPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import useRestaurantDoc from "../../hooks/useRestaurantDoc";
+import { storage } from "../../firebase";
 
 const createId = (prefix) =>
   `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -35,6 +37,7 @@ const newMenuItem = () => ({
   isVeg: false,
   bestseller: false,
   availabilityState: "active",
+  isUploading: false,
 
   variantGroup: {
     enabled: false,
@@ -125,8 +128,8 @@ const normalizeMenusFromDb = (dbMenus = []) => {
             it.basePrice !== undefined && it.basePrice !== null
               ? String(it.basePrice)
               : it.price !== undefined && it.price !== null
-                ? String(it.price)
-                : "",
+              ? String(it.price)
+              : "",
           compareAtPrice:
             it.compareAtPrice !== undefined && it.compareAtPrice !== null
               ? String(it.compareAtPrice)
@@ -134,6 +137,7 @@ const normalizeMenusFromDb = (dbMenus = []) => {
           isVeg: !!it.isVeg,
           bestseller: !!it.bestseller,
           availabilityState: it.availabilityState || "active",
+          isUploading: false,
 
           variantGroup: {
             enabled: !!sizeGroup?.enabled || (sizeGroup?.options || []).length > 0,
@@ -149,8 +153,8 @@ const normalizeMenusFromDb = (dbMenus = []) => {
                 opt.price !== undefined && opt.price !== null
                   ? String(opt.price)
                   : opt.priceDelta !== undefined && opt.priceDelta !== null
-                    ? String(opt.priceDelta)
-                    : "",
+                  ? String(opt.priceDelta)
+                  : "",
               isDefault: idx === 0 ? !!opt.isDefault || true : !!opt.isDefault,
             })),
           },
@@ -166,8 +170,8 @@ const normalizeMenusFromDb = (dbMenus = []) => {
                 opt.selected !== undefined
                   ? !!opt.selected
                   : opt.isDefault !== undefined
-                    ? !!opt.isDefault
-                    : true,
+                  ? !!opt.isDefault
+                  : true,
             })),
           },
 
@@ -181,8 +185,8 @@ const normalizeMenusFromDb = (dbMenus = []) => {
                 opt.price !== undefined && opt.price !== null
                   ? String(opt.price)
                   : opt.priceDelta !== undefined && opt.priceDelta !== null
-                    ? String(opt.priceDelta)
-                    : "",
+                  ? String(opt.priceDelta)
+                  : "",
             })),
           },
         };
@@ -333,11 +337,11 @@ export default function RestaurantMenuPage() {
       prev.map((menu) =>
         menu.id === menuId
           ? {
-            ...menu,
-            categories: (menu.categories || []).map((cat) =>
-              cat.id === categoryId ? { ...cat, ...patch } : cat
-            ),
-          }
+              ...menu,
+              categories: (menu.categories || []).map((cat) =>
+                cat.id === categoryId ? { ...cat, ...patch } : cat
+              ),
+            }
           : menu
       )
     );
@@ -347,9 +351,9 @@ export default function RestaurantMenuPage() {
       prev.map((menu) =>
         menu.id === menuId
           ? {
-            ...menu,
-            categories: (menu.categories || []).filter((cat) => cat.id !== categoryId),
-          }
+              ...menu,
+              categories: (menu.categories || []).filter((cat) => cat.id !== categoryId),
+            }
           : menu
       )
     );
@@ -359,13 +363,13 @@ export default function RestaurantMenuPage() {
       prev.map((menu) =>
         menu.id === menuId
           ? {
-            ...menu,
-            categories: (menu.categories || []).map((cat) =>
-              cat.id === categoryId
-                ? { ...cat, items: [...(cat.items || []), newMenuItem()] }
-                : cat
-            ),
-          }
+              ...menu,
+              categories: (menu.categories || []).map((cat) =>
+                cat.id === categoryId
+                  ? { ...cat, items: [...(cat.items || []), newMenuItem()] }
+                  : cat
+              ),
+            }
           : menu
       )
     );
@@ -375,18 +379,18 @@ export default function RestaurantMenuPage() {
       prev.map((menu) =>
         menu.id === menuId
           ? {
-            ...menu,
-            categories: (menu.categories || []).map((cat) =>
-              cat.id === categoryId
-                ? {
-                  ...cat,
-                  items: (cat.items || []).map((item) =>
-                    item.id === itemId ? { ...item, ...patch } : item
-                  ),
-                }
-                : cat
-            ),
-          }
+              ...menu,
+              categories: (menu.categories || []).map((cat) =>
+                cat.id === categoryId
+                  ? {
+                      ...cat,
+                      items: (cat.items || []).map((item) =>
+                        item.id === itemId ? { ...item, ...patch } : item
+                      ),
+                    }
+                  : cat
+              ),
+            }
           : menu
       )
     );
@@ -396,16 +400,16 @@ export default function RestaurantMenuPage() {
       prev.map((menu) =>
         menu.id === menuId
           ? {
-            ...menu,
-            categories: (menu.categories || []).map((cat) =>
-              cat.id === categoryId
-                ? {
-                  ...cat,
-                  items: (cat.items || []).filter((item) => item.id !== itemId),
-                }
-                : cat
-            ),
-          }
+              ...menu,
+              categories: (menu.categories || []).map((cat) =>
+                cat.id === categoryId
+                  ? {
+                      ...cat,
+                      items: (cat.items || []).filter((item) => item.id !== itemId),
+                    }
+                  : cat
+              ),
+            }
           : menu
       )
     );
@@ -504,6 +508,36 @@ export default function RestaurantMenuPage() {
     updateItemSection(menuId, categoryId, itemId, "variantGroup", { options });
   };
 
+  const handleImageUpload = async (menuId, categoryId, itemId, file) => {
+    if (!file) return;
+
+    try {
+      updateItem(menuId, categoryId, itemId, { isUploading: true });
+
+      const cleanFileName = file.name.replace(/\s+/g, "_");
+      const path = `restaurant-menu-items/${restaurantId || "common"}/${Date.now()}_${cleanFileName}`;
+      const fileRef = storageRef(storage, path);
+
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+
+      updateItem(menuId, categoryId, itemId, {
+        image: url,
+        isUploading: false,
+      });
+
+      toast.success("Image uploaded ✅");
+    } catch (error) {
+      console.error("Image upload failed:", error);
+      updateItem(menuId, categoryId, itemId, { isUploading: false });
+      toast.error("Image upload failed ❌");
+    }
+  };
+
+  const removeImage = (menuId, categoryId, itemId) => {
+    updateItem(menuId, categoryId, itemId, { image: "" });
+  };
+
   const totalItems = useMemo(() => {
     return menus.reduce((acc, menu) => {
       return (
@@ -532,10 +566,7 @@ export default function RestaurantMenuPage() {
             return false;
           }
 
-          if (
-            item.variantGroup?.enabled &&
-            !item.variantGroup?.title?.trim()
-          ) {
+          if (item.variantGroup?.enabled && !item.variantGroup?.title?.trim()) {
             toast.error(`"${item.name}" me size group title chahiye`);
             return false;
           }
@@ -556,10 +587,7 @@ export default function RestaurantMenuPage() {
             return false;
           }
 
-          if (
-            item.extrasGroup?.enabled &&
-            !item.extrasGroup?.title?.trim()
-          ) {
+          if (item.extrasGroup?.enabled && !item.extrasGroup?.title?.trim()) {
             toast.error(`"${item.name}" me extras group title chahiye`);
             return false;
           }
@@ -699,7 +727,7 @@ export default function RestaurantMenuPage() {
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
                   <input
                     className="rounded-lg border p-3 md:col-span-2"
-                    value={""}
+                    value={menu.name}
                     onChange={(e) => updateMenu(menu.id, { name: e.target.value })}
                     placeholder="Menu name"
                   />
@@ -862,16 +890,63 @@ export default function RestaurantMenuPage() {
                                 <option value="archived">Archived</option>
                               </select>
 
-                              <input
-                                className="rounded-lg border p-3 md:col-span-3"
-                                value={item.image}
-                                onChange={(e) =>
-                                  updateItem(menu.id, category.id, item.id, {
-                                    image: e.target.value,
-                                  })
-                                }
-                                placeholder="Image URL"
-                              />
+                              <div className="md:col-span-3">
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="w-full rounded-lg border p-3"
+                                  onChange={(e) =>
+                                    handleImageUpload(
+                                      menu.id,
+                                      category.id,
+                                      item.id,
+                                      e.target.files?.[0]
+                                    )
+                                  }
+                                />
+
+                                {item.isUploading ? (
+                                  <div className="mt-2 text-sm text-blue-600">
+                                    Uploading image...
+                                  </div>
+                                ) : null}
+
+                                {item.image ? (
+                                  <div className="mt-3 flex items-center gap-3 rounded-lg border p-2">
+                                    <img
+                                      src={item.image}
+                                      alt={item.name || "item"}
+                                      className="h-16 w-16 rounded-lg border object-cover"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm text-gray-600">
+                                        Image uploaded
+                                      </p>
+                                      <a
+                                        href={item.image}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-xs text-blue-600 underline"
+                                      >
+                                        View image
+                                      </a>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        removeImage(menu.id, category.id, item.id)
+                                      }
+                                      className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <p className="mt-2 text-xs text-gray-400">
+                                    Upload item image
+                                  </p>
+                                )}
+                              </div>
                             </div>
 
                             <textarea
