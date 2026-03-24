@@ -1,70 +1,59 @@
 // src/pages/restaurants/RestaurantMenuPage.jsx
-import React, { useEffect, useState } from "react";
-import { ToastContainer } from "react-toastify";
+import React, { useEffect, useMemo, useState } from "react";
+import { ToastContainer, toast } from "react-toastify";
 import useRestaurantDoc from "../../hooks/useRestaurantDoc";
-
-const SERVICE_MODES = ["delivery", "pickup", "dineIn", "menuOnly"];
-const DAYS = [
-  { key: "mon", label: "Mon" },
-  { key: "tue", label: "Tue" },
-  { key: "wed", label: "Wed" },
-  { key: "thu", label: "Thu" },
-  { key: "fri", label: "Fri" },
-  { key: "sat", label: "Sat" },
-  { key: "sun", label: "Sun" },
-];
 
 const createId = (prefix) =>
   `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-const toggleValueInArray = (current = [], value) =>
-  current.includes(value) ? current.filter((x) => x !== value) : [...current, value];
-
-const newModifierOption = () => ({
-  id: createId("modopt"),
+const newVariantOption = () => ({
+  id: createId("variant"),
   name: "",
-  priceDelta: "",
+  price: "",
   isDefault: false,
-  isAvailable: true,
-  calories: "",
-  nestedGroupIds: [],
 });
 
-const newModifierGroup = () => ({
-  id: createId("modgrp"),
+const newIngredientOption = () => ({
+  id: createId("ingredient"),
   name: "",
-  description: "",
-  selectionType: "single",
-  isRequired: false,
-  minSelect: 0,
-  maxSelect: 1,
-  freeCount: 0,
-  appliesToServiceModes: ["delivery", "pickup", "dineIn"],
-  options: [newModifierOption()],
+  selected: true,
+});
+
+const newExtraOption = () => ({
+  id: createId("extra"),
+  name: "",
+  price: "",
 });
 
 const newMenuItem = () => ({
   id: createId("item"),
   name: "",
-  price: "",
-  compareAtPrice: "",
   description: "",
+  image: "",
+  basePrice: "",
+  compareAtPrice: "",
   isVeg: false,
   bestseller: false,
-  spicyLevel: "",
-  dietaryTags: [],
-  allergenTags: [],
-  image: "",
-  imageFile: null,
-  notesEnabled: true,
   availabilityState: "active",
-  appliesToServiceModes: ["delivery", "pickup", "dineIn"],
-  modifierGroups: [],
-  schedule: {
+
+  variantGroup: {
     enabled: false,
-    days: [],
-    startTime: "",
-    endTime: "",
+    title: "",
+    required: false,
+    options: [],
+  },
+
+  removableIngredients: {
+    enabled: false,
+    title: "",
+    helperText: "",
+    options: [],
+  },
+
+  extrasGroup: {
+    enabled: false,
+    title: "",
+    options: [],
   },
 });
 
@@ -77,40 +66,235 @@ const newMenuCategory = () => ({
 
 const newMenu = () => ({
   id: createId("menu"),
-  name: "Main Menu",
+  name: "",
   type: "all_day",
   description: "",
   isActive: true,
-  appliesToServiceModes: ["delivery", "pickup", "dineIn"],
-  schedule: {
-    enabled: false,
-    days: [],
-    startTime: "",
-    endTime: "",
-  },
   categories: [newMenuCategory()],
 });
 
-function DayToggleRow({ value = [], onToggle }) {
+const normalizeMenusFromDb = (dbMenus = []) => {
+  return dbMenus.map((menu) => ({
+    id: menu.id || createId("menu"),
+    name: menu.name || "",
+    type: menu.type || "all_day",
+    description: menu.description || "",
+    isActive: menu.isActive !== false,
+    categories: (menu.categories || []).map((cat, catIndex) => ({
+      id: cat.id || createId("cat"),
+      name: cat.name || "",
+      sortOrder: cat.sortOrder ?? catIndex,
+      items: (cat.items || []).map((it) => {
+        const modifierGroups = Array.isArray(it.modifierGroups) ? it.modifierGroups : [];
+
+        const sizeGroup =
+          it.variantGroup ||
+          modifierGroups.find((g) => g?.id === "sizes" || g?.name === "Sizes") || {
+            enabled: false,
+            title: "",
+            required: false,
+            options: [],
+          };
+
+        const removeGroup =
+          it.removableIngredients ||
+          modifierGroups.find(
+            (g) =>
+              g?.id === "remove_ingredients" || g?.name === "Ingredients (remove)"
+          ) || {
+            enabled: false,
+            title: "",
+            helperText: "",
+            options: [],
+          };
+
+        const extrasGroup =
+          it.extrasGroup ||
+          modifierGroups.find((g) => g?.id === "extras" || g?.name === "Extras") || {
+            enabled: false,
+            title: "",
+            options: [],
+          };
+
+        return {
+          id: it.id || createId("item"),
+          name: it.name || "",
+          description: it.description || "",
+          image: it.image || "",
+          basePrice:
+            it.basePrice !== undefined && it.basePrice !== null
+              ? String(it.basePrice)
+              : it.price !== undefined && it.price !== null
+                ? String(it.price)
+                : "",
+          compareAtPrice:
+            it.compareAtPrice !== undefined && it.compareAtPrice !== null
+              ? String(it.compareAtPrice)
+              : "",
+          isVeg: !!it.isVeg,
+          bestseller: !!it.bestseller,
+          availabilityState: it.availabilityState || "active",
+
+          variantGroup: {
+            enabled: !!sizeGroup?.enabled || (sizeGroup?.options || []).length > 0,
+            title: sizeGroup?.title || sizeGroup?.name || "",
+            required:
+              sizeGroup?.required !== undefined
+                ? !!sizeGroup.required
+                : !!sizeGroup?.isRequired,
+            options: (sizeGroup?.options || []).map((opt, idx) => ({
+              id: opt.id || createId("variant"),
+              name: opt.name || "",
+              price:
+                opt.price !== undefined && opt.price !== null
+                  ? String(opt.price)
+                  : opt.priceDelta !== undefined && opt.priceDelta !== null
+                    ? String(opt.priceDelta)
+                    : "",
+              isDefault: idx === 0 ? !!opt.isDefault || true : !!opt.isDefault,
+            })),
+          },
+
+          removableIngredients: {
+            enabled: !!removeGroup?.enabled || (removeGroup?.options || []).length > 0,
+            title: removeGroup?.title || removeGroup?.name || "",
+            helperText: removeGroup?.helperText || "",
+            options: (removeGroup?.options || []).map((opt) => ({
+              id: opt.id || createId("ingredient"),
+              name: opt.name || "",
+              selected:
+                opt.selected !== undefined
+                  ? !!opt.selected
+                  : opt.isDefault !== undefined
+                    ? !!opt.isDefault
+                    : true,
+            })),
+          },
+
+          extrasGroup: {
+            enabled: !!extrasGroup?.enabled || (extrasGroup?.options || []).length > 0,
+            title: extrasGroup?.title || extrasGroup?.name || "",
+            options: (extrasGroup?.options || []).map((opt) => ({
+              id: opt.id || createId("extra"),
+              name: opt.name || "",
+              price:
+                opt.price !== undefined && opt.price !== null
+                  ? String(opt.price)
+                  : opt.priceDelta !== undefined && opt.priceDelta !== null
+                    ? String(opt.priceDelta)
+                    : "",
+            })),
+          },
+        };
+      }),
+    })),
+  }));
+};
+
+const buildModifierGroupsFromSimpleItem = (item) => {
+  const groups = [];
+
+  if (
+    item.variantGroup?.enabled &&
+    item.variantGroup?.title?.trim() &&
+    (item.variantGroup?.options || []).length
+  ) {
+    groups.push({
+      id: "sizes",
+      name: item.variantGroup.title.trim(),
+      title: item.variantGroup.title.trim(),
+      description: "",
+      selectionType: "single",
+      isRequired: item.variantGroup.required !== false,
+      minSelect: item.variantGroup.required !== false ? 1 : 0,
+      maxSelect: 1,
+      freeCount: 0,
+      enabled: true,
+      required: item.variantGroup.required !== false,
+      options: (item.variantGroup.options || [])
+        .filter((opt) => opt.name?.trim())
+        .map((opt) => ({
+          id: opt.id,
+          name: opt.name.trim(),
+          price: opt.price === "" ? null : Number(opt.price),
+          priceDelta: opt.price === "" ? 0 : Number(opt.price),
+          isDefault: !!opt.isDefault,
+          isAvailable: true,
+        })),
+    });
+  }
+
+  if (
+    item.removableIngredients?.enabled &&
+    item.removableIngredients?.title?.trim() &&
+    (item.removableIngredients?.options || []).length
+  ) {
+    groups.push({
+      id: "remove_ingredients",
+      name: item.removableIngredients.title.trim(),
+      title: item.removableIngredients.title.trim(),
+      description: item.removableIngredients.helperText || "",
+      selectionType: "multi",
+      isRequired: false,
+      minSelect: 0,
+      maxSelect: item.removableIngredients.options.length,
+      freeCount: item.removableIngredients.options.length,
+      enabled: true,
+      helperText: item.removableIngredients.helperText || "",
+      options: (item.removableIngredients.options || [])
+        .filter((opt) => opt.name?.trim())
+        .map((opt) => ({
+          id: opt.id,
+          name: opt.name.trim(),
+          price: 0,
+          priceDelta: 0,
+          isDefault: opt.selected !== false,
+          selected: opt.selected !== false,
+          isAvailable: true,
+        })),
+    });
+  }
+
+  if (
+    item.extrasGroup?.enabled &&
+    item.extrasGroup?.title?.trim() &&
+    (item.extrasGroup?.options || []).length
+  ) {
+    groups.push({
+      id: "extras",
+      name: item.extrasGroup.title.trim(),
+      title: item.extrasGroup.title.trim(),
+      description: "",
+      selectionType: "multi",
+      isRequired: false,
+      minSelect: 0,
+      maxSelect: item.extrasGroup.options.length,
+      freeCount: 0,
+      enabled: true,
+      options: (item.extrasGroup.options || [])
+        .filter((opt) => opt.name?.trim())
+        .map((opt) => ({
+          id: opt.id,
+          name: opt.name.trim(),
+          price: opt.price === "" ? null : Number(opt.price),
+          priceDelta: opt.price === "" ? 0 : Number(opt.price),
+          isDefault: false,
+          isAvailable: true,
+        })),
+    });
+  }
+
+  return groups.filter((group) => group.options.length > 0);
+};
+
+function SectionCard({ title, children, right }) {
   return (
-    <div className="flex flex-wrap gap-2">
-      {DAYS.map((day) => {
-        const active = value.includes(day.key);
-        return (
-          <button
-            key={day.key}
-            type="button"
-            onClick={() => onToggle(day.key)}
-            className={`px-3 py-1 rounded-full text-xs border ${
-              active
-                ? "bg-black text-white border-black"
-                : "bg-white text-gray-700 border-gray-300"
-            }`}
-          >
-            {day.label}
-          </button>
-        );
-      })}
+    <div className="overflow-hidden rounded-xl border bg-white">
+      <div className="flex items-center justify-between border-b bg-gray-50 px-4 py-3">
+        <h3 className="font-semibold text-gray-800">{title}</h3>
+        {right}
+      </div>
+      <div className="p-4">{children}</div>
     </div>
   );
 }
@@ -121,204 +305,354 @@ export default function RestaurantMenuPage() {
 
   useEffect(() => {
     if (Array.isArray(restaurant?.menus) && restaurant.menus.length) {
-      setMenus(restaurant.menus);
+      setMenus(normalizeMenusFromDb(restaurant.menus));
     }
   }, [restaurant]);
 
   const addMenu = () => setMenus((prev) => [...prev, newMenu()]);
-  const removeMenu = (menuId) => setMenus((prev) => prev.filter((m) => m.id !== menuId));
+
+  const removeMenu = (menuId) =>
+    setMenus((prev) => prev.filter((menu) => menu.id !== menuId));
+
   const updateMenu = (menuId, patch) =>
-    setMenus((prev) => prev.map((m) => (m.id === menuId ? { ...m, ...patch } : m)));
+    setMenus((prev) =>
+      prev.map((menu) => (menu.id === menuId ? { ...menu, ...patch } : menu))
+    );
 
   const addCategory = (menuId) =>
     setMenus((prev) =>
-      prev.map((m) =>
-        m.id === menuId
-          ? { ...m, categories: [...(m.categories || []), newMenuCategory()] }
-          : m
+      prev.map((menu) =>
+        menu.id === menuId
+          ? { ...menu, categories: [...(menu.categories || []), newMenuCategory()] }
+          : menu
       )
     );
 
-  const updateCategory = (menuId, catId, patch) =>
+  const updateCategory = (menuId, categoryId, patch) =>
     setMenus((prev) =>
-      prev.map((m) =>
-        m.id === menuId
+      prev.map((menu) =>
+        menu.id === menuId
           ? {
-              ...m,
-              categories: (m.categories || []).map((c) =>
-                c.id === catId ? { ...c, ...patch } : c
-              ),
-            }
-          : m
+            ...menu,
+            categories: (menu.categories || []).map((cat) =>
+              cat.id === categoryId ? { ...cat, ...patch } : cat
+            ),
+          }
+          : menu
       )
     );
 
-  const removeCategory = (menuId, catId) =>
+  const removeCategory = (menuId, categoryId) =>
     setMenus((prev) =>
-      prev.map((m) =>
-        m.id === menuId
-          ? { ...m, categories: (m.categories || []).filter((c) => c.id !== catId) }
-          : m
-      )
-    );
-
-  const addItem = (menuId, catId) =>
-    setMenus((prev) =>
-      prev.map((m) =>
-        m.id === menuId
+      prev.map((menu) =>
+        menu.id === menuId
           ? {
-              ...m,
-              categories: (m.categories || []).map((c) =>
-                c.id === catId ? { ...c, items: [...(c.items || []), newMenuItem()] } : c
-              ),
-            }
-          : m
+            ...menu,
+            categories: (menu.categories || []).filter((cat) => cat.id !== categoryId),
+          }
+          : menu
       )
     );
 
-  const updateItem = (menuId, catId, itemId, patch) =>
+  const addItem = (menuId, categoryId) =>
     setMenus((prev) =>
-      prev.map((m) =>
-        m.id === menuId
+      prev.map((menu) =>
+        menu.id === menuId
           ? {
-              ...m,
-              categories: (m.categories || []).map((c) =>
-                c.id === catId
-                  ? {
-                      ...c,
-                      items: (c.items || []).map((it) =>
-                        it.id === itemId ? { ...it, ...patch } : it
-                      ),
-                    }
-                  : c
-              ),
-            }
-          : m
+            ...menu,
+            categories: (menu.categories || []).map((cat) =>
+              cat.id === categoryId
+                ? { ...cat, items: [...(cat.items || []), newMenuItem()] }
+                : cat
+            ),
+          }
+          : menu
       )
     );
 
-  const removeItem = (menuId, catId, itemId) =>
+  const updateItem = (menuId, categoryId, itemId, patch) =>
     setMenus((prev) =>
-      prev.map((m) =>
-        m.id === menuId
+      prev.map((menu) =>
+        menu.id === menuId
           ? {
-              ...m,
-              categories: (m.categories || []).map((c) =>
-                c.id === catId
-                  ? { ...c, items: (c.items || []).filter((it) => it.id !== itemId) }
-                  : c
-              ),
-            }
-          : m
+            ...menu,
+            categories: (menu.categories || []).map((cat) =>
+              cat.id === categoryId
+                ? {
+                  ...cat,
+                  items: (cat.items || []).map((item) =>
+                    item.id === itemId ? { ...item, ...patch } : item
+                  ),
+                }
+                : cat
+            ),
+          }
+          : menu
       )
     );
 
-  const addModifierGroup = (menuId, catId, itemId) => {
-    const item = menus
-      .find((m) => m.id === menuId)
-      ?.categories.find((c) => c.id === catId)
-      ?.items.find((it) => it.id === itemId);
+  const removeItem = (menuId, categoryId, itemId) =>
+    setMenus((prev) =>
+      prev.map((menu) =>
+        menu.id === menuId
+          ? {
+            ...menu,
+            categories: (menu.categories || []).map((cat) =>
+              cat.id === categoryId
+                ? {
+                  ...cat,
+                  items: (cat.items || []).filter((item) => item.id !== itemId),
+                }
+                : cat
+            ),
+          }
+          : menu
+      )
+    );
 
-    updateItem(menuId, catId, itemId, {
-      modifierGroups: [...(item?.modifierGroups || []), newModifierGroup()],
+  const updateItemSection = (menuId, categoryId, itemId, sectionKey, patch) => {
+    const menu = menus.find((m) => m.id === menuId);
+    const category = menu?.categories?.find((c) => c.id === categoryId);
+    const item = category?.items?.find((i) => i.id === itemId);
+
+    updateItem(menuId, categoryId, itemId, {
+      [sectionKey]: {
+        ...(item?.[sectionKey] || {}),
+        ...patch,
+      },
     });
   };
 
-  const updateModifierGroup = (menuId, catId, itemId, groupId, patch) => {
-    const item = menus
-      .find((m) => m.id === menuId)
-      ?.categories.find((c) => c.id === catId)
-      ?.items.find((it) => it.id === itemId);
+  const addSectionOption = (menuId, categoryId, itemId, sectionKey) => {
+    const menu = menus.find((m) => m.id === menuId);
+    const category = menu?.categories?.find((c) => c.id === categoryId);
+    const item = category?.items?.find((i) => i.id === itemId);
+    const section = item?.[sectionKey];
 
-    const modifierGroups = (item?.modifierGroups || []).map((g) =>
-      g.id === groupId ? { ...g, ...patch } : g
+    let nextOption = {};
+    if (sectionKey === "variantGroup") nextOption = newVariantOption();
+    if (sectionKey === "removableIngredients") nextOption = newIngredientOption();
+    if (sectionKey === "extrasGroup") nextOption = newExtraOption();
+
+    updateItemSection(menuId, categoryId, itemId, sectionKey, {
+      options: [...(section?.options || []), nextOption],
+    });
+  };
+
+  const updateSectionOption = (
+    menuId,
+    categoryId,
+    itemId,
+    sectionKey,
+    optionId,
+    patch
+  ) => {
+    const menu = menus.find((m) => m.id === menuId);
+    const category = menu?.categories?.find((c) => c.id === categoryId);
+    const item = category?.items?.find((i) => i.id === itemId);
+    const section = item?.[sectionKey];
+
+    const updatedOptions = (section?.options || []).map((opt) =>
+      opt.id === optionId ? { ...opt, ...patch } : opt
     );
 
-    updateItem(menuId, catId, itemId, { modifierGroups });
+    updateItemSection(menuId, categoryId, itemId, sectionKey, {
+      options: updatedOptions,
+    });
   };
 
-  const removeModifierGroup = (menuId, catId, itemId, groupId) => {
-    const item = menus
-      .find((m) => m.id === menuId)
-      ?.categories.find((c) => c.id === catId)
-      ?.items.find((it) => it.id === itemId);
+  const removeSectionOption = (
+    menuId,
+    categoryId,
+    itemId,
+    sectionKey,
+    optionId
+  ) => {
+    const menu = menus.find((m) => m.id === menuId);
+    const category = menu?.categories?.find((c) => c.id === categoryId);
+    const item = category?.items?.find((i) => i.id === itemId);
+    const section = item?.[sectionKey];
 
-    const modifierGroups = (item?.modifierGroups || []).filter((g) => g.id !== groupId);
-    updateItem(menuId, catId, itemId, { modifierGroups });
+    const updatedOptions = (section?.options || []).filter((opt) => opt.id !== optionId);
+
+    let finalOptions = updatedOptions;
+    if (
+      sectionKey === "variantGroup" &&
+      updatedOptions.length > 0 &&
+      !updatedOptions.some((opt) => opt.isDefault)
+    ) {
+      finalOptions = updatedOptions.map((opt, idx) =>
+        idx === 0 ? { ...opt, isDefault: true } : opt
+      );
+    }
+
+    updateItemSection(menuId, categoryId, itemId, sectionKey, {
+      options: finalOptions,
+    });
   };
 
-  const addModifierOption = (menuId, catId, itemId, groupId) => {
-    const item = menus
-      .find((m) => m.id === menuId)
-      ?.categories.find((c) => c.id === catId)
-      ?.items.find((it) => it.id === itemId);
+  const setDefaultVariant = (menuId, categoryId, itemId, optionId) => {
+    const menu = menus.find((m) => m.id === menuId);
+    const category = menu?.categories?.find((c) => c.id === categoryId);
+    const item = category?.items?.find((i) => i.id === itemId);
 
-    const modifierGroups = (item?.modifierGroups || []).map((g) =>
-      g.id === groupId ? { ...g, options: [...(g.options || []), newModifierOption()] } : g
-    );
+    const options = (item?.variantGroup?.options || []).map((opt) => ({
+      ...opt,
+      isDefault: opt.id === optionId,
+    }));
 
-    updateItem(menuId, catId, itemId, { modifierGroups });
+    updateItemSection(menuId, categoryId, itemId, "variantGroup", { options });
   };
 
-  const updateModifierOption = (menuId, catId, itemId, groupId, optionId, patch) => {
-    const item = menus
-      .find((m) => m.id === menuId)
-      ?.categories.find((c) => c.id === catId)
-      ?.items.find((it) => it.id === itemId);
+  const totalItems = useMemo(() => {
+    return menus.reduce((acc, menu) => {
+      return (
+        acc +
+        (menu.categories || []).reduce((catAcc, cat) => catAcc + (cat.items || []).length, 0)
+      );
+    }, 0);
+  }, [menus]);
 
-    const modifierGroups = (item?.modifierGroups || []).map((g) =>
-      g.id === groupId
-        ? {
-            ...g,
-            options: (g.options || []).map((o) =>
-              o.id === optionId ? { ...o, ...patch } : o
-            ),
+  const validateMenus = () => {
+    for (const menu of menus) {
+      if (!menu.name?.trim()) {
+        toast.error("Menu name required");
+        return false;
+      }
+
+      for (const category of menu.categories || []) {
+        if (!category.name?.trim()) {
+          toast.error("Each category needs a name");
+          return false;
+        }
+
+        for (const item of category.items || []) {
+          if (!item.name?.trim()) {
+            toast.error("Each item needs a name");
+            return false;
           }
-        : g
-    );
 
-    updateItem(menuId, catId, itemId, { modifierGroups });
-  };
+          if (
+            item.variantGroup?.enabled &&
+            !item.variantGroup?.title?.trim()
+          ) {
+            toast.error(`"${item.name}" me size group title chahiye`);
+            return false;
+          }
 
-  const removeModifierOption = (menuId, catId, itemId, groupId, optionId) => {
-    const item = menus
-      .find((m) => m.id === menuId)
-      ?.categories.find((c) => c.id === catId)
-      ?.items.find((it) => it.id === itemId);
+          if (
+            item.variantGroup?.enabled &&
+            !(item.variantGroup?.options || []).some((opt) => opt.name?.trim())
+          ) {
+            toast.error(`"${item.name}" me at least 1 size option chahiye`);
+            return false;
+          }
 
-    const modifierGroups = (item?.modifierGroups || []).map((g) =>
-      g.id === groupId
-        ? { ...g, options: (g.options || []).filter((o) => o.id !== optionId) }
-        : g
-    );
+          if (
+            item.removableIngredients?.enabled &&
+            !item.removableIngredients?.title?.trim()
+          ) {
+            toast.error(`"${item.name}" me ingredients group title chahiye`);
+            return false;
+          }
 
-    updateItem(menuId, catId, itemId, { modifierGroups });
+          if (
+            item.extrasGroup?.enabled &&
+            !item.extrasGroup?.title?.trim()
+          ) {
+            toast.error(`"${item.name}" me extras group title chahiye`);
+            return false;
+          }
+        }
+      }
+    }
+
+    return true;
   };
 
   const handleSave = async (e) => {
     e.preventDefault();
 
+    if (!validateMenus()) return;
+
     const cleanedMenus = (menus || []).map((menu) => ({
-      ...menu,
+      id: menu.id,
+      name: menu.name.trim(),
+      type: menu.type || "all_day",
+      description: menu.description || "",
+      isActive: menu.isActive !== false,
       categories: (menu.categories || []).map((cat, catIndex) => ({
-        ...cat,
+        id: cat.id,
+        name: cat.name.trim(),
         sortOrder: cat.sortOrder === "" ? catIndex : Number(cat.sortOrder || catIndex),
-        items: (cat.items || []).map((it) => ({
-          ...it,
-          price: it.price === "" ? null : Number(it.price),
-          compareAtPrice: it.compareAtPrice === "" ? null : Number(it.compareAtPrice),
-          modifierGroups: (it.modifierGroups || []).map((group) => ({
-            ...group,
-            minSelect: Number(group.minSelect || 0),
-            maxSelect: Number(group.maxSelect || 0),
-            freeCount: Number(group.freeCount || 0),
-            options: (group.options || []).map((opt) => ({
-              ...opt,
-              priceDelta: opt.priceDelta === "" ? 0 : Number(opt.priceDelta || 0),
-              calories: opt.calories === "" ? null : Number(opt.calories),
-            })),
-          })),
-        })),
+        items: (cat.items || []).map((item) => {
+          const basePriceNumber =
+            item.basePrice === "" || item.basePrice === null
+              ? null
+              : Number(item.basePrice);
+
+          const compareAtPriceNumber =
+            item.compareAtPrice === "" || item.compareAtPrice === null
+              ? null
+              : Number(item.compareAtPrice);
+
+          const normalizedItem = {
+            id: item.id,
+            name: item.name.trim(),
+            description: item.description || "",
+            image: item.image || "",
+            price: basePriceNumber,
+            basePrice: basePriceNumber,
+            compareAtPrice: compareAtPriceNumber,
+            isVeg: !!item.isVeg,
+            bestseller: !!item.bestseller,
+            availabilityState: item.availabilityState || "active",
+
+            variantGroup: {
+              enabled: !!item.variantGroup?.enabled,
+              title: item.variantGroup?.title || "",
+              required: item.variantGroup?.required !== false,
+              options: (item.variantGroup?.options || [])
+                .filter((opt) => opt.name?.trim())
+                .map((opt, idx) => ({
+                  id: opt.id,
+                  name: opt.name.trim(),
+                  price: opt.price === "" ? null : Number(opt.price),
+                  isDefault: !!opt.isDefault || idx === 0,
+                })),
+            },
+
+            removableIngredients: {
+              enabled: !!item.removableIngredients?.enabled,
+              title: item.removableIngredients?.title || "",
+              helperText: item.removableIngredients?.helperText || "",
+              options: (item.removableIngredients?.options || [])
+                .filter((opt) => opt.name?.trim())
+                .map((opt) => ({
+                  id: opt.id,
+                  name: opt.name.trim(),
+                  selected: opt.selected !== false,
+                })),
+            },
+
+            extrasGroup: {
+              enabled: !!item.extrasGroup?.enabled,
+              title: item.extrasGroup?.title || "",
+              options: (item.extrasGroup?.options || [])
+                .filter((opt) => opt.name?.trim())
+                .map((opt) => ({
+                  id: opt.id,
+                  name: opt.name.trim(),
+                  price: opt.price === "" ? null : Number(opt.price),
+                })),
+            },
+          };
+
+          return {
+            ...normalizedItem,
+            modifierGroups: buildModifierGroupsFromSimpleItem(normalizedItem),
+          };
+        }),
       })),
     }));
 
@@ -329,630 +663,651 @@ export default function RestaurantMenuPage() {
   if (!restaurantId) return <div className="p-6">Employee restaurant id not found.</div>;
 
   return (
-    <main className="p-6 bg-gray-100 min-h-screen">
-      <div className="max-w-7xl mx-auto bg-white rounded-xl shadow p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-semibold">Menus / Modifiers</h1>
-            <p className="text-sm text-gray-500">
-              {restaurant?.branchName || restaurant?.brandName || "Restaurant"}
-            </p>
+    <main className="min-h-screen bg-gray-100 p-6">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold">Menus / Modifiers</h1>
+              <p className="text-sm text-gray-500">
+                {restaurant?.branchName || restaurant?.brandName || "Restaurant"}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">
+                Simple flow: Menu → Category → Item → Sizes / Remove Ingredients / Extras
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700">
+                {menus.length} menu • {totalItems} item
+              </div>
+              <button
+                type="button"
+                onClick={addMenu}
+                className="rounded-lg bg-black px-4 py-2 text-white"
+              >
+                + Add Menu
+              </button>
+            </div>
           </div>
-          <button type="button" onClick={addMenu} className="px-4 py-2 bg-black text-white rounded">
-            + Add Menu
-          </button>
         </div>
 
         <form onSubmit={handleSave} className="space-y-6">
           {menus.map((menu) => (
-            <div key={menu.id} className="border rounded-xl p-4 space-y-4">
-              <div className="grid grid-cols-4 gap-3">
-                <input
-                  className="border rounded p-2"
-                  value={menu.name}
-                  onChange={(e) => updateMenu(menu.id, { name: e.target.value })}
-                  placeholder="Menu name"
+            <div key={menu.id} className="rounded-2xl border bg-white shadow-sm">
+              <div className="border-b p-5">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+                  <input
+                    className="rounded-lg border p-3 md:col-span-2"
+                    value={""}
+                    onChange={(e) => updateMenu(menu.id, { name: e.target.value })}
+                    placeholder="Menu name"
+                  />
+
+                  <select
+                    className="rounded-lg border p-3"
+                    value={menu.type}
+                    onChange={(e) => updateMenu(menu.id, { type: e.target.value })}
+                  >
+                    <option value="all_day">All Day</option>
+                    <option value="breakfast">Breakfast</option>
+                    <option value="lunch">Lunch</option>
+                    <option value="dinner">Dinner</option>
+                    <option value="late_night">Late Night</option>
+                    <option value="specials">Specials</option>
+                  </select>
+
+                  <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!!menu.isActive}
+                      onChange={(e) => updateMenu(menu.id, { isActive: e.target.checked })}
+                    />
+                    Active menu
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => removeMenu(menu.id)}
+                    className="rounded-lg border border-red-200 px-4 py-3 text-red-600"
+                  >
+                    Delete Menu
+                  </button>
+                </div>
+
+                <textarea
+                  className="mt-3 w-full rounded-lg border p-3"
+                  rows={2}
+                  value={menu.description || ""}
+                  onChange={(e) => updateMenu(menu.id, { description: e.target.value })}
+                  placeholder="Menu description"
                 />
-                <select
-                  className="border rounded p-2"
-                  value={menu.type}
-                  onChange={(e) => updateMenu(menu.id, { type: e.target.value })}
-                >
-                  <option value="all_day">All Day</option>
-                  <option value="breakfast">Breakfast</option>
-                  <option value="lunch">Lunch</option>
-                  <option value="dinner">Dinner</option>
-                  <option value="late_night">Late Night</option>
-                  <option value="specials">Specials</option>
-                </select>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={!!menu.isActive}
-                    onChange={(e) => updateMenu(menu.id, { isActive: e.target.checked })}
-                  />
-                  Active
-                </label>
-                <button
-                  type="button"
-                  onClick={() => removeMenu(menu.id)}
-                  className="border rounded px-3 py-2"
-                >
-                  Delete Menu
-                </button>
               </div>
 
-              <textarea
-                className="border rounded p-2 w-full"
-                rows={2}
-                value={menu.description || ""}
-                onChange={(e) => updateMenu(menu.id, { description: e.target.value })}
-                placeholder="Menu description"
-              />
-
-              <div>
-                <div className="text-sm font-medium mb-2">Service modes</div>
-                <div className="flex flex-wrap gap-2">
-                  {SERVICE_MODES.filter((x) => x !== "menuOnly").map((mode) => {
-                    const active = (menu.appliesToServiceModes || []).includes(mode);
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() =>
-                          updateMenu(menu.id, {
-                            appliesToServiceModes: toggleValueInArray(
-                              menu.appliesToServiceModes || [],
-                              mode
-                            ),
-                          })
-                        }
-                        className={`px-3 py-1 rounded-full text-xs border ${
-                          active
-                            ? "bg-black text-white border-black"
-                            : "bg-white text-gray-700 border-gray-300"
-                        }`}
-                      >
-                        {mode}
-                      </button>
-                    );
-                  })}
+              <div className="space-y-4 p-5">
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => addCategory(menu.id)}
+                    className="rounded-lg bg-gray-900 px-4 py-2 text-white"
+                  >
+                    + Add Category
+                  </button>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-3 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={!!menu.schedule?.enabled}
-                    onChange={(e) =>
-                      updateMenu(menu.id, {
-                        schedule: { ...(menu.schedule || {}), enabled: e.target.checked },
-                      })
-                    }
-                  />
-                  Time-based menu
-                </label>
-              </div>
-
-              {!!menu.schedule?.enabled && (
-                <div className="border rounded p-3 bg-gray-50 space-y-3">
-                  <DayToggleRow
-                    value={menu.schedule?.days || []}
-                    onToggle={(dayKey) =>
-                      updateMenu(menu.id, {
-                        schedule: {
-                          ...(menu.schedule || {}),
-                          days: toggleValueInArray(menu.schedule?.days || [], dayKey),
-                        },
-                      })
-                    }
-                  />
-                  <div className="flex gap-2">
-                    <input
-                      type="time"
-                      className="border rounded p-2"
-                      value={menu.schedule?.startTime || ""}
-                      onChange={(e) =>
-                        updateMenu(menu.id, {
-                          schedule: { ...(menu.schedule || {}), startTime: e.target.value },
-                        })
-                      }
-                    />
-                    <input
-                      type="time"
-                      className="border rounded p-2"
-                      value={menu.schedule?.endTime || ""}
-                      onChange={(e) =>
-                        updateMenu(menu.id, {
-                          schedule: { ...(menu.schedule || {}), endTime: e.target.value },
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => addCategory(menu.id)}
-                  className="px-4 py-2 bg-gray-900 text-white rounded"
-                >
-                  + Add Category
-                </button>
-              </div>
-
-              {(menu.categories || []).map((cat) => (
-                <div key={cat.id} className="border rounded-lg p-4 space-y-3">
-                  <div className="flex gap-2">
-                    <input
-                      className="flex-1 border rounded p-2"
-                      value={cat.name}
-                      onChange={(e) => updateCategory(menu.id, cat.id, { name: e.target.value })}
-                      placeholder="Category name"
-                    />
-                    <input
-                      className="w-24 border rounded p-2"
-                      value={cat.sortOrder}
-                      onChange={(e) =>
-                        updateCategory(menu.id, cat.id, { sortOrder: e.target.value })
-                      }
-                      placeholder="Sort"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeCategory(menu.id, cat.id)}
-                      className="border rounded px-3"
-                    >
-                      Delete
-                    </button>
-                  </div>
-
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => addItem(menu.id, cat.id)}
-                      className="px-4 py-2 bg-black text-white rounded"
-                    >
-                      + Add Item
-                    </button>
-                  </div>
-
-                  {(cat.items || []).map((it) => (
-                    <div key={it.id} className="border rounded p-3 bg-gray-50 space-y-3">
-                      <div className="grid grid-cols-12 gap-2">
-                        <input
-                          className="col-span-3 border rounded p-2"
-                          value={it.name}
-                          onChange={(e) => updateItem(menu.id, cat.id, it.id, { name: e.target.value })}
-                          placeholder="Item name"
-                        />
-                        <input
-                          className="col-span-2 border rounded p-2"
-                          value={it.price}
-                          onChange={(e) => updateItem(menu.id, cat.id, it.id, { price: e.target.value })}
-                          placeholder="Price"
-                        />
-                        <input
-                          className="col-span-2 border rounded p-2"
-                          value={it.compareAtPrice}
-                          onChange={(e) =>
-                            updateItem(menu.id, cat.id, it.id, { compareAtPrice: e.target.value })
-                          }
-                          placeholder="Compare price"
-                        />
-                        <input
-                          className="col-span-2 border rounded p-2"
-                          value={it.spicyLevel || ""}
-                          onChange={(e) =>
-                            updateItem(menu.id, cat.id, it.id, { spicyLevel: e.target.value })
-                          }
-                          placeholder="Spicy level"
-                        />
-                        <select
-                          className="col-span-2 border rounded p-2"
-                          value={it.availabilityState}
-                          onChange={(e) =>
-                            updateItem(menu.id, cat.id, it.id, { availabilityState: e.target.value })
-                          }
-                        >
-                          <option value="active">Active</option>
-                          <option value="sold_out">Sold Out</option>
-                          <option value="hidden">Hidden</option>
-                          <option value="scheduled">Scheduled</option>
-                          <option value="archived">Archived</option>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => removeItem(menu.id, cat.id, it.id)}
-                          className="col-span-1 text-red-600"
-                        >
-                          Remove
-                        </button>
-                      </div>
-
-                      <textarea
-                        className="w-full border rounded p-2"
-                        rows={2}
-                        placeholder="Item description"
-                        value={it.description || ""}
+                {(menu.categories || []).map((category) => (
+                  <div key={category.id} className="rounded-xl border bg-gray-50 p-4">
+                    <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_120px_120px]">
+                      <input
+                        className="rounded-lg border bg-white p-3"
+                        value={category.name}
                         onChange={(e) =>
-                          updateItem(menu.id, cat.id, it.id, { description: e.target.value })
+                          updateCategory(menu.id, category.id, { name: e.target.value })
                         }
+                        placeholder="Category name ex: Pizza, Burgers, Drinks"
                       />
 
-                      <div className="flex flex-wrap gap-4 text-sm">
-                        {[
-                          ["isVeg", "Veg"],
-                          ["bestseller", "Bestseller"],
-                          ["notesEnabled", "Notes enabled"],
-                        ].map(([key, label]) => (
-                          <label key={key} className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={!!it[key]}
-                              onChange={(e) =>
-                                updateItem(menu.id, cat.id, it.id, { [key]: e.target.checked })
-                              }
-                            />
-                            {label}
-                          </label>
-                        ))}
-                      </div>
+                      <input
+                        className="rounded-lg border bg-white p-3"
+                        value={category.sortOrder}
+                        onChange={(e) =>
+                          updateCategory(menu.id, category.id, { sortOrder: e.target.value })
+                        }
+                        placeholder="Sort"
+                      />
 
-                      <div>
-                        <div className="text-sm font-medium mb-2">Item service modes</div>
-                        <div className="flex flex-wrap gap-2">
-                          {SERVICE_MODES.filter((x) => x !== "menuOnly").map((mode) => {
-                            const active = (it.appliesToServiceModes || []).includes(mode);
-                            return (
-                              <button
-                                key={mode}
-                                type="button"
-                                onClick={() =>
-                                  updateItem(menu.id, cat.id, it.id, {
-                                    appliesToServiceModes: toggleValueInArray(
-                                      it.appliesToServiceModes || [],
-                                      mode
-                                    ),
-                                  })
-                                }
-                                className={`px-3 py-1 rounded-full text-xs border ${
-                                  active
-                                    ? "bg-black text-white border-black"
-                                    : "bg-white text-gray-700 border-gray-300"
-                                }`}
-                              >
-                                {mode}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeCategory(menu.id, category.id)}
+                        className="rounded-lg border border-red-200 bg-white px-4 py-3 text-red-600"
+                      >
+                        Delete Category
+                      </button>
+                    </div>
 
-                      <div className="border rounded p-3 bg-white space-y-3">
-                        <div className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={!!it.schedule?.enabled}
-                            onChange={(e) =>
-                              updateItem(menu.id, cat.id, it.id, {
-                                schedule: { ...(it.schedule || {}), enabled: e.target.checked },
-                              })
-                            }
-                          />
-                          Scheduled availability
-                        </div>
+                    <div className="mb-4 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => addItem(menu.id, category.id)}
+                        className="rounded-lg bg-black px-4 py-2 text-white"
+                      >
+                        + Add Item
+                      </button>
+                    </div>
 
-                        {!!it.schedule?.enabled && (
-                          <>
-                            <DayToggleRow
-                              value={it.schedule?.days || []}
-                              onToggle={(dayKey) =>
-                                updateItem(menu.id, cat.id, it.id, {
-                                  schedule: {
-                                    ...(it.schedule || {}),
-                                    days: toggleValueInArray(it.schedule?.days || [], dayKey),
-                                  },
-                                })
-                              }
-                            />
-                            <div className="flex gap-2">
+                    <div className="space-y-5">
+                      {(category.items || []).map((item) => (
+                        <div key={item.id} className="space-y-4 rounded-xl border bg-white p-4">
+                          <div className="flex items-center justify-between">
+                            <h3 className="font-semibold text-gray-900">
+                              {item.name?.trim() || "New Item"}
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={() => removeItem(menu.id, category.id, item.id)}
+                              className="text-sm text-red-600"
+                            >
+                              Remove Item
+                            </button>
+                          </div>
+
+                          <SectionCard title="Basic Details">
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
                               <input
-                                type="time"
-                                className="border rounded p-2"
-                                value={it.schedule?.startTime || ""}
+                                className="rounded-lg border p-3 md:col-span-3"
+                                value={item.name}
                                 onChange={(e) =>
-                                  updateItem(menu.id, cat.id, it.id, {
-                                    schedule: {
-                                      ...(it.schedule || {}),
-                                      startTime: e.target.value,
-                                    },
-                                  })
-                                }
-                              />
-                              <input
-                                type="time"
-                                className="border rounded p-2"
-                                value={it.schedule?.endTime || ""}
-                                onChange={(e) =>
-                                  updateItem(menu.id, cat.id, it.id, {
-                                    schedule: {
-                                      ...(it.schedule || {}),
-                                      endTime: e.target.value,
-                                    },
-                                  })
-                                }
-                              />
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      <div className="border rounded p-3 bg-white space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="font-medium">Modifier Groups</div>
-                          <button
-                            type="button"
-                            onClick={() => addModifierGroup(menu.id, cat.id, it.id)}
-                            className="px-3 py-1.5 bg-gray-900 text-white rounded text-sm"
-                          >
-                            + Add Modifier Group
-                          </button>
-                        </div>
-
-                        {(it.modifierGroups || []).map((group) => (
-                          <div key={group.id} className="border rounded p-3 bg-gray-50 space-y-3">
-                            <div className="grid grid-cols-12 gap-2 items-center">
-                              <input
-                                className="col-span-3 border rounded p-2"
-                                value={group.name}
-                                onChange={(e) =>
-                                  updateModifierGroup(menu.id, cat.id, it.id, group.id, {
+                                  updateItem(menu.id, category.id, item.id, {
                                     name: e.target.value,
                                   })
                                 }
-                                placeholder="Group name"
+                                placeholder="Item name"
                               />
+
+                              <input
+                                className="rounded-lg border p-3 md:col-span-2"
+                                value={item.basePrice}
+                                onChange={(e) =>
+                                  updateItem(menu.id, category.id, item.id, {
+                                    basePrice: e.target.value,
+                                  })
+                                }
+                                placeholder="Base price"
+                              />
+
+                              <input
+                                className="rounded-lg border p-3 md:col-span-2"
+                                value={item.compareAtPrice}
+                                onChange={(e) =>
+                                  updateItem(menu.id, category.id, item.id, {
+                                    compareAtPrice: e.target.value,
+                                  })
+                                }
+                                placeholder="Compare price"
+                              />
+
                               <select
-                                className="col-span-2 border rounded p-2"
-                                value={group.selectionType}
+                                className="rounded-lg border p-3 md:col-span-2"
+                                value={item.availabilityState}
                                 onChange={(e) =>
-                                  updateModifierGroup(menu.id, cat.id, it.id, group.id, {
-                                    selectionType: e.target.value,
-                                    maxSelect: e.target.value === "single" ? 1 : group.maxSelect,
+                                  updateItem(menu.id, category.id, item.id, {
+                                    availabilityState: e.target.value,
                                   })
                                 }
                               >
-                                <option value="single">Single</option>
-                                <option value="multi">Multi</option>
+                                <option value="active">Active</option>
+                                <option value="sold_out">Sold Out</option>
+                                <option value="hidden">Hidden</option>
+                                <option value="scheduled">Scheduled</option>
+                                <option value="archived">Archived</option>
                               </select>
-                              <label className="col-span-2 text-sm flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={!!group.isRequired}
-                                  onChange={(e) =>
-                                    updateModifierGroup(menu.id, cat.id, it.id, group.id, {
-                                      isRequired: e.target.checked,
-                                    })
-                                  }
-                                />
-                                Required
-                              </label>
+
                               <input
-                                className="col-span-1 border rounded p-2"
-                                value={group.minSelect}
+                                className="rounded-lg border p-3 md:col-span-3"
+                                value={item.image}
                                 onChange={(e) =>
-                                  updateModifierGroup(menu.id, cat.id, it.id, group.id, {
-                                    minSelect: e.target.value,
+                                  updateItem(menu.id, category.id, item.id, {
+                                    image: e.target.value,
                                   })
                                 }
-                                placeholder="Min"
+                                placeholder="Image URL"
                               />
-                              <input
-                                className="col-span-1 border rounded p-2"
-                                value={group.maxSelect}
-                                onChange={(e) =>
-                                  updateModifierGroup(menu.id, cat.id, it.id, group.id, {
-                                    maxSelect: e.target.value,
-                                  })
-                                }
-                                placeholder="Max"
-                              />
-                              <input
-                                className="col-span-2 border rounded p-2"
-                                value={group.freeCount}
-                                onChange={(e) =>
-                                  updateModifierGroup(menu.id, cat.id, it.id, group.id, {
-                                    freeCount: e.target.value,
-                                  })
-                                }
-                                placeholder="Free count"
-                              />
-                              <button
-                                type="button"
-                                className="col-span-1 text-red-600"
-                                onClick={() =>
-                                  removeModifierGroup(menu.id, cat.id, it.id, group.id)
-                                }
-                              >
-                                Remove
-                              </button>
                             </div>
 
                             <textarea
-                              className="w-full border rounded p-2"
+                              className="mt-3 w-full rounded-lg border p-3"
                               rows={2}
-                              value={group.description || ""}
+                              value={item.description}
                               onChange={(e) =>
-                                updateModifierGroup(menu.id, cat.id, it.id, group.id, {
+                                updateItem(menu.id, category.id, item.id, {
                                   description: e.target.value,
                                 })
                               }
-                              placeholder="Description"
+                              placeholder="Item description"
                             />
 
-                            <div>
-                              <div className="text-sm font-medium mb-2">
-                                Applies to service modes
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                {SERVICE_MODES.filter((x) => x !== "menuOnly").map((mode) => {
-                                  const active = (group.appliesToServiceModes || []).includes(mode);
-                                  return (
-                                    <button
-                                      key={mode}
-                                      type="button"
-                                      onClick={() =>
-                                        updateModifierGroup(menu.id, cat.id, it.id, group.id, {
-                                          appliesToServiceModes: toggleValueInArray(
-                                            group.appliesToServiceModes || [],
-                                            mode
-                                          ),
-                                        })
-                                      }
-                                      className={`px-3 py-1 rounded-full text-xs border ${
-                                        active
-                                          ? "bg-black text-white border-black"
-                                          : "bg-white text-gray-700 border-gray-300"
-                                      }`}
-                                    >
-                                      {mode}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                            <div className="mt-3 flex flex-wrap gap-5 text-sm">
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={!!item.isVeg}
+                                  onChange={(e) =>
+                                    updateItem(menu.id, category.id, item.id, {
+                                      isVeg: e.target.checked,
+                                    })
+                                  }
+                                />
+                                Veg
+                              </label>
+
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={!!item.bestseller}
+                                  onChange={(e) =>
+                                    updateItem(menu.id, category.id, item.id, {
+                                      bestseller: e.target.checked,
+                                    })
+                                  }
+                                />
+                                Bestseller
+                              </label>
+                            </div>
+                          </SectionCard>
+
+                          <SectionCard
+                            title="Sizes / Variants"
+                            right={
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={!!item.variantGroup?.enabled}
+                                  onChange={(e) =>
+                                    updateItemSection(
+                                      menu.id,
+                                      category.id,
+                                      item.id,
+                                      "variantGroup",
+                                      { enabled: e.target.checked }
+                                    )
+                                  }
+                                />
+                                Enable
+                              </label>
+                            }
+                          >
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                              <input
+                                className="rounded-lg border p-3"
+                                value={item.variantGroup?.title || ""}
+                                onChange={(e) =>
+                                  updateItemSection(
+                                    menu.id,
+                                    category.id,
+                                    item.id,
+                                    "variantGroup",
+                                    { title: e.target.value }
+                                  )
+                                }
+                                placeholder="Group title ex: Sizes"
+                              />
+
+                              <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={item.variantGroup?.required !== false}
+                                  onChange={(e) =>
+                                    updateItemSection(
+                                      menu.id,
+                                      category.id,
+                                      item.id,
+                                      "variantGroup",
+                                      { required: e.target.checked }
+                                    )
+                                  }
+                                />
+                                Required selection
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  addSectionOption(
+                                    menu.id,
+                                    category.id,
+                                    item.id,
+                                    "variantGroup"
+                                  )
+                                }
+                                className="rounded-lg border px-4 py-3"
+                              >
+                                + Add Size
+                              </button>
                             </div>
 
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between">
-                                <div className="text-sm font-medium">Options</div>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    addModifierOption(menu.id, cat.id, it.id, group.id)
-                                  }
-                                  className="px-3 py-1 bg-black text-white rounded text-xs"
-                                >
-                                  + Add Option
-                                </button>
-                              </div>
-
-                              {(group.options || []).map((opt) => (
+                            <div className="mt-3 space-y-3">
+                              {(item.variantGroup?.options || []).map((opt) => (
                                 <div
                                   key={opt.id}
-                                  className="grid grid-cols-12 gap-2 border rounded p-2 bg-white items-center"
+                                  className="grid grid-cols-1 gap-3 rounded-lg border p-3 md:grid-cols-[40px_1fr_160px_120px]"
                                 >
+                                  <div className="flex items-center justify-center">
+                                    <input
+                                      type="radio"
+                                      name={`default_variant_${item.id}`}
+                                      checked={!!opt.isDefault}
+                                      onChange={() =>
+                                        setDefaultVariant(
+                                          menu.id,
+                                          category.id,
+                                          item.id,
+                                          opt.id
+                                        )
+                                      }
+                                    />
+                                  </div>
+
                                   <input
-                                    className="col-span-3 border rounded p-2"
+                                    className="rounded-lg border p-3"
                                     value={opt.name}
                                     onChange={(e) =>
-                                      updateModifierOption(
+                                      updateSectionOption(
                                         menu.id,
-                                        cat.id,
-                                        it.id,
-                                        group.id,
+                                        category.id,
+                                        item.id,
+                                        "variantGroup",
                                         opt.id,
                                         { name: e.target.value }
                                       )
                                     }
-                                    placeholder="Option name"
+                                    placeholder="Size name ex: Small / Large"
                                   />
+
                                   <input
-                                    className="col-span-2 border rounded p-2"
-                                    value={opt.priceDelta}
+                                    className="rounded-lg border p-3"
+                                    value={opt.price}
                                     onChange={(e) =>
-                                      updateModifierOption(
+                                      updateSectionOption(
                                         menu.id,
-                                        cat.id,
-                                        it.id,
-                                        group.id,
+                                        category.id,
+                                        item.id,
+                                        "variantGroup",
                                         opt.id,
-                                        { priceDelta: e.target.value }
+                                        { price: e.target.value }
                                       )
                                     }
-                                    placeholder="Price delta"
+                                    placeholder="Price"
                                   />
-                                  <input
-                                    className="col-span-2 border rounded p-2"
-                                    value={opt.calories}
-                                    onChange={(e) =>
-                                      updateModifierOption(
-                                        menu.id,
-                                        cat.id,
-                                        it.id,
-                                        group.id,
-                                        opt.id,
-                                        { calories: e.target.value }
-                                      )
-                                    }
-                                    placeholder="Calories"
-                                  />
-                                  <label className="col-span-2 text-sm flex items-center gap-2">
-                                    <input
-                                      type="checkbox"
-                                      checked={!!opt.isDefault}
-                                      onChange={(e) =>
-                                        updateModifierOption(
-                                          menu.id,
-                                          cat.id,
-                                          it.id,
-                                          group.id,
-                                          opt.id,
-                                          { isDefault: e.target.checked }
-                                        )
-                                      }
-                                    />
-                                    Default
-                                  </label>
-                                  <label className="col-span-2 text-sm flex items-center gap-2">
-                                    <input
-                                      type="checkbox"
-                                      checked={!!opt.isAvailable}
-                                      onChange={(e) =>
-                                        updateModifierOption(
-                                          menu.id,
-                                          cat.id,
-                                          it.id,
-                                          group.id,
-                                          opt.id,
-                                          { isAvailable: e.target.checked }
-                                        )
-                                      }
-                                    />
-                                    Available
-                                  </label>
+
                                   <button
                                     type="button"
-                                    className="col-span-1 text-red-600"
                                     onClick={() =>
-                                      removeModifierOption(
+                                      removeSectionOption(
                                         menu.id,
-                                        cat.id,
-                                        it.id,
-                                        group.id,
+                                        category.id,
+                                        item.id,
+                                        "variantGroup",
                                         opt.id
                                       )
                                     }
+                                    className="rounded-lg border border-red-200 px-4 py-3 text-red-600"
                                   >
-                                    ✕
+                                    Delete
                                   </button>
                                 </div>
                               ))}
                             </div>
-                          </div>
-                        ))}
-                      </div>
+                          </SectionCard>
+
+                          <SectionCard
+                            title="Ingredients (Remove)"
+                            right={
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={!!item.removableIngredients?.enabled}
+                                  onChange={(e) =>
+                                    updateItemSection(
+                                      menu.id,
+                                      category.id,
+                                      item.id,
+                                      "removableIngredients",
+                                      { enabled: e.target.checked }
+                                    )
+                                  }
+                                />
+                                Enable
+                              </label>
+                            }
+                          >
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                              <input
+                                className="rounded-lg border p-3"
+                                value={item.removableIngredients?.title || ""}
+                                onChange={(e) =>
+                                  updateItemSection(
+                                    menu.id,
+                                    category.id,
+                                    item.id,
+                                    "removableIngredients",
+                                    { title: e.target.value }
+                                  )
+                                }
+                                placeholder="Title"
+                              />
+
+                              <input
+                                className="rounded-lg border p-3"
+                                value={item.removableIngredients?.helperText || ""}
+                                onChange={(e) =>
+                                  updateItemSection(
+                                    menu.id,
+                                    category.id,
+                                    item.id,
+                                    "removableIngredients",
+                                    { helperText: e.target.value }
+                                  )
+                                }
+                                placeholder="Helper text"
+                              />
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  addSectionOption(
+                                    menu.id,
+                                    category.id,
+                                    item.id,
+                                    "removableIngredients"
+                                  )
+                                }
+                                className="rounded-lg border px-4 py-3"
+                              >
+                                + Add Ingredient
+                              </button>
+                            </div>
+
+                            <div className="mt-3 space-y-3">
+                              {(item.removableIngredients?.options || []).map((opt) => (
+                                <div
+                                  key={opt.id}
+                                  className="grid grid-cols-1 gap-3 rounded-lg border p-3 md:grid-cols-[120px_1fr_120px]"
+                                >
+                                  <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={opt.selected !== false}
+                                      onChange={(e) =>
+                                        updateSectionOption(
+                                          menu.id,
+                                          category.id,
+                                          item.id,
+                                          "removableIngredients",
+                                          opt.id,
+                                          { selected: e.target.checked }
+                                        )
+                                      }
+                                    />
+                                    Selected
+                                  </label>
+
+                                  <input
+                                    className="rounded-lg border p-3"
+                                    value={opt.name}
+                                    onChange={(e) =>
+                                      updateSectionOption(
+                                        menu.id,
+                                        category.id,
+                                        item.id,
+                                        "removableIngredients",
+                                        opt.id,
+                                        { name: e.target.value }
+                                      )
+                                    }
+                                    placeholder="Ingredient name"
+                                  />
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      removeSectionOption(
+                                        menu.id,
+                                        category.id,
+                                        item.id,
+                                        "removableIngredients",
+                                        opt.id
+                                      )
+                                    }
+                                    className="rounded-lg border border-red-200 px-4 py-3 text-red-600"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </SectionCard>
+
+                          <SectionCard
+                            title="Extras / Add-ons"
+                            right={
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={!!item.extrasGroup?.enabled}
+                                  onChange={(e) =>
+                                    updateItemSection(
+                                      menu.id,
+                                      category.id,
+                                      item.id,
+                                      "extrasGroup",
+                                      { enabled: e.target.checked }
+                                    )
+                                  }
+                                />
+                                Enable
+                              </label>
+                            }
+                          >
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              <input
+                                className="rounded-lg border p-3"
+                                value={item.extrasGroup?.title || ""}
+                                onChange={(e) =>
+                                  updateItemSection(
+                                    menu.id,
+                                    category.id,
+                                    item.id,
+                                    "extrasGroup",
+                                    { title: e.target.value }
+                                  )
+                                }
+                                placeholder="Title ex: Extras"
+                              />
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  addSectionOption(
+                                    menu.id,
+                                    category.id,
+                                    item.id,
+                                    "extrasGroup"
+                                  )
+                                }
+                                className="rounded-lg border px-4 py-3"
+                              >
+                                + Add Extra
+                              </button>
+                            </div>
+
+                            <div className="mt-3 space-y-3">
+                              {(item.extrasGroup?.options || []).map((opt) => (
+                                <div
+                                  key={opt.id}
+                                  className="grid grid-cols-1 gap-3 rounded-lg border p-3 md:grid-cols-[1fr_160px_120px]"
+                                >
+                                  <input
+                                    className="rounded-lg border p-3"
+                                    value={opt.name}
+                                    onChange={(e) =>
+                                      updateSectionOption(
+                                        menu.id,
+                                        category.id,
+                                        item.id,
+                                        "extrasGroup",
+                                        opt.id,
+                                        { name: e.target.value }
+                                      )
+                                    }
+                                    placeholder="Extra name"
+                                  />
+
+                                  <input
+                                    className="rounded-lg border p-3"
+                                    value={opt.price}
+                                    onChange={(e) =>
+                                      updateSectionOption(
+                                        menu.id,
+                                        category.id,
+                                        item.id,
+                                        "extrasGroup",
+                                        opt.id,
+                                        { price: e.target.value }
+                                      )
+                                    }
+                                    placeholder="Price"
+                                  />
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      removeSectionOption(
+                                        menu.id,
+                                        category.id,
+                                        item.id,
+                                        "extrasGroup",
+                                        opt.id
+                                      )
+                                    }
+                                    className="rounded-lg border border-red-200 px-4 py-3 text-red-600"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </SectionCard>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ))}
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
 
           <div className="flex justify-end">
-            <button className="px-5 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
+            <button className="rounded-lg bg-blue-600 px-5 py-2.5 text-white hover:bg-blue-700">
               Save Menus
             </button>
           </div>
