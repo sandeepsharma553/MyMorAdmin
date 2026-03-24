@@ -146,7 +146,7 @@ const newMenuCategory = () => ({
 
 const newMenu = () => ({
   id: createId("menu"),
-  name: "Main Menu",
+  name: "",
   type: "all_day",
   description: "",
   isActive: true,
@@ -222,7 +222,7 @@ const initialFormData = {
   suburb: "",
   city: "",
   state: "",
-  country: "Australia",
+  country: "",
   postcode: "",
   timings: "",
   isOpen: true,
@@ -731,21 +731,21 @@ export default function ManageRestaurantPage({ navbarHeight }) {
         : item.phone
           ? [item.phone]
           : [""],
-          website: item.website
-  ? typeof item.website === "object"
-    ? item.website
-    : { name: "", url: item.website }
-  : item.websiteUrl
-  ? { name: "", url: item.websiteUrl }
-  : { name: "", url: "" },
+      website: item.website
+        ? typeof item.website === "object"
+          ? item.website
+          : { name: "", url: item.website }
+        : item.websiteUrl
+          ? { name: "", url: item.websiteUrl }
+          : { name: "", url: "" },
 
-booking: item.booking
-  ? typeof item.booking === "object"
-    ? item.booking
-    : { name: "", url: item.booking }
-  : item.bookingLink || item.bookingUrl
-  ? { name: "", url: item.bookingLink || item.bookingUrl }
-  : { name: "", url: "" },
+      booking: item.booking
+        ? typeof item.booking === "object"
+          ? item.booking
+          : { name: "", url: item.booking }
+        : item.bookingLink || item.bookingUrl
+          ? { name: "", url: item.bookingLink || item.bookingUrl }
+          : { name: "", url: "" },
     });
     setModalOpen(true);
   };
@@ -755,19 +755,19 @@ booking: item.booking
       phone: [...(prev.phone || []), ""],
     }));
   };
-  
+
   const updatePhoneField = (index, value) => {
     setForm((prev) => ({
       ...prev,
       phone: (prev.phone || []).map((p, i) => (i === index ? value : p)),
     }));
   };
-  
+
   const removePhoneField = (index) => {
     setForm((prev) => {
       const next = [...(prev.phone || [])];
       next.splice(index, 1);
-  
+
       return {
         ...prev,
         phone: next.length ? next : [""],
@@ -1126,18 +1126,18 @@ booking: item.booking
         rating: form.rating === "" ? null : Number(form.rating),
         // phone: form.phone.trim(),
         phone: Array.isArray(form.phone)
-  ? form.phone.map((p) => String(p || "").trim()).filter(Boolean)
-  : String(form.phone || "").trim()
-  ? [String(form.phone || "").trim()]
-  : [],
-  website: {
-    name: (form.website?.name || "").trim(),
-    url: (form.website?.url || "").trim(),
-  },
-  booking: {
-    name: (form.booking?.name || "").trim(),
-    url: (form.booking?.url || "").trim(),
-  },
+          ? form.phone.map((p) => String(p || "").trim()).filter(Boolean)
+          : String(form.phone || "").trim()
+            ? [String(form.phone || "").trim()]
+            : [],
+        website: {
+          name: (form.website?.name || "").trim(),
+          url: (form.website?.url || "").trim(),
+        },
+        booking: {
+          name: (form.booking?.name || "").trim(),
+          url: (form.booking?.url || "").trim(),
+        },
         // website: form.website.trim(),
         // bookingUrl: form.bookingUrl.trim(),
         address: form.address.trim(),
@@ -1531,7 +1531,7 @@ booking: item.booking
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-3">
+                    <div className="grid grid-cols-5 gap-3">
                       <select name="priceRange" value={form.priceRange} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded">
                         <option value="$">$</option>
                         <option value="$$">$$</option>
@@ -1540,11 +1540,12 @@ booking: item.booking
                       </select>
                       <input name="avgCostForTwo" value={form.avgCostForTwo} onChange={handleChange} placeholder="Avg cost for 2" className="w-full border border-gray-300 p-2 rounded" />
                       <input name="costForTwo" value={form.costForTwo} onChange={handleChange} placeholder="Cost for two label" className="w-full border border-gray-300 p-2 rounded" />
-                      <input name="rating" value={form.rating} onChange={handleChange} placeholder="Rating" className="w-full border border-gray-300 p-2 rounded" />
+                      {/* <input name="rating" value={form.rating} onChange={handleChange} placeholder="Rating" className="w-full border border-gray-300 p-2 rounded" /> */}
+                      <input name="offerText" value={form.offerText} onChange={handleChange} placeholder="Offer text" className="w-full border border-gray-300 p-2 rounded" />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-3">
-                      <input name="offerText" value={form.offerText} onChange={handleChange} placeholder="Offer text" className="w-full border border-gray-300 p-2 rounded" />
+                    <div className="grid grid-cols-2 gap-3">
+                      
                       <input name="deliveryTime" value={form.deliveryTime} onChange={handleChange} placeholder="Delivery ETA label" className="w-full border border-gray-300 p-2 rounded" />
                       <input name="pickupTime" value={form.pickupTime} onChange={handleChange} placeholder="Pickup ETA label" className="w-full border border-gray-300 p-2 rounded" />
                     </div>
@@ -1586,56 +1587,56 @@ booking: item.booking
                         ))}
                       </div>
                       <div className="grid grid-cols-2 gap-3">
-  {/* Website */}
-  <input
-    value={form.website.name}
-    onChange={(e) =>
-      setForm((prev) => ({
-        ...prev,
-        website: { ...prev.website, name: e.target.value },
-      }))
-    }
-    placeholder="Website Name (e.g. Google)"
-    className="w-full border border-gray-300 p-2 rounded"
-  />
-  <input
-    type="url"
-    value={form.website.url}
-    onChange={(e) =>
-      setForm((prev) => ({
-        ...prev,
-        website: { ...prev.website, url: e.target.value },
-      }))
-    }
-    placeholder="Website URL"
-    className="w-full border border-gray-300 p-2 rounded"
-  />
+                        {/* Website */}
+                        <input
+                          value={form.website.name}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              website: { ...prev.website, name: e.target.value },
+                            }))
+                          }
+                          placeholder="Website Name (e.g. Google)"
+                          className="w-full border border-gray-300 p-2 rounded"
+                        />
+                        <input
+                          type="url"
+                          value={form.website.url}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              website: { ...prev.website, url: e.target.value },
+                            }))
+                          }
+                          placeholder="Website URL"
+                          className="w-full border border-gray-300 p-2 rounded"
+                        />
 
-  {/* Booking */}
-  <input
-    value={form.booking.name}
-    onChange={(e) =>
-      setForm((prev) => ({
-        ...prev,
-        booking: { ...prev.booking, name: e.target.value },
-      }))
-    }
-    placeholder="Booking Name (e.g. Reserve Table)"
-    className="w-full border border-gray-300 p-2 rounded"
-  />
-  <input
-    type="url"
-    value={form.booking.url}
-    onChange={(e) =>
-      setForm((prev) => ({
-        ...prev,
-        booking: { ...prev.booking, url: e.target.value },
-      }))
-    }
-    placeholder="Booking URL"
-    className="w-full border border-gray-300 p-2 rounded"
-  />
-</div>
+                        {/* Booking */}
+                        <input
+                          value={form.booking.name}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              booking: { ...prev.booking, name: e.target.value },
+                            }))
+                          }
+                          placeholder="Booking Name (e.g. Reserve Table)"
+                          className="w-full border border-gray-300 p-2 rounded"
+                        />
+                        <input
+                          type="url"
+                          value={form.booking.url}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              booking: { ...prev.booking, url: e.target.value },
+                            }))
+                          }
+                          placeholder="Booking URL"
+                          className="w-full border border-gray-300 p-2 rounded"
+                        />
+                      </div>
                       {/* <input name="phone" value={form.phone} onChange={handleChange} placeholder="Phone" className="w-full border border-gray-300 p-2 rounded" /> */}
                       {/* <input name="website" value={form.website} onChange={handleChange} placeholder="Website" className="w-full border border-gray-300 p-2 rounded" />
                       <input name="bookingUrl" value={form.bookingUrl} onChange={handleChange} placeholder="Booking URL" className="w-full border border-gray-300 p-2 rounded" /> */}
@@ -1643,7 +1644,7 @@ booking: item.booking
                     </div>
                     <input name="address" value={form.address} onChange={handleChange} placeholder="Full address" className="w-full border border-gray-300 p-2 rounded" required />
                     <div className="grid grid-cols-4 gap-3">
-                      <input name="suburb" value={form.suburb} onChange={handleChange} placeholder="Suburb" className="w-full border border-gray-300 p-2 rounded" />
+                      {/* <input name="suburb" value={form.suburb} onChange={handleChange} placeholder="Suburb" className="w-full border border-gray-300 p-2 rounded" /> */}
                       <input name="city" value={form.city} onChange={handleChange} placeholder="City" className="w-full border border-gray-300 p-2 rounded" />
                       <input name="state" value={form.state} onChange={handleChange} placeholder="State" className="w-full border border-gray-300 p-2 rounded" />
                       <input name="postcode" value={form.postcode} onChange={handleChange} placeholder="Postcode" className="w-full border border-gray-300 p-2 rounded" />
@@ -1679,7 +1680,7 @@ booking: item.booking
 
                   <SectionCard title="Branch Flags">
                     <div className="flex flex-wrap gap-4 text-sm">
-                      {[["isOpen", "Open now"], ["isActive", "Active"], ["isFeatured", "Featured"], ["allowPreorderWhenClosed", "Allow preorder when closed"]].map(([key, label]) => (
+                      {[["isOpen", "Open now"], ["isActive", "Active"], ["isFeatured", "Featured"]].map(([key, label]) => (
                         <label key={key} className="flex items-center gap-2"><input type="checkbox" checked={!!form[key]} onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.checked }))} /> {label}</label>
                       ))}
                     </div>
