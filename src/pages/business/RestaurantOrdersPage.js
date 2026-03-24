@@ -20,6 +20,7 @@ import { toast, ToastContainer } from "react-toastify";
 
 function StatusPill({ value }) {
   const map = {
+    draft: "bg-gray-100 text-gray-700",
     placed: "bg-blue-100 text-blue-700",
     accepted: "bg-indigo-100 text-indigo-700",
     preparing: "bg-yellow-100 text-yellow-700",
@@ -27,7 +28,6 @@ function StatusPill({ value }) {
     completed: "bg-emerald-100 text-emerald-700",
     cancelled: "bg-red-100 text-red-700",
     rejected: "bg-red-100 text-red-700",
-    draft: "bg-gray-100 text-gray-700",
   };
 
   return (
@@ -39,6 +39,44 @@ function StatusPill({ value }) {
       {value || "—"}
     </span>
   );
+}
+
+function formatCurrency(value) {
+  const num = Number(value || 0);
+  if (!Number.isFinite(num)) return "—";
+  return `₹${num.toFixed(2).replace(/\.00$/, "")}`;
+}
+
+function normalizeOrder(row) {
+  const customerName =
+    row?.customer?.name ||
+    row?.customerName ||
+    row?.guestName ||
+    "—";
+
+  const orderType =
+    row?.orderType ||
+    row?.type ||
+    row?.mode ||
+    "—";
+
+  const itemsCount = Array.isArray(row?.items)
+    ? row.items.reduce((sum, item) => sum + Number(item?.quantity || 1), 0)
+    : Number(row?.itemsCount || 0);
+
+  const total =
+    row?.pricing?.total ??
+    row?.total ??
+    row?.grandTotal ??
+    null;
+
+  return {
+    ...row,
+    _customerName: customerName,
+    _orderType: orderType,
+    _itemsCount: itemsCount,
+    _total: total,
+  };
 }
 
 export default function RestaurantOrdersPage({ navbarHeight }) {
@@ -78,17 +116,31 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
         ...restaurantSnap.data(),
       });
 
-      const q = query(
-        collection(db, "orders"),
-        where("restaurantId", "==", restaurantId),
-        orderBy("createdAt", "desc")
-      );
+      let snap;
 
-      const snap = await getDocs(q);
-      setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      try {
+        const q = query(
+          collection(db, "orders"),
+          where("restaurantId", "==", restaurantId),
+          orderBy("createdAt", "desc")
+        );
+        snap = await getDocs(q);
+      } catch (error) {
+        console.error("Primary restaurantId query failed, trying restaurantid fallback:", error);
+
+        const fallbackQ = query(
+          collection(db, "orders"),
+          where("restaurantid", "==", restaurantId),
+          orderBy("createdAt", "desc")
+        );
+        snap = await getDocs(fallbackQ);
+      }
+
+      const mapped = snap.docs.map((d) => normalizeOrder({ id: d.id, ...d.data() }));
+      setOrders(mapped);
     } catch (e) {
       console.error(e);
-    
+      toast.error("Failed to load orders");
     } finally {
       setLoading(false);
     }
@@ -101,7 +153,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
   const filteredOrders = useMemo(() => {
     return orders.filter((row) => {
       const okStatus = !filters.status || row.status === filters.status;
-      const okType = !filters.type || row.type === filters.type;
+      const okType = !filters.type || row._orderType === filters.type;
       const okPayment =
         !filters.paymentStatus || row.paymentStatus === filters.paymentStatus;
 
@@ -178,6 +230,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
             <option value="delivery">delivery</option>
             <option value="pickup">pickup</option>
             <option value="dineIn">dineIn</option>
+            <option value="dinein">dinein</option>
           </select>
 
           <select
@@ -225,10 +278,10 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
               {filteredOrders.map((row) => (
                 <tr key={row.id}>
                   <td className="px-4 py-3 text-sm">{row.id}</td>
-                  <td className="px-4 py-3 text-sm">{row.customerName || "—"}</td>
-                  <td className="px-4 py-3 text-sm">{row.type || "—"}</td>
-                  <td className="px-4 py-3 text-sm">{row.itemsCount || 0}</td>
-                  <td className="px-4 py-3 text-sm">{row.total ?? "—"}</td>
+                  <td className="px-4 py-3 text-sm">{row._customerName}</td>
+                  <td className="px-4 py-3 text-sm">{row._orderType}</td>
+                  <td className="px-4 py-3 text-sm">{row._itemsCount}</td>
+                  <td className="px-4 py-3 text-sm">{formatCurrency(row._total)}</td>
                   <td className="px-4 py-3 text-sm">
                     <StatusPill value={row.status} />
                   </td>
@@ -246,6 +299,13 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                         onClick={() => quickUpdateStatus(row.id, "accepted")}
                       >
                         Accept
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-1 border rounded text-xs"
+                        onClick={() => quickUpdateStatus(row.id, "preparing")}
+                      >
+                        Preparing
                       </button>
                       <button
                         type="button"
