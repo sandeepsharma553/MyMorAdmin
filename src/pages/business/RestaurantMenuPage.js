@@ -63,6 +63,7 @@ const newMenuItem = () => ({
 const newMenuCategory = () => ({
   id: createId("cat"),
   name: "",
+  description: "",
   sortOrder: 0,
   items: [newMenuItem()],
 });
@@ -86,6 +87,7 @@ const normalizeMenusFromDb = (dbMenus = []) => {
     categories: (menu.categories || []).map((cat, catIndex) => ({
       id: cat.id || createId("cat"),
       name: cat.name || "",
+      description: cat.description || "",
       sortOrder: cat.sortOrder ?? catIndex,
       items: (cat.items || []).map((it) => {
         const modifierGroups = Array.isArray(it.modifierGroups) ? it.modifierGroups : [];
@@ -768,6 +770,7 @@ export default function RestaurantMenuPage() {
       categories: (menu.categories || []).map((cat, catIndex) => ({
         id: cat.id,
         name: cat.name.trim(),
+        description: cat.description || "",
         sortOrder: cat.sortOrder === "" ? catIndex : Number(cat.sortOrder || catIndex),
         items: (cat.items || []).map((item) => {
           const basePriceNumber =
@@ -1119,6 +1122,7 @@ export default function RestaurantMenuPage() {
                             </option>
                           ))}
                         </select>
+                     
                         <input
                           className="rounded-lg border bg-white p-3"
                           value={category.sortOrder}
@@ -1137,6 +1141,16 @@ export default function RestaurantMenuPage() {
                         >
                           Delete Category
                         </button>
+                        <textarea
+    className="rounded-lg border bg-white p-3"
+    value={category.description || ""}
+    onChange={(e) =>
+      updateCategory(editingMenu.id, category.id, {
+        description: e.target.value,
+      })
+    }
+    placeholder="Category description"
+  />
                       </div>
 
                       <div className="mb-4 flex justify-end">
