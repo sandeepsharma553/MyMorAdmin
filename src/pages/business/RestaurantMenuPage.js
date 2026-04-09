@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs, query } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase";
 import useRestaurantDoc from "../../hooks/useRestaurantDoc";
 import { ToastContainer, toast } from "react-toastify";
 import { FadeLoader } from "react-spinners";
+
 const createId = (prefix) =>
   `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -130,8 +131,8 @@ const normalizeMenusFromDb = (dbMenus = []) => {
             it.basePrice !== undefined && it.basePrice !== null
               ? String(it.basePrice)
               : it.price !== undefined && it.price !== null
-                ? String(it.price)
-                : "",
+              ? String(it.price)
+              : "",
           compareAtPrice:
             it.compareAtPrice !== undefined && it.compareAtPrice !== null
               ? String(it.compareAtPrice)
@@ -155,8 +156,8 @@ const normalizeMenusFromDb = (dbMenus = []) => {
                 opt.price !== undefined && opt.price !== null
                   ? String(opt.price)
                   : opt.priceDelta !== undefined && opt.priceDelta !== null
-                    ? String(opt.priceDelta)
-                    : "",
+                  ? String(opt.priceDelta)
+                  : "",
               isDefault: idx === 0 ? !!opt.isDefault || true : !!opt.isDefault,
             })),
           },
@@ -172,8 +173,8 @@ const normalizeMenusFromDb = (dbMenus = []) => {
                 opt.selected !== undefined
                   ? !!opt.selected
                   : opt.isDefault !== undefined
-                    ? !!opt.isDefault
-                    : true,
+                  ? !!opt.isDefault
+                  : true,
             })),
           },
 
@@ -187,8 +188,8 @@ const normalizeMenusFromDb = (dbMenus = []) => {
                 opt.price !== undefined && opt.price !== null
                   ? String(opt.price)
                   : opt.priceDelta !== undefined && opt.priceDelta !== null
-                    ? String(opt.priceDelta)
-                    : "",
+                  ? String(opt.priceDelta)
+                  : "",
             })),
           },
         };
@@ -293,14 +294,80 @@ const buildModifierGroupsFromSimpleItem = (item) => {
   return groups.filter((group) => group.options.length > 0);
 };
 
-function SectionCard({ title, children, right }) {
+const inputClass =
+  "w-full rounded-[20px] border-0 bg-white px-4 py-3 text-[15px] text-slate-900 shadow-sm ring-1 ring-gray-200 placeholder:text-slate-400 outline-none transition focus:ring-2 focus:ring-slate-300";
+
+const textareaClass =
+  "w-full rounded-[20px] border-0 bg-white px-4 py-3 text-[15px] text-slate-900 shadow-sm ring-1 ring-gray-200 placeholder:text-slate-400 outline-none transition focus:ring-2 focus:ring-slate-300 resize-none";
+
+const labelClass = "mb-2 block text-sm font-semibold text-slate-900";
+
+const primaryBtn =
+  "rounded-2xl bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800";
+
+const secondaryBtn =
+  "rounded-2xl bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-gray-200 transition hover:bg-gray-50";
+
+const dangerBtn =
+  "rounded-2xl bg-white px-4 py-2.5 text-sm font-medium text-red-600 shadow-sm ring-1 ring-red-200 transition hover:bg-red-50";
+
+function CleanAccordion({
+  title,
+  children,
+  defaultOpen = false,
+  isActive = false,
+  rightContent = null,
+  subtitle = "",
+  count,
+  className = "",
+  bodyClassName = "",
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
   return (
-    <div className="overflow-hidden rounded-xl border bg-white">
-      <div className="flex items-center justify-between border-b bg-gray-50 px-4 py-3">
-        <h3 className="font-semibold text-gray-800">{title}</h3>
-        {right}
-      </div>
-      <div className="p-4">{children}</div>
+    <div
+      className={`overflow-hidden rounded-[28px] bg-white shadow-sm ring-1 ring-gray-200 ${className}`}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left"
+      >
+        <div className="min-w-0 flex items-center gap-4">
+          <div
+            className={`h-8 w-8 shrink-0 rounded-full ring-1 ring-gray-300 ${
+              isActive ? "bg-black ring-black" : "bg-white"
+            }`}
+          />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-lg font-semibold text-slate-900">{title}</h3>
+              {typeof count !== "undefined" ? (
+                <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                  {count}
+                </span>
+              ) : null}
+            </div>
+            {subtitle ? (
+              <p className="mt-1 truncate text-sm text-slate-500">{subtitle}</p>
+            ) : null}
+          </div>
+        </div>
+
+        <div
+          className="flex items-center gap-3"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {rightContent}
+          <span className="text-sm text-slate-500">{open ? "▴" : "▾"}</span>
+        </div>
+      </button>
+
+      {open ? (
+        <div className={`border-t border-gray-100 bg-gray-50/50 px-6 py-5 ${bodyClassName}`}>
+          {children}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -310,12 +377,12 @@ function MenuModal({ open, title, children, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white w-full max-w-7xl max-h-[92vh] overflow-y-auto rounded-lg shadow-lg">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b bg-white p-6">
-          <h2 className="text-xl font-bold">{title}</h2>
+      <div className="max-h-[92vh] w-full max-w-7xl overflow-y-auto rounded-[30px] bg-white shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-gray-100 bg-white px-6 py-5">
+          <h2 className="text-xl font-bold text-slate-900">{title}</h2>
           <button
             type="button"
-            className="text-gray-600 hover:text-black"
+            className="rounded-full bg-gray-100 px-3 py-2 text-sm text-slate-600 hover:bg-gray-200"
             onClick={onClose}
           >
             ✕
@@ -323,6 +390,48 @@ function MenuModal({ open, title, children, onClose }) {
         </div>
         <div className="p-6">{children}</div>
       </div>
+    </div>
+  );
+}
+
+function ItemSummaryBadges({ item }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {item.basePrice ? (
+        <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+          ₹ {item.basePrice}
+        </span>
+      ) : null}
+
+      {item.variantGroup?.enabled ? (
+        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+          Sizes
+        </span>
+      ) : null}
+
+      {item.removableIngredients?.enabled ? (
+        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+          Remove Ingredients
+        </span>
+      ) : null}
+
+      {item.extrasGroup?.enabled ? (
+        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+          Extras
+        </span>
+      ) : null}
+
+      {item.isVeg ? (
+        <span className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+          Veg
+        </span>
+      ) : null}
+
+      {item.bestseller ? (
+        <span className="rounded-full bg-pink-50 px-2.5 py-1 text-xs font-medium text-pink-700">
+          Bestseller
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -338,19 +447,22 @@ export default function RestaurantMenuPage() {
   const [deleteData, setDeleteData] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [categoryOption, setCategoryOption] = useState([]);
+
+  useEffect(() => {
+    getCategory();
+  }, []);
+
   useEffect(() => {
     if (Array.isArray(restaurant?.menus) && restaurant.menus.length) {
       setMenus(normalizeMenusFromDb(restaurant.menus));
     } else {
       setMenus([]);
-      getCategory();
     }
   }, [restaurant]);
+
   const getCategory = async () => {
     try {
-      const qCat = query(
-        collection(db, "restaurantcategory"),
-      );
+      const qCat = query(collection(db, "restaurantcategory"));
       const snap = await getDocs(qCat);
       setCategoryOption(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (e) {
@@ -408,11 +520,6 @@ export default function RestaurantMenuPage() {
     );
   };
 
-  const removeMenu = (menuId) => {
-    setMenus((prev) => prev.filter((menu) => menu.id !== menuId));
-    if (editingMenuId === menuId) closeModal();
-  };
-
   const addCategory = (menuId) => {
     if (isCreating) {
       setMenuForm((prev) => ({
@@ -446,11 +553,11 @@ export default function RestaurantMenuPage() {
       prev.map((menu) =>
         menu.id === menuId
           ? {
-            ...menu,
-            categories: (menu.categories || []).map((cat) =>
-              cat.id === categoryId ? { ...cat, ...patch } : cat
-            ),
-          }
+              ...menu,
+              categories: (menu.categories || []).map((cat) =>
+                cat.id === categoryId ? { ...cat, ...patch } : cat
+              ),
+            }
           : menu
       )
     );
@@ -469,9 +576,9 @@ export default function RestaurantMenuPage() {
       prev.map((menu) =>
         menu.id === menuId
           ? {
-            ...menu,
-            categories: (menu.categories || []).filter((cat) => cat.id !== categoryId),
-          }
+              ...menu,
+              categories: (menu.categories || []).filter((cat) => cat.id !== categoryId),
+            }
           : menu
       )
     );
@@ -494,13 +601,13 @@ export default function RestaurantMenuPage() {
       prev.map((menu) =>
         menu.id === menuId
           ? {
-            ...menu,
-            categories: (menu.categories || []).map((cat) =>
-              cat.id === categoryId
-                ? { ...cat, items: [...(cat.items || []), newMenuItem()] }
-                : cat
-            ),
-          }
+              ...menu,
+              categories: (menu.categories || []).map((cat) =>
+                cat.id === categoryId
+                  ? { ...cat, items: [...(cat.items || []), newMenuItem()] }
+                  : cat
+              ),
+            }
           : menu
       )
     );
@@ -513,11 +620,11 @@ export default function RestaurantMenuPage() {
         categories: (prev.categories || []).map((cat) =>
           cat.id === categoryId
             ? {
-              ...cat,
-              items: (cat.items || []).map((item) =>
-                item.id === itemId ? { ...item, ...patch } : item
-              ),
-            }
+                ...cat,
+                items: (cat.items || []).map((item) =>
+                  item.id === itemId ? { ...item, ...patch } : item
+                ),
+              }
             : cat
         ),
       }));
@@ -528,18 +635,18 @@ export default function RestaurantMenuPage() {
       prev.map((menu) =>
         menu.id === menuId
           ? {
-            ...menu,
-            categories: (menu.categories || []).map((cat) =>
-              cat.id === categoryId
-                ? {
-                  ...cat,
-                  items: (cat.items || []).map((item) =>
-                    item.id === itemId ? { ...item, ...patch } : item
-                  ),
-                }
-                : cat
-            ),
-          }
+              ...menu,
+              categories: (menu.categories || []).map((cat) =>
+                cat.id === categoryId
+                  ? {
+                      ...cat,
+                      items: (cat.items || []).map((item) =>
+                        item.id === itemId ? { ...item, ...patch } : item
+                      ),
+                    }
+                  : cat
+              ),
+            }
           : menu
       )
     );
@@ -552,9 +659,9 @@ export default function RestaurantMenuPage() {
         categories: (prev.categories || []).map((cat) =>
           cat.id === categoryId
             ? {
-              ...cat,
-              items: (cat.items || []).filter((item) => item.id !== itemId),
-            }
+                ...cat,
+                items: (cat.items || []).filter((item) => item.id !== itemId),
+              }
             : cat
         ),
       }));
@@ -565,16 +672,16 @@ export default function RestaurantMenuPage() {
       prev.map((menu) =>
         menu.id === menuId
           ? {
-            ...menu,
-            categories: (menu.categories || []).map((cat) =>
-              cat.id === categoryId
-                ? {
-                  ...cat,
-                  items: (cat.items || []).filter((item) => item.id !== itemId),
-                }
-                : cat
-            ),
-          }
+              ...menu,
+              categories: (menu.categories || []).map((cat) =>
+                cat.id === categoryId
+                  ? {
+                      ...cat,
+                      items: (cat.items || []).filter((item) => item.id !== itemId),
+                    }
+                  : cat
+              ),
+            }
           : menu
       )
     );
@@ -880,76 +987,74 @@ export default function RestaurantMenuPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex h-64 items-center justify-center">
         <FadeLoader color="#36d7b7" loading />
       </div>
     );
   }
 
-  if (!restaurantId) return <div className="p-6">Employee restaurant id not found.</div>;
+  if (!restaurantId) {
+    return <div className="p-6">Employee restaurant id not found.</div>;
+  }
 
   return (
-    <main className="min-h-screen bg-gray-100 p-6">
+    <main className="min-h-screen bg-[#f6f7fb] p-6">
       <div className="mx-auto max-w-7xl space-y-6">
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="rounded-[30px] bg-white p-6 shadow-sm ring-1 ring-gray-200">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h1 className="text-2xl font-semibold">Menus / Modifiers</h1>
-              <p className="text-sm text-gray-500">
+              <h1 className="text-2xl font-semibold text-slate-900">Menus / Modifiers</h1>
+              <p className="text-sm text-slate-500">
                 {restaurant?.branchName || restaurant?.brandName || "Restaurant"}
               </p>
-              <p className="mt-1 text-xs text-gray-400">
+              <p className="mt-1 text-xs text-slate-400">
                 Simple flow: Menu → Category → Item → Sizes / Remove Ingredients / Extras
               </p>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700">
+              <div className="rounded-2xl bg-gray-100 px-4 py-2.5 text-sm font-medium text-slate-700">
                 {menus.length} menu • {totalItems} item
               </div>
-              <button
-                type="button"
-                onClick={openCreate}
-                className="rounded-lg bg-black px-4 py-2 text-white"
-              >
+              <button type="button" onClick={openCreate} className={primaryBtn}>
                 + Add Menu
               </button>
             </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-[30px] bg-white shadow-sm ring-1 ring-gray-200">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50/80">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">
                   Menu
                 </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">
                   Type
                 </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">
                   Description
                 </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">
                   Categories
                 </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">
                   Items
                 </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">
                   Actions
                 </th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-100">
               {menus.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-10 text-center text-gray-500">
+                  <td colSpan="7" className="px-6 py-12 text-center text-slate-500">
                     No menus found.
                   </td>
                 </tr>
@@ -962,23 +1067,26 @@ export default function RestaurantMenuPage() {
 
                   return (
                     <tr key={menu.id}>
-                      <td className="px-6 py-4 text-sm text-gray-700 font-medium">
+                      <td className="px-6 py-4 text-sm font-medium text-slate-800">
                         {menu.name || "—"}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-700">{menu.type || "—"}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700">
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {menu.type || "—"}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600">
                         {menu.description || "—"}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-700">
+                      <td className="px-6 py-4 text-sm text-slate-600">
                         {menu.categories?.length || 0}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-700">{itemCount}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{itemCount}</td>
                       <td className="px-6 py-4 text-sm">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs font-semibold ${menu.isActive
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            menu.isActive
                               ? "bg-green-100 text-green-700"
                               : "bg-red-100 text-red-700"
-                            }`}
+                          }`}
                         >
                           {menu.isActive ? "Active" : "Inactive"}
                         </span>
@@ -986,14 +1094,14 @@ export default function RestaurantMenuPage() {
                       <td className="px-6 py-4 text-sm">
                         <button
                           type="button"
-                          className="text-blue-600 hover:underline mr-3"
+                          className="mr-4 font-medium text-blue-600 hover:underline"
                           onClick={() => openEdit(menu.id)}
                         >
                           Edit
                         </button>
                         <button
                           type="button"
-                          className="text-red-600 hover:underline"
+                          className="font-medium text-red-600 hover:underline"
                           onClick={() => {
                             setDeleteData(menu);
                             setConfirmDeleteOpen(true);
@@ -1017,11 +1125,11 @@ export default function RestaurantMenuPage() {
         >
           {editingMenu ? (
             <form onSubmit={handleSaveModal} className="space-y-6">
-              <div className="rounded-2xl border bg-white shadow-sm">
-                <div className="border-b p-5">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+              <div className=" bg-white">
+                <div className="p-6">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
                     <input
-                      className="rounded-lg border p-3 md:col-span-2"
+                      className={`md:col-span-2 ${inputClass}`}
                       value={editingMenu.name}
                       onChange={(e) =>
                         updateMenu(editingMenu.id, { name: e.target.value })
@@ -1030,7 +1138,7 @@ export default function RestaurantMenuPage() {
                     />
 
                     <select
-                      className="rounded-lg border p-3"
+                      className={inputClass}
                       value={editingMenu.type}
                       onChange={(e) =>
                         updateMenu(editingMenu.id, { type: e.target.value })
@@ -1044,7 +1152,7 @@ export default function RestaurantMenuPage() {
                       <option value="specials">Specials</option>
                     </select>
 
-                    <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+                    <label className="flex items-center gap-2 rounded-[20px] bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-gray-200">
                       <input
                         type="checkbox"
                         checked={!!editingMenu.isActive}
@@ -1062,7 +1170,7 @@ export default function RestaurantMenuPage() {
                           setDeleteData(editingMenu);
                           setConfirmDeleteOpen(true);
                         }}
-                        className="rounded-lg border border-red-200 px-4 py-3 text-red-600"
+                        className={dangerBtn}
                       >
                         Delete Menu
                       </button>
@@ -1072,7 +1180,7 @@ export default function RestaurantMenuPage() {
                   </div>
 
                   <textarea
-                    className="mt-3 w-full rounded-lg border p-3"
+                    className={`${textareaClass} mt-4`}
                     rows={2}
                     value={editingMenu.description || ""}
                     onChange={(e) =>
@@ -1082,648 +1190,743 @@ export default function RestaurantMenuPage() {
                   />
                 </div>
 
-                <div className="space-y-4 p-5">
+                <div className="space-y-5 border-t border-gray-100 p-6">
                   <div className="flex justify-end">
                     <button
                       type="button"
                       onClick={() => addCategory(editingMenu.id)}
-                      className="rounded-lg bg-gray-900 px-4 py-2 text-white"
+                      className={primaryBtn}
                     >
                       + Add Category
                     </button>
                   </div>
 
-                  {(editingMenu.categories || []).map((category) => (
-                    <div key={category.id} className="rounded-xl border bg-gray-50 p-4">
-                      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_120px_120px]">
-                        {/* <input
-                          className="rounded-lg border bg-white p-3"
-                          value={category.name}
-                          onChange={(e) =>
-                            updateCategory(editingMenu.id, category.id, {
-                              name: e.target.value,
-                            })
-                          }
-                          placeholder="Category name ex: Pizza, Burgers, Drinks"
-                        /> */}
-                        <select
-                          className="rounded-lg border bg-white p-3"
-                          value={category.name}
-                          onChange={(e) =>
-                            updateCategory(editingMenu.id, category.id, {
-                              name: e.target.value,
-                            })
-                          }
-                        >
-                          <option value="">Select category</option>
-                          {categoryOption.map((option) => (
-                            <option key={option.name} value={option.name}>
-                              {option.name}
-                            </option>
-                          ))}
-                        </select>
-                     
-                        <input
-                          className="rounded-lg border bg-white p-3"
-                          value={category.sortOrder}
-                          onChange={(e) =>
-                            updateCategory(editingMenu.id, category.id, {
-                              sortOrder: e.target.value,
-                            })
-                          }
-                          placeholder="Sort"
-                        />
-
+                  {(editingMenu.categories || []).map((category, categoryIndex) => (
+                    <CleanAccordion
+                      key={category.id}
+                      title={category.name || `Category ${categoryIndex + 1}`}
+                      subtitle={category.description || "Category details"}
+                      count={category.items?.length || 0}
+                      defaultOpen={categoryIndex === 0}
+                      isActive={!!category.name}
+                      className="bg-white"
+                      rightContent={
                         <button
                           type="button"
                           onClick={() => removeCategory(editingMenu.id, category.id)}
-                          className="rounded-lg border border-red-200 bg-white px-4 py-3 text-red-600"
+                          className={dangerBtn}
                         >
                           Delete Category
                         </button>
-                        <textarea
-    className="rounded-lg border bg-white p-3"
-    value={category.description || ""}
-    onChange={(e) =>
-      updateCategory(editingMenu.id, category.id, {
-        description: e.target.value,
-      })
-    }
-    placeholder="Category description"
-  />
-                      </div>
-
-                      <div className="mb-4 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => addItem(editingMenu.id, category.id)}
-                          className="rounded-lg bg-black px-4 py-2 text-white"
-                        >
-                          + Add Item
-                        </button>
-                      </div>
-
+                      }
+                    >
                       <div className="space-y-5">
-                        {(category.items || []).map((item) => (
-                          <div key={item.id} className="space-y-4 rounded-xl border bg-white p-4">
-                            <div className="flex items-center justify-between">
-                              <h3 className="font-semibold text-gray-900">
-                                {item.name?.trim() || "New Item"}
-                              </h3>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  removeItem(editingMenu.id, category.id, item.id)
+                        <div className="rounded-[24px] bg-white p-5 shadow-sm ring-1 ring-gray-200">
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+                            <div className="md:col-span-5">
+                              <label className={labelClass}>Category</label>
+                              <select
+                                className={inputClass}
+                                value={category.name}
+                                onChange={(e) =>
+                                  updateCategory(editingMenu.id, category.id, {
+                                    name: e.target.value,
+                                  })
                                 }
-                                className="text-sm text-red-600"
                               >
-                                Remove Item
-                              </button>
+                                <option value="">Select category</option>
+                                {categoryOption.map((option) => (
+                                  <option key={option.id} value={option.name}>
+                                    {option.name}
+                                  </option>
+                                ))}
+                              </select>
                             </div>
 
-                            <SectionCard title="Basic Details">
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-                                <input
-                                  className="rounded-lg border p-3 md:col-span-3"
-                                  value={item.name}
-                                  onChange={(e) =>
-                                    updateItem(editingMenu.id, category.id, item.id, {
-                                      name: e.target.value,
-                                    })
-                                  }
-                                  placeholder="Item name"
-                                />
-
-                                <input
-                                  className="rounded-lg border p-3 md:col-span-2"
-                                  value={item.basePrice}
-                                  onChange={(e) =>
-                                    updateItem(editingMenu.id, category.id, item.id, {
-                                      basePrice: e.target.value,
-                                    })
-                                  }
-                                  placeholder="Base price"
-                                />
-
-                                <input
-                                  className="rounded-lg border p-3 md:col-span-2"
-                                  value={item.compareAtPrice}
-                                  onChange={(e) =>
-                                    updateItem(editingMenu.id, category.id, item.id, {
-                                      compareAtPrice: e.target.value,
-                                    })
-                                  }
-                                  placeholder="Compare price"
-                                />
-
-                                <select
-                                  className="rounded-lg border p-3 md:col-span-2"
-                                  value={item.availabilityState}
-                                  onChange={(e) =>
-                                    updateItem(editingMenu.id, category.id, item.id, {
-                                      availabilityState: e.target.value,
-                                    })
-                                  }
-                                >
-                                  <option value="active">Active</option>
-                                  <option value="sold_out">Sold Out</option>
-                                  <option value="hidden">Hidden</option>
-                                  <option value="scheduled">Scheduled</option>
-                                  <option value="archived">Archived</option>
-                                </select>
-
-                                <div className="md:col-span-3">
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    className="w-full rounded-lg border p-3"
-                                    onChange={(e) =>
-                                      handleImageUpload(
-                                        editingMenu.id,
-                                        category.id,
-                                        item.id,
-                                        e.target.files?.[0]
-                                      )
-                                    }
-                                  />
-
-                                  {item.isUploading ? (
-                                    <div className="mt-2 text-sm text-blue-600">
-                                      Uploading image...
-                                    </div>
-                                  ) : null}
-
-                                  {item.image ? (
-                                    <div className="mt-3 flex items-center gap-3 rounded-lg border p-2">
-                                      <img
-                                        src={item.image}
-                                        alt={item.name || "item"}
-                                        className="h-16 w-16 rounded-lg border object-cover"
-                                      />
-                                      <div className="min-w-0 flex-1">
-                                        <p className="truncate text-sm text-gray-600">
-                                          Image uploaded
-                                        </p>
-                                        <a
-                                          href={item.image}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="text-xs text-blue-600 underline"
-                                        >
-                                          View image
-                                        </a>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          removeImage(editingMenu.id, category.id, item.id)
-                                        }
-                                        className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600"
-                                      >
-                                        Remove
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <p className="mt-2 text-xs text-gray-400">
-                                      Upload item image
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-
-                              <textarea
-                                className="mt-3 w-full rounded-lg border p-3"
-                                rows={2}
-                                value={item.description}
+                            <div className="md:col-span-2">
+                              <label className={labelClass}>Sort Order</label>
+                              <input
+                                className={inputClass}
+                                value={category.sortOrder}
                                 onChange={(e) =>
-                                  updateItem(editingMenu.id, category.id, item.id, {
+                                  updateCategory(editingMenu.id, category.id, {
+                                    sortOrder: e.target.value,
+                                  })
+                                }
+                                placeholder="Sort"
+                              />
+                            </div>
+
+                            <div className="md:col-span-5">
+                              <label className={labelClass}>Category Description</label>
+                              <textarea
+                                rows={2}
+                                className={textareaClass}
+                                value={category.description || ""}
+                                onChange={(e) =>
+                                  updateCategory(editingMenu.id, category.id, {
                                     description: e.target.value,
                                   })
                                 }
-                                placeholder="Item description"
+                                placeholder="Category description"
                               />
+                            </div>
+                          </div>
+                        </div>
 
-                              <div className="mt-3 flex flex-wrap gap-5 text-sm">
-                                <label className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={!!item.isVeg}
-                                    onChange={(e) =>
-                                      updateItem(editingMenu.id, category.id, item.id, {
-                                        isVeg: e.target.checked,
-                                      })
-                                    }
-                                  />
-                                  Veg
-                                </label>
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => addItem(editingMenu.id, category.id)}
+                            className={secondaryBtn}
+                          >
+                            + Add Item
+                          </button>
+                        </div>
 
-                                <label className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={!!item.bestseller}
-                                    onChange={(e) =>
-                                      updateItem(editingMenu.id, category.id, item.id, {
-                                        bestseller: e.target.checked,
-                                      })
-                                    }
-                                  />
-                                  Bestseller
-                                </label>
-                              </div>
-                            </SectionCard>
-
-                            <SectionCard
-                              title="Sizes / Variants"
-                              right={
-                                <label className="flex items-center gap-2 text-sm">
-                                  <input
-                                    type="checkbox"
-                                    checked={!!item.variantGroup?.enabled}
-                                    onChange={(e) =>
-                                      updateItemSection(
-                                        editingMenu.id,
-                                        category.id,
-                                        item.id,
-                                        "variantGroup",
-                                        { enabled: e.target.checked }
-                                      )
-                                    }
-                                  />
-                                  Enable
-                                </label>
-                              }
-                            >
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                                <input
-                                  className="rounded-lg border p-3"
-                                  value={item.variantGroup?.title || ""}
-                                  onChange={(e) =>
-                                    updateItemSection(
-                                      editingMenu.id,
-                                      category.id,
-                                      item.id,
-                                      "variantGroup",
-                                      { title: e.target.value }
-                                    )
-                                  }
-                                  placeholder="Group title ex: Sizes"
-                                />
-
-                                <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
-                                  <input
-                                    type="checkbox"
-                                    checked={item.variantGroup?.required !== false}
-                                    onChange={(e) =>
-                                      updateItemSection(
-                                        editingMenu.id,
-                                        category.id,
-                                        item.id,
-                                        "variantGroup",
-                                        { required: e.target.checked }
-                                      )
-                                    }
-                                  />
-                                  Required selection
-                                </label>
-
+                        <div className="space-y-5">
+                          {(category.items || []).map((item, itemIndex) => (
+                            <CleanAccordion
+                              key={item.id}
+                              title={item.name?.trim() || `New Item ${itemIndex + 1}`}
+                              subtitle={item.description || "Add item details"}
+                              defaultOpen={itemIndex === 0}
+                              isActive={!!item.name?.trim()}
+                              className="bg-white"
+                              rightContent={
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    addSectionOption(
-                                      editingMenu.id,
-                                      category.id,
-                                      item.id,
-                                      "variantGroup"
-                                    )
+                                    removeItem(editingMenu.id, category.id, item.id)
                                   }
-                                  className="rounded-lg border px-4 py-3"
+                                  className={dangerBtn}
                                 >
-                                  + Add Size
+                                  Remove Item
                                 </button>
-                              </div>
+                              }
+                            >
+                              <div className="space-y-4">
+                                <ItemSummaryBadges item={item} />
 
-                              <div className="mt-3 space-y-3">
-                                {(item.variantGroup?.options || []).map((opt) => (
-                                  <div
-                                    key={opt.id}
-                                    className="grid grid-cols-1 gap-3 rounded-lg border p-3 md:grid-cols-[40px_1fr_160px_120px]"
-                                  >
-                                    <div className="flex items-center justify-center">
+                                <CleanAccordion
+                                  title="Basic Details"
+                                  defaultOpen
+                                  isActive
+                                  className="bg-white"
+                                >
+                                  <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+                                    <div className="md:col-span-4">
+                                      <label className={labelClass}>Item Name</label>
                                       <input
-                                        type="radio"
-                                        name={`default_variant_${item.id}`}
-                                        checked={!!opt.isDefault}
-                                        onChange={() =>
-                                          setDefaultVariant(
+                                        className={inputClass}
+                                        value={item.name}
+                                        onChange={(e) =>
+                                          updateItem(editingMenu.id, category.id, item.id, {
+                                            name: e.target.value,
+                                          })
+                                        }
+                                        placeholder="Item name"
+                                      />
+                                    </div>
+
+                                    <div className="md:col-span-2">
+                                      <label className={labelClass}>Base Price</label>
+                                      <input
+                                        className={inputClass}
+                                        value={item.basePrice}
+                                        onChange={(e) =>
+                                          updateItem(editingMenu.id, category.id, item.id, {
+                                            basePrice: e.target.value,
+                                          })
+                                        }
+                                        placeholder="Base price"
+                                      />
+                                    </div>
+
+                                    <div className="md:col-span-2">
+                                      <label className={labelClass}>Compare Price</label>
+                                      <input
+                                        className={inputClass}
+                                        value={item.compareAtPrice}
+                                        onChange={(e) =>
+                                          updateItem(editingMenu.id, category.id, item.id, {
+                                            compareAtPrice: e.target.value,
+                                          })
+                                        }
+                                        placeholder="Compare price"
+                                      />
+                                    </div>
+
+                                    <div className="md:col-span-2">
+                                      <label className={labelClass}>Availability</label>
+                                      <select
+                                        className={inputClass}
+                                        value={item.availabilityState}
+                                        onChange={(e) =>
+                                          updateItem(editingMenu.id, category.id, item.id, {
+                                            availabilityState: e.target.value,
+                                          })
+                                        }
+                                      >
+                                        <option value="active">Active</option>
+                                        <option value="sold_out">Sold Out</option>
+                                        <option value="hidden">Hidden</option>
+                                        <option value="scheduled">Scheduled</option>
+                                        <option value="archived">Archived</option>
+                                      </select>
+                                    </div>
+
+                                    <div className="md:col-span-2">
+                                      <label className={labelClass}>Image</label>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className={`${inputClass} cursor-pointer`}
+                                        onChange={(e) =>
+                                          handleImageUpload(
                                             editingMenu.id,
                                             category.id,
                                             item.id,
-                                            opt.id
+                                            e.target.files?.[0]
                                           )
                                         }
                                       />
                                     </div>
 
-                                    <input
-                                      className="rounded-lg border p-3"
-                                      value={opt.name}
-                                      onChange={(e) =>
-                                        updateSectionOption(
-                                          editingMenu.id,
-                                          category.id,
-                                          item.id,
-                                          "variantGroup",
-                                          opt.id,
-                                          { name: e.target.value }
-                                        )
-                                      }
-                                      placeholder="Size name ex: Small / Large"
-                                    />
+                                    <div className="md:col-span-12">
+                                      <label className={labelClass}>Description</label>
+                                      <textarea
+                                        rows={3}
+                                        className={textareaClass}
+                                        value={item.description}
+                                        onChange={(e) =>
+                                          updateItem(editingMenu.id, category.id, item.id, {
+                                            description: e.target.value,
+                                          })
+                                        }
+                                        placeholder="Item description"
+                                      />
+                                    </div>
 
-                                    <input
-                                      className="rounded-lg border p-3"
-                                      value={opt.price}
-                                      onChange={(e) =>
-                                        updateSectionOption(
-                                          editingMenu.id,
-                                          category.id,
-                                          item.id,
-                                          "variantGroup",
-                                          opt.id,
-                                          { price: e.target.value }
-                                        )
-                                      }
-                                      placeholder="Price"
-                                    />
+                                    <div className="md:col-span-12 flex flex-wrap gap-3">
+                                      <label className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-gray-200">
+                                        <input
+                                          type="checkbox"
+                                          checked={!!item.isVeg}
+                                          onChange={(e) =>
+                                            updateItem(
+                                              editingMenu.id,
+                                              category.id,
+                                              item.id,
+                                              { isVeg: e.target.checked }
+                                            )
+                                          }
+                                        />
+                                        Veg
+                                      </label>
 
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        removeSectionOption(
-                                          editingMenu.id,
-                                          category.id,
-                                          item.id,
-                                          "variantGroup",
-                                          opt.id
-                                        )
-                                      }
-                                      className="rounded-lg border border-red-200 px-4 py-3 text-red-600"
-                                    >
-                                      Delete
-                                    </button>
+                                      <label className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-gray-200">
+                                        <input
+                                          type="checkbox"
+                                          checked={!!item.bestseller}
+                                          onChange={(e) =>
+                                            updateItem(
+                                              editingMenu.id,
+                                              category.id,
+                                              item.id,
+                                              { bestseller: e.target.checked }
+                                            )
+                                          }
+                                        />
+                                        Bestseller
+                                      </label>
+                                    </div>
+
+                                    {item.isUploading ? (
+                                      <div className="md:col-span-12 text-sm text-blue-600">
+                                        Uploading image...
+                                      </div>
+                                    ) : null}
+
+                                    {item.image ? (
+                                      <div className="md:col-span-12">
+                                        <div className="flex items-center gap-3 rounded-[20px] bg-white p-3 shadow-sm ring-1 ring-gray-200">
+                                          <img
+                                            src={item.image}
+                                            alt={item.name || "item"}
+                                            className="h-16 w-16 rounded-2xl border object-cover"
+                                          />
+                                          <div className="min-w-0 flex-1">
+                                            <p className="truncate text-sm font-medium text-slate-700">
+                                              Image uploaded
+                                            </p>
+                                            <a
+                                              href={item.image}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="text-xs text-blue-600 underline"
+                                            >
+                                              View image
+                                            </a>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              removeImage(
+                                                editingMenu.id,
+                                                category.id,
+                                                item.id
+                                              )
+                                            }
+                                            className={dangerBtn}
+                                          >
+                                            Remove
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : null}
                                   </div>
-                                ))}
-                              </div>
-                            </SectionCard>
+                                </CleanAccordion>
 
-                            <SectionCard
-                              title="Ingredients (Remove)"
-                              right={
-                                <label className="flex items-center gap-2 text-sm">
-                                  <input
-                                    type="checkbox"
-                                    checked={!!item.removableIngredients?.enabled}
-                                    onChange={(e) =>
-                                      updateItemSection(
-                                        editingMenu.id,
-                                        category.id,
-                                        item.id,
-                                        "removableIngredients",
-                                        { enabled: e.target.checked }
-                                      )
-                                    }
-                                  />
-                                  Enable
-                                </label>
-                              }
-                            >
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                                <input
-                                  className="rounded-lg border p-3"
-                                  value={item.removableIngredients?.title || ""}
-                                  onChange={(e) =>
-                                    updateItemSection(
-                                      editingMenu.id,
-                                      category.id,
-                                      item.id,
-                                      "removableIngredients",
-                                      { title: e.target.value }
-                                    )
-                                  }
-                                  placeholder="Title"
-                                />
-
-                                <input
-                                  className="rounded-lg border p-3"
-                                  value={item.removableIngredients?.helperText || ""}
-                                  onChange={(e) =>
-                                    updateItemSection(
-                                      editingMenu.id,
-                                      category.id,
-                                      item.id,
-                                      "removableIngredients",
-                                      { helperText: e.target.value }
-                                    )
-                                  }
-                                  placeholder="Helper text"
-                                />
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    addSectionOption(
-                                      editingMenu.id,
-                                      category.id,
-                                      item.id,
-                                      "removableIngredients"
-                                    )
-                                  }
-                                  className="rounded-lg border px-4 py-3"
-                                >
-                                  + Add Ingredient
-                                </button>
-                              </div>
-
-                              <div className="mt-3 space-y-3">
-                                {(item.removableIngredients?.options || []).map((opt) => (
-                                  <div
-                                    key={opt.id}
-                                    className="grid grid-cols-1 gap-3 rounded-lg border p-3 md:grid-cols-[120px_1fr_120px]"
-                                  >
-                                    <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+                                <CleanAccordion
+                                  title="Sizes / Variants"
+                                  isActive={!!item.variantGroup?.enabled}
+                                  className="bg-white"
+                                  rightContent={
+                                    <label className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-gray-200">
                                       <input
                                         type="checkbox"
-                                        checked={opt.selected !== false}
+                                        checked={!!item.variantGroup?.enabled}
                                         onChange={(e) =>
-                                          updateSectionOption(
+                                          updateItemSection(
+                                            editingMenu.id,
+                                            category.id,
+                                            item.id,
+                                            "variantGroup",
+                                            { enabled: e.target.checked }
+                                          )
+                                        }
+                                      />
+                                      Enable
+                                    </label>
+                                  }
+                                >
+                                  <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+                                    <div className="md:col-span-5">
+                                      <label className={labelClass}>Group Title</label>
+                                      <input
+                                        className={inputClass}
+                                        value={item.variantGroup?.title || ""}
+                                        onChange={(e) =>
+                                          updateItemSection(
+                                            editingMenu.id,
+                                            category.id,
+                                            item.id,
+                                            "variantGroup",
+                                            { title: e.target.value }
+                                          )
+                                        }
+                                        placeholder="Group title ex: Sizes"
+                                      />
+                                    </div>
+
+                                    <div className="md:col-span-3">
+                                      <label className={labelClass}>Required</label>
+                                      <label className="flex h-[48px] items-center gap-2 rounded-[20px] bg-white px-4 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-gray-200">
+                                        <input
+                                          type="checkbox"
+                                          checked={item.variantGroup?.required !== false}
+                                          onChange={(e) =>
+                                            updateItemSection(
+                                              editingMenu.id,
+                                              category.id,
+                                              item.id,
+                                              "variantGroup",
+                                              { required: e.target.checked }
+                                            )
+                                          }
+                                        />
+                                        Required selection
+                                      </label>
+                                    </div>
+
+                                    <div className="md:col-span-4 flex items-end">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          addSectionOption(
+                                            editingMenu.id,
+                                            category.id,
+                                            item.id,
+                                            "variantGroup"
+                                          )
+                                        }
+                                        className={`${secondaryBtn} w-full`}
+                                      >
+                                        + Add Size
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-4 space-y-4">
+                                    {(item.variantGroup?.options || []).map((opt) => (
+                                      <div
+                                        key={opt.id}
+                                        className="grid grid-cols-1 gap-4 rounded-[24px] bg-white p-4 shadow-sm ring-1 ring-gray-200 md:grid-cols-12"
+                                      >
+                                        <div className="flex items-center justify-center md:col-span-1">
+                                          <input
+                                            type="radio"
+                                            name={`default_variant_${item.id}`}
+                                            checked={!!opt.isDefault}
+                                            onChange={() =>
+                                              setDefaultVariant(
+                                                editingMenu.id,
+                                                category.id,
+                                                item.id,
+                                                opt.id
+                                              )
+                                            }
+                                          />
+                                        </div>
+
+                                        <div className="md:col-span-6">
+                                          <input
+                                            className={inputClass}
+                                            value={opt.name}
+                                            onChange={(e) =>
+                                              updateSectionOption(
+                                                editingMenu.id,
+                                                category.id,
+                                                item.id,
+                                                "variantGroup",
+                                                opt.id,
+                                                { name: e.target.value }
+                                              )
+                                            }
+                                            placeholder="Size name ex: Small / Large"
+                                          />
+                                        </div>
+
+                                        <div className="md:col-span-3">
+                                          <input
+                                            className={inputClass}
+                                            value={opt.price}
+                                            onChange={(e) =>
+                                              updateSectionOption(
+                                                editingMenu.id,
+                                                category.id,
+                                                item.id,
+                                                "variantGroup",
+                                                opt.id,
+                                                { price: e.target.value }
+                                              )
+                                            }
+                                            placeholder="Price"
+                                          />
+                                        </div>
+
+                                        <div className="md:col-span-2 flex items-center">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              removeSectionOption(
+                                                editingMenu.id,
+                                                category.id,
+                                                item.id,
+                                                "variantGroup",
+                                                opt.id
+                                              )
+                                            }
+                                            className={`${dangerBtn} w-full`}
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </CleanAccordion>
+
+                                <CleanAccordion
+                                  title="Ingredients (Remove)"
+                                  isActive={!!item.removableIngredients?.enabled}
+                                  className="bg-white"
+                                  rightContent={
+                                    <label className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-gray-200">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!item.removableIngredients?.enabled}
+                                        onChange={(e) =>
+                                          updateItemSection(
                                             editingMenu.id,
                                             category.id,
                                             item.id,
                                             "removableIngredients",
-                                            opt.id,
-                                            { selected: e.target.checked }
+                                            { enabled: e.target.checked }
                                           )
                                         }
                                       />
-                                      Selected
+                                      Enable
                                     </label>
-
-                                    <input
-                                      className="rounded-lg border p-3"
-                                      value={opt.name}
-                                      onChange={(e) =>
-                                        updateSectionOption(
-                                          editingMenu.id,
-                                          category.id,
-                                          item.id,
-                                          "removableIngredients",
-                                          opt.id,
-                                          { name: e.target.value }
-                                        )
-                                      }
-                                      placeholder="Ingredient name"
-                                    />
-
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        removeSectionOption(
-                                          editingMenu.id,
-                                          category.id,
-                                          item.id,
-                                          "removableIngredients",
-                                          opt.id
-                                        )
-                                      }
-                                      className="rounded-lg border border-red-200 px-4 py-3 text-red-600"
-                                    >
-                                      Delete
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            </SectionCard>
-
-                            <SectionCard
-                              title="Extras / Add-ons"
-                              right={
-                                <label className="flex items-center gap-2 text-sm">
-                                  <input
-                                    type="checkbox"
-                                    checked={!!item.extrasGroup?.enabled}
-                                    onChange={(e) =>
-                                      updateItemSection(
-                                        editingMenu.id,
-                                        category.id,
-                                        item.id,
-                                        "extrasGroup",
-                                        { enabled: e.target.checked }
-                                      )
-                                    }
-                                  />
-                                  Enable
-                                </label>
-                              }
-                            >
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                <input
-                                  className="rounded-lg border p-3"
-                                  value={item.extrasGroup?.title || ""}
-                                  onChange={(e) =>
-                                    updateItemSection(
-                                      editingMenu.id,
-                                      category.id,
-                                      item.id,
-                                      "extrasGroup",
-                                      { title: e.target.value }
-                                    )
                                   }
-                                  placeholder="Title ex: Extras"
-                                />
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    addSectionOption(
-                                      editingMenu.id,
-                                      category.id,
-                                      item.id,
-                                      "extrasGroup"
-                                    )
-                                  }
-                                  className="rounded-lg border px-4 py-3"
                                 >
-                                  + Add Extra
-                                </button>
-                              </div>
+                                  <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+                                    <div className="md:col-span-4">
+                                      <label className={labelClass}>Title</label>
+                                      <input
+                                        className={inputClass}
+                                        value={item.removableIngredients?.title || ""}
+                                        onChange={(e) =>
+                                          updateItemSection(
+                                            editingMenu.id,
+                                            category.id,
+                                            item.id,
+                                            "removableIngredients",
+                                            { title: e.target.value }
+                                          )
+                                        }
+                                        placeholder="Title"
+                                      />
+                                    </div>
 
-                              <div className="mt-3 space-y-3">
-                                {(item.extrasGroup?.options || []).map((opt) => (
-                                  <div
-                                    key={opt.id}
-                                    className="grid grid-cols-1 gap-3 rounded-lg border p-3 md:grid-cols-[1fr_160px_120px]"
-                                  >
-                                    <input
-                                      className="rounded-lg border p-3"
-                                      value={opt.name}
-                                      onChange={(e) =>
-                                        updateSectionOption(
-                                          editingMenu.id,
-                                          category.id,
-                                          item.id,
-                                          "extrasGroup",
-                                          opt.id,
-                                          { name: e.target.value }
-                                        )
-                                      }
-                                      placeholder="Extra name"
-                                    />
+                                    <div className="md:col-span-4">
+                                      <label className={labelClass}>Helper Text</label>
+                                      <input
+                                        className={inputClass}
+                                        value={item.removableIngredients?.helperText || ""}
+                                        onChange={(e) =>
+                                          updateItemSection(
+                                            editingMenu.id,
+                                            category.id,
+                                            item.id,
+                                            "removableIngredients",
+                                            { helperText: e.target.value }
+                                          )
+                                        }
+                                        placeholder="Helper text"
+                                      />
+                                    </div>
 
-                                    <input
-                                      className="rounded-lg border p-3"
-                                      value={opt.price}
-                                      onChange={(e) =>
-                                        updateSectionOption(
-                                          editingMenu.id,
-                                          category.id,
-                                          item.id,
-                                          "extrasGroup",
-                                          opt.id,
-                                          { price: e.target.value }
-                                        )
-                                      }
-                                      placeholder="Price"
-                                    />
-
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        removeSectionOption(
-                                          editingMenu.id,
-                                          category.id,
-                                          item.id,
-                                          "extrasGroup",
-                                          opt.id
-                                        )
-                                      }
-                                      className="rounded-lg border border-red-200 px-4 py-3 text-red-600"
-                                    >
-                                      Delete
-                                    </button>
+                                    <div className="md:col-span-4 flex items-end">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          addSectionOption(
+                                            editingMenu.id,
+                                            category.id,
+                                            item.id,
+                                            "removableIngredients"
+                                          )
+                                        }
+                                        className={`${secondaryBtn} w-full`}
+                                      >
+                                        + Add Ingredient
+                                      </button>
+                                    </div>
                                   </div>
-                                ))}
+
+                                  <div className="mt-4 space-y-4">
+                                    {(item.removableIngredients?.options || []).map((opt) => (
+                                      <div
+                                        key={opt.id}
+                                        className="grid grid-cols-1 gap-4 rounded-[24px] bg-white p-4 shadow-sm ring-1 ring-gray-200 md:grid-cols-12"
+                                      >
+                                        <div className="md:col-span-2">
+                                          <label className="flex h-[48px] items-center gap-2 rounded-[20px] bg-white px-4 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-gray-200">
+                                            <input
+                                              type="checkbox"
+                                              checked={opt.selected !== false}
+                                              onChange={(e) =>
+                                                updateSectionOption(
+                                                  editingMenu.id,
+                                                  category.id,
+                                                  item.id,
+                                                  "removableIngredients",
+                                                  opt.id,
+                                                  { selected: e.target.checked }
+                                                )
+                                              }
+                                            />
+                                            Selected
+                                          </label>
+                                        </div>
+
+                                        <div className="md:col-span-8">
+                                          <input
+                                            className={inputClass}
+                                            value={opt.name}
+                                            onChange={(e) =>
+                                              updateSectionOption(
+                                                editingMenu.id,
+                                                category.id,
+                                                item.id,
+                                                "removableIngredients",
+                                                opt.id,
+                                                { name: e.target.value }
+                                              )
+                                            }
+                                            placeholder="Ingredient name"
+                                          />
+                                        </div>
+
+                                        <div className="md:col-span-2 flex items-center">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              removeSectionOption(
+                                                editingMenu.id,
+                                                category.id,
+                                                item.id,
+                                                "removableIngredients",
+                                                opt.id
+                                              )
+                                            }
+                                            className={`${dangerBtn} w-full`}
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </CleanAccordion>
+
+                                <CleanAccordion
+                                  title="Extras / Add-ons"
+                                  isActive={!!item.extrasGroup?.enabled}
+                                  className="bg-white"
+                                  rightContent={
+                                    <label className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-gray-200">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!item.extrasGroup?.enabled}
+                                        onChange={(e) =>
+                                          updateItemSection(
+                                            editingMenu.id,
+                                            category.id,
+                                            item.id,
+                                            "extrasGroup",
+                                            { enabled: e.target.checked }
+                                          )
+                                        }
+                                      />
+                                      Enable
+                                    </label>
+                                  }
+                                >
+                                  <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+                                    <div className="md:col-span-8">
+                                      <label className={labelClass}>Title</label>
+                                      <input
+                                        className={inputClass}
+                                        value={item.extrasGroup?.title || ""}
+                                        onChange={(e) =>
+                                          updateItemSection(
+                                            editingMenu.id,
+                                            category.id,
+                                            item.id,
+                                            "extrasGroup",
+                                            { title: e.target.value }
+                                          )
+                                        }
+                                        placeholder="Title ex: Extras"
+                                      />
+                                    </div>
+
+                                    <div className="md:col-span-4 flex items-end">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          addSectionOption(
+                                            editingMenu.id,
+                                            category.id,
+                                            item.id,
+                                            "extrasGroup"
+                                          )
+                                        }
+                                        className={`${secondaryBtn} w-full`}
+                                      >
+                                        + Add Extra
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-4 space-y-4">
+                                    {(item.extrasGroup?.options || []).map((opt) => (
+                                      <div
+                                        key={opt.id}
+                                        className="grid grid-cols-1 gap-4 rounded-[24px] bg-white p-4 shadow-sm ring-1 ring-gray-200 md:grid-cols-12"
+                                      >
+                                        <div className="md:col-span-7">
+                                          <input
+                                            className={inputClass}
+                                            value={opt.name}
+                                            onChange={(e) =>
+                                              updateSectionOption(
+                                                editingMenu.id,
+                                                category.id,
+                                                item.id,
+                                                "extrasGroup",
+                                                opt.id,
+                                                { name: e.target.value }
+                                              )
+                                            }
+                                            placeholder="Extra name"
+                                          />
+                                        </div>
+
+                                        <div className="md:col-span-3">
+                                          <input
+                                            className={inputClass}
+                                            value={opt.price}
+                                            onChange={(e) =>
+                                              updateSectionOption(
+                                                editingMenu.id,
+                                                category.id,
+                                                item.id,
+                                                "extrasGroup",
+                                                opt.id,
+                                                { price: e.target.value }
+                                              )
+                                            }
+                                            placeholder="Price"
+                                          />
+                                        </div>
+
+                                        <div className="md:col-span-2 flex items-center">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              removeSectionOption(
+                                                editingMenu.id,
+                                                category.id,
+                                                item.id,
+                                                "extrasGroup",
+                                                opt.id
+                                              )
+                                            }
+                                            className={`${dangerBtn} w-full`}
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </CleanAccordion>
                               </div>
-                            </SectionCard>
-                          </div>
-                        ))}
+                            </CleanAccordion>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    </CleanAccordion>
                   ))}
                 </div>
               </div>
 
               <div className="flex justify-end">
-                <button className="rounded-lg bg-blue-600 px-5 py-2.5 text-white hover:bg-blue-700">
+                <button className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-700">
                   Save Menus
                 </button>
               </div>
@@ -1733,26 +1936,26 @@ export default function RestaurantMenuPage() {
 
         {confirmDeleteOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
-              <h2 className="text-xl font-semibold mb-4 text-red-600">Delete Menu</h2>
-              <p className="mb-4">
+            <div className="w-full max-w-sm rounded-[28px] bg-white p-6 shadow-2xl">
+              <h2 className="mb-4 text-xl font-semibold text-red-600">Delete Menu</h2>
+              <p className="mb-5 text-slate-700">
                 Are you sure you want to delete{" "}
                 <strong>{deleteData?.name || "this menu"}</strong>?
               </p>
-              <div className="flex justify-end space-x-3">
+              <div className="flex justify-end gap-3">
                 <button
                   onClick={() => {
                     setConfirmDeleteOpen(false);
                     setDeleteData(null);
                   }}
-                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                  className={secondaryBtn}
                   type="button"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDeleteMenu}
-                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                  className="rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700"
                   type="button"
                 >
                   Delete
