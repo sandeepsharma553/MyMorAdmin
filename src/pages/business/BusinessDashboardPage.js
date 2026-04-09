@@ -41,16 +41,6 @@ const businessTypeMeta = {
     bookingsLabel: "Reservations",
     customerLabel: "Repeat customers",
   },
-  salon: {
-    label: "Salon",
-    icon: Scissors,
-    primaryMetricLabel: "Bookings today",
-    catalogLabel: "Top services",
-    queueLabel: "Upcoming appointments",
-    secondaryMetricLabel: "Avg booking value",
-    bookingsLabel: "Appointments",
-    customerLabel: "Returning clients",
-  },
   retail: {
     label: "Retail Store",
     icon: ShoppingBag,
@@ -115,47 +105,7 @@ const sampleData = {
       { name: "Rohit", rating: 4, text: "Burger was great, fries could be hotter." },
     ],
   },
-  salon: {
-    businessName: "Glow & Co.",
-    branchName: "South Yarra",
-    revenueToday: 22600,
-    revenueChange: 9.8,
-    primaryMetricValue: 39,
-    primaryMetricChange: 6.2,
-    avgValue: 910,
-    avgValueChange: 3.1,
-    bookingsCount: 24,
-    bookingsChange: 10.4,
-    repeatCustomers: 18,
-    repeatCustomersChange: 7.6,
-    conversionRate: 8.9,
-    conversionChange: 0.8,
-    activePromos: 2,
-    pendingPayout: 11800,
-    lowStockCount: 3,
-    queue: [
-      { id: "#APT-401", name: "Sarah L.", type: "Haircut", time: "1:00 PM", amount: 65, status: "accepted" },
-      { id: "#APT-402", name: "Emily R.", type: "Hair Color", time: "1:30 PM", amount: 220, status: "preparing" },
-      { id: "#APT-403", name: "Grace T.", type: "Facial", time: "2:00 PM", amount: 110, status: "ready" },
-      { id: "#APT-404", name: "Olivia M.", type: "Nails", time: "Delayed", amount: 85, status: "issue" },
-    ],
-    topCatalog: [
-      { name: "Hair Color", value: 18, amount: 3960 },
-      { name: "Keratin", value: 12, amount: 5400 },
-      { name: "Classic Facial", value: 14, amount: 1540 },
-      { name: "Nail Art", value: 16, amount: 1440 },
-    ],
-    recentActivity: [
-      "Stylist Ava marked unavailable 4–6 PM",
-      "Weekend bridal package created",
-      "1 customer joined loyalty program",
-      "Low stock on premium serum",
-    ],
-    reviews: [
-      { name: "Sophie", rating: 5, text: "Loved the service and ambience." },
-      { name: "Amelia", rating: 4, text: "Great haircut, small wait at the start." },
-    ],
-  },
+  
   retail: {
     businessName: "Campus Mart",
     branchName: "CBD Outlet",
@@ -414,7 +364,6 @@ export default function BusinessDashboard() {
                 className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none"
               >
                 <option value="restaurant">Restaurant</option>
-                <option value="salon">Salon</option>
                 <option value="retail">Retail</option>
                 <option value="services">Services</option>
               </select>

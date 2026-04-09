@@ -44,7 +44,6 @@ import RestaurantInventoryPage from "../pages/business/RestaurantInventoryPage";
 import BusinessDashboard from "../pages/business/BusinessDashboardPage";
 import ProductPage from "../pages/business/ProductPage";
 import ServicePage from "../pages/business/ServicePage";
-import SalonPage from "../pages/business/SalonPage";
 import ManageRestaurantPage from '../pages/business/ManageRestaurantPage'
 import RestaurantQrTablesPage from "../pages/business/RestaurantQrTablesPage";
 import RestaurantMenuPage from "../pages/business/RestaurantMenuPage";
@@ -100,7 +99,6 @@ export default function AdminRoutes({ route }) {
       <Route path="/inventory" element={<RestaurantInventoryPage />} />
       <Route path="/product" element={<ProductPage />} />
       <Route path="/service" element={<ServicePage />} />
-      <Route path="/salon" element={<SalonPage />} />
       <Route path="/managerestaurant" element={<ManageRestaurantPage />} />
       <Route path="/qr" element={<RestaurantQrTablesPage />} />
       <Route path="/menu" element={<RestaurantMenuPage />} />
