@@ -10,6 +10,8 @@ import DiscoverSettingPage from "./DiscoverSettingPage";
 import MarketSettingPage from "./MarketSettingPage";
 import DealSettingPage from "./DealSettingPage";
 import RestaurantSettingPage from "./RestaurantSettingPage";
+import ProductSettingPage from "./ProductSettingPage";
+import ServiceSettingPage from "./ServiceSettingPage";
 
 const EventSettingPage = lazy(() =>
   import("./EventSettingPage")
@@ -42,6 +44,8 @@ const SettingPage = () => {
     { key: "market", label: "Market Setting" },
     { key: "deal", label: "Deal Setting" },
     { key: "restaurant", label: "Restaurant Setting" },
+    { key: "product", label: "Product Setting" },
+    { key: "service", label: "Service Setting" },
   ];
   const [activeKey, setActiveKey] = useState("event");
   // Sidebar click
@@ -148,6 +152,28 @@ const SettingPage = () => {
           }>
             <div className="bg-white rounded shadow p-4">
               <RestaurantSettingPage uid={uid} embedded />
+            </div>
+          </Suspense>
+        )}
+        {activeKey === "product" && (
+          <Suspense fallback={
+            <div className="flex justify-center items-center h-64">
+              <FadeLoader color="#36d7b7" />
+            </div>
+          }>
+            <div className="bg-white rounded shadow p-4">
+              <ProductSettingPage uid={uid} embedded />
+            </div>
+          </Suspense>
+        )}
+        {activeKey === "service" && (
+          <Suspense fallback={
+            <div className="flex justify-center items-center h-64">
+              <FadeLoader color="#36d7b7" />
+            </div>
+          }>
+            <div className="bg-white rounded shadow p-4">
+              <ServiceSettingPage uid={uid} embedded />
             </div>
           </Suspense>
         )}

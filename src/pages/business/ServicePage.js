@@ -8,7 +8,7 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  serverTimestamp,
+  serverTimestamp,getDocs, 
 } from "firebase/firestore";
 import {
   ref as storageRef,
@@ -151,7 +151,7 @@ export default function ServicePage({ navbarHeight }) {
   const [deleteId, setDeleteId] = useState(null);
 
   const [form, setForm] = useState(initialForm);
-
+  const [categoryOption, setCategoryOption] = useState([]);
   const [open, setOpen] = useState({
     basic: true,
     pricing: true,
@@ -179,7 +179,19 @@ export default function ServicePage({ navbarHeight }) {
     );
     return () => unsub();
   }, []);
-
+    useEffect(() => {
+      getCategory();
+    }, []);
+ const getCategory = async () => {
+    try {
+      const qCat = query(collection(db, "servicecategory"));
+      const snap = await getDocs(qCat);
+      setCategoryOption(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load categories");
+    }
+  };
   const filtered = useMemo(() => {
     const t = qText.trim().toLowerCase();
     if (!t) return rows;
@@ -597,11 +609,11 @@ export default function ServicePage({ navbarHeight }) {
                           className={inputCls}
                         >
                           <option value="">Select category</option>
-                          {SERVICE_CATEGORIES.map((x) => (
-                            <option key={x} value={x}>
-                              {x}
-                            </option>
-                          ))}
+                          {categoryOption.map((option) => (
+                                  <option key={option.id} value={option.name}>
+                                    {option.name}
+                                  </option>
+                                ))}
                         </select>
                       </div>
 

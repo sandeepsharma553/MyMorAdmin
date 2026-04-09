@@ -333,27 +333,344 @@ function SimpleCrudSection({
         </div>
     );
 }
+function SlotCrudSection({ title = "Deal Slots" }) {
+  const uid = useSelector((s) => s.auth.user?.uid);
 
-const RestaurantSettingPage = () => {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [deleteRow, setDeleteRow] = useState(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const [categories, setCategories] = useState([]);
+  const [list, setList] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // pagination
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+
+  const initialForm = { id: "", name: "", categoryId: "" };
+  const [form, setForm] = useState(initialForm);
+
+  const fetchCategories = async () => {
+    if (!uid) return;
+    try {
+      const qCat = query(collection(db, "servicecategory"), where("uid", "==", uid));
+      const snap = await getDocs(qCat);
+      const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+      setCategories(rows);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load categories");
+    }
+  };
+
+  const fetchSubcategory = async () => {
+    setIsLoading(true);
+    try {
+      const qBase = query(collection(db, "servicesubcategory"), where("uid", "==", uid));
+      const snap = await getDocs(qBase);
+      const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+      setList(rows);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load slots");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+    fetchSubcategory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
+
+  useEffect(() => setPage(1), [list.length]);
+
+  const slice = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return list.slice(start, start + pageSize);
+  }, [list, page, pageSize]);
+
+  const categoryMap = useMemo(() => {
+    const m = {};
+    categories.forEach((c) => (m[c.id] = c.name));
+    return m;
+  }, [categories]);
+
+  const onChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.name?.trim()) return toast.warn("Slot name required");
+    if (!form.categoryId) return toast.warn("Category required");
+
+    const categoryName = categoryMap[form.categoryId] || "";
+
+    try {
+      if (editing) {
+        const ref = doc(db, "servicesubcategory", form.id);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          toast.warning("Record no longer exists. Cannot update.");
+          return;
+        }
+
+        // Duplicate check (excluding this doc)
+        const dupQ = query(
+          collection(db, "servicesubcategory"),
+          where("uid", "==", uid),
+          where("categoryId", "==", form.categoryId),
+          where("name", "==", form.name.trim())
+        );
+        const dupSnap = await getDocs(dupQ);
+        const dup = dupSnap.docs.find((d) => d.id !== form.id);
+        if (dup) return toast.warn("Duplicate slot in same category");
+
+        await updateDoc(ref, {
+          uid,
+          name: form.name.trim(),
+          categoryId: form.categoryId,
+          categoryName,
+          updatedBy: uid,
+          updatedDate: new Date(),
+        });
+
+        toast.success("Slot updated");
+      } else {
+        // Duplicate check
+        const dupQ = query(
+          collection(db, "servicesubcategory"),
+          where("uid", "==", uid),
+          where("categoryId", "==", form.categoryId),
+          where("name", "==", form.name.trim())
+        );
+        const dupSnap = await getDocs(dupQ);
+        if (!dupSnap.empty) return toast.warn("Duplicate slot in same category");
+
+        await addDoc(collection(db, "servicesubcategory"), {
+          uid,
+          name: form.name.trim(),
+          categoryId: form.categoryId,
+          categoryName,
+          createdBy: uid,
+          createdDate: new Date(),
+        });
+
+        toast.success("Slot saved");
+      }
+
+      await fetchSubcategory();
+      setModalOpen(false);
+      setEditing(null);
+      setForm(initialForm);
+    } catch (e) {
+      console.error(e);
+      toast.error("Save failed");
+    }
+  };
+
+  const onDelete = async () => {
+    if (!deleteRow?.id) return;
+    try {
+      await deleteDoc(doc(db, "servicesubcategory", deleteRow.id));
+      toast.success("Slot deleted!");
+      await fetchSubcategory();
+    } catch (e) {
+      console.error(e);
+      toast.error("Delete failed");
+    }
+    setDeleteOpen(false);
+    setDeleteRow(null);
+  };
+
+  return (
+    <div className="overflow-x-auto bg-white rounded shadow">
+      <div className="flex items-center justify-between p-4">
+        <h2 className="text-lg font-semibold">{title}</h2>
+        <button
+          className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+          onClick={() => {
+            setEditing(null);
+            setForm({ ...initialForm, categoryId: categories?.[0]?.id || "" });
+            setModalOpen(true);
+          }}
+        >
+          + Add Subcategory
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center items-center h-64">
+          <FadeLoader color="#36d7b7" loading={isLoading} />
+        </div>
+      ) : (
+        <>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Category</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Slot</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-gray-200">
+              {slice.map((item) => (
+                <tr key={item.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                    {item.categoryName || categoryMap[item.categoryId] || "—"}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <button
+                      className="text-blue-600 hover:underline mr-3"
+                      onClick={() => {
+                        setEditing(item);
+                        setForm({
+                          id: item.id,
+                          name: item.name || "",
+                          categoryId: item.categoryId || "",
+                        });
+                        setModalOpen(true);
+                      }}
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      className="text-red-600 hover:underline"
+                      onClick={() => {
+                        setDeleteRow(item);
+                        setDeleteOpen(true);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+              {slice.length === 0 && (
+                <tr>
+                  <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={3}>
+                    No slots
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <Pager page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={list.length} />
+        </>
+      )}
+
+      {/* Add/Edit Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
+            <h3 className="text-xl font-bold mb-4">{editing ? "Edit Subcategory" : "Add Subcategory"}</h3>
+
+            <form onSubmit={onSubmit} className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Category</label>
+                <select
+                  name="categoryId"
+                  value={form.categoryId}
+                  onChange={onChange}
+                  className="w-full border border-gray-300 p-2 rounded mt-1"
+                  required
+                >
+                  <option value="">Select Category</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Name</label>
+                <input
+                  name="name"
+                  placeholder="name"
+                  value={form.name}
+                  onChange={onChange}
+                  className="w-full border border-gray-300 p-2 rounded mt-1"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end mt-6 space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalOpen(false);
+                    setEditing(null);
+                    setForm(initialForm);
+                  }}
+                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+                <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm */}
+      {deleteOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
+            <h3 className="text-xl font-semibold mb-4 text-red-600">Delete Slot</h3>
+            <p className="mb-4">
+              Are you sure you want to delete <strong>{deleteRow?.name}</strong>?
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setDeleteOpen(false);
+                  setDeleteRow(null);
+                }}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+              <button onClick={onDelete} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+const ServiceSettingPage = () => {
     return (
         <main className="flex-1 p-6 bg-gray-100 overflow-auto">
-            <h1 className="text-2xl font-semibold mb-4">Restaurant Setting</h1>
+            <h1 className="text-2xl font-semibold mb-4">Service Setting</h1>
 
 
             {/* Public Event Categories (NEW) */}
             <SimpleCrudSection
-                title="Restaurant Categories"
-                collectionName="restaurantcategory"
+                title="Service Categories"
+                collectionName="servicecategory"
                 addButtonLabel="+ Add Category"
                 duplicateWhere={(uid) => [where("uid", "==", uid)]}
             />
             <br />
 
-
+        
+            <SlotCrudSection title="Subcategory (by Category)" />
 
             <ToastContainer />
         </main>
     );
 };
 
-export default RestaurantSettingPage;
+export default ServiceSettingPage;

@@ -1000,7 +1000,7 @@ export default function RestaurantMenuPage() {
   return (
     <main className="min-h-screen bg-[#f6f7fb] p-6">
       <div className="mx-auto max-w-7xl space-y-6">
-        <div className="rounded-[30px] bg-white p-6 shadow-sm ring-1 ring-gray-200">
+        <div className=" bg-white p-6 shadow-sm ring-1 ring-gray-200">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h1 className="text-2xl font-semibold text-slate-900">Menus / Modifiers</h1>
@@ -1023,7 +1023,7 @@ export default function RestaurantMenuPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-[30px] bg-white shadow-sm ring-1 ring-gray-200">
+        <div className="overflow-x-auto  bg-white shadow-sm ring-1 ring-gray-200">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50/80">
               <tr>

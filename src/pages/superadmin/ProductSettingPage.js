@@ -334,16 +334,16 @@ function SimpleCrudSection({
     );
 }
 
-const RestaurantSettingPage = () => {
+const ProductSettingPage = () => {
     return (
         <main className="flex-1 p-6 bg-gray-100 overflow-auto">
-            <h1 className="text-2xl font-semibold mb-4">Restaurant Setting</h1>
+            <h1 className="text-2xl font-semibold mb-4">Product Setting</h1>
 
 
             {/* Public Event Categories (NEW) */}
             <SimpleCrudSection
-                title="Restaurant Categories"
-                collectionName="restaurantcategory"
+                title="Product Categories"
+                collectionName="productcategory"
                 addButtonLabel="+ Add Category"
                 duplicateWhere={(uid) => [where("uid", "==", uid)]}
             />
@@ -356,4 +356,4 @@ const RestaurantSettingPage = () => {
     );
 };
 
-export default RestaurantSettingPage;
+export default ProductSettingPage;
