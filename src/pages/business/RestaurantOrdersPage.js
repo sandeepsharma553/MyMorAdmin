@@ -18,14 +18,14 @@ import {
 } from "../../components/RestaurantShared";
 import { toast, ToastContainer } from "react-toastify";
 
-function StatusPill({ value }) {
+function StatusPill({ value, className = "" }) {
   const map = {
     draft: "bg-gray-100 text-gray-700 border-gray-200",
     placed: "bg-blue-100 text-blue-700 border-blue-200",
-    accepted: "bg-indigo-100 text-indigo-700 border-indigo-200",
-    preparing: "bg-yellow-100 text-yellow-700 border-yellow-200",
+    accepted: "bg-sky-100 text-sky-700 border-sky-200",
+    preparing: "bg-amber-100 text-amber-700 border-amber-200",
     ready: "bg-green-100 text-green-700 border-green-200",
-    completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    completed: "bg-purple-100 text-purple-700 border-purple-200",
     cancelled: "bg-red-100 text-red-700 border-red-200",
     rejected: "bg-rose-100 text-rose-700 border-rose-200",
     pending: "bg-orange-100 text-orange-700 border-orange-200",
@@ -39,7 +39,7 @@ function StatusPill({ value }) {
     <span
       className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
         map[value] || "bg-gray-100 text-gray-700 border-gray-200"
-      }`}
+      } ${className}`}
     >
       {value || "—"}
     </span>
@@ -90,10 +90,14 @@ function normalizeItems(items) {
       0,
     total:
       item?.total ??
-      (Number(item?.quantity || 1) *
+      Number(item?.quantity || 1) *
         Number(
-          item?.price ?? item?.basePrice ?? item?.unitPrice ?? item?.finalPrice ?? 0
-        )),
+          item?.price ??
+            item?.basePrice ??
+            item?.unitPrice ??
+            item?.finalPrice ??
+            0
+        ),
     modifiers:
       item?.modifiers ||
       item?.selectedModifiers ||
@@ -116,7 +120,6 @@ function normalizeOrder(row) {
     row?.customer?.email || row?.email || row?.customerEmail || "—";
 
   const orderType = row?.orderType || row?.type || row?.mode || "—";
-
   const normalizedItems = normalizeItems(row?.items);
 
   const itemsCount = normalizedItems.length
@@ -189,16 +192,6 @@ function normalizeOrder(row) {
   };
 }
 
-function StatCard({ title, value, subtext }) {
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-      <div className="text-sm text-gray-500">{title}</div>
-      <div className="text-2xl font-bold text-gray-900 mt-1">{value}</div>
-      {subtext ? <div className="text-xs text-gray-400 mt-1">{subtext}</div> : null}
-    </div>
-  );
-}
-
 function DetailRow({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-4 py-2 border-b last:border-b-0">
@@ -210,15 +203,204 @@ function DetailRow({ label, value }) {
   );
 }
 
-function ActionButton({ children, onClick, className = "" }) {
+function getMinutesAgo(value) {
+  try {
+    let date = null;
+
+    if (value?.toDate) date = value.toDate();
+    else if (value instanceof Date) date = value;
+    else if (typeof value === "string" || typeof value === "number") {
+      const d = new Date(value);
+      if (!Number.isNaN(d.getTime())) date = d;
+    }
+
+    if (!date) return "0'";
+    const diffMs = Date.now() - date.getTime();
+    const mins = Math.max(0, Math.floor(diffMs / 60000));
+    return `${mins}'`;
+  } catch {
+    return "0'";
+  }
+}
+
+function getBoardStatus(order) {
+  const status = String(order?.status || "").toLowerCase();
+
+  if (status === "ready") return "ready";
+  if (status === "completed") return "completed";
+  if (status === "accepted" || status === "placed" || status === "preparing") {
+    return "to_pick";
+  }
+  return "all";
+}
+
+function BoardTabButton({ active, label, count, onClick, badgeClass = "" }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition hover:shadow-sm ${className}`}
+      className={`h-14 px-5 flex items-center gap-2 text-base font-semibold border-r border-gray-200 transition ${
+        active ? "bg-white text-gray-900" : "bg-white text-gray-700 hover:bg-gray-50"
+      }`}
     >
-      {children}
+      <span>{label}</span>
+      {typeof count === "number" ? (
+        <span
+          className={`min-w-[28px] h-8 px-2 rounded-lg text-sm flex items-center justify-center ${badgeClass}`}
+        >
+          {count}
+        </span>
+      ) : null}
     </button>
+  );
+}
+
+function OrderBoardCard({
+  row,
+  onView,
+  onAccept,
+  onPreparing,
+  onReady,
+  onComplete,
+  onRecall,
+  updatingOrderId,
+}) {
+  const itemPreview = row.items?.slice(0, 4) || [];
+  const isUpdating = updatingOrderId === row.id;
+  const boardStatus = getBoardStatus(row);
+
+  const topPillText =
+    boardStatus === "ready"
+      ? "Ready"
+      : boardStatus === "completed"
+      ? "Completed"
+      : "To pick";
+
+  const topPillClass =
+    boardStatus === "ready"
+      ? "bg-green-100 text-green-700"
+      : boardStatus === "completed"
+      ? "bg-purple-100 text-purple-700"
+      : "bg-sky-100 text-sky-700";
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-semibold text-gray-900">
+            {row._orderType?.toLowerCase() === "dinein" ||
+            row._orderType?.toLowerCase() === "dine in"
+              ? "IN"
+              : row._orderType?.toLowerCase() === "pickup"
+              ? "PK"
+              : row._orderType?.toLowerCase() === "delivery"
+              ? "DL"
+              : "IN"}{" "}
+            (# {String(row.id).slice(-4)})
+          </span>
+
+          <div className="w-6 h-6 rounded-full bg-black text-white text-[10px] font-semibold flex items-center justify-center shrink-0">
+            {getInitials(row._customerName)}
+          </div>
+
+          <span className="text-sm font-semibold text-gray-900 truncate">
+            {row._customerName}
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onView(row)}
+          className="text-xs text-gray-500 hover:text-black"
+        >
+          View
+        </button>
+      </div>
+
+      <div className="px-4 py-3 bg-gray-50/70 flex items-center justify-between">
+        <span
+          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${topPillClass}`}
+        >
+          {topPillText}
+        </span>
+
+        <span className="inline-flex items-center gap-1 text-sm text-gray-600 font-medium">
+          <span>◔</span>
+          <span>{getMinutesAgo(row._createdAt)}</span>
+        </span>
+      </div>
+
+      <div className="px-4 py-4 space-y-3 min-h-[150px]">
+        {itemPreview.length ? (
+          itemPreview.map((item, idx) => (
+            <div key={item.id || idx} className="text-sm text-gray-800 leading-6">
+              <span className="text-gray-500 mr-2">{item.quantity}x</span>
+              <span>{item.name}</span>
+            </div>
+          ))
+        ) : (
+          <div className="text-sm text-gray-400">No items found</div>
+        )}
+
+        {row.items?.length > 4 ? (
+          <div className="text-xs text-gray-500">
+            +{row.items.length - 4} more items
+          </div>
+        ) : null}
+      </div>
+
+      <div className="px-4 pb-4 flex flex-wrap gap-2">
+        {boardStatus !== "to_pick" ? null : (
+          <>
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={() => onAccept(row.id)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+            >
+              Accept
+            </button>
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={() => onPreparing(row.id)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+            >
+              Preparing
+            </button>
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={() => onReady(row.id)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-green-600 text-white hover:opacity-90 disabled:opacity-60"
+            >
+              Ready
+            </button>
+          </>
+        )}
+
+        {boardStatus === "ready" ? (
+          <>
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={() => onComplete(row.id)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white hover:opacity-90 disabled:opacity-60"
+            >
+              Complete
+            </button>
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={() => onRecall(row.id)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+            >
+              Recall
+            </button>
+          </>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -239,6 +421,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [updatingOrderId, setUpdatingOrderId] = useState("");
+  const [activeBoardTab, setActiveBoardTab] = useState("all");
 
   const closeModal = () => {
     setShowModal(false);
@@ -363,6 +546,26 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
     };
   }, [filteredOrders]);
 
+  const boardCounts = useMemo(() => {
+    const toPick = filteredOrders.filter((x) => getBoardStatus(x) === "to_pick").length;
+    const ready = filteredOrders.filter((x) => getBoardStatus(x) === "ready").length;
+    const completed = filteredOrders.filter(
+      (x) => getBoardStatus(x) === "completed"
+    ).length;
+
+    return {
+      all: filteredOrders.length,
+      to_pick: toPick,
+      ready,
+      completed,
+    };
+  }, [filteredOrders]);
+
+  const boardOrders = useMemo(() => {
+    if (activeBoardTab === "all") return filteredOrders;
+    return filteredOrders.filter((row) => getBoardStatus(row) === activeBoardTab);
+  }, [filteredOrders, activeBoardTab]);
+
   const quickUpdateStatus = async (orderId, status) => {
     try {
       setUpdatingOrderId(orderId);
@@ -415,7 +618,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
     >
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-5">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Orders</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Orders Board</h1>
           <p className="text-sm text-gray-500 mt-1">
             {restaurant
               ? `${restaurant.brandName || ""}${
@@ -425,239 +628,143 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={loadData}
-          className="px-4 py-2 rounded-xl bg-black text-white text-sm font-medium hover:opacity-90"
-        >
-          Refresh
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-        <StatCard
-          title="Total Orders"
-          value={dashboard.totalOrders}
-          subtext="Based on current filters"
-        />
-        <StatCard
-          title="Live Orders"
-          value={dashboard.liveOrders}
-          subtext="Placed to ready"
-        />
-        <StatCard
-          title="Completed"
-          value={dashboard.completedOrders}
-          subtext="Finished orders"
-        />
-        <StatCard
-          title="Revenue"
-          value={formatCurrency(dashboard.revenue)}
-          subtext="Paid or completed orders"
-        />
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-5">
-        <div className="flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">All Orders</h2>
-            <p className="text-sm text-gray-500">
-              View, filter and manage restaurant orders
-            </p>
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-gray-500">
+            Total: <span className="font-semibold text-gray-900">{dashboard.totalOrders}</span>
           </div>
+          <div className="text-sm text-gray-500">
+            Revenue:{" "}
+            <span className="font-semibold text-gray-900">
+              {formatCurrency(dashboard.revenue)}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={loadData}
+            className="px-4 py-2 rounded-xl bg-black text-white text-sm font-medium hover:opacity-90"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
 
-          <div className="w-full xl:w-[320px]">
+      <div className="bg-white rounded-[28px] shadow-sm border border-gray-200 overflow-hidden">
+        <div className="flex flex-wrap items-stretch border-b border-gray-200 bg-white">
+          <BoardTabButton
+            active={activeBoardTab === "all"}
+            label="All"
+            count={boardCounts.all}
+            onClick={() => setActiveBoardTab("all")}
+            badgeClass="bg-gray-100 text-gray-700"
+          />
+
+          <BoardTabButton
+            active={activeBoardTab === "to_pick"}
+            label="To pick"
+            count={boardCounts.to_pick}
+            onClick={() => setActiveBoardTab("to_pick")}
+            badgeClass="bg-sky-100 text-sky-700"
+          />
+
+          <BoardTabButton
+            active={activeBoardTab === "ready"}
+            label="Ready"
+            count={boardCounts.ready}
+            onClick={() => setActiveBoardTab("ready")}
+            badgeClass="bg-green-100 text-green-700"
+          />
+
+          <BoardTabButton
+            active={activeBoardTab === "completed"}
+            label="Completed"
+            count={boardCounts.completed}
+            onClick={() => setActiveBoardTab("completed")}
+            badgeClass="bg-purple-100 text-purple-700"
+          />
+
+          <div className="ml-auto flex items-stretch">
+            <button
+              type="button"
+              onClick={() => loadData()}
+              className="px-6 h-14 text-base font-semibold border-l border-gray-200 hover:bg-gray-50"
+            >
+              ↻ Recall
+            </button>
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-6 h-14 text-base font-semibold border-l border-gray-200 hover:bg-gray-50"
+            >
+              Close ↪
+            </button>
+          </div>
+        </div>
+
+        <div className="p-4 border-b border-gray-200 bg-white">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <input
               type="text"
               placeholder="Search by order, customer, item..."
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-black/10"
+              className="md:col-span-2 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-black/10"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+
+            <select
+              className="border border-gray-200 p-2.5 rounded-xl text-sm"
+              value={filters.type}
+              onChange={(e) => setFilters((p) => ({ ...p, type: e.target.value }))}
+            >
+              <option value="">All types</option>
+              <option value="delivery">delivery</option>
+              <option value="pickup">pickup</option>
+              <option value="dineIn">dineIn</option>
+              <option value="dinein">dinein</option>
+            </select>
+
+            <select
+              className="border border-gray-200 p-2.5 rounded-xl text-sm"
+              value={filters.paymentStatus}
+              onChange={(e) =>
+                setFilters((p) => ({ ...p, paymentStatus: e.target.value }))
+              }
+            >
+              <option value="">All payment statuses</option>
+              {PAYMENT_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-          <select
-            className="border border-gray-200 p-2.5 rounded-xl text-sm"
-            value={filters.status}
-            onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}
-          >
-            <option value="">All statuses</option>
-            {ORDER_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-
-          <select
-            className="border border-gray-200 p-2.5 rounded-xl text-sm"
-            value={filters.type}
-            onChange={(e) => setFilters((p) => ({ ...p, type: e.target.value }))}
-          >
-            <option value="">All types</option>
-            <option value="delivery">delivery</option>
-            <option value="pickup">pickup</option>
-            <option value="dineIn">dineIn</option>
-            <option value="dinein">dinein</option>
-          </select>
-
-          <select
-            className="border border-gray-200 p-2.5 rounded-xl text-sm"
-            value={filters.paymentStatus}
-            onChange={(e) =>
-              setFilters((p) => ({ ...p, paymentStatus: e.target.value }))
-            }
-          >
-            <option value="">All payment statuses</option>
-            {PAYMENT_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="overflow-x-auto border border-gray-100 rounded-2xl">
-          <table className="min-w-full">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                {[
-                  
-                  "Customer",
-                  "Type",
-                  "Items",
-                  "Total",
-                  "Status",
-                  "Payment",
-                  "Created",
-                  "Actions",
-                ].map((x) => (
-                  <th
-                    key={x}
-                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
-                  >
-                    {x}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody className="bg-white">
-              {filteredOrders.map((row) => (
-                <tr
+        <div className="bg-[#8f949d] p-4 min-h-[520px]">
+          {loading ? (
+            <div className="bg-white rounded-xl p-10 text-center text-gray-500">
+              Loading...
+            </div>
+          ) : boardOrders.length === 0 ? (
+            <div className="bg-white rounded-xl p-10 text-center text-gray-500">
+              No orders found.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 items-start">
+              {boardOrders.map((row) => (
+                <OrderBoardCard
                   key={row.id}
-                  className="border-b border-gray-100 hover:bg-gray-50/70 transition"
-                >
-                  {/* <td className="px-4 py-4 text-sm">
-                    <div className="font-semibold text-gray-900">#{row.id}</div>
-                    <div className="text-xs text-gray-400 mt-1">
-                      {row._paymentMethod || "—"}
-                    </div>
-                  </td> */}
-
-                  <td className="px-4 py-4 text-sm">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-black text-white flex items-center justify-center text-xs font-semibold">
-                        {getInitials(row._customerName)}
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {row._customerName}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {row._customerPhone}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-4 text-sm capitalize">{row._orderType}</td>
-
-                  <td className="px-4 py-4 text-sm">
-                    <div className="font-medium text-gray-900">
-                      {row._itemsCount} items
-                    </div>
-                    <div className="text-xs text-gray-500 max-w-[180px] truncate">
-                      {row.items?.slice(0, 2).map((x) => x.name).join(", ") || "—"}
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-4 text-sm font-semibold text-gray-900">
-                    {formatCurrency(row._total)}
-                  </td>
-
-                  <td className="px-4 py-4 text-sm">
-                    <StatusPill value={row.status} />
-                  </td>
-
-                  <td className="px-4 py-4 text-sm">
-                    <StatusPill value={row.paymentStatus || "pending"} />
-                  </td>
-
-                  <td className="px-4 py-4 text-sm text-gray-600">
-                    {formatDate(row._createdAt)}
-                  </td>
-
-                  <td className="px-4 py-4 text-sm">
-                    <div className="flex flex-wrap gap-2">
-                      <ActionButton
-                        onClick={() => openViewModal(row)}
-                        className="bg-black text-white border-black"
-                      >
-                        View Order
-                      </ActionButton>
-
-                      <ActionButton
-                        onClick={() => quickUpdateStatus(row.id, "accepted")}
-                        className="bg-white text-gray-700 border-gray-200"
-                      >
-                        Accept
-                      </ActionButton>
-
-                      <ActionButton
-                        onClick={() => quickUpdateStatus(row.id, "preparing")}
-                        className="bg-white text-gray-700 border-gray-200"
-                      >
-                        Preparing
-                      </ActionButton>
-
-                      <ActionButton
-                        onClick={() => quickUpdateStatus(row.id, "ready")}
-                        className="bg-white text-gray-700 border-gray-200"
-                      >
-                        Ready
-                      </ActionButton>
-
-                      <ActionButton
-                        onClick={() => quickUpdateStatus(row.id, "completed")}
-                        className="bg-emerald-50 text-emerald-700 border-emerald-200"
-                      >
-                        Complete
-                      </ActionButton>
-                    </div>
-                  </td>
-                </tr>
+                  row={row}
+                  onView={openViewModal}
+                  onAccept={(id) => quickUpdateStatus(id, "accepted")}
+                  onPreparing={(id) => quickUpdateStatus(id, "preparing")}
+                  onReady={(id) => quickUpdateStatus(id, "ready")}
+                  onComplete={(id) => quickUpdateStatus(id, "completed")}
+                  onRecall={(id) => quickUpdateStatus(id, "accepted")}
+                  updatingOrderId={updatingOrderId}
+                />
               ))}
-
-              {!loading && filteredOrders.length === 0 && (
-                <tr>
-                  <td colSpan="9" className="px-4 py-10 text-center text-gray-500">
-                    No orders found.
-                  </td>
-                </tr>
-              )}
-
-              {loading && (
-                <tr>
-                  <td colSpan="9" className="px-4 py-10 text-center text-gray-500">
-                    Loading...
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+            </div>
+          )}
         </div>
       </div>
 
@@ -875,10 +982,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                     </h3>
                     <DetailRow label="Order Type" value={selectedOrder._orderType} />
                     <DetailRow label="Payment" value={selectedOrder.paymentStatus} />
-                    <DetailRow
-                      label="Method"
-                      value={selectedOrder._paymentMethod}
-                    />
+                    <DetailRow label="Method" value={selectedOrder._paymentMethod} />
                     <DetailRow label="Created" value={formatDate(selectedOrder._createdAt)} />
                     <DetailRow label="Updated" value={formatDate(selectedOrder._updatedAt)} />
                     <DetailRow label="Table" value={selectedOrder._tableNumber} />
