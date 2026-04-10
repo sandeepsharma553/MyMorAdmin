@@ -8,7 +8,7 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  serverTimestamp,
+  serverTimestamp, getDocs,
 } from "firebase/firestore";
 import {
   ref as storageRef,
@@ -33,6 +33,30 @@ const PRODUCT_CATEGORIES = [
   "Other",
 ];
 
+const BADGE_COLOR_OPTIONS = [
+  { value: "orange", label: "Orange" },
+  { value: "blue", label: "Blue" },
+  { value: "green", label: "Green" },
+  { value: "purple", label: "Purple" },
+  { value: "red", label: "Red" },
+  { value: "gray", label: "Gray" },
+];
+
+const OFFER_ICON_OPTIONS = [
+  { value: "coupon", label: "Coupon" },
+  { value: "bank", label: "Bank" },
+  { value: "bundle", label: "Bundle" },
+  { value: "offer", label: "Offer" },
+];
+
+const TRUST_ICON_OPTIONS = [
+  { value: "return", label: "Return" },
+  { value: "cod", label: "Cash / COD" },
+  { value: "secure", label: "Secure" },
+  { value: "delivery", label: "Delivery" },
+  { value: "support", label: "Support" },
+];
+
 const labelCls = "text-sm font-semibold text-gray-900";
 const inputCls =
   "mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-200";
@@ -42,7 +66,7 @@ const textareaCls =
 
 const emptyVariant = () => ({
   name: "",
-  options: [{ value: "", price: "", stock: "", sku: "" }],
+  options: [{ value: "", price: "", stock: "", sku: "", image: null }],
 });
 
 const emptySpec = () => ({
@@ -50,6 +74,23 @@ const emptySpec = () => ({
   value: "",
 });
 
+const emptyBadge = () => ({
+  text: "",
+  color: "orange",
+});
+
+const emptyOffer = () => ({
+  title: "",
+  description: "",
+  icon: "coupon",
+});
+
+const emptyTrustBadge = () => ({
+  title: "",
+  icon: "secure",
+});
+
+/* ---------------------------- initial form ---------------------------- */
 const initialForm = {
   title: "",
   brand: "",
@@ -82,6 +123,45 @@ const initialForm = {
   images: [],
   variants: [emptyVariant()],
   specifications: [emptySpec()],
+
+  /* -------- customer product page fields -------- */
+  displayBrand: "",
+  productType: "",
+  rating: "",
+  ratingCount: "",
+  inStockText: "In stock",
+  taxInclusiveText: "Inclusive of all taxes",
+
+  badges: [emptyBadge()],
+
+  offersTitle: "Offers & Coupons",
+  offers: [emptyOffer()],
+
+  deliveryTitle: "Delivery",
+  deliverySubtitle: "Deliver to your address",
+  pincodeEnabled: true,
+  pincodePlaceholder: "Enter pincode",
+  checkButtonText: "Check",
+  deliveryMessage: "FREE delivery by tomorrow. Order within 8 hrs 25 mins.",
+
+  sellerTitle: "Seller",
+  sellerName: "MyMor Verified Store",
+  sellerMeta: "92% positive ratings • Trusted seller",
+  sellerButtonText: "Visit",
+
+  trustBadges: [
+    { title: "7-day return", icon: "return" },
+    { title: "Pay on delivery", icon: "cod" },
+    { title: "Secure transaction", icon: "secure" },
+  ],
+
+  aboutTitle: "About this item",
+  aboutDescription:
+    "Write a detailed description that appears on the customer product page.",
+  aboutBulletsText: "",
+
+  buyNowEnabled: true,
+  addToCartEnabled: true,
 };
 
 /* ---------------------------- helpers ---------------------------- */
@@ -95,9 +175,8 @@ function Section({ title, open, onToggle, children }) {
       >
         <div className="flex items-center gap-3">
           <div
-            className={`h-5 w-5 rounded-full border ${
-              open ? "bg-black border-black" : "bg-white border-gray-300"
-            }`}
+            className={`h-5 w-5 rounded-full border ${open ? "bg-black border-black" : "bg-white border-gray-300"
+              }`}
           />
           <div className="text-base font-semibold text-gray-900">{title}</div>
         </div>
@@ -130,12 +209,18 @@ function normalizeVariants(raw) {
     options:
       Array.isArray(v?.options) && v.options.length
         ? v.options.map((o) => ({
-            value: o?.value || "",
-            price: o?.price === 0 || o?.price ? String(o.price) : "",
-            stock: o?.stock === 0 || o?.stock ? String(o.stock) : "",
-            sku: o?.sku || "",
-          }))
-        : [{ value: "", price: "", stock: "", sku: "" }],
+          value: o?.value || "",
+          price: o?.price === 0 || o?.price ? String(o.price) : "",
+          stock: o?.stock === 0 || o?.stock ? String(o.stock) : "",
+          sku: o?.sku || "",
+          image: o?.image
+            ? {
+              url: o.image?.url || "",
+              path: o.image?.path || "",
+            }
+            : null,
+        }))
+        : [{ value: "", price: "", stock: "", sku: "", image: null }],
   }));
 }
 
@@ -145,6 +230,54 @@ function normalizeSpecifications(raw) {
     key: x?.key || "",
     value: x?.value || "",
   }));
+}
+
+function normalizeBadges(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return [emptyBadge()];
+  return raw.map((x) => ({
+    text: x?.text || "",
+    color: x?.color || "orange",
+  }));
+}
+
+function normalizeOffers(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return [emptyOffer()];
+  return raw.map((x) => ({
+    title: x?.title || "",
+    description: x?.description || "",
+    icon: x?.icon || "coupon",
+  }));
+}
+
+function normalizeTrustBadges(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return [
+      { title: "7-day return", icon: "return" },
+      { title: "Pay on delivery", icon: "cod" },
+      { title: "Secure transaction", icon: "secure" },
+    ];
+  }
+  return raw.map((x) => ({
+    title: x?.title || "",
+    icon: x?.icon || "secure",
+  }));
+}
+
+function badgePreviewCls(color) {
+  switch (color) {
+    case "orange":
+      return "bg-orange-50 text-orange-700";
+    case "blue":
+      return "bg-blue-50 text-blue-700";
+    case "green":
+      return "bg-green-50 text-green-700";
+    case "purple":
+      return "bg-purple-50 text-purple-700";
+    case "red":
+      return "bg-red-50 text-red-700";
+    default:
+      return "bg-gray-100 text-gray-700";
+  }
 }
 
 /* ---------------------------- page ---------------------------- */
@@ -159,7 +292,7 @@ export default function ProductPage({ navbarHeight }) {
   const [deleteId, setDeleteId] = useState(null);
 
   const [form, setForm] = useState(initialForm);
-
+  const [categoryOption, setCategoryOption] = useState([]);
   const [open, setOpen] = useState({
     basic: true,
     pricing: true,
@@ -169,6 +302,11 @@ export default function ProductPage({ navbarHeight }) {
     shipping: false,
     seo: false,
     visibility: true,
+    storefront: true,
+    offers: true,
+    delivery: true,
+    seller: true,
+    about: true,
   });
 
   /* ---------------- load firestore ---------------- */
@@ -188,7 +326,19 @@ export default function ProductPage({ navbarHeight }) {
     );
     return () => unsub();
   }, []);
-
+    useEffect(() => {
+      getCategory();
+    }, []);
+ const getCategory = async () => {
+    try {
+      const qCat = query(collection(db, "productcategory"));
+      const snap = await getDocs(qCat);
+      setCategoryOption(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load categories");
+    }
+  };
   const filtered = useMemo(() => {
     const t = qText.trim().toLowerCase();
     if (!t) return rows;
@@ -200,6 +350,9 @@ export default function ProductPage({ navbarHeight }) {
         r.category,
         r.subcategory,
         r.shortDescription,
+        r.displayBrand,
+        r.productType,
+        r.sellerName,
       ]
         .filter(Boolean)
         .join(" ")
@@ -229,6 +382,11 @@ export default function ProductPage({ navbarHeight }) {
       shipping: false,
       seo: false,
       visibility: true,
+      storefront: true,
+      offers: true,
+      delivery: true,
+      seller: true,
+      about: true,
     });
   };
 
@@ -256,10 +414,21 @@ export default function ProductPage({ navbarHeight }) {
       length: item?.length === 0 || item?.length ? String(item.length) : "",
       width: item?.width === 0 || item?.width ? String(item.width) : "",
       height: item?.height === 0 || item?.height ? String(item.height) : "",
+      rating: item?.rating === 0 || item?.rating ? String(item.rating) : "",
+      ratingCount:
+        item?.ratingCount === 0 || item?.ratingCount
+          ? String(item.ratingCount)
+          : "",
       tagsText: Array.isArray(item?.tags) ? item.tags.join(", ") : "",
+      aboutBulletsText: Array.isArray(item?.aboutBullets)
+        ? item.aboutBullets.join("\n")
+        : "",
       images: Array.isArray(item?.images) ? item.images : [],
       variants: normalizeVariants(item?.variants),
       specifications: normalizeSpecifications(item?.specifications),
+      badges: normalizeBadges(item?.badges),
+      offers: normalizeOffers(item?.offers),
+      trustBadges: normalizeTrustBadges(item?.trustBadges),
     });
     setModalOpen(true);
   };
@@ -295,7 +464,56 @@ export default function ProductPage({ navbarHeight }) {
       images: (p.images || []).filter((_, i) => i !== index),
     }));
   };
+  const onPickVariantImage = async (groupIndex, optionIndex, e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
+    try {
+      toast.info("Uploading variant image...");
+      const uploaded = await uploadImage(file, "products/variants");
+
+      setForm((p) => {
+        const next = [...(p.variants || [])];
+        const options = [...(next[groupIndex]?.options || [])];
+
+        options[optionIndex] = {
+          ...(options[optionIndex] || {}),
+          image: uploaded,
+        };
+
+        next[groupIndex] = {
+          ...next[groupIndex],
+          options,
+        };
+
+        return { ...p, variants: next };
+      });
+
+      toast.success("Variant image uploaded ✅");
+    } catch (err) {
+      console.error(err);
+      toast.error("Variant image upload failed");
+    }
+  };
+
+  const removeVariantImage = (groupIndex, optionIndex) => {
+    setForm((p) => {
+      const next = [...(p.variants || [])];
+      const options = [...(next[groupIndex]?.options || [])];
+
+      options[optionIndex] = {
+        ...(options[optionIndex] || {}),
+        image: null,
+      };
+
+      next[groupIndex] = {
+        ...next[groupIndex],
+        options,
+      };
+
+      return { ...p, variants: next };
+    });
+  };
   /* ---------------- variants ---------------- */
   const addVariantGroup = () => {
     setForm((p) => ({
@@ -329,7 +547,7 @@ export default function ProductPage({ navbarHeight }) {
         ...next[groupIndex],
         options: [
           ...(next[groupIndex]?.options || []),
-          { value: "", price: "", stock: "", sku: "" },
+          { value: "", price: "", stock: "", sku: "", image: null },
         ],
       };
       return { ...p, variants: next };
@@ -363,6 +581,7 @@ export default function ProductPage({ navbarHeight }) {
           price: "",
           stock: "",
           sku: "",
+          image: null,
         }),
         [key]: value,
       };
@@ -397,6 +616,72 @@ export default function ProductPage({ navbarHeight }) {
     });
   };
 
+  /* ---------------- badges ---------------- */
+  const addBadge = () => {
+    setForm((p) => ({ ...p, badges: [...(p.badges || []), emptyBadge()] }));
+  };
+
+  const removeBadge = (index) => {
+    setForm((p) => {
+      const next = (p.badges || []).filter((_, i) => i !== index);
+      return { ...p, badges: next.length ? next : [emptyBadge()] };
+    });
+  };
+
+  const setBadgeField = (index, key, value) => {
+    setForm((p) => {
+      const next = [...(p.badges || [])];
+      next[index] = { ...next[index], [key]: value };
+      return { ...p, badges: next };
+    });
+  };
+
+  /* ---------------- offers ---------------- */
+  const addOffer = () => {
+    setForm((p) => ({ ...p, offers: [...(p.offers || []), emptyOffer()] }));
+  };
+
+  const removeOffer = (index) => {
+    setForm((p) => {
+      const next = (p.offers || []).filter((_, i) => i !== index);
+      return { ...p, offers: next.length ? next : [emptyOffer()] };
+    });
+  };
+
+  const setOfferField = (index, key, value) => {
+    setForm((p) => {
+      const next = [...(p.offers || [])];
+      next[index] = { ...next[index], [key]: value };
+      return { ...p, offers: next };
+    });
+  };
+
+  /* ---------------- trust badges ---------------- */
+  const addTrustBadge = () => {
+    setForm((p) => ({
+      ...p,
+      trustBadges: [...(p.trustBadges || []), emptyTrustBadge()],
+    }));
+  };
+
+  const removeTrustBadge = (index) => {
+    setForm((p) => {
+      const next = (p.trustBadges || []).filter((_, i) => i !== index);
+      return {
+        ...p,
+        trustBadges: next.length ? next : [emptyTrustBadge()],
+      };
+    });
+  };
+
+  const setTrustBadgeField = (index, key, value) => {
+    setForm((p) => {
+      const next = [...(p.trustBadges || [])];
+      next[index] = { ...next[index], [key]: value };
+      return { ...p, trustBadges: next };
+    });
+  };
+
   /* ---------------- save ---------------- */
   const onSave = async () => {
     if (!form.title.trim()) return toast.error("Product title is required");
@@ -417,8 +702,7 @@ export default function ProductPage({ navbarHeight }) {
         salePrice: form.salePrice === "" ? null : Number(form.salePrice),
         taxRate: form.taxRate === "" ? null : Number(form.taxRate),
         stock: form.stock === "" ? null : Number(form.stock),
-        minOrderQty:
-          form.minOrderQty === "" ? 1 : Number(form.minOrderQty),
+        minOrderQty: form.minOrderQty === "" ? 1 : Number(form.minOrderQty),
 
         weight: form.weight === "" ? null : Number(form.weight),
         length: form.length === "" ? null : Number(form.length),
@@ -464,6 +748,59 @@ export default function ProductPage({ navbarHeight }) {
           }))
           .filter((s) => s.key && s.value),
 
+        /* -------- storefront / customer page -------- */
+        displayBrand: form.displayBrand.trim(),
+        productType: form.productType.trim(),
+        rating: form.rating === "" ? null : Number(form.rating),
+        ratingCount: form.ratingCount === "" ? null : Number(form.ratingCount),
+        inStockText: form.inStockText.trim(),
+        taxInclusiveText: form.taxInclusiveText.trim(),
+
+        badges: (form.badges || [])
+          .map((b) => ({
+            text: (b?.text || "").trim(),
+            color: (b?.color || "orange").trim(),
+          }))
+          .filter((b) => b.text),
+
+        offersTitle: form.offersTitle.trim(),
+        offers: (form.offers || [])
+          .map((o) => ({
+            title: (o?.title || "").trim(),
+            description: (o?.description || "").trim(),
+            icon: (o?.icon || "coupon").trim(),
+          }))
+          .filter((o) => o.title || o.description),
+
+        deliveryTitle: form.deliveryTitle.trim(),
+        deliverySubtitle: form.deliverySubtitle.trim(),
+        pincodeEnabled: !!form.pincodeEnabled,
+        pincodePlaceholder: form.pincodePlaceholder.trim(),
+        checkButtonText: form.checkButtonText.trim(),
+        deliveryMessage: form.deliveryMessage.trim(),
+
+        sellerTitle: form.sellerTitle.trim(),
+        sellerName: form.sellerName.trim(),
+        sellerMeta: form.sellerMeta.trim(),
+        sellerButtonText: form.sellerButtonText.trim(),
+
+        trustBadges: (form.trustBadges || [])
+          .map((x) => ({
+            title: (x?.title || "").trim(),
+            icon: (x?.icon || "secure").trim(),
+          }))
+          .filter((x) => x.title),
+
+        aboutTitle: form.aboutTitle.trim(),
+        aboutDescription: form.aboutDescription.trim(),
+        aboutBullets: (form.aboutBulletsText || "")
+          .split("\n")
+          .map((x) => x.trim())
+          .filter(Boolean),
+
+        buyNowEnabled: !!form.buyNowEnabled,
+        addToCartEnabled: !!form.addToCartEnabled,
+
         updatedAt: serverTimestamp(),
       };
 
@@ -501,6 +838,12 @@ export default function ProductPage({ navbarHeight }) {
     }
   };
 
+  /* ---------------- preview values ---------------- */
+  const previewBrand = form.displayBrand || form.brand || "Brand";
+  const previewPrice = form.salePrice || form.price || 0;
+  const previewComparePrice =
+    form.salePrice && form.price ? form.price : null;
+
   /* ---------------- ui ---------------- */
   return (
     <main
@@ -511,7 +854,7 @@ export default function ProductPage({ navbarHeight }) {
         <div>
           <h1 className="text-2xl font-semibold">Products</h1>
           <p className="text-sm text-gray-500">
-            Amazon-style add product page
+            Product admin with storefront detail management
           </p>
         </div>
 
@@ -567,7 +910,7 @@ export default function ProductPage({ navbarHeight }) {
                           {item.title || "—"}
                         </div>
                         <div className="text-xs text-gray-500 truncate">
-                          {item.brand || item.sku || "—"}
+                          {item.displayBrand || item.brand || item.sku || "—"}
                         </div>
                       </div>
                     </div>
@@ -582,8 +925,8 @@ export default function ProductPage({ navbarHeight }) {
                     {item.salePrice != null
                       ? `₹${item.salePrice}`
                       : item.price != null
-                      ? `₹${item.price}`
-                      : "—"}
+                        ? `₹${item.price}`
+                        : "—"}
                   </td>
 
                   <td className="p-3 text-gray-700">
@@ -592,11 +935,10 @@ export default function ProductPage({ navbarHeight }) {
 
                   <td className="p-3">
                     <span
-                      className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                        item.active
+                      className={`rounded-full px-2 py-1 text-xs font-semibold ${item.active
                           ? "bg-green-50 text-green-700"
                           : "bg-gray-100 text-gray-600"
-                      }`}
+                        }`}
                     >
                       {item.active ? "Active" : "Inactive"}
                     </span>
@@ -636,14 +978,14 @@ export default function ProductPage({ navbarHeight }) {
       {/* ===================== MODAL ===================== */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-6xl rounded-2xl bg-white shadow-xl overflow-hidden">
+          <div className="w-full max-w-7xl rounded-2xl bg-white shadow-xl overflow-hidden">
             <div className="flex items-center justify-between border-b border-gray-100 p-5">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">
                   {editingItem?.id ? "Edit Product" : "Add Product"}
                 </h2>
                 <p className="text-xs text-gray-500">
-                  Amazon style product creation form
+                  Admin-managed product page data
                 </p>
               </div>
 
@@ -666,7 +1008,7 @@ export default function ProductPage({ navbarHeight }) {
             </div>
 
             <div className="p-5 max-h-[82vh] overflow-auto bg-gray-50">
-              <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_0.6fr] gap-5">
+              <div className="grid grid-cols-1 xl:grid-cols-[1.45fr_0.55fr] gap-5">
                 {/* LEFT */}
                 <div className="space-y-4">
                   <Section
@@ -681,7 +1023,7 @@ export default function ProductPage({ navbarHeight }) {
                           value={form.title}
                           onChange={set("title")}
                           className={inputCls}
-                          placeholder="e.g. Noise Smartwatch Pro Max"
+                          placeholder="e.g. Trucker Hat - White"
                         />
                       </div>
 
@@ -696,12 +1038,32 @@ export default function ProductPage({ navbarHeight }) {
                       </div>
 
                       <div>
+                        <label className={labelCls}>Display Brand</label>
+                        <input
+                          value={form.displayBrand}
+                          onChange={set("displayBrand")}
+                          className={inputCls}
+                          placeholder="e.g. ACAP"
+                        />
+                      </div>
+
+                      <div>
                         <label className={labelCls}>SKU</label>
                         <input
                           value={form.sku}
                           onChange={set("sku")}
                           className={inputCls}
                           placeholder="SKU-1001"
+                        />
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>Product Type</label>
+                        <input
+                          value={form.productType}
+                          onChange={set("productType")}
+                          className={inputCls}
+                          placeholder="e.g. Accessories • Hats"
                         />
                       </div>
 
@@ -713,11 +1075,11 @@ export default function ProductPage({ navbarHeight }) {
                           className={inputCls}
                         >
                           <option value="">Select category</option>
-                          {PRODUCT_CATEGORIES.map((x) => (
-                            <option key={x} value={x}>
-                              {x}
-                            </option>
-                          ))}
+                          {categoryOption.map((option) => (
+                                  <option key={option.id} value={option.name}>
+                                    {option.name}
+                                  </option>
+                                ))}
                         </select>
                       </div>
 
@@ -727,7 +1089,30 @@ export default function ProductPage({ navbarHeight }) {
                           value={form.subcategory}
                           onChange={set("subcategory")}
                           className={inputCls}
-                          placeholder="e.g. Smart Watches"
+                          placeholder="e.g. Hats"
+                        />
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>Rating</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={form.rating}
+                          onChange={set("rating")}
+                          className={inputCls}
+                          placeholder="4.4"
+                        />
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>Ratings Count</label>
+                        <input
+                          type="number"
+                          value={form.ratingCount}
+                          onChange={set("ratingCount")}
+                          className={inputCls}
+                          placeholder="1824"
                         />
                       </div>
 
@@ -813,6 +1198,26 @@ export default function ProductPage({ navbarHeight }) {
                           placeholder="1"
                         />
                       </div>
+
+                      <div>
+                        <label className={labelCls}>Stock Label</label>
+                        <input
+                          value={form.inStockText}
+                          onChange={set("inStockText")}
+                          className={inputCls}
+                          placeholder="In stock"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className={labelCls}>Tax Info Text</label>
+                        <input
+                          value={form.taxInclusiveText}
+                          onChange={set("taxInclusiveText")}
+                          className={inputCls}
+                          placeholder="Inclusive of all taxes"
+                        />
+                      </div>
                     </div>
                   </Section>
 
@@ -862,6 +1267,387 @@ export default function ProductPage({ navbarHeight }) {
                   </Section>
 
                   <Section
+                    title="Top Badges / Chips"
+                    open={open.storefront}
+                    onToggle={() => toggleOpen("storefront")}
+                  >
+                    <div className="space-y-3">
+                      {(form.badges || []).map((badge, index) => (
+                        <div
+                          key={index}
+                          className="grid grid-cols-1 md:grid-cols-[1fr_180px_auto] gap-3"
+                        >
+                          <div>
+                            <label className={labelCls}>Badge Text</label>
+                            <input
+                              value={badge.text}
+                              onChange={(e) =>
+                                setBadgeField(index, "text", e.target.value)
+                              }
+                              className={inputCls}
+                              placeholder="e.g. Amazon's Choice"
+                            />
+                          </div>
+
+                          <div>
+                            <label className={labelCls}>Color</label>
+                            <select
+                              value={badge.color}
+                              onChange={(e) =>
+                                setBadgeField(index, "color", e.target.value)
+                              }
+                              className={inputCls}
+                            >
+                              {BADGE_COLOR_OPTIONS.map((x) => (
+                                <option key={x.value} value={x.value}>
+                                  {x.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={() => removeBadge(index)}
+                              className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={addBadge}
+                          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+                        >
+                          + Add Badge
+                        </button>
+                      </div>
+                    </div>
+                  </Section>
+
+                  <Section
+                    title="Offers & Coupons"
+                    open={open.offers}
+                    onToggle={() => toggleOpen("offers")}
+                  >
+                    <div className="space-y-4">
+                      <div>
+                        <label className={labelCls}>Section Title</label>
+                        <input
+                          value={form.offersTitle}
+                          onChange={set("offersTitle")}
+                          className={inputCls}
+                          placeholder="Offers & Coupons"
+                        />
+                      </div>
+
+                      {(form.offers || []).map((offer, index) => (
+                        <div
+                          key={index}
+                          className="rounded-2xl border border-gray-200 bg-white p-4"
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className={labelCls}>Offer Title</label>
+                              <input
+                                value={offer.title}
+                                onChange={(e) =>
+                                  setOfferField(index, "title", e.target.value)
+                                }
+                                className={inputCls}
+                                placeholder="e.g. Coupon available"
+                              />
+                            </div>
+
+                            <div>
+                              <label className={labelCls}>Icon Type</label>
+                              <select
+                                value={offer.icon}
+                                onChange={(e) =>
+                                  setOfferField(index, "icon", e.target.value)
+                                }
+                                className={inputCls}
+                              >
+                                {OFFER_ICON_OPTIONS.map((x) => (
+                                  <option key={x.value} value={x.value}>
+                                    {x.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="md:col-span-2">
+                              <label className={labelCls}>Description</label>
+                              <textarea
+                                value={offer.description}
+                                onChange={(e) =>
+                                  setOfferField(
+                                    index,
+                                    "description",
+                                    e.target.value
+                                  )
+                                }
+                                className={textareaCls + " h-24"}
+                                placeholder="Offer description"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => removeOffer(index)}
+                              className="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+                            >
+                              Remove Offer
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={addOffer}
+                          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+                        >
+                          + Add Offer
+                        </button>
+                      </div>
+                    </div>
+                  </Section>
+
+                  <Section
+                    title="Delivery Section"
+                    open={open.delivery}
+                    onToggle={() => toggleOpen("delivery")}
+                  >
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div>
+                        <label className={labelCls}>Section Title</label>
+                        <input
+                          value={form.deliveryTitle}
+                          onChange={set("deliveryTitle")}
+                          className={inputCls}
+                          placeholder="Delivery"
+                        />
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>Subtitle</label>
+                        <input
+                          value={form.deliverySubtitle}
+                          onChange={set("deliverySubtitle")}
+                          className={inputCls}
+                          placeholder="Deliver to your address"
+                        />
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>Pincode Placeholder</label>
+                        <input
+                          value={form.pincodePlaceholder}
+                          onChange={set("pincodePlaceholder")}
+                          className={inputCls}
+                          placeholder="Enter pincode"
+                        />
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>Check Button Text</label>
+                        <input
+                          value={form.checkButtonText}
+                          onChange={set("checkButtonText")}
+                          className={inputCls}
+                          placeholder="Check"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className={labelCls}>Delivery Message</label>
+                        <textarea
+                          value={form.deliveryMessage}
+                          onChange={set("deliveryMessage")}
+                          className={textareaCls + " h-24"}
+                          placeholder="FREE delivery by tomorrow..."
+                        />
+                      </div>
+
+                      <label className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4 md:col-span-2">
+                        <span className="text-sm font-medium text-gray-900">
+                          Show Pincode Input
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={form.pincodeEnabled}
+                          onChange={set("pincodeEnabled")}
+                        />
+                      </label>
+                    </div>
+                  </Section>
+
+                  <Section
+                    title="Seller & Service Info"
+                    open={open.seller}
+                    onToggle={() => toggleOpen("seller")}
+                  >
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                          <label className={labelCls}>Seller Section Title</label>
+                          <input
+                            value={form.sellerTitle}
+                            onChange={set("sellerTitle")}
+                            className={inputCls}
+                            placeholder="Seller"
+                          />
+                        </div>
+
+                        <div>
+                          <label className={labelCls}>Seller Button</label>
+                          <input
+                            value={form.sellerButtonText}
+                            onChange={set("sellerButtonText")}
+                            className={inputCls}
+                            placeholder="Visit"
+                          />
+                        </div>
+
+                        <div>
+                          <label className={labelCls}>Seller Name</label>
+                          <input
+                            value={form.sellerName}
+                            onChange={set("sellerName")}
+                            className={inputCls}
+                            placeholder="MyMor Verified Store"
+                          />
+                        </div>
+
+                        <div>
+                          <label className={labelCls}>Seller Meta</label>
+                          <input
+                            value={form.sellerMeta}
+                            onChange={set("sellerMeta")}
+                            className={inputCls}
+                            placeholder="92% positive ratings • Trusted seller"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {(form.trustBadges || []).map((item, index) => (
+                          <div
+                            key={index}
+                            className="grid grid-cols-1 md:grid-cols-[1fr_180px_auto] gap-3"
+                          >
+                            <div>
+                              <label className={labelCls}>Card Title</label>
+                              <input
+                                value={item.title}
+                                onChange={(e) =>
+                                  setTrustBadgeField(
+                                    index,
+                                    "title",
+                                    e.target.value
+                                  )
+                                }
+                                className={inputCls}
+                                placeholder="e.g. 7-day return"
+                              />
+                            </div>
+
+                            <div>
+                              <label className={labelCls}>Icon Type</label>
+                              <select
+                                value={item.icon}
+                                onChange={(e) =>
+                                  setTrustBadgeField(
+                                    index,
+                                    "icon",
+                                    e.target.value
+                                  )
+                                }
+                                className={inputCls}
+                              >
+                                {TRUST_ICON_OPTIONS.map((x) => (
+                                  <option key={x.value} value={x.value}>
+                                    {x.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="flex items-end">
+                              <button
+                                type="button"
+                                onClick={() => removeTrustBadge(index)}
+                                className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={addTrustBadge}
+                            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+                          >
+                            + Add Service Card
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </Section>
+
+                  <Section
+                    title="About This Item"
+                    open={open.about}
+                    onToggle={() => toggleOpen("about")}
+                  >
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <label className={labelCls}>Section Title</label>
+                        <input
+                          value={form.aboutTitle}
+                          onChange={set("aboutTitle")}
+                          className={inputCls}
+                          placeholder="About this item"
+                        />
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>Description</label>
+                        <textarea
+                          value={form.aboutDescription}
+                          onChange={set("aboutDescription")}
+                          className={textareaCls + " h-36"}
+                          placeholder="Main about section description"
+                        />
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>
+                          Bullet Points (one per line)
+                        </label>
+                        <textarea
+                          value={form.aboutBulletsText}
+                          onChange={set("aboutBulletsText")}
+                          className={textareaCls + " h-40"}
+                          placeholder={`Premium mesh panels\nHard buckram, structured\nMatching plastic snapback closure`}
+                        />
+                      </div>
+                    </div>
+                  </Section>
+
+                  <Section
                     title="Variants"
                     open={open.variants}
                     onToggle={() => toggleOpen("variants")}
@@ -874,9 +1660,7 @@ export default function ProductPage({ navbarHeight }) {
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex-1">
-                              <label className={labelCls}>
-                                Variant Name
-                              </label>
+                              <label className={labelCls}>Variant Name</label>
                               <input
                                 value={group.name}
                                 onChange={(e) =>
@@ -900,7 +1684,7 @@ export default function ProductPage({ navbarHeight }) {
                             {(group.options || []).map((option, optionIndex) => (
                               <div
                                 key={optionIndex}
-                                className="grid grid-cols-1 md:grid-cols-4 gap-3 rounded-xl border border-gray-100 p-3"
+                                className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 rounded-xl border border-gray-100 p-3"
                               >
                                 <div>
                                   <label className={labelCls}>Option</label>
@@ -971,8 +1755,38 @@ export default function ProductPage({ navbarHeight }) {
                                     placeholder="SKU-RED-L"
                                   />
                                 </div>
+                                <div className="xl:col-span-1">
+                                  <label className={labelCls}>Variant Image</label>
 
-                                <div className="md:col-span-4 flex justify-end">
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="mt-2 block w-full text-sm"
+                                    onChange={(e) => onPickVariantImage(groupIndex, optionIndex, e)}
+                                  />
+
+                                  {option?.image?.url ? (
+                                    <div className="mt-3 rounded-xl border border-gray-200 bg-white p-2">
+                                      <img
+                                        src={option.image.url}
+                                        alt="variant"
+                                        className="h-24 w-full rounded-lg object-cover"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => removeVariantImage(groupIndex, optionIndex)}
+                                        className="mt-2 w-full rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50"
+                                      >
+                                        Remove Image
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="mt-3 flex h-24 items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-xs text-gray-400">
+                                      No image
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="md:col-span-2 xl:col-span-5 flex justify-end">
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -1215,52 +2029,255 @@ export default function ProductPage({ navbarHeight }) {
                           onChange={set("returnable")}
                         />
                       </label>
+
+                      <label className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4">
+                        <span className="text-sm font-medium text-gray-900">
+                          Enable Add to Cart
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={form.addToCartEnabled}
+                          onChange={set("addToCartEnabled")}
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4">
+                        <span className="text-sm font-medium text-gray-900">
+                          Enable Buy Now
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={form.buyNowEnabled}
+                          onChange={set("buyNowEnabled")}
+                        />
+                      </label>
                     </div>
                   </Section>
 
                   <div className="rounded-2xl border border-gray-200 bg-white p-5">
                     <h3 className="text-base font-semibold text-gray-900">
-                      Preview
+                      Customer Page Preview
                     </h3>
 
-                    <div className="mt-4 rounded-2xl border border-gray-100 overflow-hidden bg-white">
-                      <div className="h-52 bg-gray-100 flex items-center justify-center">
-                        {form.images?.[0]?.url ? (
-                          <img
-                            src={form.images[0].url}
-                            alt="preview"
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <span className="text-sm text-gray-400">
-                            No image
-                          </span>
-                        )}
+                    <div className="mt-4 rounded-3xl border border-gray-100 overflow-hidden bg-[#f5f6fa]">
+                      <div className="p-4 border-b border-gray-200 bg-white">
+                        <div className="text-center text-lg font-semibold text-gray-900">
+                          Product
+                        </div>
                       </div>
 
-                      <div className="p-4 space-y-2">
-                        <div className="font-semibold text-gray-900 line-clamp-2">
-                          {form.title || "Product title"}
+                      <div className="p-4 space-y-4 max-h-[70vh] overflow-auto">
+                        <div className="rounded-3xl bg-white p-3 border border-gray-100">
+                          <div className="aspect-square rounded-2xl overflow-hidden bg-gray-100 flex items-center justify-center">
+                            {form.images?.[0]?.url ? (
+                              <img
+                                src={form.images[0].url}
+                                alt="preview"
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <span className="text-sm text-gray-400">
+                                No image
+                              </span>
+                            )}
+                          </div>
                         </div>
 
-                        <div className="text-sm text-gray-500">
-                          {form.brand || "Brand"}
+                        {(form.badges || []).some((x) => x.text) && (
+                          <div className="flex flex-wrap gap-2">
+                            {(form.badges || [])
+                              .filter((x) => x.text)
+                              .map((badge, idx) => (
+                                <span
+                                  key={idx}
+                                  className={`rounded-full px-3 py-1 text-xs font-semibold ${badgePreviewCls(
+                                    badge.color
+                                  )}`}
+                                >
+                                  {badge.text}
+                                </span>
+                              ))}
+                          </div>
+                        )}
+
+                        <div className="rounded-3xl bg-white p-4 border border-gray-100">
+                          <div className="text-blue-600 font-semibold text-sm">
+                            {previewBrand}
+                          </div>
+                          <div className="mt-1 text-2xl font-bold text-gray-900">
+                            {form.title || "Product title"}
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+                            {form.rating ? (
+                              <span className="rounded-full bg-orange-50 text-orange-700 px-2.5 py-1 font-semibold">
+                                ★ {form.rating}
+                              </span>
+                            ) : null}
+                            {form.ratingCount ? (
+                              <span className="text-blue-600 font-semibold">
+                                {form.ratingCount} ratings
+                              </span>
+                            ) : null}
+                            {form.productType ? (
+                              <span>{form.productType}</span>
+                            ) : null}
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl font-bold text-gray-900">
-                            ₹{form.salePrice || form.price || 0}
-                          </span>
-
-                          {form.salePrice && form.price ? (
-                            <span className="text-sm text-gray-400 line-through">
-                              ₹{form.price}
-                            </span>
+                        <div className="rounded-3xl bg-white p-4 border border-gray-100">
+                          <div className="text-4xl font-bold text-gray-900">
+                            ₹{previewPrice}
+                          </div>
+                          {previewComparePrice ? (
+                            <div className="mt-1 text-sm text-gray-400 line-through">
+                              ₹{previewComparePrice}
+                            </div>
                           ) : null}
+                          <div className="mt-2 text-sm text-gray-500">
+                            {form.taxInclusiveText || "Inclusive of all taxes"}
+                          </div>
+                          <div className="mt-3 text-green-700 font-semibold">
+                            {form.inStockText || "In stock"}
+                          </div>
                         </div>
 
-                        <div className="text-sm text-gray-500">
-                          Stock: {form.stock || 0}
+                        {(form.offers || []).some(
+                          (x) => x.title || x.description
+                        ) && (
+                            <div className="rounded-3xl bg-white p-4 border border-gray-100">
+                              <div className="text-2xl font-bold text-gray-900">
+                                {form.offersTitle || "Offers & Coupons"}
+                              </div>
+
+                              <div className="mt-4 space-y-3">
+                                {(form.offers || [])
+                                  .filter((x) => x.title || x.description)
+                                  .map((offer, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="rounded-2xl border border-blue-100 bg-slate-50 p-4"
+                                    >
+                                      <div className="font-semibold text-gray-900">
+                                        {offer.title || "Offer"}
+                                      </div>
+                                      <div className="mt-1 text-sm text-gray-500">
+                                        {offer.description || "Offer description"}
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+
+                        <div className="rounded-3xl bg-white p-4 border border-gray-100">
+                          <div className="text-2xl font-bold text-gray-900">
+                            {form.deliveryTitle || "Delivery"}
+                          </div>
+                          <div className="mt-4 font-semibold text-gray-900">
+                            {form.deliverySubtitle || "Deliver to your address"}
+                          </div>
+
+                          {form.pincodeEnabled && (
+                            <div className="mt-4 flex gap-3">
+                              <input
+                                disabled
+                                className="flex-1 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm"
+                                placeholder={
+                                  form.pincodePlaceholder || "Enter pincode"
+                                }
+                              />
+                              <button className="rounded-2xl bg-slate-900 px-5 py-3 text-white font-semibold">
+                                {form.checkButtonText || "Check"}
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="mt-4 text-sm font-semibold text-gray-700">
+                            {form.deliveryMessage ||
+                              "FREE delivery by tomorrow."}
+                          </div>
+                        </div>
+
+                        <div className="rounded-3xl bg-white p-4 border border-gray-100">
+                          <div className="text-2xl font-bold text-gray-900">
+                            {form.sellerTitle || "Seller"}
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-xl font-semibold text-gray-900">
+                                {form.sellerName || "Seller name"}
+                              </div>
+                              <div className="mt-1 text-sm text-gray-500">
+                                {form.sellerMeta || "Seller meta"}
+                              </div>
+                            </div>
+
+                            <button className="rounded-2xl border border-gray-200 px-4 py-2.5 font-semibold text-gray-900">
+                              {form.sellerButtonText || "Visit"}
+                            </button>
+                          </div>
+                        </div>
+
+                        {(form.trustBadges || []).some((x) => x.title) && (
+                          <div className="grid grid-cols-3 gap-3">
+                            {(form.trustBadges || [])
+                              .filter((x) => x.title)
+                              .map((item, idx) => (
+                                <div
+                                  key={idx}
+                                  className="rounded-3xl bg-white p-4 border border-gray-100 text-center"
+                                >
+                                  <div className="text-sm font-semibold text-gray-800">
+                                    {item.title}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+
+                        <div className="rounded-3xl bg-white p-4 border border-gray-100">
+                          <div className="text-2xl font-bold text-gray-900">
+                            {form.aboutTitle || "About this item"}
+                          </div>
+                          <div className="mt-4 whitespace-pre-line text-gray-600 leading-8">
+                            {form.aboutDescription ||
+                              "Write a detailed description."}
+                          </div>
+
+                          {(form.aboutBulletsText || "").trim() && (
+                            <ul className="mt-4 space-y-2 text-gray-600 list-disc pl-5">
+                              {(form.aboutBulletsText || "")
+                                .split("\n")
+                                .map((x) => x.trim())
+                                .filter(Boolean)
+                                .map((bullet, idx) => (
+                                  <li key={idx}>{bullet}</li>
+                                ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4">
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            className={`rounded-2xl px-4 py-3 font-semibold ${form.addToCartEnabled
+                                ? "bg-yellow-400 text-gray-900"
+                                : "bg-gray-200 text-gray-500"
+                              }`}
+                          >
+                            Add to Cart
+                          </button>
+                          <button
+                            className={`rounded-2xl px-4 py-3 font-semibold ${form.buyNowEnabled
+                                ? "bg-orange-400 text-white"
+                                : "bg-gray-200 text-gray-500"
+                              }`}
+                          >
+                            Buy Now
+                          </button>
                         </div>
                       </div>
                     </div>
