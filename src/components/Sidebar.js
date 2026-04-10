@@ -104,6 +104,8 @@ const SECTIONS = [
   { key: "analytics", label: "Analytics", Icon: Utensils },
   { key: "orders", label: "Orders", Icon: ShoppingBag },
   { key: "inventory", label: "Inventory", Icon: Package },
+  { key: "productorder", label: "Order", Icon: ShoppingBag },
+  { key: "servicebooking", label: "Service Booking", Icon: BookOpen },
   // common
   { key: "setting", label: "Setting", Icon: SettingsIcon },
   { key: "contact", label: "Contact", Icon: HelpCircle },
@@ -459,6 +461,8 @@ export default function Sidebar({ onSectionClick, isLoading }) {
       "analytics",
       "orders",
       "inventory",
+      "productorder",
+      "servicebooking"
     ]);
 
     const byOrg = SECTIONS.filter((s) => {

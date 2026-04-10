@@ -79,7 +79,9 @@ export default function BusinessEmployeePage(props) {
     () => [
       { key: "dashboard", label: "Dashboard" },
       { key: "product", label: "Product" },
+      { key: "productorder", label: "Product Order" },
       { key: "service", label: "Service" },
+      { key: "servicebooking", label: "Service Booking" },
       { key: "managerestaurant", label: "Restaurant" },
       { key: "reservations", label: "Reservations" },
       { key: "qr", label: "QR / Tables" },
