@@ -48,6 +48,7 @@ import ManageRestaurantPage from '../pages/business/ManageRestaurantPage'
 import RestaurantQrTablesPage from "../pages/business/RestaurantQrTablesPage";
 import RestaurantMenuPage from "../pages/business/RestaurantMenuPage";
 import RestaurantDealsPage from "../pages/business/RestaurantDealsPage";
+import BusinessEmployeePage from "../pages/business/BusinessEmployeePage";
 export default function AdminRoutes({ route }) {
 
   return (
@@ -103,6 +104,7 @@ export default function AdminRoutes({ route }) {
       <Route path="/qr" element={<RestaurantQrTablesPage />} />
       <Route path="/menu" element={<RestaurantMenuPage />} />
       <Route path="/deals" element={<RestaurantDealsPage />} />
+      <Route path="/businessemp" element={<BusinessEmployeePage />} />
     </Routes>
   );
 }

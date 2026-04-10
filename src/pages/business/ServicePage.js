@@ -21,6 +21,7 @@ import { db, storage } from "../../firebase";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { useSelector } from "react-redux";
 
 const labelCls = "text-sm font-semibold text-gray-900";
 const hintCls = "mt-1 text-xs text-gray-500";
@@ -590,7 +591,7 @@ export default function ServicePage({ navbarHeight }) {
   const [form, setForm] = useState(initialForm);
   const [categoryOption, setCategoryOption] = useState([]);
   const [subCategoryOption, setSubCategoryOption] = useState([]);
-
+  const uid = useSelector((state) => state.auth.user?.uid);
   const [open, setOpen] = useState({
     basic: true,
     pricing: true,
@@ -605,7 +606,7 @@ export default function ServicePage({ navbarHeight }) {
   });
 
   useEffect(() => {
-    const qy = query(collection(db, "services"), orderBy("createdAt", "desc"));
+    const qy = query(collection(db, "services"), where("uid", "==", uid));
     const unsub = onSnapshot(
       qy,
       (snap) => {
@@ -614,7 +615,6 @@ export default function ServicePage({ navbarHeight }) {
       },
       (err) => {
         console.error(err);
-        toast.error("Failed to load services");
         setLoading(false);
       }
     );
@@ -1105,7 +1105,7 @@ export default function ServicePage({ navbarHeight }) {
         checklist: (form.checklist || [])
           .map((x) => ({ label: (x?.label || "").trim() }))
           .filter((x) => x.label),
-
+        uid,
         updatedAt: serverTimestamp(),
       };
 

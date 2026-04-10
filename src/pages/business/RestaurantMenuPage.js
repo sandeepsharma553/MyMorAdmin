@@ -295,10 +295,10 @@ const buildModifierGroupsFromSimpleItem = (item) => {
 };
 
 const inputClass =
-  "w-full rounded-[20px] border-0 bg-white px-4 py-3 text-[15px] text-slate-900 shadow-sm ring-1 ring-gray-200 placeholder:text-slate-400 outline-none transition focus:ring-2 focus:ring-slate-300";
+  "w-full rounded-[5px] border-0 bg-white px-4 py-3 text-[15px] text-slate-900 shadow-sm ring-1 ring-gray-200 placeholder:text-slate-400 outline-none transition focus:ring-2 focus:ring-slate-300";
 
 const textareaClass =
-  "w-full rounded-[20px] border-0 bg-white px-4 py-3 text-[15px] text-slate-900 shadow-sm ring-1 ring-gray-200 placeholder:text-slate-400 outline-none transition focus:ring-2 focus:ring-slate-300 resize-none";
+  "w-full rounded-[5px] border-0 bg-white px-4 py-3 text-[15px] text-slate-900 shadow-sm ring-1 ring-gray-200 placeholder:text-slate-400 outline-none transition focus:ring-2 focus:ring-slate-300 resize-none";
 
 const labelClass = "mb-2 block text-sm font-semibold text-slate-900";
 
@@ -326,7 +326,7 @@ function CleanAccordion({
 
   return (
     <div
-      className={`overflow-hidden rounded-[28px] bg-white shadow-sm ring-1 ring-gray-200 ${className}`}
+      className={`overflow-hidden rounded-[15px] bg-white shadow-sm ring-1 ring-gray-200 ${className}`}
     >
       <button
         type="button"
@@ -1221,7 +1221,7 @@ export default function RestaurantMenuPage() {
                       }
                     >
                       <div className="space-y-5">
-                        <div className="rounded-[24px] bg-white p-5 shadow-sm ring-1 ring-gray-200">
+                        <div className="rounded-[15px] bg-white p-5 shadow-sm ring-1 ring-gray-200">
                           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
                             <div className="md:col-span-5">
                               <label className={labelClass}>Category</label>

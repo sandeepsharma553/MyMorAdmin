@@ -59,6 +59,7 @@ const DAYS = [
 
 const BUSINESS_PERMISSION_OPTIONS = [
   { key: "dashboard", label: "Dashboard" },
+  { key: "businessemp", label: "Employee" },
   { key: "deal", label: "Deal" },
   { key: "restaurant", label: "Restaurant" },
   { key: "product", label: "Product" },

@@ -18,8 +18,9 @@ import {
   Settings as SettingsIcon,
   HelpCircle,
   Handshake,
-  Layers, ShoppingBag, Cog, Scissors,CalendarRange,QrCode,UtensilsCrossed,
-  BadgePercent,Package} from "lucide-react";
+  Layers, ShoppingBag, Cog, Scissors, CalendarRange, QrCode, UtensilsCrossed,
+  BadgePercent, Package
+} from "lucide-react";
 
 import { useSelector, useDispatch } from "react-redux";
 
@@ -86,22 +87,23 @@ const SECTIONS = [
 
   // business
   { key: "businessdashboard", label: "Dashboard", Icon: LayoutDashboard },
+  { key: "businessemp", label: "Employee", Icon: UserPlus },
   { key: "restaurant", label: "Restaurant", Icon: Utensils },
   { key: "product", label: "Product", Icon: ShoppingBag },
   { key: "service", label: "Service", Icon: Cog },
-  { key: "managerestaurant", label: "Restaurant",Icon: Utensils },
-  { key: "hours", label: "Hours",Icon: Utensils },
-  { key: "serviceModes", label: "Service Modes",Icon: Utensils },
-  { key: "delivery", label: "Delivery / Pickup",Icon: Utensils },
-  { key: "menu", label: "Menus / Modifiers",Icon: UtensilsCrossed },
-  { key: "deals", label: "Deals",Icon: BadgePercent },
-  { key: "qr", label: "QR / Tables",Icon: QrCode },
-  { key: "reservations", label: "Reservations",Icon: CalendarRange },
-  { key: "ops", label: "Operations",Icon: Utensils },
-  { key: "reviews", label: "Reviews",Icon: Utensils },
-  { key: "analytics", label: "Analytics",Icon: Utensils },
-  { key: "orders", label: "Orders",Icon: ShoppingBag  },
-  { key: "inventory", label: "Inventory",Icon: Package  },
+  { key: "managerestaurant", label: "Restaurant", Icon: Utensils },
+  { key: "hours", label: "Hours", Icon: Utensils },
+  { key: "serviceModes", label: "Service Modes", Icon: Utensils },
+  { key: "delivery", label: "Delivery / Pickup", Icon: Utensils },
+  { key: "menu", label: "Menus / Modifiers", Icon: UtensilsCrossed },
+  { key: "deals", label: "Deals", Icon: BadgePercent },
+  { key: "qr", label: "QR / Tables", Icon: QrCode },
+  { key: "reservations", label: "Reservations", Icon: CalendarRange },
+  { key: "ops", label: "Operations", Icon: Utensils },
+  { key: "reviews", label: "Reviews", Icon: Utensils },
+  { key: "analytics", label: "Analytics", Icon: Utensils },
+  { key: "orders", label: "Orders", Icon: ShoppingBag },
+  { key: "inventory", label: "Inventory", Icon: Package },
   // common
   { key: "setting", label: "Setting", Icon: SettingsIcon },
   { key: "contact", label: "Contact", Icon: HelpCircle },
@@ -438,7 +440,9 @@ export default function Sidebar({ onSectionClick, isLoading }) {
       "faq",
     ]);
 
-    const businessKeys = new Set(["businessdashboard",
+    const businessKeys = new Set([
+      "businessdashboard",
+      "businessemp",
       "restaurant",
       "product",
       "service",

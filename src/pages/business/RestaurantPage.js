@@ -74,6 +74,7 @@ const CUISINE_OPTIONS = [
 ];
 
 const PERMISSION_MODULES = [
+  { key: "dashboard", label: "Dashboard" },
   { key: "managerestaurant", label: "Restaurant" },
   { key: "reservations", label: "Reservations" },
   { key: "qr", label: "QR / Tables" },
@@ -653,8 +654,8 @@ export default function RestaurantPage({ navbarHeight }) {
       phone: Array.isArray(item.phone)
         ? item.phone
         : item.phone
-        ? [item.phone]
-        : [""],
+          ? [item.phone]
+          : [""],
 
       website: normalizeLinks(item.website, item.websiteUrl),
       booking: normalizeLinks(item.booking, item.bookingUrl || item.bookingLink),
@@ -698,20 +699,20 @@ export default function RestaurantPage({ navbarHeight }) {
 
       const logoUrl = form.logoFile
         ? await uploadFileIfAny(
-            form.logoFile,
-            `restaurant_brand_logos/${form.branchName || "restaurant"}`
-          )
+          form.logoFile,
+          `restaurant_brand_logos/${form.branchName || "restaurant"}`
+        )
         : form.logo;
 
       const parsedMapLocation = form.mapLocation
         ? (() => {
-            const [lng, lat] = String(form.mapLocation)
-              .split(",")
-              .map((n) => Number(n));
-            return Number.isFinite(lat) && Number.isFinite(lng)
-              ? { lat, lng }
-              : null;
-          })()
+          const [lng, lat] = String(form.mapLocation)
+            .split(",")
+            .map((n) => Number(n));
+          return Number.isFinite(lat) && Number.isFinite(lng)
+            ? { lat, lng }
+            : null;
+        })()
         : null;
 
       const cleanedWebsite = (form.website || [])
@@ -753,8 +754,8 @@ export default function RestaurantPage({ navbarHeight }) {
         phone: Array.isArray(form.phone)
           ? form.phone.map((p) => String(p || "").trim()).filter(Boolean)
           : String(form.phone || "").trim()
-          ? [String(form.phone || "").trim()]
-          : [],
+            ? [String(form.phone || "").trim()]
+            : [],
 
         website: cleanedWebsite,
         booking: cleanedBooking,
@@ -1220,11 +1221,10 @@ export default function RestaurantPage({ navbarHeight }) {
 
                       <td className="px-6 py-4 text-sm">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                            item.isActive
+                          className={`px-2 py-1 rounded-full text-xs font-semibold ${item.isActive
                               ? "bg-green-100 text-green-700"
                               : "bg-red-100 text-red-700"
-                          }`}
+                            }`}
                         >
                           {item.isActive ? "Active" : "Inactive"}
                         </span>
@@ -1300,11 +1300,10 @@ export default function RestaurantPage({ navbarHeight }) {
                   key={k}
                   type="button"
                   onClick={() => setActiveTab(k)}
-                  className={`px-3 py-1.5 rounded-full text-sm border ${
-                    activeTab === k
+                  className={`px-3 py-1.5 rounded-full text-sm border ${activeTab === k
                       ? "bg-black text-white border-black"
                       : "bg-white text-gray-700 border-gray-300"
-                  }`}
+                    }`}
                 >
                   {t}
                 </button>
@@ -1395,15 +1394,15 @@ export default function RestaurantPage({ navbarHeight }) {
                         className="w-full border border-gray-300 p-2 rounded"
                       />
 
-                     
+
                     </div>
                     <input
-                        name="shortDesc"
-                        value={form.shortDesc}
-                        onChange={handleChange}
-                        placeholder="Short description"
-                        className="w-full border border-gray-300 p-2 rounded"
-                      />
+                      name="shortDesc"
+                      value={form.shortDesc}
+                      onChange={handleChange}
+                      placeholder="Short description"
+                      className="w-full border border-gray-300 p-2 rounded"
+                    />
                     <textarea
                       name="description"
                       value={form.description}

@@ -8,7 +8,7 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  serverTimestamp, getDocs,
+  serverTimestamp, getDocs, where
 } from "firebase/firestore";
 import {
   ref as storageRef,
@@ -19,6 +19,7 @@ import { db, storage } from "../../firebase";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { useSelector } from "react-redux";
 
 /* ---------------------------- constants ---------------------------- */
 const PRODUCT_CATEGORIES = [
@@ -293,6 +294,7 @@ export default function ProductPage({ navbarHeight }) {
 
   const [form, setForm] = useState(initialForm);
   const [categoryOption, setCategoryOption] = useState([]);
+  const uid = useSelector((state) => state.auth.user?.uid);
   const [open, setOpen] = useState({
     basic: true,
     pricing: true,
@@ -311,7 +313,7 @@ export default function ProductPage({ navbarHeight }) {
 
   /* ---------------- load firestore ---------------- */
   useEffect(() => {
-    const qy = query(collection(db, "products"), orderBy("createdAt", "desc"));
+    const qy = query(collection(db, "products"), where("uid", "==", uid));
     const unsub = onSnapshot(
       qy,
       (snap) => {
@@ -320,16 +322,15 @@ export default function ProductPage({ navbarHeight }) {
       },
       (err) => {
         console.error(err);
-        toast.error("Failed to load products");
         setLoading(false);
       }
     );
     return () => unsub();
   }, []);
-    useEffect(() => {
-      getCategory();
-    }, []);
- const getCategory = async () => {
+  useEffect(() => {
+    getCategory();
+  }, []);
+  const getCategory = async () => {
     try {
       const qCat = query(collection(db, "productcategory"));
       const snap = await getDocs(qCat);
@@ -800,7 +801,7 @@ export default function ProductPage({ navbarHeight }) {
 
         buyNowEnabled: !!form.buyNowEnabled,
         addToCartEnabled: !!form.addToCartEnabled,
-
+        uid,
         updatedAt: serverTimestamp(),
       };
 
@@ -936,8 +937,8 @@ export default function ProductPage({ navbarHeight }) {
                   <td className="p-3">
                     <span
                       className={`rounded-full px-2 py-1 text-xs font-semibold ${item.active
-                          ? "bg-green-50 text-green-700"
-                          : "bg-gray-100 text-gray-600"
+                        ? "bg-green-50 text-green-700"
+                        : "bg-gray-100 text-gray-600"
                         }`}
                     >
                       {item.active ? "Active" : "Inactive"}
@@ -1076,10 +1077,10 @@ export default function ProductPage({ navbarHeight }) {
                         >
                           <option value="">Select category</option>
                           {categoryOption.map((option) => (
-                                  <option key={option.id} value={option.name}>
-                                    {option.name}
-                                  </option>
-                                ))}
+                            <option key={option.id} value={option.name}>
+                              {option.name}
+                            </option>
+                          ))}
                         </select>
                       </div>
 
@@ -2264,16 +2265,16 @@ export default function ProductPage({ navbarHeight }) {
                         <div className="grid grid-cols-2 gap-3">
                           <button
                             className={`rounded-2xl px-4 py-3 font-semibold ${form.addToCartEnabled
-                                ? "bg-yellow-400 text-gray-900"
-                                : "bg-gray-200 text-gray-500"
+                              ? "bg-yellow-400 text-gray-900"
+                              : "bg-gray-200 text-gray-500"
                               }`}
                           >
                             Add to Cart
                           </button>
                           <button
                             className={`rounded-2xl px-4 py-3 font-semibold ${form.buyNowEnabled
-                                ? "bg-orange-400 text-white"
-                                : "bg-gray-200 text-gray-500"
+                              ? "bg-orange-400 text-white"
+                              : "bg-gray-200 text-gray-500"
                               }`}
                           >
                             Buy Now

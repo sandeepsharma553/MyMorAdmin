@@ -255,6 +255,244 @@ function BoardTabButton({ active, label, count, onClick, badgeClass = "" }) {
   );
 }
 
+// ─── Out of Stock Modal ────────────────────────────────────────────────────────
+function OutOfStockModal({ itemName, affectedOrders, onConfirm, onClose, loading }) {
+  const [selected, setSelected] = useState(() =>
+    affectedOrders
+      .filter((o) => !["completed", "cancelled", "rejected"].includes(o.status))
+      .map((o) => o.id)
+  );
+  const [action, setAction] = useState("cancel"); // "cancel" | "reject"
+  const [reason, setReason] = useState(`Item unavailable: "${itemName}"`);
+
+  const toggle = (id) =>
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+
+  const toggleAll = () => {
+    const activableIds = affectedOrders
+      .filter((o) => !["completed", "cancelled", "rejected"].includes(o.status))
+      .map((o) => o.id);
+    setSelected((prev) =>
+      prev.length === activableIds.length ? [] : activableIds
+    );
+  };
+
+  const activableOrders = affectedOrders.filter(
+    (o) => !["completed", "cancelled", "rejected"].includes(o.status)
+  );
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-gray-100">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">⚠️</span>
+                <h2 className="text-xl font-bold text-gray-900">Item Out of Stock</h2>
+              </div>
+              <p className="text-sm text-gray-500">
+                <span className="font-semibold text-gray-800">"{itemName}"</span>{" "}
+                — found in {affectedOrders.length} order{affectedOrders.length !== 1 ? "s" : ""}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-xl border border-gray-200 text-sm hover:bg-gray-50 shrink-0"
+            >
+              ✕ Close
+            </button>
+          </div>
+        </div>
+
+        {/* Action selector */}
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            Choose action for selected orders
+          </p>
+          <div className="flex gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="oos-action"
+                value="cancel"
+                checked={action === "cancel"}
+                onChange={() => setAction("cancel")}
+                className="accent-red-600"
+              />
+              <span className="text-sm font-medium text-gray-700">Cancel Orders</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="oos-action"
+                value="reject"
+                checked={action === "reject"}
+                onChange={() => setAction("reject")}
+                className="accent-rose-600"
+              />
+              <span className="text-sm font-medium text-gray-700">Reject Orders</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Order list */}
+
+        {/* Reason */}
+        <div className="px-6 py-4 border-b border-gray-100 bg-white">
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Cancellation Reason
+          </label>
+          <textarea
+            rows={2}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Item ran out of stock, cannot fulfil order"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-black/10 resize-none"
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            This reason will be saved to all selected orders.
+          </p>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-2">
+          {/* Select all row */}
+          {activableOrders.length > 1 && (
+            <div
+              className="flex items-center gap-3 pb-3 mb-1 border-b border-gray-100 cursor-pointer"
+              onClick={toggleAll}
+            >
+              <div
+                className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition ${
+                  selected.length === activableOrders.length
+                    ? "bg-black border-black"
+                    : "border-gray-300"
+                }`}
+              >
+                {selected.length === activableOrders.length && (
+                  <span className="text-white text-xs leading-none">✓</span>
+                )}
+              </div>
+              <span className="text-sm font-semibold text-gray-700">
+                Select all ({activableOrders.length})
+              </span>
+            </div>
+          )}
+
+          {affectedOrders.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-6">
+              No active orders found.
+            </p>
+          )}
+
+          {affectedOrders.map((order) => {
+            const isDone = ["completed", "cancelled", "rejected"].includes(order.status);
+            const isChecked = selected.includes(order.id);
+            const itemInOrder = order.items?.find(
+              (i) => i.name?.toLowerCase() === itemName?.toLowerCase()
+            );
+
+            return (
+              <div
+                key={order.id}
+                onClick={() => !isDone && toggle(order.id)}
+                className={`flex items-start gap-3 p-3 rounded-2xl border transition ${
+                  isDone
+                    ? "border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed"
+                    : isChecked
+                    ? "border-red-200 bg-red-50 cursor-pointer"
+                    : "border-gray-200 hover:border-gray-300 cursor-pointer"
+                }`}
+              >
+                {/* Checkbox */}
+                <div
+                  className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition ${
+                    isDone
+                      ? "border-gray-200"
+                      : isChecked
+                      ? "bg-red-600 border-red-600"
+                      : "border-gray-300"
+                  }`}
+                >
+                  {isChecked && !isDone && (
+                    <span className="text-white text-xs leading-none">✓</span>
+                  )}
+                </div>
+
+                {/* Order info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-gray-900">
+                      #{String(order.id).slice(-6)}
+                    </span>
+                    <StatusPill value={order.status} />
+                    <span className="text-xs text-gray-400">
+                      {getMinutesAgo(order._createdAt)} ago
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">
+                    {order._customerName} · {order._orderType}
+                  </p>
+                  {itemInOrder && (
+                    <p className="text-xs mt-1 text-red-600 font-medium">
+                      {itemInOrder.quantity}× {itemName}
+                      {itemInOrder.price ? ` — ${formatCurrency(itemInOrder.price)} each` : ""}
+                    </p>
+                  )}
+                </div>
+
+                {/* Total */}
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {formatCurrency(order._total)}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 bg-white flex items-center justify-between gap-3">
+          <p className="text-sm text-gray-500">
+            {selected.length} order{selected.length !== 1 ? "s" : ""} selected
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium hover:bg-gray-50"
+            >
+              Later
+            </button>
+            <button
+              type="button"
+              disabled={selected.length === 0 || !reason.trim() || loading}
+              onClick={() => onConfirm(selected, action, reason.trim())}
+              className={`px-5 py-2 rounded-xl text-sm font-semibold text-white transition disabled:opacity-50 ${
+                action === "cancel"
+                  ? "bg-red-600 hover:bg-red-700"
+                  : "bg-rose-700 hover:bg-rose-800"
+              }`}
+            >
+              {loading
+                ? "Processing..."
+                : action === "cancel"
+                ? `Cancel ${selected.length} Order${selected.length !== 1 ? "s" : ""}`
+                : `Reject ${selected.length} Order${selected.length !== 1 ? "s" : ""}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Order Board Card ──────────────────────────────────────────────────────────
 function OrderBoardCard({
   row,
   onView,
@@ -263,6 +501,7 @@ function OrderBoardCard({
   onReady,
   onComplete,
   onRecall,
+  onItemOutOfStock,
   updatingOrderId,
 }) {
   const itemPreview = row.items?.slice(0, 4) || [];
@@ -330,12 +569,27 @@ function OrderBoardCard({
         </span>
       </div>
 
-      <div className="px-4 py-4 space-y-3 min-h-[150px]">
+      {/* Items list with Out of Stock button */}
+      <div className="px-4 py-4 space-y-2 min-h-[150px]">
         {itemPreview.length ? (
           itemPreview.map((item, idx) => (
-            <div key={item.id || idx} className="text-sm text-gray-800 leading-6">
-              <span className="text-gray-500 mr-2">{item.quantity}x</span>
-              <span>{item.name}</span>
+            <div
+              key={item.id || idx}
+              className="flex items-center justify-between gap-2 group"
+            >
+              <div className="text-sm text-gray-800 leading-6 min-w-0 truncate">
+                <span className="text-gray-500 mr-2">{item.quantity}x</span>
+                <span>{item.name}</span>
+              </div>
+              {/* Out of Stock trigger button — visible on hover */}
+              <button
+                type="button"
+                title={`"${item.name}" is out of stock`}
+                onClick={() => onItemOutOfStock(item.name)}
+                className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-0.5 rounded-lg bg-red-50 border border-red-200 text-[10px] font-semibold text-red-600 hover:bg-red-100 whitespace-nowrap"
+              >
+                Out of Stock
+              </button>
             </div>
           ))
         ) : (
@@ -404,6 +658,7 @@ function OrderBoardCard({
   );
 }
 
+// ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function RestaurantOrdersPage({ navbarHeight }) {
   const emp = useSelector((s) => s.auth.employee);
   const restaurantId = emp?.restaurantid || null;
@@ -422,6 +677,11 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
   const [showModal, setShowModal] = useState(false);
   const [updatingOrderId, setUpdatingOrderId] = useState("");
   const [activeBoardTab, setActiveBoardTab] = useState("all");
+
+  // ── Out of Stock state ──
+  const [oosItemName, setOosItemName] = useState(null);   // which item was clicked
+  const [showOosModal, setShowOosModal] = useState(false);
+  const [oosLoading, setOosLoading] = useState(false);
 
   const closeModal = () => {
     setShowModal(false);
@@ -447,13 +707,9 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
         return;
       }
 
-      setRestaurant({
-        id: restaurantSnap.id,
-        ...restaurantSnap.data(),
-      });
+      setRestaurant({ id: restaurantSnap.id, ...restaurantSnap.data() });
 
       let snap;
-
       try {
         const q = query(
           collection(db, "orders"),
@@ -462,11 +718,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
         );
         snap = await getDocs(q);
       } catch (error) {
-        console.error(
-          "Primary restaurantId query failed, trying restaurantid fallback:",
-          error
-        );
-
+        console.error("Primary query failed, trying fallback:", error);
         const fallbackQ = query(
           collection(db, "orders"),
           where("restaurantid", "==", restaurantId),
@@ -475,7 +727,9 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
         snap = await getDocs(fallbackQ);
       }
 
-      const mapped = snap.docs.map((d) => normalizeOrder({ id: d.id, ...d.data() }));
+      const mapped = snap.docs.map((d) =>
+        normalizeOrder({ id: d.id, ...d.data() })
+      );
       setOrders(mapped);
     } catch (e) {
       console.error(e);
@@ -491,11 +745,14 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
 
   useEffect(() => {
     const onEsc = (e) => {
-      if (e.key === "Escape") closeModal();
+      if (e.key === "Escape") {
+        if (showOosModal) setShowOosModal(false);
+        else closeModal();
+      }
     };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, []);
+  }, [showOosModal]);
 
   const filteredOrders = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -538,33 +795,38 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
       .filter((x) => x.paymentStatus === "paid" || x.status === "completed")
       .reduce((sum, x) => sum + Number(x._total || 0), 0);
 
-    return {
-      totalOrders,
-      liveOrders,
-      completedOrders,
-      revenue,
-    };
+    return { totalOrders, liveOrders, completedOrders, revenue };
   }, [filteredOrders]);
 
   const boardCounts = useMemo(() => {
-    const toPick = filteredOrders.filter((x) => getBoardStatus(x) === "to_pick").length;
-    const ready = filteredOrders.filter((x) => getBoardStatus(x) === "ready").length;
+    const toPick = filteredOrders.filter(
+      (x) => getBoardStatus(x) === "to_pick"
+    ).length;
+    const ready = filteredOrders.filter(
+      (x) => getBoardStatus(x) === "ready"
+    ).length;
     const completed = filteredOrders.filter(
       (x) => getBoardStatus(x) === "completed"
     ).length;
 
-    return {
-      all: filteredOrders.length,
-      to_pick: toPick,
-      ready,
-      completed,
-    };
+    return { all: filteredOrders.length, to_pick: toPick, ready, completed };
   }, [filteredOrders]);
 
   const boardOrders = useMemo(() => {
     if (activeBoardTab === "all") return filteredOrders;
-    return filteredOrders.filter((row) => getBoardStatus(row) === activeBoardTab);
+    return filteredOrders.filter(
+      (row) => getBoardStatus(row) === activeBoardTab
+    );
   }, [filteredOrders, activeBoardTab]);
+
+  // ── Orders that contain the out-of-stock item ──
+  const oosAffectedOrders = useMemo(() => {
+    if (!oosItemName) return [];
+    const needle = oosItemName.toLowerCase();
+    return orders.filter((order) =>
+      order.items?.some((i) => i.name?.toLowerCase() === needle)
+    );
+  }, [orders, oosItemName]);
 
   const quickUpdateStatus = async (orderId, status) => {
     try {
@@ -586,6 +848,43 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
       toast.error("Failed to update order");
     } finally {
       setUpdatingOrderId("");
+    }
+  };
+
+  // ── Trigger OOS modal from a board card ──
+  const handleItemOutOfStock = (itemName) => {
+    setOosItemName(itemName);
+    setShowOosModal(true);
+  };
+
+  // ── Confirm bulk cancel/reject from OOS modal ──
+  const handleOosConfirm = async (selectedIds, action, reason) => {
+    if (!selectedIds.length) return;
+    setOosLoading(true);
+    const newStatus = action === "reject" ? "rejected" : "cancelled";
+    const cancelNote = reason || `Item unavailable: "${oosItemName}"`;
+
+    try {
+      await Promise.all(
+        selectedIds.map((id) =>
+          updateDoc(doc(db, "orders", id), {
+            status: newStatus,
+            cancellationReason: cancelNote,
+            updatedAt: Timestamp.now(),
+          })
+        )
+      );
+      toast.success(
+        `${selectedIds.length} order${selectedIds.length !== 1 ? "s" : ""} ${newStatus} — "${oosItemName}" marked out of stock`
+      );
+      setShowOosModal(false);
+      setOosItemName(null);
+      await loadData();
+    } catch (e) {
+      console.error(e);
+      toast.error("Some orders could not be updated");
+    } finally {
+      setOosLoading(false);
     }
   };
 
@@ -630,7 +929,10 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
 
         <div className="flex items-center gap-3">
           <div className="text-sm text-gray-500">
-            Total: <span className="font-semibold text-gray-900">{dashboard.totalOrders}</span>
+            Total:{" "}
+            <span className="font-semibold text-gray-900">
+              {dashboard.totalOrders}
+            </span>
           </div>
           <div className="text-sm text-gray-500">
             Revenue:{" "}
@@ -649,6 +951,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
       </div>
 
       <div className="bg-white rounded-[28px] shadow-sm border border-gray-200 overflow-hidden">
+        {/* Tab bar */}
         <div className="flex flex-wrap items-stretch border-b border-gray-200 bg-white">
           <BoardTabButton
             active={activeBoardTab === "all"}
@@ -657,7 +960,6 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
             onClick={() => setActiveBoardTab("all")}
             badgeClass="bg-gray-100 text-gray-700"
           />
-
           <BoardTabButton
             active={activeBoardTab === "to_pick"}
             label="To pick"
@@ -665,7 +967,6 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
             onClick={() => setActiveBoardTab("to_pick")}
             badgeClass="bg-sky-100 text-sky-700"
           />
-
           <BoardTabButton
             active={activeBoardTab === "ready"}
             label="Ready"
@@ -673,7 +974,6 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
             onClick={() => setActiveBoardTab("ready")}
             badgeClass="bg-green-100 text-green-700"
           />
-
           <BoardTabButton
             active={activeBoardTab === "completed"}
             label="Completed"
@@ -700,6 +1000,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
           </div>
         </div>
 
+        {/* Filters */}
         <div className="p-4 border-b border-gray-200 bg-white">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <input
@@ -709,11 +1010,12 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-
             <select
               className="border border-gray-200 p-2.5 rounded-xl text-sm"
               value={filters.type}
-              onChange={(e) => setFilters((p) => ({ ...p, type: e.target.value }))}
+              onChange={(e) =>
+                setFilters((p) => ({ ...p, type: e.target.value }))
+              }
             >
               <option value="">All types</option>
               <option value="delivery">delivery</option>
@@ -721,7 +1023,6 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
               <option value="dineIn">dineIn</option>
               <option value="dinein">dinein</option>
             </select>
-
             <select
               className="border border-gray-200 p-2.5 rounded-xl text-sm"
               value={filters.paymentStatus}
@@ -739,6 +1040,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
           </div>
         </div>
 
+        {/* Board */}
         <div className="bg-[#8f949d] p-4 min-h-[520px]">
           {loading ? (
             <div className="bg-white rounded-xl p-10 text-center text-gray-500">
@@ -760,6 +1062,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                   onReady={(id) => quickUpdateStatus(id, "ready")}
                   onComplete={(id) => quickUpdateStatus(id, "completed")}
                   onRecall={(id) => quickUpdateStatus(id, "accepted")}
+                  onItemOutOfStock={handleItemOutOfStock}
                   updatingOrderId={updatingOrderId}
                 />
               ))}
@@ -768,6 +1071,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
         </div>
       </div>
 
+      {/* Order detail modal */}
       {showModal && selectedOrder && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-6xl rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
@@ -797,6 +1101,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
             <div className="overflow-y-auto p-6 bg-gray-50">
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 <div className="xl:col-span-2 space-y-6">
+                  {/* Items */}
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold text-gray-900">
@@ -812,7 +1117,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                         selectedOrder.items.map((item, i) => (
                           <div
                             key={item.id || i}
-                            className="border border-gray-100 rounded-2xl p-4"
+                            className="border border-gray-100 rounded-2xl p-4 group"
                           >
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex gap-4">
@@ -836,6 +1141,17 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                                     <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs">
                                       Qty {item.quantity}
                                     </span>
+                                    {/* OOS button in modal too */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        closeModal();
+                                        handleItemOutOfStock(item.name);
+                                      }}
+                                      className="px-2 py-0.5 rounded-lg bg-red-50 border border-red-200 text-[10px] font-semibold text-red-600 hover:bg-red-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                      Out of Stock
+                                    </button>
                                   </div>
 
                                   <div className="text-sm text-gray-500 mt-1">
@@ -890,7 +1206,9 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                               </div>
 
                               <div className="text-right min-w-[90px]">
-                                <div className="text-xs text-gray-500">Item total</div>
+                                <div className="text-xs text-gray-500">
+                                  Item total
+                                </div>
                                 <div className="text-base font-bold text-gray-900">
                                   {formatCurrency(item.total)}
                                 </div>
@@ -904,6 +1222,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                     </div>
                   </div>
 
+                  {/* Quick Actions */}
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">
                       Quick Actions
@@ -920,7 +1239,6 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                       >
                         Accept Order
                       </button>
-
                       <button
                         type="button"
                         onClick={() =>
@@ -931,16 +1249,16 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                       >
                         Mark Preparing
                       </button>
-
                       <button
                         type="button"
-                        onClick={() => quickUpdateStatus(selectedOrder.id, "ready")}
+                        onClick={() =>
+                          quickUpdateStatus(selectedOrder.id, "ready")
+                        }
                         disabled={updatingOrderId === selectedOrder.id}
                         className="px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-medium hover:opacity-90 disabled:opacity-60"
                       >
                         Mark Ready
                       </button>
-
                       <button
                         type="button"
                         onClick={() =>
@@ -951,7 +1269,6 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                       >
                         Complete Order
                       </button>
-
                       <button
                         type="button"
                         onClick={() =>
@@ -980,11 +1297,26 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                     <h3 className="text-lg font-semibold text-gray-900 mb-3">
                       Order Info
                     </h3>
-                    <DetailRow label="Order Type" value={selectedOrder._orderType} />
-                    <DetailRow label="Payment" value={selectedOrder.paymentStatus} />
-                    <DetailRow label="Method" value={selectedOrder._paymentMethod} />
-                    <DetailRow label="Created" value={formatDate(selectedOrder._createdAt)} />
-                    <DetailRow label="Updated" value={formatDate(selectedOrder._updatedAt)} />
+                    <DetailRow
+                      label="Order Type"
+                      value={selectedOrder._orderType}
+                    />
+                    <DetailRow
+                      label="Payment"
+                      value={selectedOrder.paymentStatus}
+                    />
+                    <DetailRow
+                      label="Method"
+                      value={selectedOrder._paymentMethod}
+                    />
+                    <DetailRow
+                      label="Created"
+                      value={formatDate(selectedOrder._createdAt)}
+                    />
+                    <DetailRow
+                      label="Updated"
+                      value={formatDate(selectedOrder._updatedAt)}
+                    />
                     <DetailRow label="Table" value={selectedOrder._tableNumber} />
                   </div>
 
@@ -993,7 +1325,10 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
                       Fulfilment
                     </h3>
                     <DetailRow label="Address" value={selectedOrder._address} />
-                    <DetailRow label="Notes" value={selectedOrder._notes || "—"} />
+                    <DetailRow
+                      label="Notes"
+                      value={selectedOrder._notes || "—"}
+                    />
                   </div>
 
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -1034,6 +1369,20 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Out of Stock Modal ── */}
+      {showOosModal && oosItemName && (
+        <OutOfStockModal
+          itemName={oosItemName}
+          affectedOrders={oosAffectedOrders}
+          onConfirm={handleOosConfirm}
+          onClose={() => {
+            setShowOosModal(false);
+            setOosItemName(null);
+          }}
+          loading={oosLoading}
+        />
       )}
 
       <ToastContainer />
