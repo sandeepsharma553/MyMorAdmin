@@ -153,7 +153,6 @@ export default function ProductOrderPage({ navbarHeight }) {
         const qy = query(
             collection(db, "productOrders"),
             where("sellerUid", "==", uid),
-            orderBy("createdAt", "desc")
         );
 
         const unsub = onSnapshot(

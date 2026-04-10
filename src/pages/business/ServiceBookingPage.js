@@ -88,7 +88,6 @@ export default function ServiceBookingPage({ navbarHeight }) {
     const qy = query(
       collection(db, "servicebookings"),
       where("providerUid", "==", uid),
-      orderBy("createdAt", "desc")
     );
 
     const unsub = onSnapshot(
