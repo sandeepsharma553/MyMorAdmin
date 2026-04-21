@@ -39,30 +39,35 @@ function AppWrapper() {
 
   const hasHostel = isValidId(employee?.hostelid);
   const hasUniclub = isValidId(employee?.uniclubid);
-  const hasBusiness = !hasHostel && !hasUniclub;
-
-  let adminDefaultPath = "/businessdashboard";
-
+  const hasUniversity = isValidId(employee?.universityid);
+  const hasBusiness = !hasHostel && !hasUniclub && !hasUniversity;
+  let adminDefaultPath = "/dashboard";
   if (isLoggedIn && type === "admin") {
-    if (hasHostel && hasUniclub) {
+    if (hasHostel && hasUniclub && hasUniversity) {
       if (activeOrg === "hostel") {
         adminDefaultPath = "/dashboard";
       } else if (activeOrg === "uniclub") {
         adminDefaultPath = "/uniclubdashboard";
       } else if (activeOrg === "business") {
         adminDefaultPath = "/businessdashboard";
-      } else {
+      } else if (activeOrg === "university") {
+        adminDefaultPath = "/universitydashboard";
+      }
+      else {
         adminDefaultPath = "/choose";
       }
-    } 
+    }
     else if (hasUniclub) {
       adminDefaultPath = "/uniclubdashboard";
     } else if (hasHostel) {
       adminDefaultPath = "/dashboard";
     } else if (hasBusiness) {
       adminDefaultPath = "/businessdashboard";
-    } else {
-      adminDefaultPath = "/businessdashboard";
+    } else if (hasUniversity) {
+      adminDefaultPath = "/universitydashboard";
+    }
+    else {
+      adminDefaultPath = "/dashboard";
     }
   }
   return (

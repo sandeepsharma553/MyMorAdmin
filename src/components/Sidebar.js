@@ -19,7 +19,8 @@ import {
   HelpCircle,
   Handshake,
   Layers, ShoppingBag, Cog, Scissors, CalendarRange, QrCode, UtensilsCrossed,
-  BadgePercent, Package
+  BadgePercent, Package, CheckSquare, BedDouble, MessageSquare, HeartPulse,
+  GraduationCap, BookMarked
 } from "lucide-react";
 
 import { useSelector, useDispatch } from "react-redux";
@@ -69,6 +70,36 @@ const SECTIONS = [
   { key: "eventbooking", label: "Event Booking", Icon: Calendar },
   { key: "deal", label: "Deals", Icon: Utensils },
   { key: "faq", label: "FAQs", Icon: HelpCircle },
+  { key: "checklist", label: "Checklists", Icon: CheckSquare },
+  { key: "roominfo", label: "Room Info", Icon: BedDouble },
+  { key: "parcels", label: "Parcels", Icon: Package },
+  { key: "wellnessprompts", label: "Wellness Prompts", Icon: HeartPulse },
+  { key: "messages", label: "Messages", Icon: MessageSquare },
+
+  // university
+  { key: "universitydashboard", label: "Dashboard", Icon: LayoutDashboard },
+  { key: "universityemployee", label: "Employee", Icon: UserPlus },
+  { key: "universitystudent", label: "Student", Icon: UserPlus },
+  { key: "universityannouncement", label: "Announcement", Icon: Bell },
+  { key: "universitydiningmenu", label: "Dining Menu", Icon: Menu },
+  { key: "universitycleaningschedule", label: "Cleaning Schedule", Icon: BrushCleaning },
+  { key: "universitytutorialschedule", label: "Tutorial Schedule", Icon: BrushCleaning },
+  { key: "universitymaintenance", label: "Maintenance", Icon: SettingsCog },
+  { key: "universityroombooking", label: "Book a Room", Icon: BookOpen },
+  { key: "universityacademicgroup", label: "Academic Groups", Icon: Users },
+  { key: "universityreportincident", label: "Report Incident", Icon: MessageSquareWarning },
+  { key: "universityfeedback", label: "Feedback", Icon: SettingsIcon },
+  { key: "universityresources", label: "Resources", Icon: Hotel },
+  { key: "universityevent", label: "Event", Icon: Calendar },
+  { key: "universityeventbooking", label: "Event Booking", Icon: Calendar },
+  { key: "universitydeal", label: "Deals", Icon: Utensils },
+  { key: "universityfaq", label: "FAQs", Icon: HelpCircle },
+  { key: "universitychecklist", label: "Checklists", Icon: CheckSquare },
+  { key: "universityroominfo", label: "Room Info", Icon: BedDouble },
+  { key: "universityparcels", label: "Parcels", Icon: Package },
+  { key: "universitywellnessprompts", label: "Wellness Prompts", Icon: HeartPulse },
+  { key: "universitymessages", label: "Messages", Icon: MessageSquare },
+  { key: "universitysetting", label: "Setting", Icon: SettingsIcon },
 
   // uniclub
   { key: "uniclubdashboard", label: "Dashboard", Icon: LayoutDashboard },
@@ -294,14 +325,17 @@ export default function Sidebar({ onSectionClick, isLoading }) {
 
   const hostelid = employee?.hostelid || null;
   const uniclubid = employee?.uniclubid || null;
+  const universityid = employee?.universityid || employee?.universityId || null;
   const activeOrg = useSelector((s) => s.auth.activeOrg);
 
   const hasHostel = isValidId(hostelid);
   const hasUniclub = isValidId(uniclubid);
-  const hasBusiness = !hasHostel && !hasUniclub;
+  const hasUniversity = isValidId(universityid);
+  const hasBusiness = !hasHostel && !hasUniclub && !hasUniversity;
   useEffect(() => {
-    if (hasHostel && hasUniclub && !activeOrg) navigate("/choose");
-  }, [hasHostel, hasUniclub, activeOrg, navigate]);
+    const orgCount = [hasHostel, hasUniclub, hasUniversity].filter(Boolean).length;
+    if (orgCount > 1 && !activeOrg) navigate("/choose");
+  }, [hasHostel, hasUniclub, hasUniversity, activeOrg, navigate]);
 
   useEffect(() => {
     const pathKey = location.pathname.replace(/^\/+/, "").split("/")[0];
@@ -310,6 +344,7 @@ export default function Sidebar({ onSectionClick, isLoading }) {
 
   const hostelBadgeEnabled = activeOrg === "hostel";
   const uniclubBadgeEnabled = activeOrg === "uniclub";
+  const universityBadgeEnabled = activeOrg === "university";
 
   const maintenanceBadge = useFirestoreBadgeCount({
     uid,
@@ -406,6 +441,33 @@ export default function Sidebar({ onSectionClick, isLoading }) {
   };
 
   const visibleSections = useMemo(() => {
+    const universityKeys = new Set([
+      "universitydashboard",
+      "universityemployee",
+      "universitystudent",
+      "universityannouncement",
+      "universitydiningmenu",
+      "universitycleaningschedule",
+      "universitytutorialschedule",
+      "universitymaintenance",
+      "universityroombooking",
+      "universityacademicgroup",
+      "universityreportincident",
+      "universityfeedback",
+      "universityresources",
+      "universityevent",
+      "universityeventbooking",
+      "universitydeal",
+      "universityfaq",
+      "universitychecklist",
+      "universityroominfo",
+      "universityparcels",
+      "universitywellnessprompts",
+      "universitymessages",
+      "universitysetting",
+      "contact",
+    ]);
+
     const uniclubKeys = new Set([
       "uniclubdashboard",
       "uniclub",
@@ -440,6 +502,11 @@ export default function Sidebar({ onSectionClick, isLoading }) {
       "eventbooking",
       "deal",
       "faq",
+      "checklist",
+      "roominfo",
+      "parcels",
+      "wellnessprompts",
+      "messages",
     ]);
 
     const businessKeys = new Set([
@@ -470,6 +537,10 @@ export default function Sidebar({ onSectionClick, isLoading }) {
         return hostelKeys.has(s.key) || s.key === "setting" || s.key === "contact";
       }
 
+      if (activeOrg === "university") {
+        return universityKeys.has(s.key) || s.key === "universitysetting" || s.key === "contact";
+      }
+
       if (activeOrg === "uniclub") {
         return uniclubKeys.has(s.key) || s.key === "setting" || s.key === "contact";
       }
@@ -484,11 +555,32 @@ export default function Sidebar({ onSectionClick, isLoading }) {
     return byOrg.filter((s) => {
       if (!perms) return true;
       const permKey =
-        s.key === "uniclubdashboard"
-          ? "dashboard"
-          : s.key === "businessdashboard"
-            ? "dashboard"
-            : s.key;
+        s.key === "uniclubdashboard" ? "dashboard"
+          : s.key === "businessdashboard" ? "dashboard"
+            : s.key === "universitydashboard" ? "universitydashboard"
+              : s.key === "universityemployee" ? "universityemployee"
+                : s.key === "universitystudent" ? "universitystudent"
+                  : s.key === "universityannouncement" ? "universityannouncement"
+                    : s.key === "universitydiningmenu" ? "universitydiningmenu"
+                      : s.key === "universitycleaningschedule" ? "universitycleaningschedule"
+                        : s.key === "universitytutorialschedule" ? "universitytutorialschedule"
+                          : s.key === "universitymaintenance" ? "universitymaintenance"
+                            : s.key === "universityroombooking" ? "universityroombooking"
+                              : s.key === "universityacademicgroup" ? "universityacademicgroup"
+                                : s.key === "universityreportincident" ? "universityreportincident"
+                                  : s.key === "universityfeedback" ? "universityfeedback"
+                                    : s.key === "universityresources" ? "universityresources"
+                                      : s.key === "universityevent" ? "universityevent"
+                                        : s.key === "universityeventbooking" ? "universityeventbooking"
+                                          : s.key === "universitydeal" ? "universitydeal"
+                                            : s.key === "universityfaq" ? "universityfaq"
+                                              : s.key === "universitychecklist" ? "universitychecklist"
+                                                : s.key === "universityroominfo" ? "universityroominfo"
+                                                  : s.key === "universityparcels" ? "universityparcels"
+                                                    : s.key === "universitywellnessprompts" ? "universitywellnessprompts"
+                                                      : s.key === "universitymessages" ? "universitymessages"
+                                                        : s.key === "universitysetting" ? "universitysetting"
+                                                          : s.key;
       return hasPermission(perms, permKey);
     });
   }, [activeOrg, perms]);
@@ -497,6 +589,7 @@ export default function Sidebar({ onSectionClick, isLoading }) {
     if (activeOrg === "uniclub") setActiveSection("uniclubdashboard");
     else if (activeOrg === "hostel") setActiveSection("dashboard");
     else if (activeOrg === "business") setActiveSection("businessdashboard");
+    else if (activeOrg === "university") setActiveSection("universitydashboard");
   }, [activeOrg]);
 
   return (
@@ -518,43 +611,37 @@ export default function Sidebar({ onSectionClick, isLoading }) {
         )}
       </div>
 
-      {(hasHostel || hasUniclub) && (
+      {(hasHostel || hasUniclub || hasUniversity || hasBusiness) && (
         <div className="px-2 pb-2">
-          <div className="bg-white rounded-lg p-2 shadow-sm flex gap-2">
+          <div className="bg-white rounded-lg p-2 shadow-sm flex flex-wrap gap-2">
             {hasHostel && (
               <button
-                className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "hostel" ? "bg-black text-white" : "bg-gray-100"
-                  }`}
-                onClick={() => {
-                  dispatch(setActiveOrg("hostel"));
-                  navigate("/dashboard");
-                }}
+                className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "hostel" ? "bg-black text-white" : "bg-gray-100"}`}
+                onClick={() => { dispatch(setActiveOrg("hostel")); navigate("/dashboard"); }}
               >
                 Hostel
               </button>
             )}
-
+            {hasUniversity && (
+              <button
+                className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "university" ? "bg-green-800 text-white" : "bg-gray-100"}`}
+                onClick={() => { dispatch(setActiveOrg("university")); navigate("/universitydashboard"); }}
+              >
+                University
+              </button>
+            )}
             {hasUniclub && (
               <button
-                className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "uniclub" ? "bg-blue-600 text-white" : "bg-gray-100"
-                  }`}
-                onClick={() => {
-                  dispatch(setActiveOrg("uniclub"));
-                  navigate("/uniclubdashboard");
-                }}
+                className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "uniclub" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                onClick={() => { dispatch(setActiveOrg("uniclub")); navigate("/uniclubdashboard"); }}
               >
                 UniClub
               </button>
             )}
-
             {hasBusiness && (
               <button
-                className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "business" ? "bg-emerald-600 text-white" : "bg-gray-100"
-                  }`}
-                onClick={() => {
-                  dispatch(setActiveOrg("business"));
-                  navigate("/businessdashboard");
-                }}
+                className={`flex-1 py-2 rounded font-semibold text-sm ${activeOrg === "business" ? "bg-emerald-600 text-white" : "bg-gray-100"}`}
+                onClick={() => { dispatch(setActiveOrg("business")); navigate("/businessdashboard"); }}
               >
                 Business
               </button>

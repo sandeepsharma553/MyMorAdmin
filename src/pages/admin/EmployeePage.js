@@ -93,11 +93,6 @@ export default function EmployeePage(props) {
       { key: "parcels", label: "Parcels" },
       { key: "wellnessprompts", label: "Wellness Prompts" },
       { key: "messages", label: "Messages" },
-      { key: "universitydashboard", label: "University Dashboard" },
-      { key: "universityannouncement", label: "University Announcements" },
-      { key: "universityevent", label: "University Events" },
-      { key: "universityresources", label: "University Resources" },
-      { key: "universityroombooking", label: "University Room Bookings" },
       { key: "setting", label: "Setting" },
     ],
     []
