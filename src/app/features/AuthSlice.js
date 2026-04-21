@@ -52,9 +52,11 @@ const toSerializable = (value) => {
 const pickDefaultActiveOrg = (employee) => {
   const hasHostel = isValidId(employee?.hostelid);
   const hasUniclub = isValidId(employee?.uniclubid);
+  const hasUniversity = isValidId(employee?.universityid || employee?.universityId);
 
   if (hasUniclub) return "uniclub";
   if (hasHostel) return "hostel";
+  if (hasUniversity) return "university";
   return "business";
 };
 
@@ -155,7 +157,8 @@ const initialState = {
   activeOrg:
     localStorage.getItem("activeOrg") === "hostel" ||
     localStorage.getItem("activeOrg") === "uniclub" ||
-    localStorage.getItem("activeOrg") === "business"
+    localStorage.getItem("activeOrg") === "business" ||
+    localStorage.getItem("activeOrg") === "university"
       ? localStorage.getItem("activeOrg")
       : null,
 };
@@ -171,6 +174,7 @@ const AuthSlice = createSlice({
         v !== "hostel" &&
         v !== "uniclub" &&
         v !== "business" &&
+        v !== "university" &&
         v !== null
       )
         return;
@@ -185,7 +189,7 @@ const AuthSlice = createSlice({
       try {
         const v = localStorage.getItem("activeOrg");
         state.activeOrg =
-          v === "hostel" || v === "uniclub" || v === "business" ? v : null;
+          v === "hostel" || v === "uniclub" || v === "business" || v === "university" ? v : null;
       } catch {
         state.activeOrg = null;
       }
@@ -220,11 +224,13 @@ const AuthSlice = createSlice({
 
         const hasHostel = isValidId(employee?.hostelid);
         const hasUniclub = isValidId(employee?.uniclubid);
-        const hasBusiness = !hasHostel && !hasUniclub;
+        const hasUniversity = isValidId(employee?.universityid || employee?.universityId);
+        const hasBusiness = !hasHostel && !hasUniclub && !hasUniversity;
 
         const storedValid =
           (stored === "hostel" && hasHostel) ||
           (stored === "uniclub" && hasUniclub) ||
+          (stored === "university" && hasUniversity) ||
           (stored === "business" && hasBusiness);
 
         state.activeOrg = storedValid ? stored : computed;

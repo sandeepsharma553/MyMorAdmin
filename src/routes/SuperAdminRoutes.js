@@ -8,6 +8,7 @@ import EventBookingPage from "../pages/superadmin/EventBookingPage";
 import SettingPage from "../pages/superadmin/SettingPage";
 import ChangePasswordPage from "../pages/admin/ChangePasswordPage";
 import UniclubEmployeePage from "../pages/superadmin/UniclubEmployeePage";
+import UniversityEmployeePage from "../pages/superadmin/UniversityEmployeePage";
 import UniclubPage from "../pages/superadmin/UniclubPage";
 import PoiPage from "../pages/superadmin/PoiPage";
 import ContactPage from "../pages/ContactPage";
@@ -25,6 +26,7 @@ export default function SuperAdminRoutes() {
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/employee" element={<AdminEmployeePage />} />
       <Route path="/uniclubemp" element={<UniclubEmployeePage />} />
+      <Route path="/universityemp" element={<UniversityEmployeePage />} />
       <Route path="/changepassword" element={<ChangePasswordPage />} />
       <Route path="/university" element={<UniversityPage />} />
       <Route path="/hostel" element={<HostelPage />} />

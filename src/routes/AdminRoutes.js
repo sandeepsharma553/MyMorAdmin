@@ -51,6 +51,35 @@ import RestaurantDealsPage from "../pages/business/RestaurantDealsPage";
 import BusinessEmployeePage from "../pages/business/BusinessEmployeePage";
 import ProductOrderPage from "../pages/business/ProductOrderPage";
 import ServiceBookingPage from "../pages/business/ServiceBookingPage";
+import UniversityDashboardPage from "../pages/university/UniversityDashboardPage";
+import UniversityAnnouncementPage from "../pages/university/UniversityAnnouncementPage";
+import UniversityEventPage from "../pages/university/UniversityEventPage";
+import UniversityResourcesPage from "../pages/university/UniversityResourcesPage";
+import UniversityRoomBookingPage from "../pages/university/UniversityRoomBookingPage";
+import UniversityEmployeeAdminPage from "../pages/university/UniversityEmployeeAdminPage";
+import UniversityStudentPage from "../pages/university/UniversityStudentPage";
+import UniversityDiningMenuPage from "../pages/university/UniversityDiningMenuPage";
+import UniversityCleaningSchedulePage from "../pages/university/UniversityCleaningSchedulePage";
+import UniversityTutorialSchedulePage from "../pages/university/UniversityTutorialSchedulePage";
+import UniversityMaintenancePage from "../pages/university/UniversityMaintenancePage";
+import UniversityAcademicGroupPage from "../pages/university/UniversityAcademicGroupPage";
+import UniversityReportIncidentPage from "../pages/university/UniversityReportIncidentPage";
+import UniversityFeedbackPage from "../pages/university/UniversityFeedbackPage";
+import UniversityEventBookingPage from "../pages/university/UniversityEventBookingPage";
+import UniversityDealPage from "../pages/university/UniversityDealPage";
+import UniversityFaqPage from "../pages/university/UniversityFaqPage";
+import UniversityChecklistPage from "../pages/university/UniversityChecklistPage";
+import UniversityRoomInfoPage from "../pages/university/UniversityRoomInfoPage";
+import UniversityParcelPage from "../pages/university/UniversityParcelPage";
+import UniversityWellnessPromptsPage from "../pages/university/UniversityWellnessPromptsPage";
+import UniversityMessagesPage from "../pages/university/UniversityMessagesPage";
+import ChecklistPage from "../pages/admin/ChecklistPage";
+import RoomInfoPage from "../pages/admin/RoomInfoPage";
+import ParcelPage from "../pages/admin/ParcelPage";
+import WellnessPromptsPage from "../pages/admin/WellnessPromptsPage";
+import MessagesPage from "../pages/admin/MessagesPage";
+import UniversitySettingPage from "../pages/university/UniversitySettingPage";
+
 export default function AdminRoutes({ route }) {
 
   return (
@@ -109,6 +138,38 @@ export default function AdminRoutes({ route }) {
       <Route path="/businessemp" element={<BusinessEmployeePage />} />
       <Route path="/productorder" element={<ProductOrderPage />} />
       <Route path="/servicebooking" element={<ServiceBookingPage />} />
+
+      {/* ── University routes ── */}
+      <Route path="/universitydashboard" element={<UniversityDashboardPage />} />
+      <Route path="/universityannouncement" element={<UniversityAnnouncementPage />} />
+      <Route path="/universityevent" element={<UniversityEventPage />} />
+      <Route path="/universityresources" element={<UniversityResourcesPage />} />
+      <Route path="/universityroombooking" element={<UniversityRoomBookingPage />} />
+      <Route path="/universityemployee" element={<UniversityEmployeeAdminPage />} />
+      <Route path="/universitystudent" element={<UniversityStudentPage />} />
+      <Route path="/universitydiningmenu" element={<UniversityDiningMenuPage />} />
+      <Route path="/universitycleaningschedule" element={<UniversityCleaningSchedulePage />} />
+      <Route path="/universitytutorialschedule" element={<UniversityTutorialSchedulePage />} />
+      <Route path="/universitymaintenance" element={<UniversityMaintenancePage />} />
+      <Route path="/universityacademicgroup" element={<UniversityAcademicGroupPage />} />
+      <Route path="/universityreportincident" element={<UniversityReportIncidentPage />} />
+      <Route path="/universityfeedback" element={<UniversityFeedbackPage />} />
+      <Route path="/universityeventbooking" element={<UniversityEventBookingPage />} />
+      <Route path="/universitydeal" element={<UniversityDealPage />} />
+      <Route path="/universityfaq" element={<UniversityFaqPage />} />
+      <Route path="/universitychecklist" element={<UniversityChecklistPage />} />
+      <Route path="/universityroominfo" element={<UniversityRoomInfoPage />} />
+      <Route path="/universityparcels" element={<UniversityParcelPage />} />
+      <Route path="/universitywellnessprompts" element={<UniversityWellnessPromptsPage />} />
+      <Route path="/universitymessages" element={<UniversityMessagesPage />} />
+      <Route path="/universitysetting" element={<UniversitySettingPage />} />
+
+      {/* ── Phase 1 new routes ── */}
+      <Route path="/checklist" element={<ChecklistPage />} />
+      <Route path="/roominfo" element={<RoomInfoPage />} />
+      <Route path="/parcels" element={<ParcelPage />} />
+      <Route path="/wellnessprompts" element={<WellnessPromptsPage />} />
+      <Route path="/messages" element={<MessagesPage />} />
     </Routes>
   );
 }

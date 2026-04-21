@@ -38,10 +38,10 @@ const ALL_MENU_OPTIONS = [
   { key: "universityparcels", label: "Parcels", featureFlag: "parcels" },
   { key: "universitywellnessprompts", label: "Wellness Prompts", featureFlag: "wellnessprompts" },
   { key: "universitymessages", label: "Messages", featureFlag: "messages" },
-  { key: "UniversitySetting", label: "Setting", featureFlag: "setting" },
+  { key: "universitysetting", label: "Setting", featureFlag: "setting" },
 ];
 
-const ALWAYS_ALLOWED = ["universitydashboard", "universityemployee", "universitystudent", "UniversitySettingPage"];
+const ALWAYS_ALLOWED = ["universitydashboard", "universityemployee", "universitystudent", "universitysettingPage"];
 
 const normalizePermissions = (raw) => {
   if (Array.isArray(raw)) return raw;
