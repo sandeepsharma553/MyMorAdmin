@@ -31,14 +31,14 @@ export default function UniversityCleaningSchedulePage(props) {
   const [data, setData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const uid = useSelector((state) => state.auth.user.uid);
+  const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
 
   const universityId = String(
     emp?.universityid || emp?.universityId || emp?.university || ""
   );
 
-  const [weekMode, setWeekMode] = useState("current"); // 'past' | 'current' | 'future'
+  const [weekMode, setWeekMode] = useState("current");
 
   const [filters, setFilters] = useState({
     roomtype: "",
@@ -76,7 +76,7 @@ export default function UniversityCleaningSchedulePage(props) {
   const headerCheckboxRef = useRef(null);
 
   const initialForm = {
-    id: 0,
+    id: "",
     roomtype: "",
     time: "",
     hall: "",
@@ -86,6 +86,16 @@ export default function UniversityCleaningSchedulePage(props) {
   };
 
   const [form, setForm] = useState(initialForm);
+
+  const getCleaningCollection = () =>
+    collection(db, "university", universityId, "cleaning");
+
+  const getCleaningDocRef = (docId) =>
+    doc(db, "university", universityId, "cleaning", docId);
+
+  const resetForm = () => {
+    setForm(initialForm);
+  };
 
   const getDayFromDate = (dateString) => {
     const d = new Date(dateString);
@@ -97,12 +107,7 @@ export default function UniversityCleaningSchedulePage(props) {
 
     setIsLoading(true);
     try {
-      const qy = query(
-        collection(db, "universitycleaningschedule"),
-        where("universityid", "==", universityId)
-      );
-
-      const qs = await getDocs(qy);
+      const qs = await getDocs(getCleaningCollection());
       const documents = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       documents.sort((a, b) => {
@@ -123,7 +128,7 @@ export default function UniversityCleaningSchedulePage(props) {
   };
 
   useEffect(() => {
-    getList();
+    if (universityId) getList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [universityId]);
 
@@ -133,11 +138,14 @@ export default function UniversityCleaningSchedulePage(props) {
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    if (!form.roomtype) return;
+    if (!form.roomtype || !form.hall || !form.date || !form.day || !form.time || !form.empname) {
+      toast.warning("Please fill all required fields");
+      return;
+    }
 
     try {
       if (editingData) {
-        const docRef = doc(db, "universitycleaningschedule", form.id);
+        const docRef = getCleaningDocRef(form.id);
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
@@ -160,7 +168,21 @@ export default function UniversityCleaningSchedulePage(props) {
 
         toast.success("Successfully updated");
       } else {
-        await addDoc(collection(db, "universitycleaningschedule"), {
+        const duplicateQuery = query(
+          getCleaningCollection(),
+          where("roomtype", "==", form.roomtype),
+          where("date", "==", form.date),
+          where("hall", "==", form.hall)
+        );
+
+        const duplicateSnap = await getDocs(duplicateQuery);
+
+        if (!duplicateSnap.empty) {
+          toast.warn("Cleaning schedule already exists for this room type, hall and date");
+          return;
+        }
+
+        await addDoc(getCleaningCollection(), {
           uid,
           roomtype: form.roomtype,
           hall: form.hall,
@@ -177,21 +199,20 @@ export default function UniversityCleaningSchedulePage(props) {
       }
 
       getList();
+      setModalOpen(false);
+      setEditing(null);
+      resetForm();
     } catch (error) {
       console.error("Error saving data:", error);
       toast.error("Failed to save data");
     }
-
-    setModalOpen(false);
-    setEditing(null);
-    setForm(initialForm);
   };
 
   const handleDelete = async () => {
     if (!deleteData) return;
 
     try {
-      await deleteDoc(doc(db, "universitycleaningschedule", deleteData.id));
+      await deleteDoc(getCleaningDocRef(deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -224,7 +245,7 @@ export default function UniversityCleaningSchedulePage(props) {
           return {
             roomtype: row["Room Type"] || "",
             hall: row["Hall"] || "",
-            day: row["Day"] || "",
+            day: row["Day"] || getDayFromDate(date),
             time: row["Time"] || "",
             date,
             empname: row["Name"] || "",
@@ -245,15 +266,19 @@ export default function UniversityCleaningSchedulePage(props) {
   };
 
   const saveToFirebase = async () => {
+    if (!universityId) {
+      toast.error("No university assigned");
+      return;
+    }
+
     setIsLoading(true);
     try {
       for (const entry of data) {
         const qy = query(
-          collection(db, "universitycleaningschedule"),
+          getCleaningCollection(),
           where("roomtype", "==", entry.roomtype),
           where("date", "==", entry.date),
-          where("hall", "==", entry.hall),
-          where("universityid", "==", universityId)
+          where("hall", "==", entry.hall)
         );
 
         const qs = await getDocs(qy);
@@ -265,8 +290,10 @@ export default function UniversityCleaningSchedulePage(props) {
           continue;
         }
 
-        await addDoc(collection(db, "universitycleaningschedule"), {
+        await addDoc(getCleaningCollection(), {
           ...entry,
+          uid,
+          universityid: universityId,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -285,20 +312,24 @@ export default function UniversityCleaningSchedulePage(props) {
   };
 
   const handleDownload = async () => {
-    const response = await fetch(cleaningscheduleFile);
-    const blob = await response.blob();
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "cleaning_schedule.xlsx";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const response = await fetch(cleaningscheduleFile);
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "cleaning_schedule.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error(error);
+      toast.error("Download failed");
+    }
   };
 
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!window.confirm(`Delete ${selectedIds.size} cleaning schedule(s)?`))
-      return;
+    if (!window.confirm(`Delete ${selectedIds.size} cleaning schedule(s)?`)) return;
 
     setIsLoading(true);
     try {
@@ -310,7 +341,7 @@ export default function UniversityCleaningSchedulePage(props) {
         const batch = writeBatch(db);
 
         chunk.forEach((id) => {
-          batch.delete(doc(db, "universitycleaningschedule", id));
+          batch.delete(getCleaningDocRef(id));
         });
 
         await batch.commit();
@@ -327,7 +358,7 @@ export default function UniversityCleaningSchedulePage(props) {
     }
   };
 
-  const WEEK_START = 1; // Monday
+  const WEEK_START = 1;
 
   const toYMD = (d) => {
     const y = d.getFullYear();
@@ -373,12 +404,8 @@ export default function UniversityCleaningSchedulePage(props) {
     const d = (r?.date || "").slice(0, 10);
     if (!d) return false;
 
-    if (weekMode === "current") {
-      return d >= curStartYMD && d <= curEndYMD;
-    }
-    if (weekMode === "future") {
-      return d >= nextStartYMD && d <= nextEndYMD;
-    }
+    if (weekMode === "current") return d >= curStartYMD && d <= curEndYMD;
+    if (weekMode === "future") return d >= nextStartYMD && d <= nextEndYMD;
     return d < curStartYMD;
   });
 
@@ -437,6 +464,7 @@ export default function UniversityCleaningSchedulePage(props) {
         <div className="bg-white rounded-xl shadow p-10 text-center text-gray-500">
           No university assigned.
         </div>
+        <ToastContainer />
       </main>
     );
   }
@@ -504,7 +532,7 @@ export default function UniversityCleaningSchedulePage(props) {
           </div>
 
           <button
-            className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition"
+            className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition disabled:opacity-50"
             disabled={!data.length || isLoading}
             onClick={saveToFirebase}
           >
@@ -512,10 +540,10 @@ export default function UniversityCleaningSchedulePage(props) {
           </button>
 
           <button
-            className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+            className="px-4 py-2 bg-black text-white rounded hover:bg-gray-900"
             onClick={() => {
               setEditing(null);
-              setForm(initialForm);
+              resetForm();
               setModalOpen(true);
             }}
           >
@@ -825,7 +853,11 @@ export default function UniversityCleaningSchedulePage(props) {
               <div className="flex justify-end mt-6 space-x-3">
                 <button
                   type="button"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => {
+                    setModalOpen(false);
+                    setEditing(null);
+                    resetForm();
+                  }}
                   className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
                 >
                   Cancel

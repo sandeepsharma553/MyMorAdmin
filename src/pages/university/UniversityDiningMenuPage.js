@@ -35,7 +35,7 @@ export default function UniversityDiningMenuPage(props) {
   const [data, setData] = useState([]);
 
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [weekMode, setWeekMode] = useState("current"); // past | current | future
+  const [weekMode, setWeekMode] = useState("current");
 
   const [fileName, setFileName] = useState("No file chosen");
   const [currentPage, setCurrentPage] = useState(1);
@@ -47,14 +47,16 @@ export default function UniversityDiningMenuPage(props) {
   const emp = useSelector((state) => state.auth.employee);
   const universityId = String(emp?.universityid || emp?.universityId || "");
 
+  const emptyMeals = {
+    breakfast: { time: "", items: [{ name: "", tags: [] }] },
+    lunch: { time: "", items: [{ name: "", tags: [] }] },
+    dinner: { time: "", items: [{ name: "", tags: [] }] },
+  };
+
   const [form, setForm] = useState({
     date: "",
     day: "",
-    meals: {
-      breakfast: { time: "", items: [{ name: "", tags: [] }] },
-      lunch: { time: "", items: [{ name: "", tags: [] }] },
-      dinner: { time: "", items: [{ name: "", tags: [] }] },
-    },
+    meals: emptyMeals,
     uid: uid,
     universityid: universityId,
   });
@@ -96,6 +98,7 @@ export default function UniversityDiningMenuPage(props) {
     const diffToMonday = anchor.getDate() - day + (day === 0 ? -6 : 1);
     const monday = new Date(anchor.setDate(diffToMonday));
     const sunday = addDays(monday, 6);
+
     return {
       start: fmt(monday),
       end: fmt(sunday),
@@ -108,6 +111,29 @@ export default function UniversityDiningMenuPage(props) {
     return d.toLocaleDateString("en-US", { weekday: "long" });
   };
 
+  const getDiningMenuCollection = () =>
+    collection(db, "university", universityId, "diningmenu");
+
+  const getDiningMenuUploadsCollection = () =>
+    collection(db, "university", universityId, "diningmenu_uploads");
+
+  const getDiningMenuDocRef = (docId) =>
+    doc(db, "university", universityId, "diningmenu", docId);
+
+  const resetForm = () => {
+    setForm({
+      date: "",
+      day: "",
+      meals: {
+        breakfast: { time: "", items: [{ name: "", tags: [] }] },
+        lunch: { time: "", items: [{ name: "", tags: [] }] },
+        dinner: { time: "", items: [{ name: "", tags: [] }] },
+      },
+      uid: uid,
+      universityid: universityId,
+    });
+  };
+
   const getList = async (dateStr, mode) => {
     if (!universityId) return;
 
@@ -116,8 +142,7 @@ export default function UniversityDiningMenuPage(props) {
       const { start, end } = getWeekRange(dateStr, mode);
 
       const qy = query(
-        collection(db, "menus"),
-        where("universityid", "==", universityId),
+        getDiningMenuCollection(),
         where("date", ">=", start),
         where("date", "<=", end)
       );
@@ -135,6 +160,7 @@ export default function UniversityDiningMenuPage(props) {
       setCurrentPage(1);
     } catch (e) {
       console.error(e);
+      toast.error("Failed to fetch dining menus");
     } finally {
       setIsLoading(false);
     }
@@ -176,7 +202,7 @@ export default function UniversityDiningMenuPage(props) {
     }
 
     try {
-      const menusRef = collection(db, "menus");
+      const diningMenuRef = getDiningMenuCollection();
 
       const payload = {
         ...form,
@@ -186,39 +212,26 @@ export default function UniversityDiningMenuPage(props) {
 
       if (editingData) {
         const docId = `${editingData.date}_${editingData.universityid}`;
-        await updateDoc(doc(menusRef, docId), payload);
+        await updateDoc(getDiningMenuDocRef(docId), payload);
         toast.success("Menu updated successfully!");
       } else {
-        const qy = query(
-          menusRef,
-          where("date", "==", form.date),
-          where("universityid", "==", universityId)
-        );
+        const qy = query(diningMenuRef, where("date", "==", form.date));
         const qs = await getDocs(qy);
 
         if (!qs.empty) {
-          toast.warn("Menu for this date and university already exists!");
+          toast.warn("Menu for this date already exists!");
           return;
         }
 
         const docId = `${form.date}_${universityId}`;
-        await setDoc(doc(menusRef, docId), payload);
+        await setDoc(getDiningMenuDocRef(docId), payload);
         toast.success("Menu created successfully!");
       }
 
       setModalOpen(false);
+      setEditing(null);
+      resetForm();
       getList(date, weekMode);
-      setForm({
-        date: "",
-        day: "",
-        meals: {
-          breakfast: { time: "", items: [{ name: "", tags: [] }] },
-          lunch: { time: "", items: [{ name: "", tags: [] }] },
-          dinner: { time: "", items: [{ name: "", tags: [] }] },
-        },
-        uid: uid,
-        universityid: universityId,
-      });
     } catch (error) {
       console.error("Error saving data:", error);
       toast.error("Save failed");
@@ -229,7 +242,7 @@ export default function UniversityDiningMenuPage(props) {
     if (!deleteData?.id) return;
 
     try {
-      await deleteDoc(doc(db, "menus", deleteData.id));
+      await deleteDoc(getDiningMenuDocRef(deleteData.id));
       toast.success("Successfully deleted!");
       getList(date, weekMode);
     } catch (error) {
@@ -267,7 +280,7 @@ export default function UniversityDiningMenuPage(props) {
             formattedDate = new Date(Date).toISOString().split("T")[0];
           }
 
-          const key = formattedDate + "|" + Day;
+          const key = `${formattedDate}|${Day}`;
           const mealKey = String(Meal || "").toLowerCase();
 
           if (!groupedByDate[key]) {
@@ -293,7 +306,7 @@ export default function UniversityDiningMenuPage(props) {
               : [];
 
           groupedByDate[key].meals[mealKey].items.push({
-            name: Menu_Items,
+            name: Menu_Items || "",
             tags: tagsArray,
           });
         });
@@ -320,8 +333,7 @@ export default function UniversityDiningMenuPage(props) {
 
     setIsLoading(true);
     try {
-      const menusRef = collection(db, "menus");
-
+      const diningMenuRef = getDiningMenuCollection();
       const sortedData = [...data].sort((a, b) =>
         String(a.date).localeCompare(String(b.date))
       );
@@ -331,11 +343,7 @@ export default function UniversityDiningMenuPage(props) {
       let lastDate = null;
 
       for (const entry of sortedData) {
-        const qy = query(
-          menusRef,
-          where("date", "==", entry.date),
-          where("universityid", "==", universityId)
-        );
+        const qy = query(diningMenuRef, where("date", "==", entry.date));
         const qs = await getDocs(qy);
 
         if (!qs.empty) {
@@ -350,7 +358,7 @@ export default function UniversityDiningMenuPage(props) {
         };
 
         const docId = `${entry.date}_${universityId}`;
-        await setDoc(doc(menusRef, docId), payload);
+        await setDoc(getDiningMenuDocRef(docId), payload);
 
         createdCount++;
         if (!firstDate) firstDate = entry.date;
@@ -360,7 +368,7 @@ export default function UniversityDiningMenuPage(props) {
       if (createdCount > 0) {
         toast.success(`Data saved! (${createdCount} new menu(s))`);
 
-        await addDoc(collection(db, "menus_uploads"), {
+        await addDoc(getDiningMenuUploadsCollection(), {
           universityid: universityId,
           createdCount,
           firstDate,
@@ -429,7 +437,11 @@ export default function UniversityDiningMenuPage(props) {
       for (let i = 0; i < ids.length; i += chunkSize) {
         const chunk = ids.slice(i, i + chunkSize);
         const batch = writeBatch(db);
-        chunk.forEach((id) => batch.delete(doc(db, "menus", id)));
+
+        chunk.forEach((id) => {
+          batch.delete(getDiningMenuDocRef(id));
+        });
+
         await batch.commit();
       }
 
@@ -542,17 +554,7 @@ export default function UniversityDiningMenuPage(props) {
             onClick={() => {
               setModalOpen(true);
               setEditing(null);
-              setForm({
-                date: "",
-                day: "",
-                meals: {
-                  breakfast: { time: "", items: [{ name: "", tags: [] }] },
-                  lunch: { time: "", items: [{ name: "", tags: [] }] },
-                  dinner: { time: "", items: [{ name: "", tags: [] }] },
-                },
-                uid: uid,
-                universityid: universityId,
-              });
+              resetForm();
             }}
           >
             + Add
@@ -679,7 +681,6 @@ export default function UniversityDiningMenuPage(props) {
                         <button
                           className="text-blue-600 hover:underline mr-3"
                           onClick={() => {
-                            setEditing(menu);
                             setEditing(menu);
                             setForm({
                               ...menu,
@@ -886,11 +887,18 @@ export default function UniversityDiningMenuPage(props) {
                             const updated = form.meals[meal].items.filter(
                               (_, i) => i !== index
                             );
+
                             setForm({
                               ...form,
                               meals: {
                                 ...form.meals,
-                                [meal]: { ...form.meals[meal], items: updated },
+                                [meal]: {
+                                  ...form.meals[meal],
+                                  items:
+                                    updated.length > 0
+                                      ? updated
+                                      : [{ name: "", tags: [] }],
+                                },
                               },
                             });
                           }}
@@ -934,6 +942,7 @@ export default function UniversityDiningMenuPage(props) {
                     setModalOpen(false);
                     setEditing(null);
                     setDelete(null);
+                    resetForm();
                   }}
                   className="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400"
                 >

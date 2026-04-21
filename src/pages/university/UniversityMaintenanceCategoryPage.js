@@ -141,7 +141,14 @@ const UniversityMaintenanceCategoryPage = () => {
   };
 
   useEffect(() => {
-    if (!universityId) return;
+    if (!universityId) {
+      setProblemCatList([]);
+      setItemCatList([]);
+      setItemList([]);
+      setTypeList([]);
+      return;
+    }
+
     getProblemCatList();
     getItemCatList();
     getItemList();
@@ -286,7 +293,7 @@ const UniversityMaintenanceCategoryPage = () => {
         }
 
         await updateDoc(refDoc, {
-          uid,
+          uid: uid || "",
           name,
           universityid: universityId,
           updatedBy: uid || "",
@@ -296,7 +303,7 @@ const UniversityMaintenanceCategoryPage = () => {
         toast.success("Updated");
       } else {
         await addDoc(
-          collection(db, "university", universityId, "itemcategory"),
+          collection(db, "university", universityId, "problemcategory"),
           {
             uid: uid || "",
             name,
@@ -379,7 +386,7 @@ const UniversityMaintenanceCategoryPage = () => {
         }
 
         await updateDoc(refDoc, {
-          uid,
+          uid: uid || "",
           name,
           universityid: universityId,
           problemId: itemCatForm.problemId,
@@ -504,7 +511,7 @@ const UniversityMaintenanceCategoryPage = () => {
         }
 
         await updateDoc(refDoc, {
-          uid,
+          uid: uid || "",
           name,
           universityid: universityId,
           problemId: itemForm.problemId,
@@ -623,7 +630,7 @@ const UniversityMaintenanceCategoryPage = () => {
         }
 
         await updateDoc(refDoc, {
-          uid,
+          uid: uid || "",
           name,
           universityid: universityId,
           updatedBy: uid || "",
@@ -788,7 +795,11 @@ const UniversityMaintenanceCategoryPage = () => {
               <div className="flex justify-end mt-6 gap-3">
                 <button
                   type="button"
-                  onClick={() => setProblemModalOpen(false)}
+                  onClick={() => {
+                    setProblemModalOpen(false);
+                    setEditing(null);
+                    setProblemForm(initialProblemForm);
+                  }}
                   className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
                 >
                   Cancel
@@ -1413,7 +1424,11 @@ const UniversityMaintenanceCategoryPage = () => {
               <div className="flex justify-end mt-6 gap-3">
                 <button
                   type="button"
-                  onClick={() => setTypeModalOpen(false)}
+                  onClick={() => {
+                    setTypeModalOpen(false);
+                    setEditing(null);
+                    setTypeForm(initialTypeForm);
+                  }}
                   className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
                 >
                   Cancel

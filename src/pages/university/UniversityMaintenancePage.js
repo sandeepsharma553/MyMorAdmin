@@ -127,6 +127,12 @@ export default function UniversityMaintenancePage(props) {
   const viewPrintRef = useRef(null);
   const listPrintRef = useRef(null);
 
+  const maintenanceCollection = () =>
+    collection(db, "university", universityId, "maintenance");
+
+  const maintenanceDocRef = (id) =>
+    doc(db, "university", universityId, "maintenance", id);
+
   const handlePrintSingle = useReactToPrint({
     contentRef: viewPrintRef,
     onBeforeGetContent: () => {
@@ -294,98 +300,105 @@ export default function UniversityMaintenancePage(props) {
     if (!universityId) return;
     setIsLoading(true);
 
-    const usersQuery = query(
-      collection(db, "users"),
-      where("universityid", "==", universityId)
-    );
-    const usersSnap = await getDocs(usersQuery);
-    const userMap = {};
-    usersSnap.forEach((d) => {
-      const data = d.data();
-      userMap[data.uid] =
-        data.username || data.UserName || data.USERNAME || "Unknown";
-    });
-
-    const maintenanceQuery = query(
-      collection(db, "universitymaintenance"),
-      where("universityid", "==", universityId)
-    );
-    const maintenanceSnapshot = await getDocs(maintenanceQuery);
-
-    let rows = maintenanceSnapshot.docs.map((d) => {
-      const data = d.data();
-      const base = {
-        id: d.id,
-        ...data,
-        username: userMap[data.uid] || "",
-        adminNotes: Array.isArray(data.adminNotes) ? data.adminNotes : [],
-        noteSeenBy: data.noteSeenBy || {},
-      };
-      const assignees = getAssigneesFromRow(base);
-      return {
-        ...base,
-        assignedTo: assignees,
-        assignedToEmail: base.assignedToEmail || "",
-        assignedToUid: base.assignedToUid || null,
-      };
-    });
-
-    if (!isAdmin) {
-      const me = normEmail(myEmail);
-      rows = rows.filter((r) =>
-        getAssigneesFromRow(r).some(
-          (a) => a.email === me || (a.uid && a.uid === uid)
-        )
+    try {
+      const usersQuery = query(
+        collection(db, "users"),
+        where("universityid", "==", universityId)
       );
+      const usersSnap = await getDocs(usersQuery);
+      const userMap = {};
+      usersSnap.forEach((d) => {
+        const data = d.data();
+        userMap[data.uid] =
+          data.username || data.UserName || data.USERNAME || "Unknown";
+      });
+
+      const maintenanceSnapshot = await getDocs(maintenanceCollection());
+
+      let rows = maintenanceSnapshot.docs.map((d) => {
+        const data = d.data();
+        const base = {
+          id: d.id,
+          ...data,
+          username: userMap[data.uid] || "",
+          adminNotes: Array.isArray(data.adminNotes) ? data.adminNotes : [],
+          noteSeenBy: data.noteSeenBy || {},
+        };
+        const assignees = getAssigneesFromRow(base);
+        return {
+          ...base,
+          assignedTo: assignees,
+          assignedToEmail: base.assignedToEmail || "",
+          assignedToUid: base.assignedToUid || null,
+        };
+      });
+
+      if (!isAdmin) {
+        const me = normEmail(myEmail);
+        rows = rows.filter((r) =>
+          getAssigneesFromRow(r).some(
+            (a) => a.email === me || (a.uid && a.uid === uid)
+          )
+        );
+      }
+
+      setList(rows);
+      setSelectedIds(new Set());
+
+      const total = rows.length;
+      const pending = rows.filter((i) => i.status === "Pending").length;
+      const inProgress = rows.filter((i) => i.status === "In Progress").length;
+      const resolved = rows.filter((i) => i.status === "Resolved").length;
+      const closed = rows.filter((i) => i.status === "Closed").length;
+      setStats({ total, pending, inProgress, resolved, closed });
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load maintenance requests");
+    } finally {
+      setIsLoading(false);
     }
-
-    setList(rows);
-    setSelectedIds(new Set());
-
-    const total = rows.length;
-    const pending = rows.filter((i) => i.status === "Pending").length;
-    const inProgress = rows.filter((i) => i.status === "In Progress").length;
-    const resolved = rows.filter((i) => i.status === "Resolved").length;
-    const closed = rows.filter((i) => i.status === "Closed").length;
-    setStats({ total, pending, inProgress, resolved, closed });
-
-    setIsLoading(false);
   };
 
   const getProblemCatList = async () => {
     if (!universityId) return;
     setIsLoading(true);
-    const q1 = query(
-      collection(db, "universityproblemcategory"),
-      where("universityid", "==", universityId)
-    );
-    const s1 = await getDocs(q1);
-    setProblemCatList(s1.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
-    setIsLoading(false);
+    try {
+      const q1 = query(
+          collection(db, "university", universityId, "problemcategory"),
+      );
+      const s1 = await getDocs(q1);
+      setProblemCatList(s1.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getItemCatList = async () => {
     if (!universityId) return;
     setIsLoading(true);
-    const q2 = query(
-      collection(db, "universityitemcategory"),
-      where("universityid", "==", universityId)
-    );
-    const s2 = await getDocs(q2);
-    setItemCatList(s2.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
-    setIsLoading(false);
+    try {
+      const q2 = query(
+       collection(db, "university", universityId, "itemcategory"),
+      );
+      const s2 = await getDocs(q2);
+      setItemCatList(s2.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getItemList = async () => {
     if (!universityId) return;
     setIsLoading(true);
-    const q3 = query(
-      collection(db, "universitymaintenanceitems"),
-      where("universityid", "==", universityId)
-    );
-    const s3 = await getDocs(q3);
-    setItemList(s3.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
-    setIsLoading(false);
+    try {
+      const q3 = query(
+         collection(db, "university", universityId, "maintenanceitems"),
+      );
+      const s3 = await getDocs(q3);
+      setItemList(s3.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const parseDateSafe = (v) => {
@@ -416,19 +429,20 @@ export default function UniversityMaintenancePage(props) {
     if (!form.roomno) return;
     setIsLoading(true);
 
-    let imageUrl = "";
-    if (form.image) {
-      const imageRef = ref(
-        storage,
-        `universitymaintenance/${Date.now()}_${form.image.name}`
-      );
-      await uploadBytes(imageRef, form.image);
-      imageUrl = await getDownloadURL(imageRef);
-    }
+    try {
+      let imageUrl = editingData?.imageUrl || "";
 
-    if (editingData) {
-      try {
-        const docRefm = doc(db, "universitymaintenance", form.id);
+      if (form.image) {
+        const imageRef = ref(
+          storage,
+          `universitymaintenance/${Date.now()}_${form.image.name}`
+        );
+        await uploadBytes(imageRef, form.image);
+        imageUrl = await getDownloadURL(imageRef);
+      }
+
+      if (editingData) {
+        const docRefm = maintenanceDocRef(form.id);
         const docSnap = await getDoc(docRefm);
         if (!docSnap.exists()) {
           toast.warning("Maintenance does not exist! Cannot update.");
@@ -450,17 +464,14 @@ export default function UniversityMaintenancePage(props) {
           updatedBy: uid,
           updatedDate: new Date().toISOString().split("T")[0],
           updatedAt: serverTimestamp(),
-          status: "Pending",
+          status: editingData.status || "Pending",
+          isagree: !!form.isagree,
         });
 
         toast.success("Successfully updated");
         getList();
-      } catch (error) {
-        console.error("Error updating document: ", error);
-      }
-    } else {
-      try {
-        await addDoc(collection(db, "universitymaintenance"), {
+      } else {
+        await addDoc(maintenanceCollection(), {
           uid,
           roomno: form.roomno,
           problemcategory: form.problemcategory,
@@ -479,26 +490,28 @@ export default function UniversityMaintenancePage(props) {
           assignedToUid: null,
           assignedTo: [],
           adminNotes: [],
+          isagree: !!form.isagree,
         });
 
         toast.success("Successfully saved");
         getList();
-      } catch (error) {
-        console.error("Error saving data:", error);
       }
+    } catch (error) {
+      console.error("Error saving maintenance:", error);
+      toast.error("Save failed");
+    } finally {
+      setIsLoading(false);
+      setModalOpen(false);
+      setEditing(null);
+      setForm(initialForm);
+      setFileName("No file chosen");
     }
-
-    setIsLoading(false);
-    setModalOpen(false);
-    setEditing(null);
-    setForm(initialForm);
-    setFileName("No file chosen");
   };
 
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "universitymaintenance", deleteData.id));
+      await deleteDoc(maintenanceDocRef(deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -525,7 +538,7 @@ export default function UniversityMaintenancePage(props) {
         const batch = writeBatch(db);
         ids
           .slice(i, i + CHUNK)
-          .forEach((id) => batch.delete(doc(db, "universitymaintenance", id)));
+          .forEach((id) => batch.delete(maintenanceDocRef(id)));
         await batch.commit();
       }
       toast.success("Selected requests deleted");
@@ -557,7 +570,7 @@ export default function UniversityMaintenancePage(props) {
         toast.error("You don't have permission to update this.");
         return;
       }
-      const requestRef = doc(db, "universitymaintenance", id);
+      const requestRef = maintenanceDocRef(id);
       await updateDoc(requestRef, {
         status: newStatus,
         updatedBy: authUser?.email || uid,
@@ -597,7 +610,7 @@ export default function UniversityMaintenancePage(props) {
     }
 
     try {
-      const requestRef = doc(db, "universitymaintenance", assignTarget.id);
+      const requestRef = maintenanceDocRef(assignTarget.id);
       const resolved = await resolveEmployeesByEmails(emails);
 
       const now = new Date().toISOString();
@@ -634,31 +647,6 @@ export default function UniversityMaintenancePage(props) {
     } catch (e) {
       console.error(e);
       toast.error("Failed to assign");
-    }
-  };
-
-  const addNote = async (row, text) => {
-    const msg = (text ?? "").trim() || prompt("Add note:");
-    if (!msg) return;
-    try {
-      if (!canModify(row)) {
-        toast.error("You don't have permission to add a note here.");
-        return;
-      }
-      const requestRef = doc(db, "universitymaintenance", row.id);
-      const entry = {
-        by: authUser?.email || uid,
-        byUid: uid || null,
-        at: new Date().toISOString(),
-        text: msg,
-      };
-      const prevNotes = Array.isArray(row.adminNotes) ? row.adminNotes : [];
-      await updateDoc(requestRef, { adminNotes: [...prevNotes, entry] });
-      toast.success("Note added");
-      await getList();
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to add note");
     }
   };
 
@@ -722,12 +710,10 @@ export default function UniversityMaintenancePage(props) {
     }
 
     return (
-      (!filters.request ||
-        reqStr.includes(filters.request.toLowerCase())) &&
+      (!filters.request || reqStr.includes(filters.request.toLowerCase())) &&
       (!filters.user || userStr.includes(filters.user.toLowerCase())) &&
       issueOK &&
-      (!filters.location ||
-        locStr.includes(filters.location.toLowerCase())) &&
+      (!filters.location || locStr.includes(filters.location.toLowerCase())) &&
       mtOK &&
       (!filters.date || dateStr.includes(filters.date.toLowerCase())) &&
       statusOK &&
@@ -812,7 +798,7 @@ export default function UniversityMaintenancePage(props) {
         toast.error("You don't have permission to add a note here.");
         return;
       }
-      const requestRef = doc(db, "universitymaintenance", row.id);
+      const requestRef = maintenanceDocRef(row.id);
       const entry = {
         by: authUser?.email || uid,
         byUid: uid || null,
@@ -842,7 +828,7 @@ export default function UniversityMaintenancePage(props) {
     if (!uid || !row?.id) return;
     try {
       const total = Array.isArray(row?.adminNotes) ? row.adminNotes.length : 0;
-      const requestRef = doc(db, "universitymaintenance", row.id);
+      const requestRef = maintenanceDocRef(row.id);
       const payload = { count: total, at: new Date().toISOString() };
       await updateDoc(requestRef, { [`noteSeenBy.${uid}`]: payload });
 
@@ -1477,7 +1463,7 @@ export default function UniversityMaintenancePage(props) {
                   <label className="cursor-pointer">
                     <input
                       type="file"
-                      accept=".xlsx, .xls, .jpg,.png,.jpeg"
+                      accept=".jpg,.png,.jpeg"
                       className="hidden"
                       onChange={(e) => {
                         if (e.target.files.length > 0)

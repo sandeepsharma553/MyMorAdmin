@@ -37,7 +37,7 @@ export default function UniversityTutorialSchedulePage(props) {
   const emp = useSelector((state) => state.auth.employee);
   const universityId = String(emp?.universityid || emp?.universityId || "");
 
-  const [weekMode, setWeekMode] = useState("current"); // past | current | future
+  const [weekMode, setWeekMode] = useState("current");
 
   const [filters, setFilters] = useState({
     roomtype: "",
@@ -75,7 +75,7 @@ export default function UniversityTutorialSchedulePage(props) {
   const headerCheckboxRef = useRef(null);
 
   const initialForm = {
-    id: 0,
+    id: "",
     roomtype: "",
     time: "",
     hall: "",
@@ -85,6 +85,16 @@ export default function UniversityTutorialSchedulePage(props) {
   };
 
   const [form, setForm] = useState(initialForm);
+
+  const getTutorialsCollection = () =>
+    collection(db, "university", universityId, "tutorials");
+
+  const getTutorialDocRef = (docId) =>
+    doc(db, "university", universityId, "tutorials", docId);
+
+  const resetForm = () => {
+    setForm(initialForm);
+  };
 
   const getDayFromDate = (dateString) => {
     const date = new Date(dateString);
@@ -96,11 +106,7 @@ export default function UniversityTutorialSchedulePage(props) {
 
     setIsLoading(true);
     try {
-      const qy = query(
-        collection(db, "tutorialschedule"),
-        where("universityid", "==", universityId)
-      );
-      const snapshot = await getDocs(qy);
+      const snapshot = await getDocs(getTutorialsCollection());
 
       const documents = snapshot.docs.map((d) => ({
         id: d.id,
@@ -125,7 +131,7 @@ export default function UniversityTutorialSchedulePage(props) {
   };
 
   useEffect(() => {
-    getList();
+    if (universityId) getList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [universityId]);
 
@@ -148,7 +154,7 @@ export default function UniversityTutorialSchedulePage(props) {
 
     try {
       if (editingData) {
-        const docRef = doc(db, "tutorialschedule", form.id);
+        const docRef = getTutorialDocRef(form.id);
         const snap = await getDoc(docRef);
 
         if (!snap.exists()) {
@@ -172,7 +178,20 @@ export default function UniversityTutorialSchedulePage(props) {
 
         toast.success("Successfully updated");
       } else {
-        await addDoc(collection(db, "tutorialschedule"), {
+        const duplicateQuery = query(
+          getTutorialsCollection(),
+          where("roomtype", "==", form.roomtype),
+          where("date", "==", form.date),
+          where("hall", "==", form.hall)
+        );
+        const duplicateSnap = await getDocs(duplicateQuery);
+
+        if (!duplicateSnap.empty) {
+          toast.warn("Tutorial schedule already exists for this room type, hall and date");
+          return;
+        }
+
+        await addDoc(getTutorialsCollection(), {
           uid,
           roomtype: form.roomtype,
           hall: form.hall,
@@ -197,14 +216,14 @@ export default function UniversityTutorialSchedulePage(props) {
 
     setModalOpen(false);
     setEditing(null);
-    setForm(initialForm);
+    resetForm();
   };
 
   const handleDelete = async () => {
     if (!deleteData) return;
 
     try {
-      await deleteDoc(doc(db, "tutorialschedule", deleteData.id));
+      await deleteDoc(getTutorialDocRef(deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -237,7 +256,7 @@ export default function UniversityTutorialSchedulePage(props) {
           return {
             roomtype: row["Room Type"] || "",
             hall: row["Hall"] || "",
-            day: row["Day"] || "",
+            day: row["Day"] || getDayFromDate(date),
             time: row["Time"] || "",
             date,
             empname: row["Name"] || "",
@@ -268,11 +287,10 @@ export default function UniversityTutorialSchedulePage(props) {
     try {
       for (const entry of data) {
         const qy = query(
-          collection(db, "tutorialschedule"),
+          getTutorialsCollection(),
           where("roomtype", "==", entry.roomtype),
           where("date", "==", entry.date),
-          where("hall", "==", entry.hall),
-          where("universityid", "==", universityId)
+          where("hall", "==", entry.hall)
         );
         const qs = await getDocs(qy);
 
@@ -283,8 +301,9 @@ export default function UniversityTutorialSchedulePage(props) {
           continue;
         }
 
-        await addDoc(collection(db, "tutorialschedule"), {
+        await addDoc(getTutorialsCollection(), {
           ...entry,
+          uid,
           universityid: universityId,
           createdBy: uid,
           createdDate: new Date(),
@@ -331,7 +350,7 @@ export default function UniversityTutorialSchedulePage(props) {
       for (let i = 0; i < ids.length; i += chunkSize) {
         const chunk = ids.slice(i, i + chunkSize);
         const batch = writeBatch(db);
-        chunk.forEach((id) => batch.delete(doc(db, "tutorialschedule", id)));
+        chunk.forEach((id) => batch.delete(getTutorialDocRef(id)));
         await batch.commit();
       }
 
@@ -346,7 +365,7 @@ export default function UniversityTutorialSchedulePage(props) {
     }
   };
 
-  const WEEK_START = 1; // Monday
+  const WEEK_START = 1;
 
   const toYMD = (d) => {
     const y = d.getFullYear();
@@ -535,7 +554,7 @@ export default function UniversityTutorialSchedulePage(props) {
             className="px-4 py-2 bg-black text-white rounded hover:bg-black"
             onClick={() => {
               setEditing(null);
-              setForm(initialForm);
+              resetForm();
               setModalOpen(true);
             }}
           >
@@ -836,7 +855,7 @@ export default function UniversityTutorialSchedulePage(props) {
                   onClick={() => {
                     setModalOpen(false);
                     setEditing(null);
-                    setForm(initialForm);
+                    resetForm();
                   }}
                   className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
                 >
