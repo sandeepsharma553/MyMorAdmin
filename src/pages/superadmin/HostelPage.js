@@ -48,7 +48,11 @@ const DEFAULT_FEATURES = {
   uniclub: false,
   explore: false,
   marketplace: false,
-  shop:false
+  shop:false,
+  checklist:false,
+  roominfo:false,
+  wellnessprompts:false,
+  messages:false,
 };
 
 const pageSize = 10;

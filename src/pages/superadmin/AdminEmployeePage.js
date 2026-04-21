@@ -103,6 +103,11 @@ export default function AdminEmployeePage({ navbarHeight }) {
     { key: "eventbooking", label: "Event Booking" },
     { key: "deal", label: "Deals" },
     { key: "faq", label: "FAQs" },
+    { key: "checklist", label: "Checklists" },
+    { key: "roominfo", label: "Room Info" },
+    { key: "parcels", label: "Parcels" },
+    { key: "wellnessprompts", label: "Wellness Prompts" },
+    { key: "messages", label: "Messages" },
     { key: "setting", label: "Setting" },
     { key: "employee", label: "Employee" },
     { key: "uniclub", label: "UniClub" },
@@ -129,6 +134,11 @@ export default function AdminEmployeePage({ navbarHeight }) {
     employee: "employee",
     student: "student",
     uniclub: "uniclub",
+    checklist: "checklist",
+    roominfo: "roominfo",
+    parcels: "parcels",
+    wellnessprompts: "wellnessprompts",
+    messages: "messages",
   };
 
   /* -------------------- Helpers -------------------- */
@@ -501,8 +511,13 @@ export default function AdminEmployeePage({ navbarHeight }) {
         return;
       }
 
-      if (!form.universityId || !form.hostelid) {
-        toast.error("Please select university and hostel");
+      if (!form.universityId) {
+        toast.error("Please select a university");
+        return;
+      }
+
+      if (!form.hostelid && !form.universityId) {
+        toast.error("Please select at least a university or hostel");
         return;
       }
 
