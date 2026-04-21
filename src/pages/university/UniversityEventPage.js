@@ -1,255 +1,2469 @@
+// src/pages/UniversityEventPage.jsx
 import React, { useState, useEffect, useRef } from "react";
-import { useSelector } from "react-redux";
-import { toast, ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
 import {
-  collection, addDoc, getDocs, updateDoc, deleteDoc,
-  doc, serverTimestamp, query, orderBy,
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  doc,
+  deleteDoc,
+  query,
+  where,
+  getDoc,
+  Timestamp,
+  writeBatch,
 } from "firebase/firestore";
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase";
-import { Plus, Trash2, Edit2, X, Image as ImageIcon, Search, MapPin, Users } from "lucide-react";
+import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
+import { ToastContainer, toast } from "react-toastify";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import dayjs from "dayjs";
+import MapLocationInput from "../../components/MapLocationInput";
+import EditorPro from "../../components/EditorPro";
+import { MapPin } from "lucide-react";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
+import Button from "@mui/material/Button";
+import { DateRange } from "react-date-range";
+import "react-date-range/dist/styles.css";
+import "react-date-range/dist/theme/default.css";
+import { enUS } from "date-fns/locale";
+import { format } from "date-fns";
+import { Html5Qrcode } from "html5-qrcode";
 
-const STATUS = (start, end) => {
-  const now = Date.now();
-  const s = start ? new Date(start).getTime() : 0;
-  const e = end ? new Date(end).getTime() : Infinity;
-  if (now < s) return { label: "Upcoming", cls: "bg-blue-100 text-blue-700" };
-  if (now > e) return { label: "Past", cls: "bg-gray-100 text-gray-500" };
-  return { label: "Ongoing", cls: "bg-green-100 text-green-700" };
-};
+export default function UniversityEventPage({ navbarHeight }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingData, setEditing] = useState(null);
+  const [deleteData, setDelete] = useState(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
-const EMPTY = { eventName: "", shortDesc: "", description: "", startDateTime: "", endDateTime: "", locationName: "", capacity: "", priceType: "Free", price: "", posterUrl: "", isPinned: false };
+  const [paymentlist, setPaymentList] = useState([]);
+  const [category, setCategory] = useState([]);
+  const [list, setList] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-export default function UniversityEventPage() {
-  const user = useSelector((state) => state.auth.user);
-  const emp = useSelector((state) => state.auth.employee);
+  const [range, setRange] = useState([
+    { startDate: new Date(), endDate: new Date(), key: "selection" },
+  ]);
+  const [showPicker, setShowPicker] = useState(false);
+  const pickerRef = useRef();
+
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [showPinnedOnly, setShowPinnedOnly] = useState(false);
+  const [timeFilter, setTimeFilter] = useState("current");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+
+  const [scanModal, setScanModal] = useState({ open: false, event: null });
+  const [scanResult, setScanResult] = useState(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanStatus, setScanStatus] = useState(null);
+  const qrInstanceRef = useRef(null);
+  const qrContainerRef = useRef(null);
+  const [qrReady, setQrReady] = useState(false);
+
+  const [sortConfig, setSortConfig] = useState({
+    key: "start",
+    direction: "asc",
+  });
+  const [filters, setFilters] = useState({ name: "", location: "" });
+  const debounceRef = useRef(null);
+
+  const setFilterDebounced = (field, value) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(
+      () => setFilters((p) => ({ ...p, [field]: value })),
+      250
+    );
+  };
+
+  const onSort = (key) =>
+    setSortConfig((p) =>
+      p.key === key
+        ? { key, direction: p.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: "asc" }
+    );
+
+  const uid = useSelector((s) => s.auth.user?.uid);
+  const emp = useSelector((s) => s.auth.employee);
   const universityId = String(emp?.universityid || emp?.universityId || "");
 
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("Upcoming");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [form, setForm] = useState(EMPTY);
-  const fileRef = useRef();
-
-  useEffect(() => { if (universityId) load(); }, [universityId]);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const snap = await getDocs(query(collection(db, "university", universityId, "events"), orderBy("startDateTime", "asc")));
-      setItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch { toast.error("Failed to load events"); }
-    finally { setLoading(false); }
+  const initialFormData = {
+    id: 0,
+    eventName: "",
+    shortDesc: "",
+    eventDescriptionHtml: "",
+    category: "",
+    tags: "",
+    date: "",
+    startDateTime: "",
+    endDateTime: "",
+    isRecurring: false,
+    frequency: "",
+    locationName: "",
+    address: "",
+    mapLocation: "",
+    onlineLink: "",
+    posters: [],
+    posterFiles: [],
+    promoVideo: "",
+    theme: "",
+    rsvp: false,
+    capacity: "",
+    maxPurchaseTickets: "",
+    rsvpDeadline: "",
+    priceType: "",
+    prices: [],
+    paymentLink: "",
+    allowChat: false,
+    allowReactions: false,
+    challenges: "",
+    visibility: "Public",
+    cohosts: "",
+    website: "",
+    instagram: "",
+    rules: "",
+    boothOption: false,
+    vendorInfo: "",
+    sponsorship: "",
+    interestedCount: 0,
+    universityid: "",
+    isPinned: false,
+    pinnedAt: null,
+    pinnedOrder: null,
+    refundPolicy: "",
+    freeTicketStartDateTime: "",
+    freeTicketEndDateTime: "",
+    hasTables: false,
+    tableType: "",
+    tableCount: "",
+    ticketsPerTable: "",
+    ticketTypes: [],
+    enableQrCheckIn: false,
   };
 
-  const openCreate = () => {
-    setEditing(null); setForm(EMPTY);
-    setImageFile(null); setImagePreview(null);
-    setModalOpen(true);
-  };
+  const [form, setForm] = useState(initialFormData);
 
-  const openEdit = (item) => {
-    setEditing(item);
-    setForm({ eventName: item.eventName || "", shortDesc: item.shortDesc || "", description: item.description || "", startDateTime: item.startDateTime || "", endDateTime: item.endDateTime || "", locationName: item.locationName || "", capacity: item.capacity || "", priceType: item.priceType || "Free", price: item.price || "", posterUrl: item.posterUrl || "", isPinned: !!item.isPinned });
-    setImageFile(null); setImagePreview(item.posterUrl || null);
-    setModalOpen(true);
-  };
-
-  const save = async () => {
-    if (!form.eventName.trim()) { toast.error("Event name is required"); return; }
-    setSubmitting(true);
-    try {
-      let posterUrl = form.posterUrl;
-      if (imageFile) {
-        const path = `university/${universityId}/events/${Date.now()}_${imageFile.name}`;
-        const snap = await uploadBytes(storageRef(storage, path), imageFile);
-        posterUrl = await getDownloadURL(snap.ref);
-      }
-      const data = {
-        eventName: form.eventName.trim(),
-        shortDesc: form.shortDesc.trim(),
-        description: form.description.trim(),
-        startDateTime: form.startDateTime,
-        endDateTime: form.endDateTime,
-        locationName: form.locationName.trim(),
-        capacity: form.capacity ? Number(form.capacity) : null,
-        priceType: form.priceType,
-        price: form.priceType === "Paid" ? Number(form.price) : 0,
-        posterUrl,
-        isPinned: form.isPinned,
-        universityId,
-        updatedAt: serverTimestamp(),
-      };
-      if (editing?.id) {
-        await updateDoc(doc(db, "university", universityId, "events", editing.id), data);
-        toast.success("Updated!");
-      } else {
-        await addDoc(collection(db, "university", universityId, "events"), { ...data, createdAt: serverTimestamp(), createdBy: user.uid });
-        toast.success("Created!");
-      }
-      setModalOpen(false); load();
-    } catch { toast.error("Save failed"); }
-    finally { setSubmitting(false); }
-  };
-
-  const remove = async (item) => {
-    if (!window.confirm("Delete this event?")) return;
-    try { await deleteDoc(doc(db, "university", universityId, "events", item.id)); load(); toast.success("Deleted"); }
-    catch { toast.error("Delete failed"); }
-  };
-
-  const filtered = items.filter(item => {
-    const st = STATUS(item.startDateTime, item.endDateTime);
-    const matchFilter = filter === "All" || st.label === filter;
-    const matchSearch = !search || item.eventName?.toLowerCase().includes(search.toLowerCase());
-    return matchFilter && matchSearch;
+  const [bookingsByEvent, setBookingsByEvent] = useState({});
+  const [bookingModal, setBookingModal] = useState({
+    open: false,
+    event: null,
+    page: 1,
+    pageSize: 10,
+    sort: { key: "timestamp", dir: "desc" },
+    q: "",
   });
 
-  if (!universityId) return <div className="p-8 text-center text-gray-400">No university assigned.</div>;
+  const [filterRange, setFilterRange] = useState([
+    { startDate: null, endDate: null, key: "selection" },
+  ]);
+  const [showFilterPicker, setShowFilterPicker] = useState(false);
+  const filterPickerRef = useRef(null);
+
+  useEffect(() => {
+    getList();
+    getCategory();
+    getPaymentList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [universityId]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!universityId) return;
+        const qB = query(
+          collection(db, "eventbookings"),
+          where("universityid", "==", universityId)
+        );
+        const snap = await getDocs(qB);
+
+        const grouped = {};
+        snap.docs.forEach((d) => {
+          const b = { id: d.id, ...d.data() };
+          const key = b.eventDocId || b.eventId || "__unknown__";
+          if (!grouped[key]) grouped[key] = [];
+          grouped[key].push(b);
+        });
+        setBookingsByEvent(grouped);
+      } catch (e) {
+        console.error(e);
+        toast.error("Failed to load bookings");
+      }
+    })();
+  }, [universityId]);
+
+  useEffect(() => {
+    if (!scanModal.open) {
+      setQrReady(false);
+      return;
+    }
+    const raf = requestAnimationFrame(() => setQrReady(true));
+    return () => cancelAnimationFrame(raf);
+  }, [scanModal.open]);
+
+  useEffect(() => {
+    const start = async () => {
+      if (!scanModal.open || !qrReady) return;
+
+      const el = qrContainerRef.current;
+      if (!el) return;
+
+      setScanStatus(null);
+      setScanResult(null);
+
+      if (!el.id) el.id = "mymor-qr-reader-university";
+
+      try {
+        if (qrInstanceRef.current) {
+          await qrInstanceRef.current.stop();
+          await qrInstanceRef.current.clear();
+        }
+      } catch {}
+
+      qrInstanceRef.current = new Html5Qrcode(el.id);
+
+      try {
+        await qrInstanceRef.current.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 260, height: 260 } },
+          async (decodedText) => {
+            if (scanBusy) return;
+            setScanBusy(true);
+            setScanResult(decodedText);
+            await handleVerifyAndCheckIn(decodedText);
+            setScanBusy(false);
+          },
+          () => {}
+        );
+      } catch (err) {
+        console.error("QR start error", err);
+        setScanStatus({
+          ok: false,
+          msg: "Camera access denied or scanner failed.",
+        });
+      }
+    };
+
+    start();
+
+    return () => {
+      (async () => {
+        try {
+          if (qrInstanceRef.current) {
+            await qrInstanceRef.current.stop();
+            await qrInstanceRef.current.clear();
+          }
+        } catch {}
+      })();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanModal.open, qrReady]);
+
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setForm((f) => ({ ...f, [name]: type === "checkbox" ? checked : value }));
+  };
+
+  const uniquePath = (folder, file) => {
+    const ext = file.name.includes(".") ? file.name.split(".").pop() : "jpg";
+    const base = file.name.replace(/\.[^/.]+$/, "");
+    const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const prefix = folder ? `${folder}/` : "";
+    return `${prefix}${base}_${stamp}.${ext}`;
+  };
+
+  const isBlankHtml = (html) => {
+    if (!html) return true;
+    const text = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+    return text.length === 0;
+  };
+
+  const defaultTicket = () => ({
+    id: "",
+    name: "",
+    description: "",
+    price: "",
+    allowedGroupNote: "",
+    passwordRequired: false,
+    password: "",
+    maxCapacity: "",
+    maxPurchasePerUser: "",
+    collectExtraInfo: false,
+    fields: {
+      name: true,
+      email: true,
+      number: true,
+      studentId: false,
+      degree: false,
+      studyYear: false,
+    },
+    startDateTime: "",
+    endDateTime: "",
+    hasTables: false,
+    tableType: "",
+    tableCount: "",
+    ticketsPerTable: "",
+  });
+
+  const updateTicket = (index, patch) => {
+    setForm((prev) => {
+      const next = [...(prev.ticketTypes || [])];
+      next[index] = { ...(next[index] || defaultTicket()), ...patch };
+      return { ...prev, ticketTypes: next };
+    });
+  };
+
+  const updateTicketFieldCheckbox = (index, field) => {
+    setForm((prev) => {
+      const next = [...(prev.ticketTypes || [])];
+      const current = next[index] || defaultTicket();
+      const fields = current.fields || {};
+      next[index] = { ...current, fields: { ...fields, [field]: !fields[field] } };
+      return { ...prev, ticketTypes: next };
+    });
+  };
+
+  const toMillis = (val) => {
+    if (!val) return null;
+    if (typeof val === "object" && val.seconds != null) return val.seconds * 1000;
+    if (val?.toDate) return val.toDate().getTime();
+    const ms = new Date(val).getTime();
+    return Number.isNaN(ms) ? null : ms;
+  };
+
+  const getList = async () => {
+    if (!universityId) {
+      setList([]);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const qEvents = query(
+        collection(db, "events"),
+        where("universityid", "==", universityId)
+      );
+      const snap = await getDocs(qEvents);
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      docs.sort(
+        (a, b) => (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0)
+      );
+      setList(docs);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load events");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getPaymentList = async () => {
+    if (!universityId) return;
+    setIsLoading(true);
+    try {
+      const qPay = query(
+        collection(db, "eventpaymenttype"),
+        where("universityid", "==", universityId)
+      );
+      const snap = await getDocs(qPay);
+      setPaymentList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getCategory = async () => {
+    if (!universityId) return;
+    try {
+      const qCat = query(
+        collection(db, "eventcategory"),
+        where("universityid", "==", universityId)
+      );
+      const snap = await getDocs(qCat);
+      setCategory(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load categories");
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const hasPoster =
+        (form.posters?.length || 0) > 0 || (form.posterFiles?.length || 0) > 0;
+      if (!editingData && !hasPoster)
+        return toast.error("Please add at least one poster");
+      if (isBlankHtml(form.eventDescriptionHtml))
+        return toast.error("Please add a description");
+
+      const sMs = new Date(form.startDateTime).getTime();
+      const eMs = new Date(form.endDateTime).getTime();
+      if (Number.isNaN(sMs) || Number.isNaN(eMs) || eMs <= sMs)
+        return toast.error("End date/time must be after start date/time.");
+
+      if (form.freeTicketStartDateTime && form.freeTicketEndDateTime) {
+        const fsMs = new Date(form.freeTicketStartDateTime).getTime();
+        const feMs = new Date(form.freeTicketEndDateTime).getTime();
+        if (!Number.isNaN(fsMs) && !Number.isNaN(feMs) && feMs <= fsMs) {
+          return toast.error("Free ticket end time must be after its start time.");
+        }
+      }
+
+      const capNum = parseInt(form.capacity, 10);
+      const maxPerNum = parseInt(form.maxPurchaseTickets, 10);
+      if (!Number.isNaN(maxPerNum) && maxPerNum < 1)
+        return toast.error("Max purchase tickets must be at least 1.");
+      if (!Number.isNaN(capNum) && !Number.isNaN(maxPerNum) && maxPerNum > capNum)
+        return toast.error("Max purchase tickets cannot be greater than Max Capacity.");
+
+      if (form.priceType === "Paid") {
+        const tks = form.ticketTypes || [];
+        if (tks.length === 0) {
+          return toast.error("Paid event: please add at least one ticket type.");
+        }
+        const invalid = tks.some((t) => !(t.name || "").trim());
+        if (invalid) return toast.error("Please enter ticket name for all tickets.");
+      }
+
+      let uploaded = [];
+      if (form.posterFiles?.length) {
+        const uploads = form.posterFiles.map(async (file) => {
+          const path = uniquePath(
+            `event_posters/${universityId}/${form.eventName || "event"}`,
+            file
+          );
+          const sRef = storageRef(storage, path);
+          await uploadBytes(sRef, file);
+          const url = await getDownloadURL(sRef);
+          return { url, name: file.name };
+        });
+        uploaded = await Promise.all(uploads);
+      }
+
+      const posters = [...(form.posters || []), ...uploaded];
+
+      const ticketTypesSanitised = (form.ticketTypes || []).map((t, idx) => ({
+        id: t.id || `ticket_${idx + 1}`,
+        name: (t.name || "").trim(),
+        description: (t.description || "").toString().trim(),
+        price: t.price === "" || t.price == null ? 0 : Number(t.price),
+        allowedGroupNote: (t.allowedGroupNote || "").trim(),
+        passwordRequired: !!t.passwordRequired,
+        password: t.passwordRequired ? (t.password || "").trim() : "",
+        maxCapacity:
+          t.maxCapacity === "" || t.maxCapacity == null ? null : Number(t.maxCapacity),
+        maxPurchasePerUser:
+          t.maxPurchasePerUser === "" || t.maxPurchasePerUser == null
+            ? null
+            : Number(t.maxPurchasePerUser),
+        collectExtraInfo: !!t.collectExtraInfo,
+        fields: {
+          name: !!t.fields?.name,
+          email: !!t.fields?.email,
+          number: !!t.fields?.number,
+          studentId: !!t.fields?.studentId,
+          degree: !!t.fields?.degree,
+          studyYear: !!t.fields?.studyYear,
+        },
+        startDateTime: t.startDateTime || "",
+        endDateTime: t.endDateTime || "",
+        hasTables: !!t.hasTables,
+        tableType: t.hasTables ? t.tableType || "" : "",
+        tableCount:
+          t.hasTables && t.tableCount !== "" && t.tableCount != null
+            ? Number(t.tableCount)
+            : null,
+        ticketsPerTable:
+          t.hasTables && t.ticketsPerTable !== "" && t.ticketsPerTable != null
+            ? Number(t.ticketsPerTable)
+            : null,
+      }));
+
+      const eventData = {
+        ...form,
+        universityid: universityId,
+        university: emp?.university || "",
+        imageUrl: emp?.imageUrl ?? null,
+        uid,
+        posters,
+        startDateTime: form.startDateTime,
+        endDateTime: form.endDateTime,
+        prices:
+          form.priceType === "Free" || form.priceType === "Paid" || !form.priceType
+            ? []
+            : form.prices || [],
+        isPinned: !!form.isPinned,
+        pinnedAt: form.isPinned ? form.pinnedAt || Timestamp.now() : null,
+        pinnedOrder: Number.isFinite(Number(form.pinnedOrder))
+          ? Number(form.pinnedOrder)
+          : null,
+        maxPurchaseTickets: Number.isNaN(Number(form.maxPurchaseTickets))
+          ? null
+          : Number(form.maxPurchaseTickets),
+        refundPolicy: form.refundPolicy || "",
+        freeTicketStartDateTime: form.freeTicketStartDateTime || "",
+        freeTicketEndDateTime: form.freeTicketEndDateTime || "",
+        hasTables: !!form.hasTables,
+        tableType: form.hasTables ? form.tableType || "" : "",
+        tableCount:
+          form.hasTables && form.tableCount !== "" && form.tableCount != null
+            ? Number(form.tableCount)
+            : null,
+        ticketsPerTable:
+          form.hasTables && form.ticketsPerTable !== "" && form.ticketsPerTable != null
+            ? Number(form.ticketsPerTable)
+            : null,
+        ticketTypes: form.priceType === "Paid" ? ticketTypesSanitised : [],
+        enableQrCheckIn: !!form.enableQrCheckIn,
+      };
+
+      delete eventData.id;
+      delete eventData.posterFiles;
+
+      if (editingData) {
+        const ref = doc(db, "events", editingData.id);
+        const snap = await getDoc(ref);
+        if (!snap.exists())
+          return toast.warning("Event does not exist! Cannot update.");
+        await updateDoc(ref, eventData);
+        toast.success("Event updated successfully");
+      } else {
+        await addDoc(collection(db, "events"), eventData);
+        toast.success("Event created successfully");
+      }
+
+      await getList();
+      setModalOpen(false);
+      setEditing(null);
+      setForm(initialFormData);
+    } catch (err) {
+      console.error(err);
+      toast.error("Save failed");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteData?.id) return;
+    try {
+      await deleteDoc(doc(db, "events", deleteData.id));
+      toast.success("Successfully deleted!");
+      getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Delete failed");
+    }
+    setConfirmDeleteOpen(false);
+    setDelete(null);
+  };
+
+  function getEventWindowMillis(item) {
+    const sdMs = toMillis(item?.date?.startDate);
+    const edMs = toMillis(item?.date?.endDate);
+
+    if (sdMs || edMs) {
+      const startDate = sdMs ? new Date(sdMs) : edMs ? new Date(edMs) : null;
+      const endDate = edMs ? new Date(edMs) : sdMs ? new Date(sdMs) : null;
+
+      if (startDate && endDate) {
+        const dayStart = new Date(
+          startDate.getFullYear(),
+          startDate.getMonth(),
+          startDate.getDate(),
+          0, 0, 0, 0
+        ).getTime();
+
+        const dayEnd = new Date(
+          endDate.getFullYear(),
+          endDate.getMonth(),
+          endDate.getDate(),
+          23, 59, 59, 999
+        ).getTime();
+
+        return { start: dayStart, end: dayEnd, source: "dateRange" };
+      }
+    }
+
+    const s1 = toMillis(item.startDateTime);
+    const e1 = toMillis(item.endDateTime);
+
+    if (s1 || e1) {
+      return { start: s1 ?? e1, end: e1 ?? s1, source: "dateTime" };
+    }
+
+    return { start: null, end: null, source: "none" };
+  }
+
+  function classifyEvent(item) {
+    const now = Date.now();
+    const { start, end } = getEventWindowMillis(item);
+
+    if (start == null && end == null) return "current";
+    if (start != null && now < start) return "future";
+    if (end != null && now > end) return "past";
+    return "current";
+  }
+
+  const eNumber = (v) =>
+    v === "" || v === null || v === undefined ? NaN : Number(v);
+
+  const getPinnedSorted = () =>
+    [...list]
+      .filter((e) => e.isPinned)
+      .sort((a, b) => {
+        const ao = Number.isFinite(eNumber(a.pinnedOrder)) ? a.pinnedOrder : 1e9;
+        const bo = Number.isFinite(eNumber(b.pinnedOrder)) ? b.pinnedOrder : 1e9;
+        if (ao !== bo) return ao - bo;
+        const aPA = toMillis(a.pinnedAt) ?? 0;
+        const bPA = toMillis(b.pinnedAt) ?? 0;
+        return bPA - aPA;
+      });
+
+  const renumberPinned = async () => {
+    const pinned = getPinnedSorted();
+    const batch = writeBatch(db);
+    pinned.forEach((ev, i) => {
+      const order = i + 1;
+      if (ev.pinnedOrder !== order)
+        batch.update(doc(db, "events", ev.id), { pinnedOrder: order });
+    });
+    await batch.commit();
+    await getList();
+  };
+
+  const movePin = async (item, dir) => {
+    const pinned = getPinnedSorted();
+    const idx = pinned.findIndex((e) => e.id === item.id);
+    const swapIdx = idx + dir;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= pinned.length) return;
+    const a = pinned[idx];
+    const b = pinned[swapIdx];
+    const batch = writeBatch(db);
+    batch.update(doc(db, "events", a.id), { pinnedOrder: b.pinnedOrder });
+    batch.update(doc(db, "events", b.id), { pinnedOrder: a.pinnedOrder });
+    await batch.commit();
+    await getList();
+  };
+
+  const applyPinOrder = async (item, newOrderRaw) => {
+    if (!item.isPinned) return;
+    let newOrder = Math.max(1, Math.floor(Number(newOrderRaw) || 1));
+    const pinned = getPinnedSorted().filter((e) => e.id !== item.id);
+    newOrder = Math.min(newOrder, pinned.length + 1);
+    const sequence = [...pinned];
+    sequence.splice(newOrder - 1, 0, { ...item });
+    const batch = writeBatch(db);
+    sequence.forEach((ev, i) =>
+      batch.update(doc(db, "events", ev.id), { pinnedOrder: i + 1 })
+    );
+    await batch.commit();
+    await getList();
+  };
+
+  const togglePin = async (item, makePinned) => {
+    try {
+      const ref = doc(db, "events", item.id);
+      if (makePinned) {
+        const currentPinned = getPinnedSorted();
+        const nextOrder =
+          (currentPinned[currentPinned.length - 1]?.pinnedOrder || 0) + 1;
+        await updateDoc(ref, {
+          isPinned: true,
+          pinnedAt: Timestamp.now(),
+          pinnedOrder: nextOrder,
+        });
+      } else {
+        await updateDoc(ref, {
+          isPinned: false,
+          pinnedAt: null,
+          pinnedOrder: null,
+        });
+        await renumberPinned();
+      }
+      toast.success(makePinned ? "Pinned" : "Unpinned");
+      await getList();
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not update pin");
+    }
+  };
+
+  const SHOW_ALL_DAY_FOR_DATE_ONLY = true;
+
+  function getTimeLine(item) {
+    const s = toMillis(item.startDateTime);
+    const e = toMillis(item.endDateTime);
+    if (s || e) {
+      const st = s ? dayjs(s).format("hh:mm A") : "";
+      const et = e ? dayjs(e).format("hh:mm A") : "";
+      return st && et ? `${st} to ${et}` : st || et || "";
+    }
+    return SHOW_ALL_DAY_FOR_DATE_ONLY ? "All day" : "";
+  }
+
+  function getDateLine(item) {
+    let s = toMillis(item.startDateTime) ?? toMillis(item?.date?.startDate);
+    let e = toMillis(item.endDateTime) ?? toMillis(item?.date?.endDate);
+
+    if (!s && !e) return "—";
+    if (!s) s = e;
+    if (!e) e = s;
+
+    const sd = dayjs(s);
+    const ed = dayjs(e);
+    const sameMonth = sd.month() === ed.month() && sd.year() === ed.year();
+    const sameYear = sd.year() === ed.year();
+
+    const monLower = (d) => d.format("MMM").toLowerCase();
+    const needYear = !sameYear || sd.year() !== dayjs().year();
+
+    if (sameMonth) {
+      return `${sd.format("D")}–${ed.format("D")} ${monLower(sd)}${
+        needYear ? " " + sd.format("YYYY") : ""
+      }`;
+    }
+    if (sameYear) {
+      return `${sd.format("D")} ${monLower(sd)}–${ed.format("D")} ${monLower(ed)}${
+        needYear ? " " + sd.format("YYYY") : ""
+      }`;
+    }
+    return `${sd.format("D MMM YYYY")}–${ed.format("D MMM YYYY")}`.replace(
+      /MMM/g,
+      (m) => m.toLowerCase()
+    );
+  }
+
+  const dayStart = (d) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+  const dayEnd = (d) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+
+  const overlaps = (evStartMs, evEndMs, fStart, fEnd) => {
+    if (!fStart || !fEnd) return true;
+    const fs = dayStart(fStart);
+    const fe = dayEnd(fEnd);
+    return evStartMs <= fe && evEndMs >= fs;
+  };
+
+  const timeFiltered = list.filter((ev) => classifyEvent(ev) === timeFilter);
+  const catFiltered =
+    categoryFilter === "All"
+      ? timeFiltered
+      : timeFiltered.filter((ev) => (ev.category || "") === categoryFilter);
+  const pinFiltered = showPinnedOnly
+    ? catFiltered.filter((ev) => !!ev.isPinned)
+    : catFiltered;
+
+  const filtered = pinFiltered.filter((ev) => {
+    const nameOK =
+      !filters.name ||
+      (ev.eventName || "").toLowerCase().includes(filters.name.toLowerCase());
+    const locOK =
+      !filters.location ||
+      (ev.locationName || "").toLowerCase().includes(filters.location.toLowerCase());
+
+    const { start, end } = getEventWindowMillis(ev);
+    const fStart = filterRange?.[0]?.startDate;
+    const fEnd = filterRange?.[0]?.endDate;
+    const rangeOK =
+      start == null && end == null ? true : overlaps(start ?? 0, end ?? 0, fStart, fEnd);
+
+    return nameOK && locOK && rangeOK;
+  });
+
+  const getSortVal = (ev, key) => {
+    if (key === "name") return (ev.eventName || "").toLowerCase();
+    if (key === "start") return toMillis(ev.startDateTime) ?? 0;
+    if (key === "location") return (ev.locationName || "").toLowerCase();
+    if (key === "category") return (ev.category || "").toLowerCase();
+    return "";
+  };
+
+  const sorted = [...filtered].sort((a, b) => {
+    const ap = a.isPinned ? 1 : 0;
+    const bp = b.isPinned ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+
+    if (ap === 1 && bp === 1) {
+      const ao = Number.isFinite(eNumber(a.pinnedOrder)) ? a.pinnedOrder : 1e9;
+      const bo = Number.isFinite(eNumber(b.pinnedOrder)) ? b.pinnedOrder : 1e9;
+      if (ao !== bo) return ao - bo;
+      const aPA = toMillis(a.pinnedAt) ?? 0;
+      const bPA = toMillis(b.pinnedAt) ?? 0;
+      if (aPA !== bPA) return bPA - aPA;
+    }
+
+    const dir = sortConfig.direction === "asc" ? 1 : -1;
+    const va = getSortVal(a, sortConfig.key);
+    const vb = getSortVal(b, sortConfig.key);
+    if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+    return String(va).localeCompare(String(vb)) * dir;
+  });
+
+  const categoryOptions = [
+    "All",
+    ...Array.from(new Set((category || []).map((c) => c.name).filter(Boolean))),
+  ];
+
+  const handleRangeChange = (item) => {
+    const selected = item.selection;
+    setRange([selected]);
+    const bothSelected =
+      selected.startDate &&
+      selected.endDate &&
+      selected.startDate.getTime() !== selected.endDate.getTime();
+    if (bothSelected) {
+      setForm((prev) => ({
+        ...prev,
+        date: {
+          startDate: selected.startDate.toISOString(),
+          endDate: selected.endDate.toISOString(),
+        },
+      }));
+      setShowPicker(false);
+    }
+  };
+
+  const handleVerifyAndCheckIn = async (payloadRaw) => {
+    try {
+      const ev = scanModal.event;
+      if (!ev?.id) return setScanStatus({ ok: false, msg: "Event missing." });
+
+      let bookingId = payloadRaw;
+
+      try {
+        const j = JSON.parse(payloadRaw);
+        bookingId = j?.bid || j?.bookingId || j?.id || payloadRaw;
+      } catch {}
+
+      if (!bookingId) {
+        setScanStatus({ ok: false, msg: "Invalid QR payload." });
+        return;
+      }
+
+      const bRef = doc(db, "eventbookings", bookingId);
+      const bSnap = await getDoc(bRef);
+
+      if (!bSnap.exists()) {
+        setScanStatus({ ok: false, msg: "Booking not found." });
+        return;
+      }
+
+      const b = { id: bSnap.id, ...bSnap.data() };
+
+      if (
+        b.universityid &&
+        universityId &&
+        String(b.universityid) !== String(universityId)
+      ) {
+        setScanStatus({ ok: false, msg: "Wrong university booking." });
+        return;
+      }
+
+      const bookedEventId = b.eventDocId || b.eventId;
+      if (bookedEventId && String(bookedEventId) !== String(ev.id)) {
+        setScanStatus({ ok: false, msg: "Wrong event ticket." });
+        return;
+      }
+
+      if (b.checkInStatus === "checked_in") {
+        setScanStatus({ ok: true, msg: "Already checked-in ✅" });
+        return;
+      }
+
+      await updateDoc(bRef, {
+        checkInStatus: "checked_in",
+        checkedInAt: Timestamp.now(),
+        checkedInBy: uid,
+        checkedInByName: emp?.name || emp?.email || "",
+        checkedInEventId: ev.id,
+      });
+
+      setScanStatus({ ok: true, msg: "Verified & checked-in ✅" });
+    } catch (e) {
+      console.error(e);
+      setScanStatus({ ok: false, msg: "Check-in failed." });
+    }
+  };
+
+  if (!universityId) {
+    return (
+      <main
+        className="flex-1 p-6 bg-gray-100 overflow-auto"
+        style={{ paddingTop: navbarHeight || 0 }}
+      >
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-10 text-center text-gray-500">
+          No university assigned.
+        </div>
+        <ToastContainer />
+      </main>
+    );
+  }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <ToastContainer position="top-right" autoClose={3000} />
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Events</h1>
-          <p className="text-sm text-gray-500 mt-1">University events and activities</p>
-        </div>
-        <button onClick={openCreate} className="flex items-center gap-2 bg-green-800 text-white px-4 py-2 rounded-lg hover:bg-green-700">
-          <Plus size={16} /> New Event
+    <main
+      className="flex-1 p-6 bg-gray-100 overflow-auto"
+      style={{ paddingTop: navbarHeight || 0 }}
+    >
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-semibold">University Event</h1>
+        <button
+          className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+          onClick={() => {
+            setEditing(null);
+            setForm(initialFormData);
+            setModalOpen(true);
+          }}
+        >
+          + Add Event
         </button>
       </div>
 
-      <div className="flex gap-4 mb-4">
-        <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-600" placeholder="Search events…" value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <div className="flex gap-1">
-          {["Upcoming", "Ongoing", "Past", "All"].map(f => (
-            <button key={f} onClick={() => setFilter(f)} className={`px-3 py-2 text-xs font-semibold rounded-lg transition ${filter === f ? "bg-green-800 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>{f}</button>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {["past", "current", "future"].map((k) => {
+          const active = timeFilter === k;
+          return (
+            <button
+              key={k}
+              onClick={() => setTimeFilter(k)}
+              className={`px-3 py-1.5 rounded-full text-sm border ${
+                active
+                  ? "bg-black text-white border-black"
+                  : "bg-white text-gray-700 border-gray-300"
+              }`}
+            >
+              {k[0].toUpperCase() + k.slice(1)}
+            </button>
+          );
+        })}
+
+        <label className="ml-1 text-sm flex items-center gap-2 border border-gray-300 rounded-full px-3 py-1 bg-white">
+          <input
+            type="checkbox"
+            checked={showPinnedOnly}
+            onChange={(e) => setShowPinnedOnly(e.target.checked)}
+          />
+          Show pinned only
+        </label>
+
+        <span className="text-xs text-gray-500">
+          Showing {sorted.length} of {list.length}
+        </span>
       </div>
 
-      {loading && <div className="flex justify-center py-10"><FadeLoader color="#073b15" /></div>}
+      <h2 className="text-xl font-semibold mb-2">
+        {timeFilter === "past"
+          ? "Past Events"
+          : timeFilter === "future"
+          ? "Upcoming Events"
+          : "Happening Now"}
+      </h2>
 
-      {!loading && (
-        <div className="grid gap-4">
-          {filtered.length === 0 && <div className="text-center py-16 text-gray-400"><p className="text-lg font-semibold">No events</p></div>}
-          {filtered.map(item => {
-            const st = STATUS(item.startDateTime, item.endDateTime);
-            return (
-              <div key={item.id} className="bg-white rounded-xl border border-gray-100 shadow-sm flex gap-4 p-4">
-                {item.posterUrl
-                  ? <img src={item.posterUrl} alt="" className="w-24 h-20 object-cover rounded-lg flex-shrink-0" />
-                  : <div className="w-24 h-20 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0"><ImageIcon size={24} className="text-gray-300" /></div>
-                }
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    {item.isPinned && <span className="text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">📌 Pinned</span>}
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
-                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{item.priceType}{item.priceType === "Paid" ? ` · $${item.price}` : ""}</span>
-                  </div>
-                  <p className="font-semibold text-gray-800">{item.eventName}</p>
-                  {item.shortDesc && <p className="text-sm text-gray-500 truncate">{item.shortDesc}</p>}
-                  <div className="flex gap-4 mt-1.5 flex-wrap">
-                    {item.startDateTime && <p className="text-xs text-gray-400">{new Date(item.startDateTime).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
-                    {item.locationName && <p className="text-xs text-gray-400 flex items-center gap-1"><MapPin size={11} />{item.locationName}</p>}
-                    {item.capacity && <p className="text-xs text-gray-400 flex items-center gap-1"><Users size={11} />{item.capacity} capacity</p>}
-                  </div>
+      <div className="overflow-x-auto bg-white rounded shadow">
+        {isLoading ? (
+          <div className="flex justify-center items-center h-64">
+            <FadeLoader color="#36d7b7" loading={isLoading} />
+          </div>
+        ) : (
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                {[
+                  { key: "name", label: "Event" },
+                  { key: "category", label: "Category" },
+                  { key: "start", label: "Event Date" },
+                  { key: "location", label: "Location" },
+                  { key: "bookings", label: "Bookings", sortable: false },
+                  { key: "image", label: "Poster(s)", sortable: false },
+                  { key: "pin", label: "Pin", sortable: false },
+                  { key: "actions", label: "Actions", sortable: false },
+                ].map((col) => (
+                  <th
+                    key={col.key}
+                    className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none"
+                  >
+                    {col.sortable === false ? (
+                      <span>{col.label}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 hover:underline"
+                        onClick={() => onSort(col.key)}
+                        title="Sort"
+                      >
+                        <span>{col.label}</span>
+                        {sortConfig.key === col.key && (
+                          <span className="text-gray-400">
+                            {sortConfig.direction === "asc" ? "▲" : "▼"}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                  </th>
+                ))}
+              </tr>
+
+              <tr className="border-t border-gray-200">
+                <th className="px-6 pb-3">
+                  <input
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    placeholder="Search name"
+                    defaultValue={filters.name}
+                    onChange={(e) => setFilterDebounced("name", e.target.value)}
+                  />
+                </th>
+
+                <th className="px-6 pb-3">
+                  <select
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    title="Filter by category"
+                  >
+                    {categoryOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt === "All" ? "All" : opt}
+                      </option>
+                    ))}
+                  </select>
+                </th>
+
+                <th className="px-6 pb-3 relative">
+                  <button
+                    type="button"
+                    className="w-full border border-gray-300 rounded text-sm px-2 py-1 text-left bg-white hover:bg-gray-50"
+                    onClick={() => setShowFilterPicker((v) => !v)}
+                    title="Filter by date range"
+                  >
+                    {(() => {
+                      const s = filterRange?.[0]?.startDate;
+                      const e = filterRange?.[0]?.endDate;
+                      if (s && e) return `${format(s, "MMM dd, yyyy")} – ${format(e, "MMM dd, yyyy")}`;
+                      return "Any date";
+                    })()}
+                  </button>
+
+                  {showFilterPicker && (
+                    <div
+                      ref={filterPickerRef}
+                      className="absolute z-50 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg"
+                      style={{ left: 0 }}
+                    >
+                      <DateRange
+                        ranges={[
+                          {
+                            startDate: filterRange?.[0]?.startDate ?? new Date(),
+                            endDate: filterRange?.[0]?.endDate ?? new Date(),
+                            key: "selection",
+                          },
+                        ]}
+                        onChange={(r) => {
+                          const sel = r.selection;
+                          setFilterRange([{ ...sel }]);
+                        }}
+                        moveRangeOnFirstSelection={false}
+                        locale={enUS}
+                        editableDateInputs
+                      />
+                      <div className="flex items-center justify-end gap-2 p-2 border-t bg-gray-50">
+                        <button
+                          type="button"
+                          className="text-sm px-3 py-1 rounded border hover:bg-white"
+                          onClick={() => {
+                            setFilterRange([
+                              { startDate: null, endDate: null, key: "selection" },
+                            ]);
+                            setShowFilterPicker(false);
+                          }}
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          className="text-sm px-3 py-1 rounded border bg-black text-white hover:opacity-90"
+                          onClick={() => setShowFilterPicker(false)}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </th>
+
+                <th className="px-6 pb-3">
+                  <input
+                    className="w-full border border-gray-300 p-1 rounded text-sm"
+                    placeholder="Search location"
+                    defaultValue={filters.location}
+                    onChange={(e) => setFilterDebounced("location", e.target.value)}
+                  />
+                </th>
+
+                <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
+                <th className="px-6 pb-3" />
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-gray-200">
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="px-6 py-10 text-center text-gray-500">
+                    No events to show for this filter.
+                  </td>
+                </tr>
+              ) : (
+                sorted.map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {item.eventName}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {item.category || "—"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {getTimeLine(item)}
+                      <br />
+                      {getDateLine(item)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {item.locationName}
+                    </td>
+
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {(() => {
+                        const arr = bookingsByEvent[item.id] || [];
+                        const count = arr.length;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                              {count}
+                            </span>
+                            {count > 0 && (
+                              <button
+                                type="button"
+                                className="text-blue-600 hover:underline"
+                                onClick={() =>
+                                  setBookingModal({
+                                    open: true,
+                                    event: item,
+                                    page: 1,
+                                    pageSize: 10,
+                                    sort: { key: "timestamp", dir: "desc" },
+                                    q: "",
+                                  })
+                                }
+                              >
+                                View
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {item.posters?.[0]?.url ? (
+                        <img
+                          src={item.posters[0].url}
+                          alt=""
+                          width={80}
+                          height={80}
+                          className="rounded"
+                        />
+                      ) : null}
+                      {item.posters?.length > 1 && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          +{item.posters.length - 1} more
+                        </div>
+                      )}
+                    </td>
+
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          title={item.isPinned ? "Unpin" : "Pin"}
+                          onClick={() => togglePin(item, !item.isPinned)}
+                          className={`text-lg leading-none ${
+                            item.isPinned ? "text-yellow-500" : "text-gray-300"
+                          } hover:opacity-80`}
+                          aria-label={item.isPinned ? "Unpin event" : "Pin event"}
+                        >
+                          {item.isPinned ? "★" : "☆"}
+                        </button>
+
+                        {item.isPinned && (
+                          <>
+                            <input
+                              type="number"
+                              min={1}
+                              value={Number.isFinite(item.pinnedOrder) ? item.pinnedOrder : 1}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setList((prev) =>
+                                  prev.map((ev) =>
+                                    ev.id === item.id
+                                      ? { ...ev, pinnedOrder: Number(val) }
+                                      : ev
+                                  )
+                                );
+                              }}
+                              onBlur={(e) => applyPinOrder(item, e.target.value)}
+                              className="w-12 px-2 py-1 border rounded text-sm text-center"
+                              title="Pinned order (1 = top)"
+                            />
+                            <div className="flex flex-col gap-1">
+                              <button
+                                type="button"
+                                className="border rounded px-1 leading-none"
+                                title="Move up"
+                                onClick={() => movePin(item, -1)}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                className="border rounded px-1 leading-none"
+                                title="Move down"
+                                onClick={() => movePin(item, 1)}
+                              >
+                                ↓
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <button
+                        className="text-green-700 hover:underline mr-3"
+                        onClick={() => setScanModal({ open: true, event: item })}
+                        title="Scan tickets for this event"
+                      >
+                        Scan QR
+                      </button>
+
+                      <button
+                        className="text-blue-600 hover:underline mr-3"
+                        onClick={() => {
+                          setEditing(item);
+
+                          const startDate = item.date?.startDate?.seconds
+                            ? new Date(item.date.startDate.seconds * 1000)
+                            : new Date(item.date?.startDate || new Date());
+                          const endDate = item.date?.endDate?.seconds
+                            ? new Date(item.date.endDate.seconds * 1000)
+                            : new Date(item.date?.endDate || new Date());
+
+                          setForm((prev) => ({
+                            ...prev,
+                            ...initialFormData,
+                            ...item,
+                            id: item.id,
+                            date: {
+                              startDate: startDate.toISOString(),
+                              endDate: endDate.toISOString(),
+                            },
+                            startDateTime: item.startDateTime || "",
+                            endDateTime: item.endDateTime || "",
+                            posterFiles: [],
+                            posters: Array.isArray(item.posters) ? item.posters : [],
+                            eventDescriptionHtml:
+                              item.eventDescriptionHtml ||
+                              item.eventDescription ||
+                              "",
+                            pinnedOrder: Number.isFinite(item.pinnedOrder)
+                              ? item.pinnedOrder
+                              : null,
+                            refundPolicy: item.refundPolicy || "",
+                            freeTicketStartDateTime: item.freeTicketStartDateTime || "",
+                            freeTicketEndDateTime: item.freeTicketEndDateTime || "",
+                            hasTables: !!item.hasTables,
+                            tableType: item.tableType || "",
+                            tableCount: item.tableCount ?? "",
+                            ticketsPerTable: item.ticketsPerTable ?? "",
+                            ticketTypes: Array.isArray(item.ticketTypes) ? item.ticketTypes : [],
+                            enableQrCheckIn: !!item.enableQrCheckIn,
+                          }));
+
+                          setRange([{ startDate, endDate, key: "selection" }]);
+                          setModalOpen(true);
+                        }}
+                      >
+                        Edit
+                      </button>
+
+                      <button
+                        className="text-red-600 hover:underline"
+                        onClick={() => {
+                          setDelete(item);
+                          setConfirmDeleteOpen(true);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
+            <h2 className="text-xl font-bold mb-4">
+              {editingData ? "Edit Event" : "Create Event"}
+            </h2>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-4">
+                <input
+                  name="eventName"
+                  placeholder="Event Name"
+                  value={form.eventName}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
+
+                <input
+                  name="shortDesc"
+                  placeholder="Short Description"
+                  value={form.shortDesc}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
+
+                <label className="block font-medium">Description</label>
+                <EditorPro
+                  value={form.eventDescriptionHtml}
+                  onChange={(html) =>
+                    setForm((f) => ({ ...f, eventDescriptionHtml: html }))
+                  }
+                  placeholder="Describe your event…"
+                />
+
+                <select
+                  name="category"
+                  value={form.category}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                >
+                  <option value="">Select Category</option>
+                  {category?.map((item) => (
+                    <option key={item.id} value={item.name}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  name="tags"
+                  placeholder="Tags (comma separated)"
+                  value={form.tags}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                />
+
+                <label className="block font-medium">Event Display Range on App</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    readOnly
+                    value={
+                      form.date?.startDate && form.date?.endDate
+                        ? `${format(
+                            new Date(form.date.startDate),
+                            "MMM dd, yyyy"
+                          )} - ${format(
+                            new Date(form.date.endDate),
+                            "MMM dd, yyyy"
+                          )}`
+                        : ""
+                    }
+                    onClick={() => setShowPicker(!showPicker)}
+                    className="w-full border border-gray-300 p-2 rounded"
+                  />
+                  {showPicker && (
+                    <div
+                      ref={pickerRef}
+                      style={{
+                        position: "absolute",
+                        top: 50,
+                        zIndex: 1000,
+                        boxShadow: "0px 2px 10px rgba(0,0,0,0.2)",
+                      }}
+                    >
+                      <DateRange
+                        editableDateInputs
+                        onChange={handleRangeChange}
+                        moveRangeOnFirstSelection={false}
+                        ranges={range}
+                        minDate={new Date()}
+                        locale={enUS}
+                      />
+                    </div>
+                  )}
                 </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={() => openEdit(item)} className="p-1.5 hover:bg-gray-100 rounded-lg"><Edit2 size={15} className="text-blue-500" /></button>
-                  <button onClick={() => remove(item)} className="p-1.5 hover:bg-gray-100 rounded-lg"><Trash2 size={15} className="text-red-400" /></button>
+
+                <label className="block font-medium mt-2">Event Start Date & Time</label>
+                <input
+                  type="datetime-local"
+                  name="startDateTime"
+                  value={form.startDateTime}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
+
+                <label className="block font-medium">Event End Date & Time</label>
+                <input
+                  type="datetime-local"
+                  name="endDateTime"
+                  value={form.endDateTime}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
+
+                <input
+                  name="locationName"
+                  placeholder="Location Name"
+                  value={form.locationName}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
+                <input
+                  name="address"
+                  placeholder="Address / Room"
+                  value={form.address}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                  required
+                />
+
+                <div className="relative">
+                  <input
+                    name="mapLocation"
+                    readOnly
+                    placeholder="Select on map"
+                    value={form.mapLocation}
+                    onClick={() => setShowMapModal(true)}
+                    className="w-full border border-gray-300 p-2 pl-10 rounded cursor-pointer"
+                  />
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                 </div>
+
+                <div className="space-y-2">
+                  <label className="block font-medium">
+                    Posters (you can add multiple)
+                  </label>
+                  <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
+                    <label className="cursor-pointer">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (!files.length) return;
+                          setForm((prev) => ({
+                            ...prev,
+                            posterFiles: [...(prev.posterFiles || []), ...files],
+                          }));
+                        }}
+                      />
+                      📁 Choose Posters
+                    </label>
+                    <span className="text-sm text-gray-600">
+                      {form.posterFiles?.length
+                        ? `${form.posterFiles.length} selected`
+                        : "No files selected"}
+                    </span>
+                  </div>
+
+                  {!!form.posterFiles?.length && (
+                    <div className="mt-2 grid grid-cols-3 md:grid-cols-4 gap-2">
+                      {form.posterFiles.map((f, i) => (
+                        <div key={`${f.name}-${i}`} className="relative">
+                          <img
+                            src={URL.createObjectURL(f)}
+                            alt={f.name}
+                            className="w-full h-24 object-cover rounded"
+                          />
+                          <button
+                            type="button"
+                            className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
+                            onClick={() =>
+                              setForm((prev) => {
+                                const next = [...prev.posterFiles];
+                                next.splice(i, 1);
+                                return { ...prev, posterFiles: next };
+                              })
+                            }
+                            title="Remove"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!!form.posters?.length && (
+                    <>
+                      <div className="text-sm text-gray-500 mt-3">Already saved</div>
+                      <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                        {form.posters.map((img, i) => (
+                          <div key={`${img.url}-${i}`} className="relative">
+                            <img
+                              src={img.url}
+                              alt={img.name || `poster-${i}`}
+                              className="w-full h-24 object-cover rounded"
+                            />
+                            <button
+                              type="button"
+                              className="absolute -top-2 -right-2 bg-white border rounded-full px-2 text-xs"
+                              onClick={() =>
+                                setForm((prev) => {
+                                  const next = [...prev.posters];
+                                  next.splice(i, 1);
+                                  return { ...prev, posters: next };
+                                })
+                              }
+                              title="Remove from event"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="border border-gray-200 rounded-md p-3 space-y-3">
+                  <h3 className="font-semibold text-sm">Event Tickets</h3>
+
+                  <select
+                    name="priceType"
+                    value={form.priceType}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setForm((prev) => ({
+                        ...prev,
+                        priceType: val,
+                        prices:
+                          val === "MultiPrice" || val === "MultiPriceTimer"
+                            ? prev.prices
+                            : [],
+                        ticketTypes: val === "Paid" ? (prev.ticketTypes || []) : [],
+                      }));
+                    }}
+                    className="w-full border border-gray-300 p-2 rounded"
+                    required
+                  >
+                    <option value="">Select Payment Type</option>
+                    <option value="Free">Free</option>
+                    <option value="Paid">Paid (Ticket Types)</option>
+                    <option value="MultiPrice">Multi Price</option>
+                    <option value="MultiPriceTimer">Multi Price Timer</option>
+                  </select>
+
+                  <label className="text-sm">
+                    <input
+                      type="checkbox"
+                      name="enableQrCheckIn"
+                      checked={!!form.enableQrCheckIn}
+                      onChange={handleChange}
+                      className="mr-2"
+                    />
+                    Enable QR check-in
+                  </label>
+
+                  {form.priceType === "Free" && (
+                    <>
+                      <input
+                        name="capacity"
+                        placeholder="Max Capacity (total tickets / attendees)"
+                        value={form.capacity}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 p-2 rounded"
+                      />
+
+                      <input
+                        type="number"
+                        name="maxPurchaseTickets"
+                        min="1"
+                        placeholder="Max Purchase Tickets (per booking/user)"
+                        value={form.maxPurchaseTickets}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 p-2 rounded"
+                      />
+                      <p className="text-xs text-gray-500 -mt-1">
+                        Leave blank for no limit.
+                      </p>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            Ticket Start Time
+                          </label>
+                          <input
+                            type="datetime-local"
+                            name="freeTicketStartDateTime"
+                            value={form.freeTicketStartDateTime}
+                            onChange={handleChange}
+                            className="border border-gray-300 p-2 rounded w-full"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            Ticket End Time
+                          </label>
+                          <input
+                            type="datetime-local"
+                            name="freeTicketEndDateTime"
+                            value={form.freeTicketEndDateTime}
+                            onChange={handleChange}
+                            className="border border-gray-300 p-2 rounded w-full"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 mt-3">
+                        <label className="text-sm">
+                          <input
+                            type="checkbox"
+                            name="hasTables"
+                            checked={!!form.hasTables}
+                            onChange={handleChange}
+                            className="mr-2"
+                          />
+                          Does this event have Tables / Pods?
+                        </label>
+
+                        {form.hasTables && (
+                          <div className="space-y-2">
+                            <select
+                              name="tableType"
+                              value={form.tableType}
+                              onChange={handleChange}
+                              className="w-full border border-gray-300 p-2 rounded"
+                            >
+                              <option value="">Select type of table</option>
+                              <option value="Tables">Table</option>
+                              <option value="Teams">Team</option>
+                              <option value="Bus">Bus</option>
+                              <option value="Cabin">Cabin</option>
+                            </select>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              <input
+                                type="number"
+                                name="tableCount"
+                                min="0"
+                                placeholder="Number of tables / pods"
+                                value={form.tableCount}
+                                onChange={handleChange}
+                                className="w-full border border-gray-300 p-2 rounded"
+                              />
+                              <input
+                                type="number"
+                                name="ticketsPerTable"
+                                min="0"
+                                placeholder="Tickets per table / pod"
+                                value={form.ticketsPerTable}
+                                onChange={handleChange}
+                                className="w-full border border-gray-300 p-2 rounded"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {form.priceType === "Paid" && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-sm">Tickets</h4>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((prev) => ({
+                              ...prev,
+                              ticketTypes: [...(prev.ticketTypes || []), defaultTicket()],
+                            }))
+                          }
+                          className="text-sm px-2 py-1 border rounded hover:bg-gray-50"
+                        >
+                          + Add Ticket
+                        </button>
+                      </div>
+
+                      {(form.ticketTypes || []).length === 0 && (
+                        <p className="text-xs text-gray-500">
+                          No tickets added yet.
+                        </p>
+                      )}
+
+                      {(form.ticketTypes || []).map((t, index) => (
+                        <div
+                          key={index}
+                          className="border border-gray-200 rounded-md p-3 space-y-2 bg-gray-50"
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-medium text-gray-600">
+                              Ticket {index + 1}
+                            </span>
+                            <button
+                              type="button"
+                              className="text-xs text-red-600 hover:underline"
+                              onClick={() =>
+                                setForm((prev) => {
+                                  const next = [...(prev.ticketTypes || [])];
+                                  next.splice(index, 1);
+                                  return { ...prev, ticketTypes: next };
+                                })
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <input
+                              placeholder="Ticket Name (e.g. General, VIP)"
+                              value={t.name || ""}
+                              onChange={(e) => updateTicket(index, { name: e.target.value })}
+                              className="border border-gray-300 p-2 rounded"
+                              required
+                            />
+
+                            <input
+                              placeholder="Description"
+                              value={t.description || ""}
+                              onChange={(e) =>
+                                updateTicket(index, { description: e.target.value })
+                              }
+                              className="border border-gray-300 p-2 rounded"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="Price"
+                              value={t.price || ""}
+                              onChange={(e) => updateTicket(index, { price: e.target.value })}
+                              className="border border-gray-300 p-2 rounded"
+                            />
+
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="Ticket Max Capacity (optional)"
+                              value={t.maxCapacity || ""}
+                              onChange={(e) =>
+                                updateTicket(index, { maxCapacity: e.target.value })
+                              }
+                              className="border border-gray-300 p-2 rounded"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="Ticket Max Purchase per user (optional)"
+                              value={t.maxPurchasePerUser || ""}
+                              onChange={(e) =>
+                                updateTicket(index, { maxPurchasePerUser: e.target.value })
+                              }
+                              className="border border-gray-300 p-2 rounded"
+                            />
+
+                            <div className="space-y-2">
+                              <label className="text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={!!t.passwordRequired}
+                                  onChange={(e) =>
+                                    updateTicket(index, {
+                                      passwordRequired: e.target.checked,
+                                    })
+                                  }
+                                  className="mr-2"
+                                />
+                                Add Password for special members to buy
+                              </label>
+
+                              {t.passwordRequired && (
+                                <input
+                                  placeholder="Ticket password"
+                                  value={t.password || ""}
+                                  onChange={(e) =>
+                                    updateTicket(index, { password: e.target.value })
+                                  }
+                                  className="border border-gray-300 p-2 rounded w-full"
+                                />
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">
+                                Ticket Start Time
+                              </label>
+                              <input
+                                type="datetime-local"
+                                value={t.startDateTime || ""}
+                                onChange={(e) =>
+                                  updateTicket(index, { startDateTime: e.target.value })
+                                }
+                                className="border border-gray-300 p-2 rounded w-full"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">
+                                Ticket End Time
+                              </label>
+                              <input
+                                type="datetime-local"
+                                value={t.endDateTime || ""}
+                                onChange={(e) =>
+                                  updateTicket(index, { endDateTime: e.target.value })
+                                }
+                                className="border border-gray-300 p-2 rounded w-full"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-sm">
+                              <input
+                                type="checkbox"
+                                checked={!!t.collectExtraInfo}
+                                onChange={(e) =>
+                                  updateTicket(index, { collectExtraInfo: e.target.checked })
+                                }
+                                className="mr-2"
+                              />
+                              Collect extra information for ticketholders
+                            </label>
+
+                            {t.collectExtraInfo && (
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                {["name", "email", "number", "studentId", "degree", "studyYear"].map(
+                                  (field) => (
+                                    <label key={field}>
+                                      <input
+                                        type="checkbox"
+                                        checked={
+                                          t.fields?.[field] ??
+                                          (field === "name" ||
+                                            field === "email" ||
+                                            field === "number")
+                                        }
+                                        onChange={() => updateTicketFieldCheckbox(index, field)}
+                                        className="mr-1"
+                                      />
+                                      {field}
+                                    </label>
+                                  )
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-2 pt-3 border-t border-gray-300">
+                            <label className="text-sm font-medium">
+                              <input
+                                type="checkbox"
+                                checked={!!t.hasTables}
+                                onChange={(e) =>
+                                  updateTicket(index, { hasTables: e.target.checked })
+                                }
+                                className="mr-2"
+                              />
+                              Does this ticket have Tables / Pods?
+                            </label>
+
+                            {t.hasTables && (
+                              <div className="space-y-2">
+                                <select
+                                  value={t.tableType || ""}
+                                  onChange={(e) =>
+                                    updateTicket(index, { tableType: e.target.value })
+                                  }
+                                  className="w-full border border-gray-300 p-2 rounded"
+                                >
+                                  <option value="">Select type of table</option>
+                                  <option value="Tables">Table</option>
+                                  <option value="Teams">Team</option>
+                                  <option value="Bus">Bus</option>
+                                  <option value="Cabin">Cabin</option>
+                                </select>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    placeholder="Number of tables/pods available"
+                                    value={t.tableCount || ""}
+                                    onChange={(e) =>
+                                      updateTicket(index, { tableCount: e.target.value })
+                                    }
+                                    className="border border-gray-300 p-2 rounded"
+                                  />
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    placeholder="Tickets per table/pod"
+                                    value={t.ticketsPerTable || ""}
+                                    onChange={(e) =>
+                                      updateTicket(index, {
+                                        ticketsPerTable: e.target.value,
+                                      })
+                                    }
+                                    className="border border-gray-300 p-2 rounded"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(form.priceType === "MultiPrice" || form.priceType === "MultiPriceTimer") && (
+                    <div className="mt-3">
+                      <h2 className="font-semibold">Pricing Options</h2>
+                      {(form.prices || []).map((price, index) => (
+                        <div key={index} className="flex gap-2 mb-2">
+                          {form.priceType === "MultiPriceTimer" && (
+                            <select
+                              value={price.type}
+                              onChange={(e) => {
+                                const updated = [...form.prices];
+                                updated[index].type = e.target.value;
+                                setForm({ ...form, prices: updated });
+                              }}
+                              className="w-full border border-gray-300 p-2 rounded"
+                              required
+                            >
+                              <option value="">Select Type</option>
+                              <option value="First Day">First Day</option>
+                              <option value="Second Day">Second Day</option>
+                              <option value="Third Day">Third Day</option>
+                            </select>
+                          )}
+
+                          {form.priceType === "MultiPrice" && (
+                            <select
+                              value={price.type}
+                              onChange={(e) => {
+                                const updated = [...form.prices];
+                                updated[index].type = e.target.value;
+                                setForm({ ...form, prices: updated });
+                              }}
+                              className="w-full border border-gray-300 p-2 rounded"
+                              required
+                            >
+                              <option value="">Select Type</option>
+                              {paymentlist.map((it) => (
+                                <option key={it.id} value={it.name}>
+                                  {it.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+
+                          <input
+                            placeholder="Amount"
+                            type="number"
+                            value={price.amount}
+                            onChange={(e) => {
+                              const updated = [...form.prices];
+                              updated[index].amount = e.target.value;
+                              setForm({ ...form, prices: updated });
+                            }}
+                            className="border p-2 w-1/3 rounded"
+                          />
+                          <input
+                            type="datetime-local"
+                            value={price.validUntil || ""}
+                            onChange={(e) => {
+                              const updated = [...form.prices];
+                              updated[index].validUntil = e.target.value;
+                              setForm({ ...form, prices: updated });
+                            }}
+                            className="border p-2 w-1/3 rounded"
+                          />
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm((f) => ({
+                            ...f,
+                            prices: [
+                              ...(f.prices || []),
+                              { type: "", amount: "", validUntil: "" },
+                            ],
+                          }))
+                        }
+                        className="bg-gray-200 px-3 py-1 rounded hover:bg-gray-300"
+                      >
+                        + Add Price
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <label className="block font-medium">Refund Policy</label>
+                <textarea
+                  name="refundPolicy"
+                  placeholder="Add your refund / cancellation policy"
+                  value={form.refundPolicy}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded text-sm min-h-[80px]"
+                />
+
+                <label className="block mb-2">
+                  <input
+                    type="checkbox"
+                    name="allowChat"
+                    checked={!!form.allowChat}
+                    onChange={handleChange}
+                  />{" "}
+                  Allow Chat
+                </label>
+
+                <label className="block mb-2">
+                  <input
+                    type="checkbox"
+                    name="allowReactions"
+                    checked={!!form.allowReactions}
+                    onChange={handleChange}
+                  />{" "}
+                  Allow Reactions
+                </label>
+
+                <input
+                  name="website"
+                  placeholder="Website"
+                  value={form.website}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                />
+                <input
+                  name="instagram"
+                  placeholder="Instagram Link"
+                  value={form.instagram}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 p-2 rounded"
+                />
               </div>
-            );
-          })}
+
+              <div className="flex justify-end mt-6 space-x-3">
+                <button
+                  onClick={() => setModalOpen(false)}
+                  type="button"
+                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+                <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                  {editingData ? "Update Event" : "Create Event"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
-      {modalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto py-6">
-          <div className="bg-white rounded-2xl w-full max-w-lg mx-4 p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-800">{editing ? "Edit Event" : "New Event"}</h2>
-              <button onClick={() => setModalOpen(false)}><X size={20} className="text-gray-400" /></button>
-            </div>
-            <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">EVENT NAME *</label>
-                <input className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-600" value={form.eventName} onChange={e => setForm(f => ({ ...f, eventName: e.target.value }))} placeholder="Event name" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">SHORT DESCRIPTION</label>
-                <input className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:outline-none" value={form.shortDesc} onChange={e => setForm(f => ({ ...f, shortDesc: e.target.value }))} placeholder="Brief summary" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">DESCRIPTION</label>
-                <textarea className="w-full border border-gray-200 rounded-lg p-2.5 text-sm resize-none focus:outline-none" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">START DATE & TIME</label>
-                  <input type="datetime-local" className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:outline-none" value={form.startDateTime} onChange={e => setForm(f => ({ ...f, startDateTime: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">END DATE & TIME</label>
-                  <input type="datetime-local" className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:outline-none" value={form.endDateTime} onChange={e => setForm(f => ({ ...f, endDateTime: e.target.value }))} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">LOCATION</label>
-                <input className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:outline-none" value={form.locationName} onChange={e => setForm(f => ({ ...f, locationName: e.target.value }))} placeholder="Venue or room name" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">CAPACITY</label>
-                  <input type="number" className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:outline-none" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} placeholder="Max attendees" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">PRICE TYPE</label>
-                  <select className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:outline-none" value={form.priceType} onChange={e => setForm(f => ({ ...f, priceType: e.target.value }))}>
-                    <option>Free</option>
-                    <option>Paid</option>
-                  </select>
-                </div>
-              </div>
-              {form.priceType === "Paid" && (
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">PRICE</label>
-                  <input type="number" className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:outline-none" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.00" />
-                </div>
-              )}
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">POSTER IMAGE</label>
-                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const file = e.target.files[0]; if (file) { setImageFile(file); setImagePreview(URL.createObjectURL(file)); } }} />
-                <button onClick={() => fileRef.current.click()} className="flex items-center gap-2 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 text-gray-600">
-                  <ImageIcon size={15} /> {imageFile ? imageFile.name : "Choose Image"}
-                </button>
-                {imagePreview && <img src={imagePreview} alt="" className="mt-2 w-full h-36 object-cover rounded-lg" />}
-              </div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" checked={form.isPinned} onChange={e => setForm(f => ({ ...f, isPinned: e.target.checked }))} className="w-4 h-4 accent-green-700" />
-                <span className="text-sm font-semibold text-gray-600">📌 Pin this event</span>
-              </label>
-            </div>
-            <div className="flex gap-3 mt-5">
-              <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
-              <button onClick={save} disabled={submitting} className="flex-1 py-2.5 bg-green-800 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50">{submitting ? "Saving…" : editing ? "Update" : "Create"}</button>
+      {confirmDeleteOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
+            <h2 className="text-xl font-semibold mb-4 text-red-600">
+              Delete Event
+            </h2>
+            <p className="mb-4">
+              Are you sure you want to delete{" "}
+              <strong>{deleteData?.eventName}</strong>?
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setConfirmDeleteOpen(false);
+                  setDelete(null);
+                }}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+
+      <Dialog
+        open={showMapModal}
+        onClose={() => setShowMapModal(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Pick a Location</DialogTitle>
+        <DialogContent dividers sx={{ overflow: "hidden" }}>
+          <MapLocationInput
+            value={form.mapLocation}
+            onChange={(val) => {
+              const coordsStr = `${val.lng.toFixed(6)},${val.lat.toFixed(6)}`;
+              setForm({ ...form, mapLocation: coordsStr });
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowMapModal(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => setShowMapModal(false)}
+            disabled={!form.mapLocation}
+          >
+            Save location
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {bookingModal.open && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
+          <div className="bg-white w-full max-w-3xl max-h-[85vh] rounded-lg shadow-lg flex flex-col">
+            <div className="px-5 py-4 border-b flex items-center justify-between gap-2">
+              <h3 className="text-lg font-semibold">
+                Bookings — {bookingModal.event?.eventName || "Event"}
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  className="text-sm px-2 py-1 border rounded hover:bg-gray-50"
+                  onClick={() => {
+                    const rows = bookingsByEvent[bookingModal.event?.id] || [];
+                    const csv = [
+                      ["userName", "userEmail", "totalPrice", "timestamp", "ticketsJSON"],
+                      ...rows.map((b) => [
+                        (b.userName || "").replaceAll(",", " "),
+                        b.userEmail || "",
+                        String(b.totalPrice ?? ""),
+                        b.timestamp ? dayjs(toMillis(b.timestamp)).format("YYYY-MM-DD HH:mm") : "",
+                        JSON.stringify(b.tickets || {}),
+                      ]),
+                    ]
+                      .map((r) => r.join(","))
+                      .join("\n");
+
+                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${(bookingModal.event?.eventName || "event")
+                      .replace(/\s+/g, "_")
+                      .toLowerCase()}_bookings.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  Export CSV
+                </button>
+
+                <button
+                  className="text-gray-600 hover:text-black"
+                  onClick={() => setBookingModal((p) => ({ ...p, open: false }))}
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="px-5 py-3 border-b flex items-center gap-3">
+              <input
+                className="border rounded px-3 py-1.5 text-sm w-60"
+                placeholder="Search name/email"
+                value={bookingModal.q}
+                onChange={(e) =>
+                  setBookingModal((p) => ({ ...p, q: e.target.value, page: 1 }))
+                }
+              />
+
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-sm text-gray-600">Rows</span>
+                <select
+                  className="border rounded px-2 py-1 text-sm"
+                  value={bookingModal.pageSize}
+                  onChange={(e) =>
+                    setBookingModal((p) => ({
+                      ...p,
+                      pageSize: Number(e.target.value),
+                      page: 1,
+                    }))
+                  }
+                >
+                  {[5, 10, 20, 50, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {[
+                      { key: "userName", label: "User" },
+                      { key: "userEmail", label: "Email" },
+                      { key: "tickets", label: "Tickets", sortable: false },
+                      { key: "totalPrice", label: "Total Price" },
+                      { key: "timestamp", label: "Booked At" },
+                    ].map((c) => (
+                      <th
+                        key={c.key}
+                        className="px-5 py-3 text-left text-sm font-medium text-gray-600"
+                      >
+                        {c.sortable === false ? (
+                          <span>{c.label}</span>
+                        ) : (
+                          <button
+                            className="flex items-center gap-1 hover:underline"
+                            onClick={() =>
+                              setBookingModal((p) =>
+                                p.sort.key === c.key
+                                  ? {
+                                      ...p,
+                                      sort: {
+                                        key: c.key,
+                                        dir: p.sort.dir === "asc" ? "desc" : "asc",
+                                      },
+                                    }
+                                  : { ...p, sort: { key: c.key, dir: "asc" } }
+                              )
+                            }
+                          >
+                            <span>{c.label}</span>
+                            {bookingModal.sort.key === c.key && (
+                              <span className="text-gray-400">
+                                {bookingModal.sort.dir === "asc" ? "▲" : "▼"}
+                              </span>
+                            )}
+                          </button>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-gray-200">
+                  {(() => {
+                    const rows = bookingsByEvent[bookingModal.event?.id] || [];
+                    const q = (bookingModal.q || "").trim().toLowerCase();
+                    const filteredRows = q
+                      ? rows.filter(
+                          (b) =>
+                            (b.userName || "").toLowerCase().includes(q) ||
+                            (b.userEmail || "").toLowerCase().includes(q)
+                        )
+                      : rows;
+
+                    const dir = bookingModal.sort.dir === "asc" ? 1 : -1;
+                    const sortedRows = [...filteredRows].sort((a, b) => {
+                      const key = bookingModal.sort.key;
+                      switch (key) {
+                        case "userName":
+                          return (a.userName || "").localeCompare(b.userName || "") * dir;
+                        case "userEmail":
+                          return (a.userEmail || "").localeCompare(b.userEmail || "") * dir;
+                        case "totalPrice":
+                          return (Number(a.totalPrice || 0) - Number(b.totalPrice || 0)) * dir;
+                        case "timestamp":
+                        default:
+                          return ((toMillis(a.timestamp) ?? 0) - (toMillis(b.timestamp) ?? 0)) * dir;
+                      }
+                    });
+
+                    const total = sortedRows.length;
+                    const start = (bookingModal.page - 1) * bookingModal.pageSize;
+                    const pageRows = sortedRows.slice(start, start + bookingModal.pageSize);
+
+                    if (pageRows.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={5} className="px-5 py-10 text-center text-gray-500">
+                            No bookings found.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return pageRows.map((b) => (
+                      <tr key={b.id}>
+                        <td className="px-5 py-3 text-sm text-gray-700">
+                          <div className="flex items-center gap-2">
+                            {b.userPhotoURL ? (
+                              <img src={b.userPhotoURL} alt="" className="w-8 h-8 rounded-full" />
+                            ) : null}
+                            <span>{b.userName || "—"}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3 text-sm text-gray-700">{b.userEmail || "—"}</td>
+                        <td className="px-5 py-3 text-sm text-gray-700">
+                          {b.tickets && Object.keys(b.tickets).length ? (
+                            <ul className="space-y-0.5">
+                              {Object.entries(b.tickets).map(([type, count]) => (
+                                <li key={type}>
+                                  {type}: <strong>{count}</strong>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="px-5 py-3 text-sm text-gray-700">
+                          {typeof b.totalPrice === "number" ? `$${b.totalPrice}` : b.totalPrice || "—"}
+                        </td>
+                        <td className="px-5 py-3 text-sm text-gray-700">
+                          {b.timestamp ? dayjs(toMillis(b.timestamp)).format("MMM DD, YYYY hh:mm A") : "—"}
+                        </td>
+                      </tr>
+                    ));
+                  })()}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="px-5 py-3 border-t flex items-center justify-between">
+              {(() => {
+                const rows = bookingsByEvent[bookingModal.event?.id] || [];
+                const q = (bookingModal.q || "").trim().toLowerCase();
+                const filteredRows = q
+                  ? rows.filter(
+                      (b) =>
+                        (b.userName || "").toLowerCase().includes(q) ||
+                        (b.userEmail || "").toLowerCase().includes(q)
+                    )
+                  : rows;
+
+                const total = filteredRows.length;
+                const totalPages = Math.max(1, Math.ceil(total / bookingModal.pageSize));
+                const canPrev = bookingModal.page > 1;
+                const canNext = bookingModal.page < totalPages;
+
+                return (
+                  <>
+                    <span className="text-sm text-gray-600">
+                      Page {bookingModal.page} of {totalPages} • {total} total
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className={`px-3 py-1 rounded border ${
+                          canPrev
+                            ? "bg-white hover:bg-gray-50"
+                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        }`}
+                        onClick={() =>
+                          canPrev && setBookingModal((p) => ({ ...p, page: p.page - 1 }))
+                        }
+                        disabled={!canPrev}
+                      >
+                        Prev
+                      </button>
+                      <button
+                        className={`px-3 py-1 rounded border ${
+                          canNext
+                            ? "bg-white hover:bg-gray-50"
+                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        }`}
+                        onClick={() =>
+                          canNext && setBookingModal((p) => ({ ...p, page: p.page + 1 }))
+                        }
+                        disabled={!canNext}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Dialog
+        open={scanModal.open}
+        onClose={() => setScanModal({ open: false, event: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Scan QR — {scanModal.event?.eventName || "Event"}
+        </DialogTitle>
+
+        <DialogContent dividers>
+          <div className="space-y-3">
+            <div
+              ref={qrContainerRef}
+              id="mymor-qr-reader-university"
+              style={{ width: "100%", borderRadius: 12, overflow: "hidden" }}
+            />
+
+            {scanResult && (
+              <div className="text-xs text-gray-500 break-all">
+                <div className="font-semibold text-gray-700 mb-1">Last scan:</div>
+                {scanResult}
+              </div>
+            )}
+
+            {scanStatus && (
+              <div className={`text-sm font-semibold ${scanStatus.ok ? "text-green-700" : "text-red-700"}`}>
+                {scanStatus.msg}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+
+        <DialogActions>
+          <Button onClick={() => setScanModal({ open: false, event: null })}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <ToastContainer />
+    </main>
   );
 }
