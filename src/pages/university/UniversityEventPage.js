@@ -12,12 +12,18 @@ import {
   getDoc,
   Timestamp,
   writeBatch,
+  orderBy,
+  onSnapshot,
 } from "firebase/firestore";
 import { db, storage } from "../../firebase";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import {
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+} from "firebase/storage";
 import dayjs from "dayjs";
 import MapLocationInput from "../../components/MapLocationInput";
 import EditorPro from "../../components/EditorPro";
@@ -87,11 +93,14 @@ export default function UniversityEventPage({ navbarHeight }) {
     );
 
   const uid = useSelector((s) => s.auth.user?.uid);
+  const user = useSelector((s) => s.auth.user);
   const emp = useSelector((s) => s.auth.employee);
-  const universityId = String(emp?.universityid || emp?.universityId || "");
+  const universityId = String(
+    emp?.universityid || emp?.universityId || user?.universityid || ""
+  );
 
   const initialFormData = {
-    id: 0,
+    id: "",
     eventName: "",
     shortDesc: "",
     eventDescriptionHtml: "",
@@ -162,11 +171,49 @@ export default function UniversityEventPage({ navbarHeight }) {
   const [showFilterPicker, setShowFilterPicker] = useState(false);
   const filterPickerRef = useRef(null);
 
+  const eventCollectionRef = universityId
+    ? collection(db, "university", universityId, "events")
+    : null;
+
   useEffect(() => {
-    getList();
     getCategory();
     getPaymentList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [universityId]);
+
+  useEffect(() => {
+    if (!universityId) {
+      setList([]);
+      return;
+    }
+
+    setIsLoading(true);
+
+    const qEvents = query(
+      collection(db, "university", universityId, "events"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      qEvents,
+      (snapshot) => {
+        const docs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+        docs.sort(
+          (a, b) =>
+            (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0)
+        );
+
+        setList(docs);
+        setIsLoading(false);
+      },
+      (e) => {
+        console.error(e);
+        toast.error("Failed to load events");
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
   }, [universityId]);
 
   useEffect(() => {
@@ -174,8 +221,7 @@ export default function UniversityEventPage({ navbarHeight }) {
       try {
         if (!universityId) return;
         const qB = query(
-          collection(db, "eventbookings"),
-          where("universityid", "==", universityId)
+          collection(db, "university", universityId, "eventbookings")
         );
         const snap = await getDocs(qB);
 
@@ -220,7 +266,7 @@ export default function UniversityEventPage({ navbarHeight }) {
           await qrInstanceRef.current.stop();
           await qrInstanceRef.current.clear();
         }
-      } catch {}
+      } catch { }
 
       qrInstanceRef.current = new Html5Qrcode(el.id);
 
@@ -235,7 +281,7 @@ export default function UniversityEventPage({ navbarHeight }) {
             await handleVerifyAndCheckIn(decodedText);
             setScanBusy(false);
           },
-          () => {}
+          () => { }
         );
       } catch (err) {
         console.error("QR start error", err);
@@ -255,11 +301,35 @@ export default function UniversityEventPage({ navbarHeight }) {
             await qrInstanceRef.current.stop();
             await qrInstanceRef.current.clear();
           }
-        } catch {}
+        } catch { }
       })();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanModal.open, qrReady]);
+
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!showPicker) return;
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) {
+        setShowPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showPicker]);
+
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!showFilterPicker) return;
+      if (
+        filterPickerRef.current &&
+        !filterPickerRef.current.contains(e.target)
+      ) {
+        setShowFilterPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showFilterPicker]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -342,8 +412,8 @@ export default function UniversityEventPage({ navbarHeight }) {
     setIsLoading(true);
     try {
       const qEvents = query(
-        collection(db, "events"),
-        where("universityid", "==", universityId)
+        collection(db, "university", universityId, "events"),
+        orderBy("createdAt", "desc")
       );
       const snap = await getDocs(qEvents);
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -364,8 +434,7 @@ export default function UniversityEventPage({ navbarHeight }) {
     setIsLoading(true);
     try {
       const qPay = query(
-        collection(db, "eventpaymenttype"),
-        where("universityid", "==", universityId)
+        collection(db, "university", universityId, "eventpaymenttype")
       );
       const snap = await getDocs(qPay);
       setPaymentList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
@@ -378,8 +447,7 @@ export default function UniversityEventPage({ navbarHeight }) {
     if (!universityId) return;
     try {
       const qCat = query(
-        collection(db, "eventcategory"),
-        where("universityid", "==", universityId)
+        collection(db, "university", universityId, "eventcategory")
       );
       const snap = await getDocs(qCat);
       setCategory(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
@@ -391,18 +459,28 @@ export default function UniversityEventPage({ navbarHeight }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     try {
       const hasPoster =
         (form.posters?.length || 0) > 0 || (form.posterFiles?.length || 0) > 0;
-      if (!editingData && !hasPoster)
+
+      if (!editingData && !hasPoster) {
         return toast.error("Please add at least one poster");
-      if (isBlankHtml(form.eventDescriptionHtml))
+      }
+
+      if (isBlankHtml(form.eventDescriptionHtml)) {
         return toast.error("Please add a description");
+      }
 
       const sMs = new Date(form.startDateTime).getTime();
       const eMs = new Date(form.endDateTime).getTime();
-      if (Number.isNaN(sMs) || Number.isNaN(eMs) || eMs <= sMs)
+      if (Number.isNaN(sMs) || Number.isNaN(eMs) || eMs <= sMs) {
         return toast.error("End date/time must be after start date/time.");
+      }
+
+      if (!form?.date?.startDate || !form?.date?.endDate) {
+        return toast.error("Please select event display date range");
+      }
 
       if (form.freeTicketStartDateTime && form.freeTicketEndDateTime) {
         const fsMs = new Date(form.freeTicketStartDateTime).getTime();
@@ -414,10 +492,12 @@ export default function UniversityEventPage({ navbarHeight }) {
 
       const capNum = parseInt(form.capacity, 10);
       const maxPerNum = parseInt(form.maxPurchaseTickets, 10);
-      if (!Number.isNaN(maxPerNum) && maxPerNum < 1)
+      if (!Number.isNaN(maxPerNum) && maxPerNum < 1) {
         return toast.error("Max purchase tickets must be at least 1.");
-      if (!Number.isNaN(capNum) && !Number.isNaN(maxPerNum) && maxPerNum > capNum)
+      }
+      if (!Number.isNaN(capNum) && !Number.isNaN(maxPerNum) && maxPerNum > capNum) {
         return toast.error("Max purchase tickets cannot be greater than Max Capacity.");
+      }
 
       if (form.priceType === "Paid") {
         const tks = form.ticketTypes || [];
@@ -488,9 +568,14 @@ export default function UniversityEventPage({ navbarHeight }) {
         university: emp?.university || "",
         imageUrl: emp?.imageUrl ?? null,
         uid,
+        userName: emp?.name || user?.displayName || "",
         posters,
         startDateTime: form.startDateTime,
         endDateTime: form.endDateTime,
+        date: {
+          startDate: Timestamp.fromDate(new Date(form.date.startDate)),
+          endDate: Timestamp.fromDate(new Date(form.date.endDate)),
+        },
         prices:
           form.priceType === "Free" || form.priceType === "Paid" || !form.priceType
             ? []
@@ -518,20 +603,25 @@ export default function UniversityEventPage({ navbarHeight }) {
             : null,
         ticketTypes: form.priceType === "Paid" ? ticketTypesSanitised : [],
         enableQrCheckIn: !!form.enableQrCheckIn,
+        updatedAt: Timestamp.now(),
       };
 
       delete eventData.id;
       delete eventData.posterFiles;
 
       if (editingData) {
-        const ref = doc(db, "events", editingData.id);
+        const ref = doc(db, "university", universityId, "events", editingData.id);
         const snap = await getDoc(ref);
-        if (!snap.exists())
+        if (!snap.exists()) {
           return toast.warning("Event does not exist! Cannot update.");
+        }
         await updateDoc(ref, eventData);
         toast.success("Event updated successfully");
       } else {
-        await addDoc(collection(db, "events"), eventData);
+        await addDoc(collection(db, "university", universityId, "events"), {
+          ...eventData,
+          createdAt: Timestamp.now(),
+        });
         toast.success("Event created successfully");
       }
 
@@ -548,7 +638,7 @@ export default function UniversityEventPage({ navbarHeight }) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "events", deleteData.id));
+      await deleteDoc(doc(db, "university", universityId, "events", deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (e) {
@@ -626,8 +716,12 @@ export default function UniversityEventPage({ navbarHeight }) {
     const batch = writeBatch(db);
     pinned.forEach((ev, i) => {
       const order = i + 1;
-      if (ev.pinnedOrder !== order)
-        batch.update(doc(db, "events", ev.id), { pinnedOrder: order });
+      if (ev.pinnedOrder !== order) {
+        batch.update(
+          doc(db, "university", universityId, "events", ev.id),
+          { pinnedOrder: order }
+        );
+      }
     });
     await batch.commit();
     await getList();
@@ -641,8 +735,12 @@ export default function UniversityEventPage({ navbarHeight }) {
     const a = pinned[idx];
     const b = pinned[swapIdx];
     const batch = writeBatch(db);
-    batch.update(doc(db, "events", a.id), { pinnedOrder: b.pinnedOrder });
-    batch.update(doc(db, "events", b.id), { pinnedOrder: a.pinnedOrder });
+    batch.update(doc(db, "university", universityId, "events", a.id), {
+      pinnedOrder: b.pinnedOrder,
+    });
+    batch.update(doc(db, "university", universityId, "events", b.id), {
+      pinnedOrder: a.pinnedOrder,
+    });
     await batch.commit();
     await getList();
   };
@@ -656,7 +754,9 @@ export default function UniversityEventPage({ navbarHeight }) {
     sequence.splice(newOrder - 1, 0, { ...item });
     const batch = writeBatch(db);
     sequence.forEach((ev, i) =>
-      batch.update(doc(db, "events", ev.id), { pinnedOrder: i + 1 })
+      batch.update(doc(db, "university", universityId, "events", ev.id), {
+        pinnedOrder: i + 1,
+      })
     );
     await batch.commit();
     await getList();
@@ -664,7 +764,7 @@ export default function UniversityEventPage({ navbarHeight }) {
 
   const togglePin = async (item, makePinned) => {
     try {
-      const ref = doc(db, "events", item.id);
+      const ref = doc(db, "university", universityId, "events", item.id);
       if (makePinned) {
         const currentPinned = getPinnedSorted();
         const nextOrder =
@@ -673,12 +773,14 @@ export default function UniversityEventPage({ navbarHeight }) {
           isPinned: true,
           pinnedAt: Timestamp.now(),
           pinnedOrder: nextOrder,
+          updatedAt: Timestamp.now(),
         });
       } else {
         await updateDoc(ref, {
           isPinned: false,
           pinnedAt: null,
           pinnedOrder: null,
+          updatedAt: Timestamp.now(),
         });
         await renumberPinned();
       }
@@ -720,14 +822,12 @@ export default function UniversityEventPage({ navbarHeight }) {
     const needYear = !sameYear || sd.year() !== dayjs().year();
 
     if (sameMonth) {
-      return `${sd.format("D")}–${ed.format("D")} ${monLower(sd)}${
-        needYear ? " " + sd.format("YYYY") : ""
-      }`;
+      return `${sd.format("D")}–${ed.format("D")} ${monLower(sd)}${needYear ? " " + sd.format("YYYY") : ""
+        }`;
     }
     if (sameYear) {
-      return `${sd.format("D")} ${monLower(sd)}–${ed.format("D")} ${monLower(ed)}${
-        needYear ? " " + sd.format("YYYY") : ""
-      }`;
+      return `${sd.format("D")} ${monLower(sd)}–${ed.format("D")} ${monLower(ed)}${needYear ? " " + sd.format("YYYY") : ""
+        }`;
     }
     return `${sd.format("D MMM YYYY")}–${ed.format("D MMM YYYY")}`.replace(
       /MMM/g,
@@ -829,21 +929,34 @@ export default function UniversityEventPage({ navbarHeight }) {
   const handleVerifyAndCheckIn = async (payloadRaw) => {
     try {
       const ev = scanModal.event;
-      if (!ev?.id) return setScanStatus({ ok: false, msg: "Event missing." });
+      if (!ev?.id) {
+        return setScanStatus({ ok: false, msg: "Event missing." });
+      }
+
+      if (!universityId) {
+        return setScanStatus({ ok: false, msg: "University missing." });
+      }
 
       let bookingId = payloadRaw;
 
       try {
         const j = JSON.parse(payloadRaw);
         bookingId = j?.bid || j?.bookingId || j?.id || payloadRaw;
-      } catch {}
+      } catch { }
 
       if (!bookingId) {
         setScanStatus({ ok: false, msg: "Invalid QR payload." });
         return;
       }
 
-      const bRef = doc(db, "eventbookings", bookingId);
+      const bRef = doc(
+        db,
+        "university",
+        universityId,
+        "eventbookings",
+        bookingId
+      );
+
       const bSnap = await getDoc(bRef);
 
       if (!bSnap.exists()) {
@@ -879,6 +992,7 @@ export default function UniversityEventPage({ navbarHeight }) {
         checkedInBy: uid,
         checkedInByName: emp?.name || emp?.email || "",
         checkedInEventId: ev.id,
+        updatedAt: Timestamp.now(),
       });
 
       setScanStatus({ ok: true, msg: "Verified & checked-in ✅" });
@@ -887,7 +1001,6 @@ export default function UniversityEventPage({ navbarHeight }) {
       setScanStatus({ ok: false, msg: "Check-in failed." });
     }
   };
-
   if (!universityId) {
     return (
       <main
@@ -928,11 +1041,10 @@ export default function UniversityEventPage({ navbarHeight }) {
             <button
               key={k}
               onClick={() => setTimeFilter(k)}
-              className={`px-3 py-1.5 rounded-full text-sm border ${
-                active
+              className={`px-3 py-1.5 rounded-full text-sm border ${active
                   ? "bg-black text-white border-black"
                   : "bg-white text-gray-700 border-gray-300"
-              }`}
+                }`}
             >
               {k[0].toUpperCase() + k.slice(1)}
             </button>
@@ -957,8 +1069,8 @@ export default function UniversityEventPage({ navbarHeight }) {
         {timeFilter === "past"
           ? "Past Events"
           : timeFilter === "future"
-          ? "Upcoming Events"
-          : "Happening Now"}
+            ? "Upcoming Events"
+            : "Happening Now"}
       </h2>
 
       <div className="overflow-x-auto bg-white rounded shadow">
@@ -1040,7 +1152,12 @@ export default function UniversityEventPage({ navbarHeight }) {
                     {(() => {
                       const s = filterRange?.[0]?.startDate;
                       const e = filterRange?.[0]?.endDate;
-                      if (s && e) return `${format(s, "MMM dd, yyyy")} – ${format(e, "MMM dd, yyyy")}`;
+                      if (s && e) {
+                        return `${format(s, "MMM dd, yyyy")} – ${format(
+                          e,
+                          "MMM dd, yyyy"
+                        )}`;
+                      }
                       return "Any date";
                     })()}
                   </button>
@@ -1187,9 +1304,8 @@ export default function UniversityEventPage({ navbarHeight }) {
                           type="button"
                           title={item.isPinned ? "Unpin" : "Pin"}
                           onClick={() => togglePin(item, !item.isPinned)}
-                          className={`text-lg leading-none ${
-                            item.isPinned ? "text-yellow-500" : "text-gray-300"
-                          } hover:opacity-80`}
+                          className={`text-lg leading-none ${item.isPinned ? "text-yellow-500" : "text-gray-300"
+                            } hover:opacity-80`}
                           aria-label={item.isPinned ? "Unpin event" : "Pin event"}
                         >
                           {item.isPinned ? "★" : "☆"}
@@ -1286,7 +1402,9 @@ export default function UniversityEventPage({ navbarHeight }) {
                             tableType: item.tableType || "",
                             tableCount: item.tableCount ?? "",
                             ticketsPerTable: item.ticketsPerTable ?? "",
-                            ticketTypes: Array.isArray(item.ticketTypes) ? item.ticketTypes : [],
+                            ticketTypes: Array.isArray(item.ticketTypes)
+                              ? item.ticketTypes
+                              : [],
                             enableQrCheckIn: !!item.enableQrCheckIn,
                           }));
 
@@ -1382,12 +1500,12 @@ export default function UniversityEventPage({ navbarHeight }) {
                     value={
                       form.date?.startDate && form.date?.endDate
                         ? `${format(
-                            new Date(form.date.startDate),
-                            "MMM dd, yyyy"
-                          )} - ${format(
-                            new Date(form.date.endDate),
-                            "MMM dd, yyyy"
-                          )}`
+                          new Date(form.date.startDate),
+                          "MMM dd, yyyy"
+                        )} - ${format(
+                          new Date(form.date.endDate),
+                          "MMM dd, yyyy"
+                        )}`
                         : ""
                     }
                     onClick={() => setShowPicker(!showPicker)}
@@ -1951,90 +2069,91 @@ export default function UniversityEventPage({ navbarHeight }) {
                     </div>
                   )}
 
-                  {(form.priceType === "MultiPrice" || form.priceType === "MultiPriceTimer") && (
-                    <div className="mt-3">
-                      <h2 className="font-semibold">Pricing Options</h2>
-                      {(form.prices || []).map((price, index) => (
-                        <div key={index} className="flex gap-2 mb-2">
-                          {form.priceType === "MultiPriceTimer" && (
-                            <select
-                              value={price.type}
+                  {(form.priceType === "MultiPrice" ||
+                    form.priceType === "MultiPriceTimer") && (
+                      <div className="mt-3">
+                        <h2 className="font-semibold">Pricing Options</h2>
+                        {(form.prices || []).map((price, index) => (
+                          <div key={index} className="flex gap-2 mb-2">
+                            {form.priceType === "MultiPriceTimer" && (
+                              <select
+                                value={price.type}
+                                onChange={(e) => {
+                                  const updated = [...form.prices];
+                                  updated[index].type = e.target.value;
+                                  setForm({ ...form, prices: updated });
+                                }}
+                                className="w-full border border-gray-300 p-2 rounded"
+                                required
+                              >
+                                <option value="">Select Type</option>
+                                <option value="First Day">First Day</option>
+                                <option value="Second Day">Second Day</option>
+                                <option value="Third Day">Third Day</option>
+                              </select>
+                            )}
+
+                            {form.priceType === "MultiPrice" && (
+                              <select
+                                value={price.type}
+                                onChange={(e) => {
+                                  const updated = [...form.prices];
+                                  updated[index].type = e.target.value;
+                                  setForm({ ...form, prices: updated });
+                                }}
+                                className="w-full border border-gray-300 p-2 rounded"
+                                required
+                              >
+                                <option value="">Select Type</option>
+                                {paymentlist.map((it) => (
+                                  <option key={it.id} value={it.name}>
+                                    {it.name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+
+                            <input
+                              placeholder="Amount"
+                              type="number"
+                              value={price.amount}
                               onChange={(e) => {
                                 const updated = [...form.prices];
-                                updated[index].type = e.target.value;
+                                updated[index].amount = e.target.value;
                                 setForm({ ...form, prices: updated });
                               }}
-                              className="w-full border border-gray-300 p-2 rounded"
-                              required
-                            >
-                              <option value="">Select Type</option>
-                              <option value="First Day">First Day</option>
-                              <option value="Second Day">Second Day</option>
-                              <option value="Third Day">Third Day</option>
-                            </select>
-                          )}
-
-                          {form.priceType === "MultiPrice" && (
-                            <select
-                              value={price.type}
+                              className="border p-2 w-1/3 rounded"
+                            />
+                            <input
+                              type="datetime-local"
+                              value={price.validUntil || ""}
                               onChange={(e) => {
                                 const updated = [...form.prices];
-                                updated[index].type = e.target.value;
+                                updated[index].validUntil = e.target.value;
                                 setForm({ ...form, prices: updated });
                               }}
-                              className="w-full border border-gray-300 p-2 rounded"
-                              required
-                            >
-                              <option value="">Select Type</option>
-                              {paymentlist.map((it) => (
-                                <option key={it.id} value={it.name}>
-                                  {it.name}
-                                </option>
-                              ))}
-                            </select>
-                          )}
+                              className="border p-2 w-1/3 rounded"
+                            />
+                          </div>
+                        ))}
 
-                          <input
-                            placeholder="Amount"
-                            type="number"
-                            value={price.amount}
-                            onChange={(e) => {
-                              const updated = [...form.prices];
-                              updated[index].amount = e.target.value;
-                              setForm({ ...form, prices: updated });
-                            }}
-                            className="border p-2 w-1/3 rounded"
-                          />
-                          <input
-                            type="datetime-local"
-                            value={price.validUntil || ""}
-                            onChange={(e) => {
-                              const updated = [...form.prices];
-                              updated[index].validUntil = e.target.value;
-                              setForm({ ...form, prices: updated });
-                            }}
-                            className="border p-2 w-1/3 rounded"
-                          />
-                        </div>
-                      ))}
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setForm((f) => ({
-                            ...f,
-                            prices: [
-                              ...(f.prices || []),
-                              { type: "", amount: "", validUntil: "" },
-                            ],
-                          }))
-                        }
-                        className="bg-gray-200 px-3 py-1 rounded hover:bg-gray-300"
-                      >
-                        + Add Price
-                      </button>
-                    </div>
-                  )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((f) => ({
+                              ...f,
+                              prices: [
+                                ...(f.prices || []),
+                                { type: "", amount: "", validUntil: "" },
+                              ],
+                            }))
+                          }
+                          className="bg-gray-200 px-3 py-1 rounded hover:bg-gray-300"
+                        >
+                          + Add Price
+                        </button>
+                      </div>
+                    )}
                 </div>
 
                 <label className="block font-medium">Refund Policy</label>
@@ -2176,14 +2295,18 @@ export default function UniversityEventPage({ navbarHeight }) {
                         (b.userName || "").replaceAll(",", " "),
                         b.userEmail || "",
                         String(b.totalPrice ?? ""),
-                        b.timestamp ? dayjs(toMillis(b.timestamp)).format("YYYY-MM-DD HH:mm") : "",
+                        b.timestamp
+                          ? dayjs(toMillis(b.timestamp)).format("YYYY-MM-DD HH:mm")
+                          : "",
                         JSON.stringify(b.tickets || {}),
                       ]),
                     ]
                       .map((r) => r.join(","))
                       .join("\n");
 
-                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                    const blob = new Blob([csv], {
+                      type: "text/csv;charset=utf-8;",
+                    });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
@@ -2263,12 +2386,12 @@ export default function UniversityEventPage({ navbarHeight }) {
                               setBookingModal((p) =>
                                 p.sort.key === c.key
                                   ? {
-                                      ...p,
-                                      sort: {
-                                        key: c.key,
-                                        dir: p.sort.dir === "asc" ? "desc" : "asc",
-                                      },
-                                    }
+                                    ...p,
+                                    sort: {
+                                      key: c.key,
+                                      dir: p.sort.dir === "asc" ? "desc" : "asc",
+                                    },
+                                  }
                                   : { ...p, sort: { key: c.key, dir: "asc" } }
                               )
                             }
@@ -2292,10 +2415,10 @@ export default function UniversityEventPage({ navbarHeight }) {
                     const q = (bookingModal.q || "").trim().toLowerCase();
                     const filteredRows = q
                       ? rows.filter(
-                          (b) =>
-                            (b.userName || "").toLowerCase().includes(q) ||
-                            (b.userEmail || "").toLowerCase().includes(q)
-                        )
+                        (b) =>
+                          (b.userName || "").toLowerCase().includes(q) ||
+                          (b.userEmail || "").toLowerCase().includes(q)
+                      )
                       : rows;
 
                     const dir = bookingModal.sort.dir === "asc" ? 1 : -1;
@@ -2310,11 +2433,13 @@ export default function UniversityEventPage({ navbarHeight }) {
                           return (Number(a.totalPrice || 0) - Number(b.totalPrice || 0)) * dir;
                         case "timestamp":
                         default:
-                          return ((toMillis(a.timestamp) ?? 0) - (toMillis(b.timestamp) ?? 0)) * dir;
+                          return (
+                            ((toMillis(a.timestamp) ?? 0) - (toMillis(b.timestamp) ?? 0)) *
+                            dir
+                          );
                       }
                     });
 
-                    const total = sortedRows.length;
                     const start = (bookingModal.page - 1) * bookingModal.pageSize;
                     const pageRows = sortedRows.slice(start, start + bookingModal.pageSize);
 
@@ -2338,7 +2463,9 @@ export default function UniversityEventPage({ navbarHeight }) {
                             <span>{b.userName || "—"}</span>
                           </div>
                         </td>
-                        <td className="px-5 py-3 text-sm text-gray-700">{b.userEmail || "—"}</td>
+                        <td className="px-5 py-3 text-sm text-gray-700">
+                          {b.userEmail || "—"}
+                        </td>
                         <td className="px-5 py-3 text-sm text-gray-700">
                           {b.tickets && Object.keys(b.tickets).length ? (
                             <ul className="space-y-0.5">
@@ -2353,10 +2480,14 @@ export default function UniversityEventPage({ navbarHeight }) {
                           )}
                         </td>
                         <td className="px-5 py-3 text-sm text-gray-700">
-                          {typeof b.totalPrice === "number" ? `$${b.totalPrice}` : b.totalPrice || "—"}
+                          {typeof b.totalPrice === "number"
+                            ? `$${b.totalPrice}`
+                            : b.totalPrice || "—"}
                         </td>
                         <td className="px-5 py-3 text-sm text-gray-700">
-                          {b.timestamp ? dayjs(toMillis(b.timestamp)).format("MMM DD, YYYY hh:mm A") : "—"}
+                          {b.timestamp
+                            ? dayjs(toMillis(b.timestamp)).format("MMM DD, YYYY hh:mm A")
+                            : "—"}
                         </td>
                       </tr>
                     ));
@@ -2371,10 +2502,10 @@ export default function UniversityEventPage({ navbarHeight }) {
                 const q = (bookingModal.q || "").trim().toLowerCase();
                 const filteredRows = q
                   ? rows.filter(
-                      (b) =>
-                        (b.userName || "").toLowerCase().includes(q) ||
-                        (b.userEmail || "").toLowerCase().includes(q)
-                    )
+                    (b) =>
+                      (b.userName || "").toLowerCase().includes(q) ||
+                      (b.userEmail || "").toLowerCase().includes(q)
+                  )
                   : rows;
 
                 const total = filteredRows.length;
@@ -2389,11 +2520,10 @@ export default function UniversityEventPage({ navbarHeight }) {
                     </span>
                     <div className="flex items-center gap-2">
                       <button
-                        className={`px-3 py-1 rounded border ${
-                          canPrev
+                        className={`px-3 py-1 rounded border ${canPrev
                             ? "bg-white hover:bg-gray-50"
                             : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                        }`}
+                          }`}
                         onClick={() =>
                           canPrev && setBookingModal((p) => ({ ...p, page: p.page - 1 }))
                         }
@@ -2402,11 +2532,10 @@ export default function UniversityEventPage({ navbarHeight }) {
                         Prev
                       </button>
                       <button
-                        className={`px-3 py-1 rounded border ${
-                          canNext
+                        className={`px-3 py-1 rounded border ${canNext
                             ? "bg-white hover:bg-gray-50"
                             : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                        }`}
+                          }`}
                         onClick={() =>
                           canNext && setBookingModal((p) => ({ ...p, page: p.page + 1 }))
                         }
@@ -2449,7 +2578,10 @@ export default function UniversityEventPage({ navbarHeight }) {
             )}
 
             {scanStatus && (
-              <div className={`text-sm font-semibold ${scanStatus.ok ? "text-green-700" : "text-red-700"}`}>
+              <div
+                className={`text-sm font-semibold ${scanStatus.ok ? "text-green-700" : "text-red-700"
+                  }`}
+              >
                 {scanStatus.msg}
               </div>
             )}

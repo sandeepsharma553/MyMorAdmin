@@ -1,4 +1,3 @@
-// src/pages/UniversityReportSettingPage.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import {
   collection,
@@ -8,8 +7,9 @@ import {
   doc,
   deleteDoc,
   query,
-  where,
   getDoc,
+  Timestamp,
+  orderBy,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
@@ -87,12 +87,11 @@ const UniversityReportSettingPage = ({ navbarHeight }) => {
   const emp = useSelector((state) => state.auth.employee);
   const universityId = String(emp?.universityid || emp?.universityId || "");
 
-  const initialForm = { id: 0, name: "" };
+  const initialForm = { id: "", name: "" };
   const [form, setForm] = useState(initialForm);
 
   useEffect(() => {
     getReportList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [universityId]);
 
   useEffect(() => setReportPage(1), [reportList.length]);
@@ -111,8 +110,8 @@ const UniversityReportSettingPage = ({ navbarHeight }) => {
     setIsLoading(true);
     try {
       const reportQuery = query(
-        collection(db, "reportitems"),
-        where("universityid", "==", universityId)
+        collection(db, "university", universityId, "reportitems"),
+        orderBy("name", "asc")
       );
 
       const querySnapshot = await getDocs(reportQuery);
@@ -139,10 +138,28 @@ const UniversityReportSettingPage = ({ navbarHeight }) => {
     e.preventDefault();
 
     try {
-      if (!form.name?.trim()) return;
+      const trimmedName = form.name?.trim();
+      if (!trimmedName) return;
+
+      const duplicate = reportList.some(
+        (item) =>
+          item.name?.trim().toLowerCase() === trimmedName.toLowerCase() &&
+          item.id !== form.id
+      );
+
+      if (duplicate) {
+        toast.warn("Duplicate found! Not adding.");
+        return;
+      }
 
       if (editingData) {
-        const docRef = doc(db, "reportitems", form.id);
+        const docRef = doc(
+          db,
+          "university",
+          universityId,
+          "reportitems",
+          form.id
+        );
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
@@ -151,33 +168,22 @@ const UniversityReportSettingPage = ({ navbarHeight }) => {
         }
 
         await updateDoc(docRef, {
-          uid,
-          name: form.name.trim(),
+          uid: uid || "",
+          name: trimmedName,
           universityid: universityId,
-          updatedBy: uid,
-          updatedDate: new Date(),
+          updatedBy: uid || "",
+          updatedAt: Timestamp.now(),
         });
 
         toast.success("Successfully updated");
       } else {
-        const dupQuery = query(
-          collection(db, "reportitems"),
-          where("name", "==", form.name.trim()),
-          where("universityid", "==", universityId)
-        );
-
-        const querySnapshot = await getDocs(dupQuery);
-        if (!querySnapshot.empty) {
-          toast.warn("Duplicate found! Not adding.");
-          return;
-        }
-
-        await addDoc(collection(db, "reportitems"), {
-          uid,
-          name: form.name.trim(),
+        await addDoc(collection(db, "university", universityId, "reportitems"), {
+          uid: uid || "",
+          name: trimmedName,
           universityid: universityId,
-          createdBy: uid,
-          createdDate: new Date(),
+          createdBy: uid || "",
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
         });
 
         toast.success("Successfully saved");
@@ -198,7 +204,9 @@ const UniversityReportSettingPage = ({ navbarHeight }) => {
     if (!deleteData?.id) return;
 
     try {
-      await deleteDoc(doc(db, "reportitems", deleteData.id));
+      await deleteDoc(
+        doc(db, "university", universityId, "reportitems", deleteData.id)
+      );
       toast.success("Successfully deleted!");
       await getReportList();
     } catch (error) {

@@ -6,10 +6,11 @@ import {
   updateDoc,
   doc,
   deleteDoc,
-  query,
-  where,
   getDoc,
   writeBatch,
+  Timestamp,
+  query,
+  orderBy,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
@@ -112,10 +113,10 @@ const UniversityMaintenanceCategoryPage = () => {
     emp?.universityid || emp?.universityId || emp?.university || ""
   );
 
-  const initialProblemForm = { id: 0, name: "" };
-  const initialItemCatForm = { id: 0, name: "", problemId: "" };
-  const initialItemForm = { id: 0, name: "", problemId: "", itemCategoryId: "" };
-  const initialTypeForm = { id: 0, name: "" };
+  const initialProblemForm = { id: "", name: "" };
+  const initialItemCatForm = { id: "", name: "", problemId: "" };
+  const initialItemForm = { id: "", name: "", problemId: "", itemCategoryId: "" };
+  const initialTypeForm = { id: "", name: "" };
 
   const [problemForm, setProblemForm] = useState(initialProblemForm);
   const [itemCatForm, setItemCatForm] = useState(initialItemCatForm);
@@ -145,18 +146,20 @@ const UniversityMaintenanceCategoryPage = () => {
     getItemCatList();
     getItemList();
     getTypeList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [universityId]);
 
   const getProblemCatList = async () => {
     setIsLoading(true);
     try {
       const q1 = query(
-        collection(db, "universityproblemcategory"),
-        where("universityid", "==", universityId)
+        collection(db, "university", universityId, "problemcategory"),
+        orderBy("name", "asc")
       );
       const snap = await getDocs(q1);
       setProblemCatList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load problem categories");
     } finally {
       setIsLoading(false);
     }
@@ -166,11 +169,14 @@ const UniversityMaintenanceCategoryPage = () => {
     setIsLoading(true);
     try {
       const q1 = query(
-        collection(db, "universityitemcategory"),
-        where("universityid", "==", universityId)
+        collection(db, "university", universityId, "itemcategory"),
+        orderBy("name", "asc")
       );
       const snap = await getDocs(q1);
       setItemCatList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load item categories");
     } finally {
       setIsLoading(false);
     }
@@ -180,11 +186,14 @@ const UniversityMaintenanceCategoryPage = () => {
     setIsLoading(true);
     try {
       const q1 = query(
-        collection(db, "universitymaintenanceitems"),
-        where("universityid", "==", universityId)
+        collection(db, "university", universityId, "maintenanceitems"),
+        orderBy("name", "asc")
       );
       const snap = await getDocs(q1);
       setItemList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load items");
     } finally {
       setIsLoading(false);
     }
@@ -194,11 +203,14 @@ const UniversityMaintenanceCategoryPage = () => {
     setIsLoading(true);
     try {
       const q1 = query(
-        collection(db, "universitymaintenancetype"),
-        where("universityid", "==", universityId)
+        collection(db, "university", universityId, "maintenancetype"),
+        orderBy("name", "asc")
       );
       const snap = await getDocs(q1);
       setTypeList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load types");
     } finally {
       setIsLoading(false);
     }
@@ -245,10 +257,28 @@ const UniversityMaintenanceCategoryPage = () => {
   const submitProblem = async (e) => {
     e.preventDefault();
     try {
-      if (!problemForm.name?.trim()) return;
+      const name = problemForm.name?.trim();
+      if (!name) return;
+
+      const duplicate = problemCatlist.some(
+        (x) =>
+          (x.name || "").trim().toLowerCase() === name.toLowerCase() &&
+          x.id !== problemForm.id
+      );
+
+      if (duplicate) {
+        toast.warn("Duplicate found! Not adding.");
+        return;
+      }
 
       if (editingData?.type === "problem") {
-        const refDoc = doc(db, "universityproblemcategory", problemForm.id);
+        const refDoc = doc(
+          db,
+          "university",
+          universityId,
+          "problemcategory",
+          problemForm.id
+        );
         const snap = await getDoc(refDoc);
         if (!snap.exists()) {
           toast.warning("Record not found");
@@ -257,33 +287,25 @@ const UniversityMaintenanceCategoryPage = () => {
 
         await updateDoc(refDoc, {
           uid,
-          name: problemForm.name.trim(),
+          name,
           universityid: universityId,
-          updatedBy: uid,
-          updatedDate: new Date(),
+          updatedBy: uid || "",
+          updatedAt: Timestamp.now(),
         });
 
         toast.success("Updated");
       } else {
-        const qDup = query(
-          collection(db, "universityproblemcategory"),
-          where("name", "==", problemForm.name.trim()),
-          where("universityid", "==", universityId)
+        await addDoc(
+          collection(db, "university", universityId, "itemcategory"),
+          {
+            uid: uid || "",
+            name,
+            universityid: universityId,
+            createdBy: uid || "",
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
+          }
         );
-
-        const dupSnap = await getDocs(qDup);
-        if (!dupSnap.empty) {
-          toast.warn("Duplicate found! Not adding.");
-          return;
-        }
-
-        await addDoc(collection(db, "universityproblemcategory"), {
-          uid,
-          name: problemForm.name.trim(),
-          universityid: universityId,
-          createdBy: uid,
-          createdDate: new Date(),
-        });
 
         toast.success("Saved");
       }
@@ -302,7 +324,15 @@ const UniversityMaintenanceCategoryPage = () => {
   const deleteProblem = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "universityproblemcategory", deleteData.id));
+      await deleteDoc(
+        doc(
+          db,
+          "university",
+          universityId,
+          "problemcategory",
+          deleteData.id
+        )
+      );
       toast.success("Deleted");
       await getProblemCatList();
     } catch (e) {
@@ -320,9 +350,28 @@ const UniversityMaintenanceCategoryPage = () => {
       if (!itemCatForm.problemId) return;
 
       if (editingData?.type === "itemcat") {
-        if (!itemCatForm.name?.trim()) return;
+        const name = itemCatForm.name?.trim();
+        if (!name) return;
 
-        const refDoc = doc(db, "universityitemcategory", itemCatForm.id);
+        const duplicate = itemCatlist.some(
+          (x) =>
+            (x.name || "").trim().toLowerCase() === name.toLowerCase() &&
+            x.problemId === itemCatForm.problemId &&
+            x.id !== itemCatForm.id
+        );
+
+        if (duplicate) {
+          toast.warn("Duplicate found! Not adding.");
+          return;
+        }
+
+        const refDoc = doc(
+          db,
+          "university",
+          universityId,
+          "itemcategory",
+          itemCatForm.id
+        );
         const snap = await getDoc(refDoc);
         if (!snap.exists()) {
           toast.warning("Record not found");
@@ -331,11 +380,11 @@ const UniversityMaintenanceCategoryPage = () => {
 
         await updateDoc(refDoc, {
           uid,
-          name: itemCatForm.name.trim(),
+          name,
           universityid: universityId,
           problemId: itemCatForm.problemId,
-          updatedBy: uid,
-          updatedDate: new Date(),
+          updatedBy: uid || "",
+          updatedAt: Timestamp.now(),
         });
 
         toast.success("Updated");
@@ -349,18 +398,10 @@ const UniversityMaintenanceCategoryPage = () => {
           return;
         }
 
-        const existingSnap = await getDocs(
-          query(
-            collection(db, "universityitemcategory"),
-            where("universityid", "==", universityId),
-            where("problemId", "==", itemCatForm.problemId)
-          )
-        );
-
         const existing = new Set(
-          existingSnap.docs.map((d) =>
-            (d.data()?.name || "").trim().toLowerCase()
-          )
+          itemCatlist
+            .filter((x) => x.problemId === itemCatForm.problemId)
+            .map((x) => (x.name || "").trim().toLowerCase())
         );
 
         const toCreate = names.filter((n) => !existing.has(n.toLowerCase()));
@@ -370,14 +411,17 @@ const UniversityMaintenanceCategoryPage = () => {
         } else {
           const batch = writeBatch(db);
           toCreate.forEach((name) => {
-            const refDoc = doc(collection(db, "universityitemcategory"));
+            const refDoc = doc(
+              collection(db, "university", universityId, "itemcategory")
+            );
             batch.set(refDoc, {
-              uid,
+              uid: uid || "",
               name,
               universityid: universityId,
               problemId: itemCatForm.problemId,
-              createdBy: uid,
-              createdDate: new Date(),
+              createdBy: uid || "",
+              createdAt: Timestamp.now(),
+              updatedAt: Timestamp.now(),
             });
           });
           await batch.commit();
@@ -397,14 +441,22 @@ const UniversityMaintenanceCategoryPage = () => {
 
     setItemCatModalOpen(false);
     setEditing(null);
-    setItemCatForm({ id: 0, name: "", problemId: "" });
+    setItemCatForm({ id: "", name: "", problemId: "" });
     setItemCatRows([{ id: 1, name: "" }]);
   };
 
   const deleteItemCategory = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "universityitemcategory", deleteData.id));
+      await deleteDoc(
+        doc(
+          db,
+          "university",
+          universityId,
+          "itemcategory",
+          deleteData.id
+        )
+      );
       toast.success("Deleted");
       await getItemCatList();
     } catch (e) {
@@ -422,9 +474,29 @@ const UniversityMaintenanceCategoryPage = () => {
       if (!itemForm.problemId || !itemForm.itemCategoryId) return;
 
       if (editingData?.type === "item") {
-        if (!itemForm.name?.trim()) return;
+        const name = itemForm.name?.trim();
+        if (!name) return;
 
-        const refDoc = doc(db, "universitymaintenanceitems", itemForm.id);
+        const duplicate = itemlist.some(
+          (x) =>
+            (x.name || "").trim().toLowerCase() === name.toLowerCase() &&
+            x.problemId === itemForm.problemId &&
+            x.itemCategoryId === itemForm.itemCategoryId &&
+            x.id !== itemForm.id
+        );
+
+        if (duplicate) {
+          toast.warn("Duplicate found! Not adding.");
+          return;
+        }
+
+        const refDoc = doc(
+          db,
+          "university",
+          universityId,
+          "maintenanceitems",
+          itemForm.id
+        );
         const snap = await getDoc(refDoc);
         if (!snap.exists()) {
           toast.warning("Record not found");
@@ -433,12 +505,12 @@ const UniversityMaintenanceCategoryPage = () => {
 
         await updateDoc(refDoc, {
           uid,
-          name: itemForm.name.trim(),
+          name,
           universityid: universityId,
           problemId: itemForm.problemId,
           itemCategoryId: itemForm.itemCategoryId,
-          updatedBy: uid,
-          updatedDate: new Date(),
+          updatedBy: uid || "",
+          updatedAt: Timestamp.now(),
         });
 
         toast.success("Updated");
@@ -452,19 +524,14 @@ const UniversityMaintenanceCategoryPage = () => {
           return;
         }
 
-        const existingSnap = await getDocs(
-          query(
-            collection(db, "universitymaintenanceitems"),
-            where("universityid", "==", universityId),
-            where("problemId", "==", itemForm.problemId),
-            where("itemCategoryId", "==", itemForm.itemCategoryId)
-          )
-        );
-
         const existing = new Set(
-          existingSnap.docs.map((d) =>
-            (d.data()?.name || "").trim().toLowerCase()
-          )
+          itemlist
+            .filter(
+              (x) =>
+                x.problemId === itemForm.problemId &&
+                x.itemCategoryId === itemForm.itemCategoryId
+            )
+            .map((x) => (x.name || "").trim().toLowerCase())
         );
 
         const toCreate = names.filter((n) => !existing.has(n.toLowerCase()));
@@ -474,15 +541,18 @@ const UniversityMaintenanceCategoryPage = () => {
         } else {
           const batch = writeBatch(db);
           toCreate.forEach((name) => {
-            const refDoc = doc(collection(db, "universitymaintenanceitems"));
+            const refDoc = doc(
+              collection(db, "university", universityId, "maintenanceitems")
+            );
             batch.set(refDoc, {
-              uid,
+              uid: uid || "",
               name,
               universityid: universityId,
               problemId: itemForm.problemId,
               itemCategoryId: itemForm.itemCategoryId,
-              createdBy: uid,
-              createdDate: new Date(),
+              createdBy: uid || "",
+              createdAt: Timestamp.now(),
+              updatedAt: Timestamp.now(),
             });
           });
           await batch.commit();
@@ -500,14 +570,16 @@ const UniversityMaintenanceCategoryPage = () => {
 
     setItemModalOpen(false);
     setEditing(null);
-    setItemForm({ id: 0, name: "", problemId: "", itemCategoryId: "" });
+    setItemForm({ id: "", name: "", problemId: "", itemCategoryId: "" });
     setItemRows([{ id: 1, name: "" }]);
   };
 
   const deleteItem = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "universitymaintenanceitems", deleteData.id));
+      await deleteDoc(
+        doc(db, "university", universityId, "maintenanceitems", deleteData.id)
+      );
       toast.success("Deleted");
       await getItemList();
     } catch (e) {
@@ -522,10 +594,28 @@ const UniversityMaintenanceCategoryPage = () => {
   const submitType = async (e) => {
     e.preventDefault();
     try {
-      if (!typeForm.name?.trim()) return;
+      const name = typeForm.name?.trim();
+      if (!name) return;
+
+      const duplicate = typelist.some(
+        (x) =>
+          (x.name || "").trim().toLowerCase() === name.toLowerCase() &&
+          x.id !== typeForm.id
+      );
+
+      if (duplicate) {
+        toast.warn("Duplicate found! Not adding.");
+        return;
+      }
 
       if (editingData?.type === "maintype") {
-        const refDoc = doc(db, "universitymaintenancetype", typeForm.id);
+        const refDoc = doc(
+          db,
+          "university",
+          universityId,
+          "maintenancetype",
+          typeForm.id
+        );
         const snap = await getDoc(refDoc);
         if (!snap.exists()) {
           toast.warning("Record not found");
@@ -534,33 +624,25 @@ const UniversityMaintenanceCategoryPage = () => {
 
         await updateDoc(refDoc, {
           uid,
-          name: typeForm.name.trim(),
+          name,
           universityid: universityId,
-          updatedBy: uid,
-          updatedDate: new Date(),
+          updatedBy: uid || "",
+          updatedAt: Timestamp.now(),
         });
 
         toast.success("Updated");
       } else {
-        const qDup = query(
-          collection(db, "universitymaintenancetype"),
-          where("name", "==", typeForm.name.trim()),
-          where("universityid", "==", universityId)
+        await addDoc(
+          collection(db, "university", universityId, "maintenancetype"),
+          {
+            uid: uid || "",
+            name,
+            universityid: universityId,
+            createdBy: uid || "",
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
+          }
         );
-
-        const dupSnap = await getDocs(qDup);
-        if (!dupSnap.empty) {
-          toast.warn("Duplicate found! Not adding.");
-          return;
-        }
-
-        await addDoc(collection(db, "universitymaintenancetype"), {
-          uid,
-          name: typeForm.name.trim(),
-          universityid: universityId,
-          createdBy: uid,
-          createdDate: new Date(),
-        });
 
         toast.success("Saved");
       }
@@ -579,7 +661,9 @@ const UniversityMaintenanceCategoryPage = () => {
   const deleteType = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "universitymaintenancetype", deleteData.id));
+      await deleteDoc(
+        doc(db, "university", universityId, "maintenancetype", deleteData.id)
+      );
       toast.success("Deleted");
       await getTypeList();
     } catch (e) {
@@ -684,7 +768,6 @@ const UniversityMaintenanceCategoryPage = () => {
         )}
       </div>
 
-      {/* Problem Modal */}
       {problemModalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
@@ -756,7 +839,7 @@ const UniversityMaintenanceCategoryPage = () => {
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
-            setItemCatForm({ id: 0, name: "", problemId: "" });
+            setItemCatForm({ id: "", name: "", problemId: "" });
             setItemCatRows([{ id: 1, name: "" }]);
             setItemCatModalOpen(true);
           }}
@@ -840,7 +923,6 @@ const UniversityMaintenanceCategoryPage = () => {
         )}
       </div>
 
-      {/* Item Category Modal */}
       {itemCatModalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-[34rem] shadow-lg">
@@ -932,7 +1014,7 @@ const UniversityMaintenanceCategoryPage = () => {
                   onClick={() => {
                     setItemCatModalOpen(false);
                     setEditing(null);
-                    setItemCatForm({ id: 0, name: "", problemId: "" });
+                    setItemCatForm({ id: "", name: "", problemId: "" });
                     setItemCatRows([{ id: 1, name: "" }]);
                   }}
                   className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
@@ -985,7 +1067,7 @@ const UniversityMaintenanceCategoryPage = () => {
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
-            setItemForm({ id: 0, name: "", problemId: "", itemCategoryId: "" });
+            setItemForm({ id: "", name: "", problemId: "", itemCategoryId: "" });
             setItemRows([{ id: 1, name: "" }]);
             setItemModalOpen(true);
           }}
@@ -1076,7 +1158,6 @@ const UniversityMaintenanceCategoryPage = () => {
         )}
       </div>
 
-      {/* Item Modal */}
       {itemModalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-[36rem] shadow-lg">
@@ -1186,7 +1267,7 @@ const UniversityMaintenanceCategoryPage = () => {
                   onClick={() => {
                     setItemModalOpen(false);
                     setEditing(null);
-                    setItemForm({ id: 0, name: "", problemId: "", itemCategoryId: "" });
+                    setItemForm({ id: "", name: "", problemId: "", itemCategoryId: "" });
                     setItemRows([{ id: 1, name: "" }]);
                   }}
                   className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
@@ -1312,7 +1393,6 @@ const UniversityMaintenanceCategoryPage = () => {
         )}
       </div>
 
-      {/* Type Modal */}
       {typeModalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-96 shadow-lg">

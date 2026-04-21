@@ -2,23 +2,25 @@ import React, { useState, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import { db, database, storage } from "../../firebase";
-import {
-  ref as dbRef,
-  onValue,
-  off,
-  set,
-  push,
-  update,
-  remove,
-  get,
-} from "firebase/database";
+import { db, storage } from "../../firebase";
 import {
   ref as storageRef,
   uploadBytes,
   getDownloadURL,
 } from "firebase/storage";
-import { collection, getDocs, Timestamp } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  Timestamp,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  query,
+  orderBy,
+  onSnapshot,
+  getDoc,
+} from "firebase/firestore";
 import dayjs from "dayjs";
 import { DateRange } from "react-date-range";
 import "react-date-range/dist/styles.css";
@@ -38,12 +40,12 @@ export default function UniversityAnnouncementPage(props) {
   const [currentPage, setCurrentPage] = useState(1);
   const [fileName, setFileName] = useState("No file chosen");
 
-  const uid = useSelector((state) => state.auth.user.uid);
+  const uid = useSelector((state) => state.auth.user?.uid);
   const user = useSelector((state) => state.auth.user);
   const emp = useSelector((state) => state.auth.employee);
 
   const universityId = String(
-    emp?.universityid || emp?.universityId || emp?.university || ""
+    emp?.universityid || emp?.universityId || emp?.university || user?.universityid || ""
   );
 
   const [visiblePoll, setVisiblePoll] = useState(false);
@@ -80,7 +82,7 @@ export default function UniversityAnnouncementPage(props) {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters, sortConfig]);
+  }, [filters, sortConfig, showPinnedOnly]);
 
   const [range, setRange] = useState([
     { startDate: new Date(), endDate: new Date(), key: "selection" },
@@ -103,8 +105,19 @@ export default function UniversityAnnouncementPage(props) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [showListPicker]);
 
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!showPicker) return;
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) {
+        setShowPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showPicker]);
+
   const initialForm = {
-    id: 0,
+    id: "",
     title: "",
     shortdesc: "",
     description: "",
@@ -131,6 +144,10 @@ export default function UniversityAnnouncementPage(props) {
 
   const [form, setForm] = useState(initialForm);
 
+  const announcementsCollectionRef = universityId
+    ? collection(db, "university", universityId, "announcements")
+    : null;
+
   useEffect(() => {
     if (!universityId) {
       setList([]);
@@ -138,47 +155,47 @@ export default function UniversityAnnouncementPage(props) {
     }
 
     setIsLoading(true);
-    const groupRef = dbRef(database, "universityAnnouncements/");
 
-    const cb = (snapshot) => {
-      const data = snapshot.val();
-      const documents = data
-        ? Object.entries(data)
-            .map(([id, value]) => {
-              const posterUrls = Array.isArray(value.posterUrls)
-                ? value.posterUrls
-                : value.posterUrl
-                ? [value.posterUrl]
-                : [];
+    const q = query(
+      collection(db, "university", universityId, "announcements"),
+      orderBy("createdAt", "desc")
+    );
 
-              return {
-                id,
-                ...value,
-                posterUrls,
-                isPinned: !!value.isPinned,
-                pinnedOrder: Number.isFinite(value?.pinnedOrder)
-                  ? Number(value.pinnedOrder)
-                  : 0,
-                pinnedAt:
-                  typeof value?.pinnedAt === "number" ? value.pinnedAt : null,
-              };
-            })
-            .filter(
-              (item) =>
-                String(item.universityid || item.universityId || "") ===
-                universityId
-            )
-        : [];
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const documents = snapshot.docs.map((docSnap) => {
+          const value = docSnap.data();
 
-      setList(documents);
-      setSelectedIds(new Set());
-      setIsLoading(false);
-    };
+          const posterUrls = Array.isArray(value.posterUrls)
+            ? value.posterUrls
+            : value.posterUrl
+            ? [value.posterUrl]
+            : [];
 
-    onValue(groupRef, cb, () => setIsLoading(false));
-    return () => {
-      off(groupRef);
-    };
+          return {
+            id: docSnap.id,
+            ...value,
+            posterUrls,
+            isPinned: !!value.isPinned,
+            pinnedOrder: Number.isFinite(value?.pinnedOrder)
+              ? Number(value.pinnedOrder)
+              : 0,
+            pinnedAt: typeof value?.pinnedAt === "number" ? value.pinnedAt : null,
+          };
+        });
+
+        setList(documents);
+        setSelectedIds(new Set());
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error("Error fetching university announcements:", error);
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
   }, [universityId]);
 
   const toJsDate = (d) => {
@@ -186,7 +203,7 @@ export default function UniversityAnnouncementPage(props) {
     if (d instanceof Date) return d;
     if (typeof d === "string") return new Date(d);
     if (typeof d === "number") return new Date(d);
-    if (d.seconds) return new Date(d.seconds * 1000);
+    if (d?.seconds) return new Date(d.seconds * 1000);
     return null;
   };
 
@@ -209,12 +226,12 @@ export default function UniversityAnnouncementPage(props) {
   const formatDateTime = (dateObj) => {
     if (!dateObj?.startDate || !dateObj?.endDate) return "N/A";
     const start = dayjs(
-      dateObj.startDate.seconds
+      dateObj.startDate?.seconds
         ? dateObj.startDate.seconds * 1000
         : dateObj.startDate
     ).format("MMM DD, YYYY");
     const end = dayjs(
-      dateObj.endDate.seconds
+      dateObj.endDate?.seconds
         ? dateObj.endDate.seconds * 1000
         : dateObj.endDate
     ).format("MMM DD, YYYY");
@@ -224,8 +241,8 @@ export default function UniversityAnnouncementPage(props) {
   const fetchUser = async (uid) => {
     const querySnapshot = await getDocs(collection(db, "employees"));
     const userMap = {};
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
       const username =
         data.username || data.UserName || data.USERNAME || data.name || "";
       userMap[data.uid] = username;
@@ -252,11 +269,13 @@ export default function UniversityAnnouncementPage(props) {
     const titleOK =
       !filters.title ||
       (item.title || "").toLowerCase().includes(filters.title.toLowerCase());
+
     const descOK =
       !filters.desc ||
       (item.shortdesc || "")
         .toLowerCase()
         .includes(filters.desc.toLowerCase());
+
     const dateStr = formatDateTime(item.date).toLowerCase();
     const dateOK =
       !filters.date || dateStr.includes(filters.date.toLowerCase());
@@ -264,7 +283,12 @@ export default function UniversityAnnouncementPage(props) {
     let rangeOK = true;
     if (listDateRange?.startDate && listDateRange?.endDate) {
       const { s, e } = getItemDates(item);
-      rangeOK = rangesOverlap(listDateRange.startDate, listDateRange.endDate, s, e);
+      rangeOK = rangesOverlap(
+        listDateRange.startDate,
+        listDateRange.endDate,
+        s,
+        e
+      );
     }
 
     return titleOK && descOK && dateOK && rangeOK;
@@ -336,35 +360,31 @@ export default function UniversityAnnouncementPage(props) {
     return urls;
   };
 
-  const buildPollPatchPreserveVotes = (id, dbPoll, formPoll) => {
-    const updatesObj = {};
-    const base = `universityAnnouncements/${id}/pollData`;
+  const buildFirestorePollDataPreserveVotes = (dbPoll, formPoll) => {
+    if (!formPoll || !formPoll.question?.trim()) return null;
 
-    if (!formPoll || !formPoll.question?.trim()) return updatesObj;
-
-    updatesObj[`${base}/question`] = formPoll.question.trim();
-    updatesObj[`${base}/allowMulti`] = !!formPoll.allowMulti;
-    updatesObj[`${base}/allowaddoption`] = !!formPoll.allowaddoption;
-
+    const oldOpts = dbPoll?.options || {};
     const newOpts = formPoll.options || {};
-    const oldOpts = (dbPoll && dbPoll.options) || {};
+    const mergedOptions = {};
 
     Object.entries(newOpts).forEach(([key, val]) => {
       const txt = (val?.text || "").trim();
       if (!txt) return;
-      updatesObj[`${base}/options/${key}/text`] = txt;
-      if (!oldOpts[key]) {
-        updatesObj[`${base}/options/${key}/votes`] = {};
-      }
+
+      mergedOptions[key] = {
+        text: txt,
+        votes: oldOpts[key]?.votes || {},
+      };
     });
 
-    Object.keys(oldOpts).forEach((key) => {
-      if (!(key in newOpts)) {
-        updatesObj[`${base}/options/${key}`] = null;
-      }
-    });
+    if (Object.keys(mergedOptions).length < 2) return null;
 
-    return updatesObj;
+    return {
+      question: formPoll.question.trim(),
+      allowMulti: !!formPoll.allowMulti,
+      allowaddoption: !!formPoll.allowaddoption,
+      options: mergedOptions,
+    };
   };
 
   const maxPinnedOrder = () =>
@@ -379,8 +399,14 @@ export default function UniversityAnnouncementPage(props) {
         isPinned: makePinned,
         pinnedAt: makePinned ? Date.now() : null,
         pinnedOrder: makePinned ? maxPinnedOrder() + 1 : 0,
+        updatedAt: Timestamp.now(),
       };
-      await update(dbRef(database, `universityAnnouncements/${item.id}`), patch);
+
+      await updateDoc(
+        doc(db, "university", universityId, "announcements", item.id),
+        patch
+      );
+
       toast.success(makePinned ? "Pinned" : "Unpinned");
     } catch (e) {
       console.error(e);
@@ -393,10 +419,14 @@ export default function UniversityAnnouncementPage(props) {
     if (!Number.isFinite(n) || n < 0) return;
 
     try {
-      await update(dbRef(database, `universityAnnouncements/${item.id}`), {
-        isPinned: true,
-        pinnedOrder: n,
-      });
+      await updateDoc(
+        doc(db, "university", universityId, "announcements", item.id),
+        {
+          isPinned: true,
+          pinnedOrder: n,
+          updatedAt: Timestamp.now(),
+        }
+      );
       toast.success("Order updated");
     } catch (e) {
       console.error(e);
@@ -468,39 +498,26 @@ export default function UniversityAnnouncementPage(props) {
         return;
       }
 
+      if (!form?.date?.startDate || !form?.date?.endDate) {
+        toast.error("Please select date range");
+        return;
+      }
+
       setIsLoading(true);
 
       const newUrls = await uploadAllPosters(form.postersFiles || []);
       const mergedPosterUrls = [...(form.posterUrls || []), ...newUrls];
 
-      let cleanPollData = null;
-      if (form.pollData?.question?.trim()) {
-        const pollOptions = {};
-        Object.entries(form.pollData.options || {}).forEach(([k, v]) => {
-          const text = (v?.text || "").trim();
-          if (text) pollOptions[k] = { text, votes: {} };
-        });
-
-        if (Object.keys(pollOptions).length >= 2) {
-          cleanPollData = {
-            question: form.pollData.question.trim(),
-            allowMulti: !!form.pollData.allowMulti,
-            allowaddoption: !!form.pollData.allowaddoption,
-            options: pollOptions,
-          };
-        }
-      }
-
       const userName = await fetchUser(uid);
-      const nextOrderOnCreate = form.isPinned ? maxPinnedOrder() + 1 : 0;
 
-      const payload = {
-        ...form,
-        uid,
+      const basePayload = {
+        title: form.title || "",
+        shortdesc: form.shortdesc || "",
+        description: form.description || "",
+        uid: uid || "",
         user: userName ? userName : emp?.name || "",
         likes: form.likes || [],
         comments: form.comments || [],
-        createdAt: Timestamp.now(),
         photoURL: user?.photoURL || "",
         date: {
           startDate: Timestamp.fromDate(new Date(form.date.startDate)),
@@ -508,20 +525,27 @@ export default function UniversityAnnouncementPage(props) {
         },
         universityid: universityId,
         role: emp?.role || "",
-        pollData: cleanPollData,
+        link: form.link || "",
+        bookmarked: !!form.bookmarked,
         timestamp: Date.now(),
         isPinned: !!form.isPinned,
         pinnedAt: form.isPinned ? form.pinnedAt || Date.now() : null,
         pinnedOrder: form.isPinned
-          ? form.pinnedOrder || nextOrderOnCreate
+          ? form.pinnedOrder || maxPinnedOrder() + 1
           : 0,
         posterUrls: mergedPosterUrls,
       };
 
       if (editingData) {
-        const refPath = `universityAnnouncements/${form.id}`;
-        const announcementRef = dbRef(database, refPath);
-        const snapshot = await get(announcementRef);
+        const announcementRef = doc(
+          db,
+          "university",
+          universityId,
+          "announcements",
+          form.id
+        );
+
+        const snapshot = await getDoc(announcementRef);
 
         if (!snapshot.exists()) {
           toast.warning("Announcement does not exist! Cannot update.");
@@ -529,28 +553,53 @@ export default function UniversityAnnouncementPage(props) {
           return;
         }
 
-        const existing = snapshot.val() || {};
-        const { postersFiles, id, pollData: _ignored, ...rest } = payload;
-
-        const baseUpdates = {};
-        Object.entries(rest).forEach(([k, v]) => {
-          if (v === undefined) return;
-          baseUpdates[`${refPath}/${k}`] = v;
-        });
-
-        const pollPatch = buildPollPatchPreserveVotes(
-          form.id,
+        const existing = snapshot.data() || {};
+        const updatedPollData = buildFirestorePollDataPreserveVotes(
           existing.pollData,
           form.pollData
         );
 
-        await update(dbRef(database), { ...baseUpdates, ...pollPatch });
+        const updatePayload = {
+          ...basePayload,
+          pollData: updatedPollData,
+          updatedAt: Timestamp.now(),
+        };
+
+        await updateDoc(announcementRef, updatePayload);
         toast.success("University announcement updated successfully");
       } else {
-        const newRef = push(dbRef(database, "universityAnnouncements/"));
-        const { postersFiles, id, ...toPersist } = payload;
-        if (!toPersist.pollData) delete toPersist.pollData;
-        await set(newRef, toPersist);
+        let cleanPollData = null;
+        if (form.pollData?.question?.trim()) {
+          const pollOptions = {};
+          Object.entries(form.pollData.options || {}).forEach(([k, v]) => {
+            const text = (v?.text || "").trim();
+            if (text) pollOptions[k] = { text, votes: {} };
+          });
+
+          if (Object.keys(pollOptions).length >= 2) {
+            cleanPollData = {
+              question: form.pollData.question.trim(),
+              allowMulti: !!form.pollData.allowMulti,
+              allowaddoption: !!form.pollData.allowaddoption,
+              options: pollOptions,
+            };
+          }
+        }
+
+        const createPayload = {
+          ...basePayload,
+          pollData: cleanPollData,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        };
+
+        if (!createPayload.pollData) delete createPayload.pollData;
+
+        await addDoc(
+          collection(db, "university", universityId, "announcements"),
+          createPayload
+        );
+
         toast.success("University announcement created successfully");
       }
     } catch (error) {
@@ -563,19 +612,28 @@ export default function UniversityAnnouncementPage(props) {
       setForm(initialForm);
       setFileName("No file chosen");
       setVisiblePoll(false);
+      setShowPicker(false);
     }
   };
 
   const handleDelete = async () => {
     if (!deleteData) return;
+
     try {
-      const itemRef = dbRef(database, `universityAnnouncements/${deleteData.id}`);
-      await remove(itemRef);
+      const itemRef = doc(
+        db,
+        "university",
+        universityId,
+        "announcements",
+        deleteData.id
+      );
+      await deleteDoc(itemRef);
       toast.success("Successfully deleted!");
     } catch (error) {
       console.error("Error deleting document: ", error);
       toast.error("Failed to delete");
     }
+
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
@@ -661,6 +719,9 @@ export default function UniversityAnnouncementPage(props) {
             setForm(initialForm);
             setVisiblePoll(false);
             setModalOpen(true);
+            setRange([
+              { startDate: new Date(), endDate: new Date(), key: "selection" },
+            ]);
           }}
         >
           + Add
@@ -704,15 +765,18 @@ export default function UniversityAnnouncementPage(props) {
                 !window.confirm(
                   `Delete ${selectedIds.size} university announcement(s)?`
                 )
-              )
+              ) {
                 return;
+              }
+
               try {
                 setIsLoading(true);
-                const updatesObj = {};
-                selectedIds.forEach((id) => {
-                  updatesObj[`universityAnnouncements/${id}`] = null;
-                });
-                await update(dbRef(database), updatesObj);
+
+                const promises = [...selectedIds].map((id) =>
+                  deleteDoc(doc(db, "university", universityId, "announcements", id))
+                );
+
+                await Promise.all(promises);
                 toast.success("Selected university announcements deleted");
                 setSelectedIds(new Set());
               } catch (err) {
@@ -913,7 +977,7 @@ export default function UniversityAnnouncementPage(props) {
                   </tr>
                 ) : (
                   paginatedData.map((item, i) => (
-                    <tr key={i}>
+                    <tr key={item.id || i}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         {item.title}
                       </td>
@@ -1001,19 +1065,19 @@ export default function UniversityAnnouncementPage(props) {
 
                             const startDate = item.date?.startDate?.seconds
                               ? new Date(item.date.startDate.seconds * 1000)
-                              : new Date(item.date.startDate);
+                              : new Date(item.date?.startDate);
 
                             const endDate = item.date?.endDate?.seconds
                               ? new Date(item.date.endDate.seconds * 1000)
-                              : new Date(item.date.endDate);
+                              : new Date(item.date?.endDate);
 
-                            setForm((prev) => ({
-                              ...prev,
+                            setForm({
+                              ...initialForm,
                               ...item,
                               id: item.id,
                               date: {
-                                startDate: startDate.toISOString(),
-                                endDate: endDate.toISOString(),
+                                startDate: startDate?.toISOString() || "",
+                                endDate: endDate?.toISOString() || "",
                               },
                               postersFiles: [],
                               posterUrls: item.posterUrls || [],
@@ -1035,9 +1099,15 @@ export default function UniversityAnnouncementPage(props) {
                               pinnedOrder: Number.isFinite(item.pinnedOrder)
                                 ? Number(item.pinnedOrder)
                                 : 0,
-                            }));
+                            });
 
-                            setRange([{ startDate, endDate, key: "selection" }]);
+                            setRange([
+                              {
+                                startDate: startDate || new Date(),
+                                endDate: endDate || new Date(),
+                                key: "selection",
+                              },
+                            ]);
                             setVisiblePoll(!!item.pollData?.question);
                             setModalOpen(true);
                           }}
@@ -1049,7 +1119,6 @@ export default function UniversityAnnouncementPage(props) {
                           className="text-red-600 hover:underline"
                           onClick={() => {
                             setDelete(item);
-                            setForm(item);
                             setConfirmDeleteOpen(true);
                           }}
                         >

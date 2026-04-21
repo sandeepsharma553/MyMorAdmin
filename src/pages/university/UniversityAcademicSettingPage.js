@@ -6,9 +6,9 @@ import {
   updateDoc,
   doc,
   deleteDoc,
-  query,
   getDoc,
   Timestamp,
+  query,
   orderBy,
 } from "firebase/firestore";
 import { db } from "../../firebase";
@@ -16,7 +16,6 @@ import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 
-// Reusable pager
 const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const canPrev = page > 1;
@@ -43,6 +42,7 @@ const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
         <span className="text-sm text-gray-600">
           Page {page} of {totalPages}
         </span>
+
         <div className="flex items-center gap-2">
           <button
             className={`px-3 py-1 rounded border ${
@@ -55,6 +55,7 @@ const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
           >
             Prev
           </button>
+
           <button
             className={`px-3 py-1 rounded border ${
               canNext
@@ -72,64 +73,64 @@ const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
   );
 };
 
-const UniversityEmployeeSettingPage = (props) => {
-  const { navbarHeight } = props;
-
-  const [roleModalOpen, setRoleModalOpen] = useState(false);
-  const [editingData, setEditing] = useState(null);
-  const [deleteData, setDelete] = useState(null);
-  const [roleDeleteModelOpen, setRoleDeleteModelOpen] = useState(false);
-  const [rolelist, setRoletList] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const [rolePage, setRolePage] = useState(1);
-  const [rolePageSize, setRolePageSize] = useState(5);
-
+const UniversityAcademicCategoryPage = ({ navbarHeight }) => {
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
-
   const universityId = String(
-    emp?.universityid || emp?.universityId || emp?.university || ""
+    emp?.universityid || emp?.universityId || ""
   );
+
+  const [list, setList] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+
+  const [editingData, setEditingData] = useState(null);
+  const [deleteData, setDeleteData] = useState(null);
 
   const initialForm = { id: "", name: "" };
   const [form, setForm] = useState(initialForm);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+
   useEffect(() => {
-    if (universityId) {
-      getRoleList();
-    } else {
-      setRoletList([]);
-    }
+    fetchAcademicCategories();
   }, [universityId]);
 
-  useEffect(() => setRolePage(1), [rolelist.length]);
+  useEffect(() => {
+    setPage(1);
+  }, [list.length]);
 
-  const roleSlice = useMemo(() => {
-    const start = (rolePage - 1) * rolePageSize;
-    return rolelist.slice(start, start + rolePageSize);
-  }, [rolelist, rolePage, rolePageSize]);
+  const paginatedList = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return list.slice(start, start + pageSize);
+  }, [list, page, pageSize]);
 
-  const getRoleList = async () => {
-    if (!universityId) return;
+  const fetchAcademicCategories = async () => {
+    if (!universityId) {
+      setList([]);
+      return;
+    }
 
     setIsLoading(true);
     try {
-      const rolesQuery = query(
-        collection(db, "university", universityId, "roles"),
+      const q = query(
+        collection(db, "university", universityId, "academiccategory"),
         orderBy("name", "asc")
       );
 
-      const querySnapshot = await getDocs(rolesQuery);
-      const documents = querySnapshot.docs.map((docu) => ({
-        id: docu.id,
-        ...docu.data(),
+      const snap = await getDocs(q);
+      const rows = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
       }));
 
-      setRoletList(documents);
+      setList(rows);
     } catch (error) {
-      console.error("Error fetching roles:", error);
-      toast.error("Failed to load roles");
+      console.error(error);
+      toast.error("Failed to load academic categories");
     } finally {
       setIsLoading(false);
     }
@@ -147,7 +148,7 @@ const UniversityEmployeeSettingPage = (props) => {
       const trimmedName = form.name?.trim();
       if (!trimmedName) return;
 
-      const duplicate = rolelist.some(
+      const duplicate = list.some(
         (item) =>
           item.name?.trim().toLowerCase() === trimmedName.toLowerCase() &&
           item.id !== form.id
@@ -159,7 +160,14 @@ const UniversityEmployeeSettingPage = (props) => {
       }
 
       if (editingData) {
-        const docRef = doc(db, "university", universityId, "roles", form.id);
+        const docRef = doc(
+          db,
+          "university",
+          universityId,
+          "academiccategory",
+          form.id
+        );
+
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
@@ -168,52 +176,56 @@ const UniversityEmployeeSettingPage = (props) => {
         }
 
         await updateDoc(docRef, {
-          uid: uid || "",
           name: trimmedName,
           universityid: universityId,
           updatedBy: uid || "",
           updatedAt: Timestamp.now(),
         });
 
-        toast.success("Successfully updated");
-        await getRoleList();
+        toast.success("Academic category updated successfully");
       } else {
-        await addDoc(collection(db, "university", universityId, "roles"), {
-          uid: uid || "",
-          name: trimmedName,
-          universityid: universityId,
-          createdBy: uid || "",
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now(),
-        });
+        await addDoc(
+          collection(db, "university", universityId, "academiccategory"),
+          {
+            uid: uid || "",
+            name: trimmedName,
+            universityid: universityId,
+            createdBy: uid || "",
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
+          }
+        );
 
-        toast.success("Successfully saved");
-        await getRoleList();
+        toast.success("Academic category saved successfully");
       }
-    } catch (error) {
-      console.error("Error saving data:", error);
-      toast.error("Something went wrong while saving");
-    }
 
-    setRoleModalOpen(false);
-    setEditing(null);
-    setForm(initialForm);
+      await fetchAcademicCategories();
+      setModalOpen(false);
+      setEditingData(null);
+      setForm(initialForm);
+    } catch (error) {
+      console.error(error);
+      toast.error("Save failed");
+    }
   };
 
   const handleDelete = async () => {
     if (!deleteData?.id) return;
 
     try {
-      await deleteDoc(doc(db, "university", universityId, "roles", deleteData.id));
-      toast.success("Successfully deleted!");
-      await getRoleList();
+      await deleteDoc(
+        doc(db, "university", universityId, "academiccategory", deleteData.id)
+      );
+
+      toast.success("Academic category deleted successfully");
+      await fetchAcademicCategories();
     } catch (error) {
-      console.error("Error deleting document: ", error);
-      toast.error("Something went wrong while deleting");
+      console.error(error);
+      toast.error("Delete failed");
     }
 
-    setRoleDeleteModelOpen(false);
-    setDelete(null);
+    setDeleteModalOpen(false);
+    setDeleteData(null);
   };
 
   if (!universityId) {
@@ -222,9 +234,10 @@ const UniversityEmployeeSettingPage = (props) => {
         className="flex-1 p-6 bg-gray-100 overflow-auto"
         style={{ paddingTop: navbarHeight || 0 }}
       >
-        <div className="bg-white rounded-xl shadow p-10 text-center text-gray-500">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-10 text-center text-gray-500">
           No university assigned.
         </div>
+        <ToastContainer />
       </main>
     );
   }
@@ -234,21 +247,19 @@ const UniversityEmployeeSettingPage = (props) => {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
-      <div className="flex flex-wrap gap-3 justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">University Employee Setting</h1>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-semibold">University Academic Categories</h1>
 
-        <div className="flex gap-2">
-          <button
-            className="px-4 py-2 bg-black text-white rounded hover:bg-black"
-            onClick={() => {
-              setEditing(null);
-              setForm(initialForm);
-              setRoleModalOpen(true);
-            }}
-          >
-            + Add Role
-          </button>
-        </div>
+        <button
+          className="px-4 py-2 bg-black text-white rounded hover:bg-black"
+          onClick={() => {
+            setEditingData(null);
+            setForm(initialForm);
+            setModalOpen(true);
+          }}
+        >
+          + Add Academic Category
+        </button>
       </div>
 
       <div className="overflow-x-auto bg-white rounded shadow">
@@ -262,7 +273,7 @@ const UniversityEmployeeSettingPage = (props) => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                    Role
+                    Academic Category
                   </th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
                     Actions
@@ -271,7 +282,7 @@ const UniversityEmployeeSettingPage = (props) => {
               </thead>
 
               <tbody className="divide-y divide-gray-200">
-                {roleSlice.map((item, i) => (
+                {paginatedList.map((item, i) => (
                   <tr key={item.id ?? i}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {item.name}
@@ -280,19 +291,19 @@ const UniversityEmployeeSettingPage = (props) => {
                       <button
                         className="text-blue-600 hover:underline mr-3"
                         onClick={() => {
-                          setEditing(item);
+                          setEditingData(item);
                           setForm(item);
-                          setRoleModalOpen(true);
+                          setModalOpen(true);
                         }}
                       >
                         Edit
                       </button>
+
                       <button
                         className="text-red-600 hover:underline"
                         onClick={() => {
-                          setDelete(item);
-                          setForm(item);
-                          setRoleDeleteModelOpen(true);
+                          setDeleteData(item);
+                          setDeleteModalOpen(true);
                         }}
                       >
                         Delete
@@ -301,13 +312,13 @@ const UniversityEmployeeSettingPage = (props) => {
                   </tr>
                 ))}
 
-                {roleSlice.length === 0 && (
+                {paginatedList.length === 0 && (
                   <tr>
                     <td
                       className="px-6 py-10 text-center text-sm text-gray-500"
                       colSpan={2}
                     >
-                      No records
+                      No academic categories found
                     </td>
                   </tr>
                 )}
@@ -315,27 +326,27 @@ const UniversityEmployeeSettingPage = (props) => {
             </table>
 
             <Pager
-              page={rolePage}
-              setPage={setRolePage}
-              pageSize={rolePageSize}
-              setPageSize={setRolePageSize}
-              total={rolelist.length}
+              page={page}
+              setPage={setPage}
+              pageSize={pageSize}
+              setPageSize={setPageSize}
+              total={list.length}
             />
           </>
         )}
       </div>
 
-      {roleModalOpen && (
+      {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
             <h2 className="text-xl font-bold mb-4">
-              {editingData ? "Edit Role" : "Add Role"}
+              {editingData ? "Edit Academic Category" : "Add Academic Category"}
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <input
                 name="name"
-                placeholder="Role"
+                placeholder="Academic Category"
                 value={form.name}
                 onChange={handleChange}
                 className="w-full border border-gray-300 p-2 rounded"
@@ -346,14 +357,15 @@ const UniversityEmployeeSettingPage = (props) => {
                 <button
                   type="button"
                   onClick={() => {
-                    setRoleModalOpen(false);
-                    setEditing(null);
+                    setModalOpen(false);
+                    setEditingData(null);
                     setForm(initialForm);
                   }}
                   className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
                 >
                   Cancel
                 </button>
+
                 <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
                   Save
                 </button>
@@ -363,11 +375,11 @@ const UniversityEmployeeSettingPage = (props) => {
         </div>
       )}
 
-      {roleDeleteModelOpen && (
+      {deleteModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
             <h2 className="text-xl font-semibold mb-4 text-red-600">
-              Delete Role
+              Delete Academic Category
             </h2>
             <p className="mb-4">
               Are you sure you want to delete <strong>{deleteData?.name}</strong>?
@@ -376,13 +388,14 @@ const UniversityEmployeeSettingPage = (props) => {
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
-                  setRoleDeleteModelOpen(false);
-                  setDelete(null);
+                  setDeleteModalOpen(false);
+                  setDeleteData(null);
                 }}
                 className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
               >
                 Cancel
               </button>
+
               <button
                 onClick={handleDelete}
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
@@ -399,4 +412,4 @@ const UniversityEmployeeSettingPage = (props) => {
   );
 };
 
-export default UniversityEmployeeSettingPage;
+export default UniversityAcademicCategoryPage;

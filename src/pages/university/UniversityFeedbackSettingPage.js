@@ -7,8 +7,9 @@ import {
   doc,
   deleteDoc,
   query,
-  where,
   getDoc,
+  Timestamp,
+  orderBy,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
@@ -62,7 +63,7 @@ const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
   );
 };
 
-const UniversityFeedbackSettingPage = () => {
+const UniversityFeedbackSettingPage = ({ navbarHeight }) => {
   const [list, setList] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
@@ -73,13 +74,13 @@ const UniversityFeedbackSettingPage = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
 
-  const uid = useSelector((state) => state.auth.user.uid);
+  const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
+  const universityId = String(emp?.universityid || emp?.universityId || "");
 
   const initialForm = { id: "", name: "" };
   const [form, setForm] = useState(initialForm);
 
-  // 🔥 FIX: always array
   const safeList = Array.isArray(list) ? list : [];
 
   const slice = useMemo(() => {
@@ -89,14 +90,23 @@ const UniversityFeedbackSettingPage = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [universityId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [safeList.length]);
 
   const fetchData = async () => {
+    if (!universityId) {
+      setList([]);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const q = query(
-        collection(db, "feedbackitems"),
-        where("universityid", "==", emp?.universityid)
+        collection(db, "university", universityId, "feedbackitems"),
+        orderBy("name", "asc")
       );
 
       const snap = await getDocs(q);
@@ -109,17 +119,37 @@ const UniversityFeedbackSettingPage = () => {
       setList(data);
     } catch (err) {
       console.log(err);
+      toast.error("Failed to load feedback items");
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name) return;
+    const trimmedName = form.name?.trim();
+    if (!trimmedName) return;
 
     try {
+      const duplicate = safeList.some(
+        (item) =>
+          item.name?.trim().toLowerCase() === trimmedName.toLowerCase() &&
+          item.id !== form.id
+      );
+
+      if (duplicate) {
+        toast.warn("Duplicate found! Not adding.");
+        return;
+      }
+
       if (editing) {
-        const docRef = doc(db, "feedbackitems", form.id);
+        const docRef = doc(
+          db,
+          "university",
+          universityId,
+          "feedbackitems",
+          form.id
+        );
         const snap = await getDoc(docRef);
 
         if (!snap.exists()) {
@@ -128,49 +158,70 @@ const UniversityFeedbackSettingPage = () => {
         }
 
         await updateDoc(docRef, {
-          name: form.name,
-          universityid: emp.universityid,
-          updatedBy: uid,
-          updatedAt: new Date(),
+          name: trimmedName,
+          universityid: universityId,
+          updatedBy: uid || "",
+          updatedAt: Timestamp.now(),
         });
 
         toast.success("Updated");
       } else {
-        await addDoc(collection(db, "feedbackitems"), {
-          name: form.name,
-          universityid: emp.universityid,
-          createdBy: uid,
-          createdAt: new Date(),
+        await addDoc(collection(db, "university", universityId, "feedbackitems"), {
+          name: trimmedName,
+          universityid: universityId,
+          createdBy: uid || "",
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
         });
 
         toast.success("Added");
       }
 
-      fetchData();
+      await fetchData();
       setModalOpen(false);
       setEditing(null);
       setForm(initialForm);
     } catch (err) {
       console.log(err);
+      toast.error("Save failed");
     }
   };
 
   const handleDelete = async () => {
     try {
-      await deleteDoc(doc(db, "feedbackitems", deleteData.id)); // ✅ FIX
+      await deleteDoc(
+        doc(db, "university", universityId, "feedbackitems", deleteData.id)
+      );
       toast.success("Deleted");
-      fetchData();
+      await fetchData();
     } catch (err) {
       console.log(err);
+      toast.error("Delete failed");
     }
 
     setDeleteModal(false);
     setDeleteData(null);
   };
 
+  if (!universityId) {
+    return (
+      <main
+        className="flex-1 p-6 bg-gray-100 overflow-auto"
+        style={{ paddingTop: navbarHeight || 0 }}
+      >
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-10 text-center text-gray-500">
+          No university assigned.
+        </div>
+        <ToastContainer />
+      </main>
+    );
+  }
+
   return (
-    <main className="flex-1 p-6 bg-gray-100">
-      {/* Header */}
+    <main
+      className="flex-1 p-6 bg-gray-100 overflow-auto"
+      style={{ paddingTop: navbarHeight || 0 }}
+    >
       <div className="flex justify-between mb-4">
         <h1 className="text-2xl font-bold">University Feedback Settings</h1>
 
@@ -186,7 +237,6 @@ const UniversityFeedbackSettingPage = () => {
         </button>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded shadow">
         {isLoading ? (
           <div className="flex justify-center p-10">
@@ -252,11 +302,12 @@ const UniversityFeedbackSettingPage = () => {
         )}
       </div>
 
-      {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center">
           <div className="bg-white p-6 rounded w-96">
-            <h2 className="text-xl mb-4">Add Feedback</h2>
+            <h2 className="text-xl mb-4">
+              {editing ? "Edit Feedback" : "Add Feedback"}
+            </h2>
 
             <form onSubmit={handleSubmit}>
               <input
@@ -269,7 +320,16 @@ const UniversityFeedbackSettingPage = () => {
               />
 
               <div className="flex justify-end gap-2">
-                <button onClick={() => setModalOpen(false)}>Cancel</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalOpen(false);
+                    setEditing(null);
+                    setForm(initialForm);
+                  }}
+                >
+                  Cancel
+                </button>
                 <button className="bg-blue-600 text-white px-4 py-2 rounded">
                   Save
                 </button>
@@ -279,7 +339,6 @@ const UniversityFeedbackSettingPage = () => {
         </div>
       )}
 
-      {/* Delete Modal */}
       {deleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center">
           <div className="bg-white p-6 rounded w-80">
