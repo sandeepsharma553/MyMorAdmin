@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  doc,
+  deleteDoc,
+  query,
+  where,
+  getDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
@@ -23,7 +31,6 @@ const UniversityEventSettingPage = lazy(() =>
   import("./UniversityEventSettingPage")
 );
 
-// ---------- helpers ----------
 const initialForm = { id: "", name: "" };
 const toKey = (s) => (s || "").trim().toLowerCase();
 
@@ -32,7 +39,7 @@ const SectionHeader = ({ title, actionLabel, onAction }) => (
     <h2 className="text-xl font-semibold">{title}</h2>
     {actionLabel && (
       <button
-        className="px-4 py-2 bg-black text-white rounded"
+        className="px-4 py-2 bg-black text-white rounded hover:bg-black/80"
         onClick={onAction}
       >
         {actionLabel}
@@ -41,194 +48,561 @@ const SectionHeader = ({ title, actionLabel, onAction }) => (
   </div>
 );
 
-const ListTable = ({ rows, onEdit, onDelete }) => (
-  <div className="bg-white rounded shadow">
-    <table className="min-w-full">
-      <thead>
+const ListTable = ({ rows, onEdit, onDelete, emptyText = "No data" }) => (
+  <div className="overflow-x-auto bg-white rounded shadow">
+    <table className="min-w-full divide-y divide-gray-200">
+      <thead className="bg-gray-50">
         <tr>
-          <th className="p-3 text-left">Name</th>
-          <th className="p-3 text-left">Actions</th>
+          <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+            Name
+          </th>
+          <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
+            Actions
+          </th>
         </tr>
       </thead>
-      <tbody>
-        {rows.map((item) => (
-          <tr key={item.id}>
-            <td className="p-3">{item.name}</td>
-            <td className="p-3">
-              <button onClick={() => onEdit(item)}>Edit</button>
-              <button onClick={() => onDelete(item)} className="ml-3 text-red-500">Delete</button>
+      <tbody className="divide-y divide-gray-200">
+        {rows.length ? (
+          rows.map((item) => (
+            <tr key={item.id}>
+              <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-800">
+                {item.name}
+              </td>
+              <td className="px-6 py-3 whitespace-nowrap text-sm">
+                <button
+                  className="text-blue-600 hover:underline mr-4"
+                  onClick={() => onEdit(item)}
+                >
+                  Edit
+                </button>
+                <button
+                  className="text-red-600 hover:underline"
+                  onClick={() => onDelete(item)}
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          ))
+        ) : (
+          <tr>
+            <td className="px-6 py-4 text-sm text-gray-500" colSpan={2}>
+              {emptyText}
             </td>
           </tr>
-        ))}
+        )}
       </tbody>
     </table>
   </div>
 );
 
-// ---------- MAIN ----------
+const ConfirmModal = ({
+  open,
+  title = "Confirm",
+  message,
+  onCancel,
+  onConfirm,
+  confirmLabel = "Delete",
+}) => {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
+        <h3 className="text-lg font-semibold mb-2">{title}</h3>
+        <p className="text-sm text-gray-700 mb-5">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button
+            className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const EditModal = ({ open, title, form, setForm, onCancel, onSave }) => {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
+        <h3 className="text-lg font-semibold mb-4">{title}</h3>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSave();
+          }}
+          className="space-y-4"
+        >
+          <input
+            name="name"
+            placeholder="Category name"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            className="w-full border border-gray-300 p-2 rounded"
+            required
+          />
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              onClick={onCancel}
+            >
+              Cancel
+            </button>
+            <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+              Save
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const FooterPager = ({ page, totalPages, onPrev, onNext }) => (
+  <div className="flex justify-between items-center mt-4">
+    <p className="text-sm text-gray-600">
+      Page {page} of {totalPages}
+    </p>
+    <div className="space-x-2">
+      <button
+        onClick={onPrev}
+        disabled={page === 1}
+        className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+      >
+        Previous
+      </button>
+      <button
+        onClick={onNext}
+        disabled={page >= totalPages}
+        className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+      >
+        Next
+      </button>
+    </div>
+  </div>
+);
+
 const UniversitySettingPage = () => {
   const uid = useSelector((s) => s.auth.user?.uid);
   const emp = useSelector((s) => s.auth.employee);
-
-  // ✅ CHANGE HERE
   const universityId = emp?.universityid;
+
+  const MENU = [
+    { key: "events", label: "Event Categories" },
+    { key: "academics", label: "Academic Categories" },
+    { key: "maintenance", label: "Maintenance Settings" },
+    { key: "reports", label: "Report Settings" },
+    { key: "feedback", label: "Feedback Setting" },
+    { key: "employee", label: "Employee Setting" },
+    { key: "event", label: "Event Setting" },
+  ];
 
   const [activeKey, setActiveKey] = useState("events");
 
   const [eventAll, setEventAll] = useState([]);
   const [academicAll, setAcademicAll] = useState([]);
 
-  const [form, setForm] = useState(initialForm);
-  const [editingData, setEditingData] = useState(null);
+  const [loadingKey, setLoadingKey] = useState("");
+
+  const PAGE_SIZE = 10;
+  const [eventPage, setEventPage] = useState(1);
+  const [acadPage, setAcadPage] = useState(1);
+
   const [editOpen, setEditOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState("Add");
+  const [currentCollection, setCurrentCollection] = useState("eventcategory");
+  const [editingData, setEditingData] = useState(null);
+  const [form, setForm] = useState(initialForm);
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [toDelete, setToDelete] = useState(null);
 
   const isEvents = activeKey === "events";
+  const sectionTitle =
+    activeKey === "events"
+      ? "Event Categories"
+      : activeKey === "academics"
+      ? "Academic Categories"
+      : "";
 
-  // ---------- FETCH ----------
   const fetchAll = async () => {
     if (!universityId) return;
 
-    const evSnap = await getDocs(
-      query(collection(db, "eventcategory"), where("universityid", "==", universityId))
-    );
+    try {
+      setLoadingKey("events");
+      const evSnap = await getDocs(
+        query(collection(db, "eventcategory"), where("universityid", "==", universityId))
+      );
+      const evRows = evSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      evRows.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      setEventAll(evRows);
+      setEventPage((p) =>
+        Math.min(p, Math.max(1, Math.ceil(evRows.length / PAGE_SIZE)))
+      );
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load event categories");
+    } finally {
+      setLoadingKey("");
+    }
 
-    setEventAll(evSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-
-    const acSnap = await getDocs(
-      query(collection(db, "academiccategory"), where("universityid", "==", universityId))
-    );
-
-    setAcademicAll(acSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    try {
+      setLoadingKey("academics");
+      const acSnap = await getDocs(
+        query(collection(db, "academiccategory"), where("universityid", "==", universityId))
+      );
+      const acRows = acSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      acRows.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      setAcademicAll(acRows);
+      setAcadPage((p) =>
+        Math.min(p, Math.max(1, Math.ceil(acRows.length / PAGE_SIZE)))
+      );
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load academic categories");
+    } finally {
+      setLoadingKey("");
+    }
   };
 
   useEffect(() => {
+    if (!universityId) return;
     fetchAll();
   }, [universityId]);
 
-  // ---------- SAVE ----------
-  const doSave = async () => {
-    const name = form.name?.trim();
-    if (!name) return;
+  const eventTotalPages = Math.max(1, Math.ceil(eventAll.length / PAGE_SIZE));
+  const acadTotalPages = Math.max(1, Math.ceil(academicAll.length / PAGE_SIZE));
 
-    if (!editingData) {
-      await addDoc(collection(db, isEvents ? "eventcategory" : "academiccategory"), {
-        name,
-        universityid: universityId,
-        uid,
-        createdDate: new Date(),
-      });
-    } else {
-      await updateDoc(doc(db, isEvents ? "eventcategory" : "academiccategory", form.id), {
-        name,
-        universityid: universityId,
-        updatedDate: new Date(),
-      });
-    }
+  const eventPageRows = useMemo(() => {
+    const start = (eventPage - 1) * PAGE_SIZE;
+    return eventAll.slice(start, start + PAGE_SIZE);
+  }, [eventAll, eventPage]);
 
-    toast.success("Saved!");
-    setEditOpen(false);
-    setForm(initialForm);
+  const acadPageRows = useMemo(() => {
+    const start = (acadPage - 1) * PAGE_SIZE;
+    return academicAll.slice(start, start + PAGE_SIZE);
+  }, [academicAll, acadPage]);
+
+  const nextEvents = () => setEventPage((p) => Math.min(p + 1, eventTotalPages));
+  const prevEvents = () => setEventPage((p) => Math.max(p - 1, 1));
+  const nextAcad = () => setAcadPage((p) => Math.min(p + 1, acadTotalPages));
+  const prevAcad = () => setAcadPage((p) => Math.max(p - 1, 1));
+
+  const openAdd = () => {
     setEditingData(null);
-    fetchAll();
+    setForm(initialForm);
+    setCurrentCollection(isEvents ? "eventcategory" : "academiccategory");
+    setEditTitle(isEvents ? "Add Event Category" : "Add Academic Category");
+    setEditOpen(true);
   };
 
-  // ---------- DELETE ----------
-  const doDelete = async (item) => {
-    await deleteDoc(doc(db, isEvents ? "eventcategory" : "academiccategory", item.id));
-    toast.success("Deleted!");
-    fetchAll();
+  const openEdit = (item) => {
+    setEditingData(item);
+    setForm({ id: item.id, name: item.name || "" });
+    setCurrentCollection(isEvents ? "eventcategory" : "academiccategory");
+    setEditTitle(isEvents ? "Edit Event Category" : "Edit Academic Category");
+    setEditOpen(true);
   };
 
-  // ---------- UI ----------
+  const doSave = async () => {
+    try {
+      const name = form.name?.trim();
+      if (!name) return;
+
+      const list = isEvents ? eventAll : academicAll;
+      const dupInList = list.some(
+        (x) => toKey(x.name) === toKey(name) && x.id !== form.id
+      );
+
+      if (dupInList) {
+        toast.warn("Duplicate found!");
+        return;
+      }
+
+      if (!editingData) {
+        await addDoc(collection(db, currentCollection), {
+          uid: uid || "",
+          name,
+          universityid: universityId || "",
+          createdBy: uid || "",
+          createdDate: new Date(),
+        });
+        toast.success("Successfully saved");
+      } else {
+        const ref = doc(db, currentCollection, form.id);
+        const snap = await getDoc(ref);
+
+        if (!snap.exists()) {
+          toast.warning("Data does not exist! Cannot update.");
+          return;
+        }
+
+        await updateDoc(ref, {
+          uid: uid || "",
+          name,
+          universityid: universityId || "",
+          updatedBy: uid || "",
+          updatedDate: new Date(),
+        });
+        toast.success("Successfully updated");
+      }
+
+      await fetchAll();
+    } catch (e) {
+      console.error("Error saving data:", e);
+      toast.error("Error saving data");
+    } finally {
+      setEditOpen(false);
+      setEditingData(null);
+      setForm(initialForm);
+    }
+  };
+
+  const openDelete = (item) => {
+    setCurrentCollection(isEvents ? "eventcategory" : "academiccategory");
+    setToDelete(item);
+    setConfirmOpen(true);
+  };
+
+  const doDelete = async () => {
+    try {
+      if (!toDelete?.id) return;
+
+      await deleteDoc(doc(db, currentCollection, toDelete.id));
+      toast.success("Successfully deleted!");
+      await fetchAll();
+
+      if (activeKey === "events") {
+        setEventPage((p) =>
+          Math.min(p, Math.max(1, Math.ceil((eventAll.length - 1) / PAGE_SIZE)))
+        );
+      } else if (activeKey === "academics") {
+        setAcadPage((p) =>
+          Math.min(p, Math.max(1, Math.ceil((academicAll.length - 1) / PAGE_SIZE)))
+        );
+      }
+    } catch (e) {
+      console.error("Error deleting document:", e);
+      toast.error("Error deleting document");
+    } finally {
+      setConfirmOpen(false);
+      setToDelete(null);
+    }
+  };
+
   return (
-    <main className="flex bg-gray-100 min-h-screen">
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r p-4">
-        <h1 className="text-lg font-bold mb-4">University Settings</h1>
+    <main className="flex min-h-[calc(100vh-64px)] bg-gray-100">
+      <aside className="w-64 bg-white border-r">
+        <div className="p-4 border-b">
+          <h1 className="text-xl font-semibold">Settings</h1>
+          <p className="text-xs text-gray-500">University scope</p>
+        </div>
 
-        <button onClick={() => setActiveKey("events")} className="block mb-2">
-          Event Categories
-        </button>
-        <button onClick={() => setActiveKey("academics")} className="block mb-2">
-          Academic Categories
-        </button>
-        <button onClick={() => setActiveKey("maintenance")} className="block mb-2">
-          Maintenance
-        </button>
-        <button onClick={() => setActiveKey("reports")} className="block mb-2">
-          Reports
-        </button>
+        <nav className="p-2">
+          {MENU.map((m) => {
+            const active = activeKey === m.key;
+            return (
+              <button
+                key={m.key}
+                className={`w-full text-left px-3 py-2 rounded mb-1 ${
+                  active ? "bg-black text-white" : "hover:bg-gray-100"
+                }`}
+                onClick={() => setActiveKey(m.key)}
+              >
+                {m.label}
+              </button>
+            );
+          })}
+        </nav>
       </aside>
 
-      {/* Content */}
-      <section className="flex-1 p-6">
-        {/* EVENTS */}
+      <section className="flex-1 p-6 overflow-auto">
+        {activeKey === "maintenance" && (
+          <Suspense
+            fallback={
+              <div className="flex justify-center items-center h-64">
+                <FadeLoader color="#36d7b7" />
+              </div>
+            }
+          >
+            <div className="bg-white rounded shadow p-4">
+              <UniversityMaintenancePage
+                universityid={universityId}
+                uid={uid}
+                embedded
+              />
+            </div>
+          </Suspense>
+        )}
+
+        {activeKey === "reports" && (
+          <Suspense
+            fallback={
+              <div className="flex justify-center items-center h-64">
+                <FadeLoader color="#36d7b7" />
+              </div>
+            }
+          >
+            <div className="bg-white rounded shadow p-4">
+              <UniversityReportSettingPage
+                universityid={universityId}
+                uid={uid}
+                embedded
+              />
+            </div>
+          </Suspense>
+        )}
+
+        {activeKey === "feedback" && (
+          <Suspense
+            fallback={
+              <div className="flex justify-center items-center h-64">
+                <FadeLoader color="#36d7b7" />
+              </div>
+            }
+          >
+            <div className="bg-white rounded shadow p-4">
+              <UniversityFeedbackSettingPage
+                universityid={universityId}
+                uid={uid}
+                embedded
+              />
+            </div>
+          </Suspense>
+        )}
+
+        {activeKey === "employee" && (
+          <Suspense
+            fallback={
+              <div className="flex justify-center items-center h-64">
+                <FadeLoader color="#36d7b7" />
+              </div>
+            }
+          >
+            <div className="bg-white rounded shadow p-4">
+              <UniversityEmployeeSettingPage
+                universityid={universityId}
+                uid={uid}
+                embedded
+              />
+            </div>
+          </Suspense>
+        )}
+
+        {activeKey === "event" && (
+          <Suspense
+            fallback={
+              <div className="flex justify-center items-center h-64">
+                <FadeLoader color="#36d7b7" />
+              </div>
+            }
+          >
+            <div className="bg-white rounded shadow p-4">
+              <UniversityEventSettingPage
+                universityid={universityId}
+                uid={uid}
+                embedded
+              />
+            </div>
+          </Suspense>
+        )}
+
         {activeKey === "events" && (
           <>
-            <SectionHeader title="Event Categories" actionLabel="+ Add" onAction={() => setEditOpen(true)} />
-
-            <ListTable
-              rows={eventAll}
-              onEdit={(item) => {
-                setEditingData(item);
-                setForm(item);
-                setEditOpen(true);
-              }}
-              onDelete={doDelete}
+            <SectionHeader
+              title={sectionTitle}
+              actionLabel="+ Add Event Category"
+              onAction={openAdd}
             />
+            {loadingKey === "events" ? (
+              <div className="flex justify-center items-center h-64">
+                <FadeLoader color="#36d7b7" />
+              </div>
+            ) : (
+              <>
+                <ListTable
+                  rows={eventPageRows}
+                  onEdit={openEdit}
+                  onDelete={openDelete}
+                  emptyText="No event categories yet."
+                />
+                <FooterPager
+                  page={eventPage}
+                  totalPages={eventTotalPages}
+                  onPrev={prevEvents}
+                  onNext={nextEvents}
+                />
+              </>
+            )}
           </>
         )}
 
-        {/* ACADEMICS */}
         {activeKey === "academics" && (
           <>
-            <SectionHeader title="Academic Categories" actionLabel="+ Add" onAction={() => setEditOpen(true)} />
-
-            <ListTable
-              rows={academicAll}
-              onEdit={(item) => {
-                setEditingData(item);
-                setForm(item);
-                setEditOpen(true);
-              }}
-              onDelete={doDelete}
+            <SectionHeader
+              title={sectionTitle}
+              actionLabel="+ Add Academic Category"
+              onAction={openAdd}
             />
+            {loadingKey === "academics" ? (
+              <div className="flex justify-center items-center h-64">
+                <FadeLoader color="#36d7b7" />
+              </div>
+            ) : (
+              <>
+                <ListTable
+                  rows={acadPageRows}
+                  onEdit={openEdit}
+                  onDelete={openDelete}
+                  emptyText="No academic categories yet."
+                />
+                <FooterPager
+                  page={acadPage}
+                  totalPages={acadTotalPages}
+                  onPrev={prevAcad}
+                  onNext={nextAcad}
+                />
+              </>
+            )}
           </>
-        )}
-
-        {/* INLINE PAGES */}
-        {activeKey === "maintenance" && (
-          <UniversityMaintenancePage universityid={universityId} uid={uid} embedded />
-        )}
-        {activeKey === "reports" && (
-          <UniversityReportSettingPage universityid={universityId} uid={uid} embedded />
         )}
       </section>
 
-      {/* MODAL */}
-      {editOpen && (
-        <div className="fixed inset-0 bg-black/40 flex justify-center items-center">
-          <div className="bg-white p-5 rounded w-80">
-            <h3 className="mb-3 font-bold">
-              {editingData ? "Edit" : "Add"} Category
-            </h3>
+      <EditModal
+        open={editOpen}
+        title={editTitle}
+        form={form}
+        setForm={setForm}
+        onCancel={() => {
+          setEditOpen(false);
+          setEditingData(null);
+          setForm(initialForm);
+        }}
+        onSave={doSave}
+      />
 
-            <input
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="border p-2 w-full mb-4"
-              placeholder="Enter name"
-            />
-
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setEditOpen(false)}>Cancel</button>
-              <button onClick={doSave} className="bg-black text-white px-3 py-1 rounded">
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        open={confirmOpen}
+        title="Delete Category"
+        message={`Are you sure you want to delete "${toDelete?.name || ""}"?`}
+        onCancel={() => {
+          setConfirmOpen(false);
+          setToDelete(null);
+        }}
+        onConfirm={doDelete}
+      />
 
       <ToastContainer />
     </main>
