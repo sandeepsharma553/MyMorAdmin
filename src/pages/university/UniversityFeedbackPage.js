@@ -68,7 +68,6 @@ export default function UniversityFeedbackPage(props) {
     key: "date",
     direction: "desc",
   });
- 
 
   const debounceRef = useRef(null);
   const setFilterDebounced = (field, value) => {
@@ -101,7 +100,6 @@ export default function UniversityFeedbackPage(props) {
     datetime: "",
     isreport: false,
     image: null,
-    universityid: "",
     status: "Pending",
   };
 
@@ -179,8 +177,9 @@ export default function UniversityFeedbackPage(props) {
       snap.forEach((d) => {
         const u = d.data();
         const role = (u.role || u.Role || "").toLowerCase();
-        if (u.email && role !== "admin")
+        if (u.email && role !== "admin") {
           emails.push(String(u.email).toLowerCase());
+        }
       });
       setAdminEmails(Array.from(new Set(emails)).sort((a, b) => a.localeCompare(b)));
     } catch (e) {
@@ -210,10 +209,11 @@ export default function UniversityFeedbackPage(props) {
   };
 
   const markNotesSeen = async (row) => {
-    if (!row?.id || !uid) return;
+    if (!row?.id || !uid || !universityId) return;
     try {
-      const refDoc = doc(db, "universityfeedback", row.id);
+      const refDoc = doc(db, "university", universityId, "feedback", row.id);
       await updateDoc(refDoc, { [`notesSeenBy.${uid}`]: serverTimestamp() });
+
       setList((prev) =>
         prev.map((it) =>
           it.id === row.id
@@ -236,91 +236,100 @@ export default function UniversityFeedbackPage(props) {
     if (!universityId) return;
     setIsLoading(true);
 
-    const usersQuery = query(
-      collection(db, "users"),
-      where("universityid", "==", universityId)
-    );
-    const usersSnap = await getDocs(usersQuery);
-    const userMap = {};
-    usersSnap.forEach((d) => {
-      const data = d.data();
-      const username =
-        data.username || data.UserName || data.USERNAME || "Unknown";
-      userMap[data.uid] = username;
-    });
-
-    const feedbackQuery = query(
-      collection(db, "universityfeedback"),
-      where("universityid", "==", universityId)
-    );
-    const feedbackSnapshot = await getDocs(feedbackQuery);
-
-    let rows = feedbackSnapshot.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        ...data,
-        username: userMap[data.uid] || "",
-        assignedToEmail: data.assignedToEmail || "",
-        assignedToUid: data.assignedToUid || null,
-        assignedToEmails: Array.isArray(data.assignedToEmails)
-          ? data.assignedToEmails
-          : data.assignedToEmail
-          ? [String(data.assignedToEmail).toLowerCase()]
-          : [],
-        assignedToUids: Array.isArray(data.assignedToUids)
-          ? data.assignedToUids
-          : data.assignedToUid
-          ? [data.assignedToUid]
-          : [],
-        adminNotes: Array.isArray(data.adminNotes) ? data.adminNotes : [],
-        notesSeenBy: data.notesSeenBy || {},
-      };
-    });
-
-    if (!isAdmin) {
-      const me = (myEmail || "").trim().toLowerCase();
-      rows = rows.filter((r) => {
-        const emails = Array.isArray(r.assignedToEmails)
-          ? r.assignedToEmails.map((e) => String(e || "").toLowerCase())
-          : [];
-        const uids = Array.isArray(r.assignedToUids) ? r.assignedToUids : [];
-
-        const matchEmail =
-          (r.assignedToEmail && String(r.assignedToEmail).toLowerCase() === me) ||
-          emails.includes(me);
-
-        const matchUid =
-          (r.assignedToUid && r.assignedToUid === uid) ||
-          uids.includes(uid);
-
-        return matchEmail || matchUid;
+    try {
+      const usersQuery = query(
+        collection(db, "users"),
+        where("universityid", "==", universityId)
+      );
+      const usersSnap = await getDocs(usersQuery);
+      const userMap = {};
+      usersSnap.forEach((d) => {
+        const data = d.data();
+        const username =
+          data.username || data.UserName || data.USERNAME || "Unknown";
+        userMap[data.uid] = username;
       });
-    }
 
-    setList(rows);
-    setIsLoading(false);
+      const feedbackSnapshot = await getDocs(
+        collection(db, "university", universityId, "feedback")
+      );
+
+      let rows = feedbackSnapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          username: userMap[data.uid] || "",
+          assignedToEmail: data.assignedToEmail || "",
+          assignedToUid: data.assignedToUid || null,
+          assignedToEmails: Array.isArray(data.assignedToEmails)
+            ? data.assignedToEmails
+            : data.assignedToEmail
+            ? [String(data.assignedToEmail).toLowerCase()]
+            : [],
+          assignedToUids: Array.isArray(data.assignedToUids)
+            ? data.assignedToUids
+            : data.assignedToUid
+            ? [data.assignedToUid]
+            : [],
+          adminNotes: Array.isArray(data.adminNotes) ? data.adminNotes : [],
+          notesSeenBy: data.notesSeenBy || {},
+        };
+      });
+
+      if (!isAdmin) {
+        const me = (myEmail || "").trim().toLowerCase();
+        rows = rows.filter((r) => {
+          const emails = Array.isArray(r.assignedToEmails)
+            ? r.assignedToEmails.map((e) => String(e || "").toLowerCase())
+            : [];
+          const uids = Array.isArray(r.assignedToUids) ? r.assignedToUids : [];
+
+          const matchEmail =
+            (r.assignedToEmail && String(r.assignedToEmail).toLowerCase() === me) ||
+            emails.includes(me);
+
+          const matchUid =
+            (r.assignedToUid && r.assignedToUid === uid) || uids.includes(uid);
+
+          return matchEmail || matchUid;
+        });
+      }
+
+      setList(rows);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to load feedback");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.incidenttype) return;
+    if (!universityId) {
+      toast.error("No university assigned.");
+      return;
+    }
 
     setIsLoading(true);
     let imageUrl = "";
 
-    if (form.image) {
-      const imageRef = ref(storage, `universityfeedback/${Date.now()}_${form.image.name}`);
-      await uploadBytes(imageRef, form.image);
-      imageUrl = await getDownloadURL(imageRef);
-    }
-
     try {
+      if (form.image) {
+        const filename = `university/${universityId}/feedback/${Date.now()}_${form.image.name}`;
+        const imageRef = ref(storage, filename);
+        await uploadBytes(imageRef, form.image);
+        imageUrl = await getDownloadURL(imageRef);
+      }
+
       if (editingData) {
-        const docRef = doc(db, "universityfeedback", form.id);
+        const docRef = doc(db, "university", universityId, "feedback", form.id);
         const docSnap = await getDoc(docRef);
+
         if (!docSnap.exists()) {
-          toast.warning("Report does not exist! Cannot update.");
+          toast.warning("Feedback does not exist! Cannot update.");
           setIsLoading(false);
           return;
         }
@@ -333,7 +342,6 @@ export default function UniversityFeedbackPage(props) {
           datetime: form.datetime,
           isreport: form.isreport,
           ...(imageUrl && { imageUrl }),
-          universityid: universityId,
           updatedBy: uid,
           updatedDate: new Date(),
           updatedAt: serverTimestamp(),
@@ -342,7 +350,7 @@ export default function UniversityFeedbackPage(props) {
 
         toast.success("Successfully updated");
       } else {
-        await addDoc(collection(db, "universityfeedback"), {
+        await addDoc(collection(db, "university", universityId, "feedback"), {
           uid,
           incidenttype:
             form.incidenttype === "Other" ? form.other : form.incidenttype,
@@ -350,7 +358,6 @@ export default function UniversityFeedbackPage(props) {
           datetime: form.datetime,
           isreport: form.isreport,
           imageUrl,
-          universityid: universityId,
           createdBy: uid,
           createdDate: new Date(),
           createdAt: serverTimestamp(),
@@ -380,9 +387,9 @@ export default function UniversityFeedbackPage(props) {
   };
 
   const handleDelete = async () => {
-    if (!deleteData?.id) return;
+    if (!deleteData?.id || !universityId) return;
     try {
-      await deleteDoc(doc(db, "universityfeedback", deleteData.id));
+      await deleteDoc(doc(db, "university", universityId, "feedback", deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -408,7 +415,7 @@ export default function UniversityFeedbackPage(props) {
         return;
       }
 
-      const requestRef = doc(db, "universityfeedback", id);
+      const requestRef = doc(db, "university", universityId, "feedback", id);
       await updateDoc(requestRef, {
         status: newStatus,
         updatedBy: authUser?.email || uid,
@@ -437,10 +444,16 @@ export default function UniversityFeedbackPage(props) {
   };
 
   const saveAssignment = async () => {
-    if (!assignTarget?.id) return;
+    if (!assignTarget?.id || !universityId) return;
 
     try {
-      const requestRef = doc(db, "universityfeedback", assignTarget.id);
+      const requestRef = doc(
+        db,
+        "university",
+        universityId,
+        "feedback",
+        assignTarget.id
+      );
 
       const extra = normalizeEmail(assignEmail);
       const candidate =
@@ -516,7 +529,7 @@ export default function UniversityFeedbackPage(props) {
         return;
       }
 
-      const requestRef = doc(db, "universityfeedback", row.id);
+      const requestRef = doc(db, "university", universityId, "feedback", row.id);
       const entry = {
         by: authUser?.email || uid,
         byUid: uid || null,
@@ -760,41 +773,39 @@ export default function UniversityFeedbackPage(props) {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div className="mb-2">
                           <span
-                            className={`px-3 py-1 rounded-full text-white text-xs font-semibold
-                              ${
-                                item.status === "Pending"
-                                  ? "bg-yellow-500"
-                                  : item.status === "In Progress"
-                                  ? "bg-blue-500"
-                                  : item.status === "Resolved"
-                                  ? "bg-green-500"
-                                  : item.status === "Closed"
-                                  ? "bg-gray-500"
-                                  : "bg-red-500"
-                              }`}
+                            className={`px-3 py-1 rounded-full text-white text-xs font-semibold ${
+                              item.status === "Pending"
+                                ? "bg-yellow-500"
+                                : item.status === "In Progress"
+                                ? "bg-blue-500"
+                                : item.status === "Resolved"
+                                ? "bg-green-500"
+                                : item.status === "Closed"
+                                ? "bg-gray-500"
+                                : "bg-red-500"
+                            }`}
                           >
                             {item.status || "Pending"}
                           </span>
                         </div>
 
-                        {item.status !== "Resolved" &&
-                          item.status !== "Closed" && (
-                            <select
-                              value={item.status || "Pending"}
-                              onChange={(e) => updateStatus(item.id, e.target.value)}
-                              className="w-full border border-gray-300 p-1 rounded text-xs bg-white focus:outline-none"
-                            >
-                              <option value="">Update Status</option>
-                              {item.status !== "Pending" && (
-                                <option value="Pending">Pending</option>
-                              )}
-                              {item.status !== "In Progress" && (
-                                <option value="In Progress">In Progress</option>
-                              )}
-                              <option value="Resolved">Resolved</option>
-                              <option value="Closed">Closed</option>
-                            </select>
-                          )}
+                        {item.status !== "Resolved" && item.status !== "Closed" && (
+                          <select
+                            value={item.status || "Pending"}
+                            onChange={(e) => updateStatus(item.id, e.target.value)}
+                            className="w-full border border-gray-300 p-1 rounded text-xs bg-white focus:outline-none"
+                          >
+                            <option value="">Update Status</option>
+                            {item.status !== "Pending" && (
+                              <option value="Pending">Pending</option>
+                            )}
+                            {item.status !== "In Progress" && (
+                              <option value="In Progress">In Progress</option>
+                            )}
+                            <option value="Resolved">Resolved</option>
+                            <option value="Closed">Closed</option>
+                          </select>
+                        )}
                       </td>
 
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -907,7 +918,9 @@ export default function UniversityFeedbackPage(props) {
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold mb-4">Add</h2>
+            <h2 className="text-xl font-bold mb-4">
+              {editingData ? "Edit Feedback" : "Add Feedback"}
+            </h2>
             <form onSubmit={handleAdd} className="space-y-4">
               <div className="space-y-4">
                 <label className="block font-medium mb-1">Incident Type</label>
@@ -960,7 +973,7 @@ export default function UniversityFeedbackPage(props) {
                   <label className="cursor-pointer">
                     <input
                       type="file"
-                      accept=".xlsx, .xls, .jpg,.png,.jpeg"
+                      accept=".xlsx,.xls,.jpg,.png,.jpeg,.pdf,.webp"
                       className="hidden"
                       onChange={(e) => {
                         if (e.target.files.length > 0)
@@ -999,9 +1012,9 @@ export default function UniversityFeedbackPage(props) {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
             <h2 className="text-xl font-semibold mb-4 text-red-600">
-              Delete Report
+              Delete Feedback
             </h2>
-            <p className="mb-4">Are you sure you want to delete this incident report?</p>
+            <p className="mb-4">Are you sure you want to delete this feedback?</p>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
@@ -1026,7 +1039,7 @@ export default function UniversityFeedbackPage(props) {
       {viewModalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold mb-4">Incident Report</h2>
+            <h2 className="text-xl font-bold mb-4">Feedback Details</h2>
 
             <div ref={viewPrintRef} className="space-y-3">
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -1099,7 +1112,7 @@ export default function UniversityFeedbackPage(props) {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-6xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <div ref={contentRef}>
-              <h2 className="text-xl font-bold mb-4">University Incident Reports</h2>
+              <h2 className="text-xl font-bold mb-4">University Feedback</h2>
               <table className="min-w-full text-sm border border-gray-300">
                 <thead className="bg-gray-100">
                   <tr>
@@ -1143,11 +1156,11 @@ export default function UniversityFeedbackPage(props) {
       {assignModalOpen && isAdmin && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-md p-6 rounded-lg shadow-lg">
-            <h2 className="text-lg font-semibold mb-4">Assign Incident</h2>
+            <h2 className="text-lg font-semibold mb-4">Assign Feedback</h2>
             <div className="space-y-3">
               <div className="text-sm text-gray-600">
                 <div>
-                  <span className="font-medium">Incident:</span> {assignTarget?.id}
+                  <span className="font-medium">Feedback:</span> {assignTarget?.id}
                 </div>
                 <div>
                   <span className="font-medium">User:</span> {assignTarget?.username}
@@ -1251,7 +1264,7 @@ export default function UniversityFeedbackPage(props) {
           <div className="bg-white w-full max-w-md p-6 rounded-lg shadow-lg">
             <h2 className="text-lg font-semibold mb-2">Add Note</h2>
             <p className="text-xs text-gray-500 mb-3">
-              Incident{" "}
+              Feedback{" "}
               <span className="font-mono bg-gray-50 border px-1 rounded">
                 {noteTarget.id}
               </span>{" "}

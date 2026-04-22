@@ -7,12 +7,12 @@ import {
   updateDoc,
   doc,
   deleteDoc,
-  query,
-  where,
   getDoc,
   writeBatch,
   setDoc,
   serverTimestamp,
+  query,
+  where,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
@@ -184,7 +184,13 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
 
   useEffect(() => {
     if (!adminId) return;
-    const refDoc = doc(db, "adminMenuState", adminId, "menus", "universitybookingroom");
+    const refDoc = doc(
+      db,
+      "adminMenuState",
+      adminId,
+      "menus",
+      "universitybookingroom"
+    );
     setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
   }, [adminId]);
 
@@ -217,11 +223,10 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
 
     setIsLoading(true);
     try {
-      const usersQuery = query(
-        collection(db, "users"),
-        where("universityid", "==", universityId)
+      const userSnap = await getDocs(
+        query(collection(db, "users"), where("universityid", "==", universityId))
       );
-      const userSnap = await getDocs(usersQuery);
+
       const userMap = {};
       userSnap.forEach((d) => {
         const u = d.data();
@@ -231,11 +236,9 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
         };
       });
 
-      const bookingQ = query(
-        collection(db, "bookingroom"),
-        where("universityid", "==", universityId)
+      const bookingSnap = await getDocs(
+        collection(db, "university", universityId, "roombookings")
       );
-      const bookingSnap = await getDocs(bookingQ);
 
       const allBookings = bookingSnap.docs.map((d) => {
         const raw = d.data();
@@ -255,8 +258,9 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
       });
 
       const bookingTypeSnap = await getDocs(
-        query(collection(db, "bookingroomtype"), where("universityid", "==", universityId))
+        collection(db, "university", universityId, "bookingroomtype")
       );
+
       const BookingType = bookingTypeSnap.docs.map((d) => ({
         id: d.id,
         ...d.data(),
@@ -322,7 +326,13 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
 
     try {
       if (editingData) {
-        const docRef = doc(db, "bookingroomtype", form.id);
+        const docRef = doc(
+          db,
+          "university",
+          universityId,
+          "bookingroomtype",
+          form.id
+        );
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
@@ -340,27 +350,28 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
           endTime: form.endTime || "",
           weeklyHours: form.weeklyHours || defaultWeeklyHours(),
           roomtypes: Array.isArray(form.roomtypes) ? form.roomtypes : [],
-          universityid: universityId,
           updatedBy: uid,
           updatedDate: new Date(),
         });
 
         toast.success("Successfully updated");
       } else {
-        await addDoc(collection(db, "bookingroomtype"), {
-          uid,
-          roomname: form.roomname,
-          description: form.description,
-          location: form.location,
-          maxDurationMins: Number(form.maxDurationMins) || 120,
-          startTime: form.startTime || "",
-          endTime: form.endTime || "",
-          weeklyHours: form.weeklyHours || defaultWeeklyHours(),
-          roomtypes: Array.isArray(form.roomtypes) ? form.roomtypes : [],
-          universityid: universityId,
-          createdBy: uid,
-          createdDate: new Date(),
-        });
+        await addDoc(
+          collection(db, "university", universityId, "bookingroomtype"),
+          {
+            uid,
+            roomname: form.roomname,
+            description: form.description,
+            location: form.location,
+            maxDurationMins: Number(form.maxDurationMins) || 120,
+            startTime: form.startTime || "",
+            endTime: form.endTime || "",
+            weeklyHours: form.weeklyHours || defaultWeeklyHours(),
+            roomtypes: Array.isArray(form.roomtypes) ? form.roomtypes : [],
+            createdBy: uid,
+            createdDate: new Date(),
+          }
+        );
 
         toast.success("Successfully saved");
       }
@@ -380,7 +391,9 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
     if (!deleteData) return;
 
     try {
-      await deleteDoc(doc(db, "bookingroomtype", deleteData.id));
+      await deleteDoc(
+        doc(db, "university", universityId, "bookingroomtype", deleteData.id)
+      );
       toast.success("Successfully deleted!");
       getList();
     } catch (err) {
@@ -409,9 +422,9 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
 
       for (let i = 0; i < ids.length; i += CHUNK) {
         const batch = writeBatch(db);
-        ids
-          .slice(i, i + CHUNK)
-          .forEach((id) => batch.delete(doc(db, "bookingroom", id)));
+        ids.slice(i, i + CHUNK).forEach((id) => {
+          batch.delete(doc(db, "university", universityId, "roombookings", id));
+        });
         await batch.commit();
       }
 
@@ -442,9 +455,11 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
 
       for (let i = 0; i < ids.length; i += CHUNK) {
         const batch = writeBatch(db);
-        ids
-          .slice(i, i + CHUNK)
-          .forEach((id) => batch.delete(doc(db, "bookingroomtype", id)));
+        ids.slice(i, i + CHUNK).forEach((id) => {
+          batch.delete(
+            doc(db, "university", universityId, "bookingroomtype", id)
+          );
+        });
         await batch.commit();
       }
 
@@ -463,9 +478,12 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
   const handleReject = async () => {
     if (!editingData) return;
     try {
-      await updateDoc(doc(db, "bookingroom", editingData.id), {
-        status: "Rejected",
-      });
+      await updateDoc(
+        doc(db, "university", universityId, "roombookings", editingData.id),
+        {
+          status: "Rejected",
+        }
+      );
       toast.success("Booking has been rejected.");
       getList();
     } catch (err) {
@@ -611,7 +629,8 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
     >
       <div className="flex flex-wrap gap-2 justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">
-          University Booking (When a notification appears, the app page should refresh.)
+          University Booking (When a notification appears, the app page should
+          refresh.)
         </h1>
         <div className="flex gap-2">
           <button

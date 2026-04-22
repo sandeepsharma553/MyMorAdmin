@@ -27,7 +27,7 @@ export default function UniversityResourcesPage(props) {
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const uid = useSelector((state) => state.auth.user.uid);
+  const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
 
   const universityId = String(
@@ -40,7 +40,6 @@ export default function UniversityResourcesPage(props) {
     contacts: [{ contact: "", rename: "" }],
     links: [{ url: "", rename: "" }],
     images: [],
-    universityid: universityId,
     uid,
     isPinned: false,
     pinnedOrder: 0,
@@ -127,30 +126,21 @@ export default function UniversityResourcesPage(props) {
     });
   };
 
-  const resources = list.flatMap((docu) =>
-    (docu.resources || []).map((r, idx) => ({
-      ...r,
-      isPinned: !!r.isPinned,
-      pinnedOrder: Number.isFinite(r?.pinnedOrder) ? Number(r.pinnedOrder) : 0,
-      docId: docu.id,
-      rowId: `${docu.id}-${idx}`,
-    }))
-  );
-
   const normalizedTerm = searchTerm.trim().toLowerCase();
+
   const filtered = normalizedTerm
-    ? resources.filter((r) =>
-        (r.title || "").toLowerCase().includes(normalizedTerm)
-      )
-    : resources;
+    ? list.filter((r) => (r.title || "").toLowerCase().includes(normalizedTerm))
+    : list;
 
   const sorted = [...filtered].sort((a, b) => {
     if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+
     if (a.isPinned && b.isPinned) {
-      const ao = Number.isFinite(a.pinnedOrder) ? a.pinnedOrder : 999999;
-      const bo = Number.isFinite(b.pinnedOrder) ? b.pinnedOrder : 999999;
+      const ao = Number.isFinite(a?.pinnedOrder) ? Number(a.pinnedOrder) : 999999;
+      const bo = Number.isFinite(b?.pinnedOrder) ? Number(b.pinnedOrder) : 999999;
       if (ao !== bo) return ao - bo;
     }
+
     return (a.title || "").localeCompare(b.title || "");
   });
 
@@ -170,24 +160,17 @@ export default function UniversityResourcesPage(props) {
     if (!universityId) return;
     setIsLoading(true);
     try {
-      const resourcesQuery = query(collection(db, "universityresources"));
+      const resourcesQuery = query(
+        collection(db, "university", universityId, "resources")
+      );
       const querySnapshot = await getDocs(resourcesQuery);
+
       const documents = querySnapshot.docs.map((docu) => ({
         id: docu.id,
         ...docu.data(),
       }));
 
-      const filteredDocs = documents
-        .map((group) => {
-          const filteredResources = (group.resources || []).filter(
-            (r) =>
-              String(r.universityid || r.universityId || "") === universityId
-          );
-          return { ...group, resources: filteredResources };
-        })
-        .filter((group) => (group.resources || []).length > 0);
-
-      setList(filteredDocs);
+      setList(documents);
     } catch (e) {
       console.error(e);
       toast.error("Failed to load resources.");
@@ -199,7 +182,7 @@ export default function UniversityResourcesPage(props) {
   const addRow = () =>
     setForm((prev) => [
       ...prev,
-      { ...initialForm, universityid: universityId, uid },
+      { ...initialForm, uid, images: [] },
     ]);
 
   const removeRow = (i) =>
@@ -265,7 +248,7 @@ export default function UniversityResourcesPage(props) {
               }
 
               if (isDocObj(it) && it.file) {
-                const path = `university_resource_files/${Date.now()}-${it.file.name}`;
+                const path = `university/${universityId}/resources/${Date.now()}-${it.file.name}`;
                 const sRef = ref(storage, path);
                 await uploadBytes(sRef, it.file);
                 const url = await getDownloadURL(sRef);
@@ -276,37 +259,45 @@ export default function UniversityResourcesPage(props) {
             })
           );
 
-          const { docId, rowId, ...rest } = row;
+          const { id, ...rest } = row;
+
           return {
             ...rest,
             images: images.filter(Boolean),
-            universityid: universityId,
             uid,
+            isPinned: !!row.isPinned,
+            pinnedOrder: Number(row.pinnedOrder || 0),
           };
         })
       );
 
       if (editingData) {
-        const { docId, index } = editingData;
-        const docRef = doc(db, "universityresources", docId);
-        const snap = await getDoc(docRef);
-        if (!snap.exists()) throw new Error("Document missing");
+        const docRef = doc(
+          db,
+          "university",
+          universityId,
+          "resources",
+          editingData.id
+        );
 
-        const current = snap.data().resources || [];
-        current[index] = cleanedRows[0];
-        await updateDoc(docRef, { resources: current });
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+          toast.warning("Resource does not exist.");
+          return;
+        }
 
+        await updateDoc(docRef, cleanedRows[0]);
         toast.success("Resource updated successfully");
       } else {
-        await addDoc(collection(db, "universityresources"), {
-          resources: cleanedRows,
-        });
+        for (const row of cleanedRows) {
+          await addDoc(collection(db, "university", universityId, "resources"), row);
+        }
         toast.success("Resource added successfully");
       }
 
       setModalOpen(false);
       setEditing(null);
-      setForm([{ ...initialForm, universityid: universityId, uid }]);
+      setForm([{ ...initialForm, uid, images: [] }]);
       getList();
     } catch (err) {
       console.error("Error saving:", err);
@@ -315,28 +306,10 @@ export default function UniversityResourcesPage(props) {
   };
 
   const handleDelete = async () => {
-    if (!deleteData) return;
+    if (!deleteData?.id) return;
 
     try {
-      const docRef = doc(db, "universityresources", deleteData.docId);
-      const snap = await getDoc(docRef);
-
-      if (!snap.exists()) {
-        toast.error("Document not found");
-        return;
-      }
-
-      const current = snap.data().resources || [];
-      const updated = current.filter(
-        (_, idx) => `${deleteData.docId}-${idx}` !== deleteData.rowId
-      );
-
-      if (updated.length > 0) {
-        await updateDoc(docRef, { resources: updated });
-      } else {
-        await deleteDoc(docRef);
-      }
-
+      await deleteDoc(doc(db, "university", universityId, "resources", deleteData.id));
       toast.success("Resource deleted successfully");
       getList();
     } catch (err) {
@@ -349,8 +322,7 @@ export default function UniversityResourcesPage(props) {
   };
 
   const updateResourcePart = async (row, patch) => {
-    const index = Number(row.rowId.split("-").pop());
-    const refDoc = doc(db, "universityresources", row.docId);
+    const refDoc = doc(db, "university", universityId, "resources", row.id);
     const snap = await getDoc(refDoc);
 
     if (!snap.exists()) {
@@ -358,11 +330,7 @@ export default function UniversityResourcesPage(props) {
       return;
     }
 
-    const arr = Array.isArray(snap.data().resources)
-      ? [...snap.data().resources]
-      : [];
-    arr[index] = { ...(arr[index] || {}), ...patch };
-    await updateDoc(refDoc, { resources: arr });
+    await updateDoc(refDoc, patch);
   };
 
   const togglePin = async (row) => {
@@ -373,7 +341,7 @@ export default function UniversityResourcesPage(props) {
       if (makePinned) {
         const maxOrder = Math.max(
           0,
-          ...resources
+          ...list
             .filter((r) => r.isPinned)
             .map((r) => Number(r.pinnedOrder) || 0)
         );
@@ -445,7 +413,7 @@ export default function UniversityResourcesPage(props) {
             className="px-4 py-2 bg-black text-white rounded hover:bg-black"
             onClick={() => {
               setEditing(null);
-              setForm([{ ...initialForm, universityid: universityId, uid }]);
+              setForm([{ ...initialForm, uid, images: [] }]);
               setModalOpen(true);
             }}
           >
@@ -499,7 +467,7 @@ export default function UniversityResourcesPage(props) {
                 </tr>
               ) : (
                 paginatedData.map((x) => (
-                  <tr key={x.rowId}>
+                  <tr key={x.id}>
                     <td className="px-4 py-3 align-top">{x.title || "—"}</td>
 
                     <td className="px-4 py-3 align-top">
@@ -662,8 +630,7 @@ export default function UniversityResourcesPage(props) {
                       <button
                         className="text-blue-600 hover:underline mr-3"
                         onClick={() => {
-                          const index = Number(x.rowId.split("-").pop());
-                          setEditing({ docId: x.docId, index });
+                          setEditing(x);
                           setForm([
                             {
                               ...x,

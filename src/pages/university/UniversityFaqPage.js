@@ -8,7 +8,6 @@ import {
   doc,
   deleteDoc,
   query,
-  where,
   getDoc,
   Timestamp,
 } from "firebase/firestore";
@@ -75,10 +74,7 @@ export default function UniversityFaqPage(props) {
 
     setIsLoading(true);
     try {
-      const q = query(
-        collection(db, "faqquestions"),
-        where("universityid", "==", universityId)
-      );
+      const q = query(collection(db, "university", universityId, "faq"));
 
       const snap = await getDocs(q);
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -115,22 +111,22 @@ export default function UniversityFaqPage(props) {
 
     if (!form.title.trim()) return toast.warn("Please add a title.");
     if (!form.question.trim()) return toast.warn("Please add a question.");
-    if (!stripHtml(form.answer).trim())
+    if (!stripHtml(form.answer).trim()) {
       return toast.warn("Please add an answer.");
+    }
 
     try {
       const faqData = {
         title: form.title.trim(),
         question: form.question.trim(),
         answer: form.answer,
-        universityid: universityId,
         uid: uid || "",
         updatedAt: Timestamp.now(),
         ...(editingData ? {} : { createdAt: Timestamp.now() }),
       };
 
       if (editingData?.id) {
-        const ref = doc(db, "faqquestions", editingData.id);
+        const ref = doc(db, "university", universityId, "faq", editingData.id);
         const snap = await getDoc(ref);
 
         if (!snap.exists()) {
@@ -140,7 +136,7 @@ export default function UniversityFaqPage(props) {
           toast.success("FAQ updated successfully");
         }
       } else {
-        await addDoc(collection(db, "faqquestions"), faqData);
+        await addDoc(collection(db, "university", universityId, "faq"), faqData);
         toast.success("FAQ created successfully");
       }
 
@@ -158,7 +154,7 @@ export default function UniversityFaqPage(props) {
     if (!deleteData?.id) return;
 
     try {
-      await deleteDoc(doc(db, "faqquestions", deleteData.id));
+      await deleteDoc(doc(db, "university", universityId, "faq", deleteData.id));
       toast.success("Successfully deleted!");
       await getList();
     } catch (error) {
@@ -189,7 +185,6 @@ export default function UniversityFaqPage(props) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
-      {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">University FAQ</h1>
         <button
@@ -204,7 +199,6 @@ export default function UniversityFaqPage(props) {
         </button>
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto bg-white rounded shadow">
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
@@ -292,7 +286,6 @@ export default function UniversityFaqPage(props) {
         )}
       </div>
 
-      {/* Pagination */}
       <div className="flex justify-between items-center mt-4">
         <p className="text-sm text-gray-600">
           Page {currentPage} of {totalPages}
@@ -315,7 +308,6 @@ export default function UniversityFaqPage(props) {
         </div>
       </div>
 
-      {/* Create/Edit Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -371,7 +363,6 @@ export default function UniversityFaqPage(props) {
         </div>
       )}
 
-      {/* Delete confirm */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">

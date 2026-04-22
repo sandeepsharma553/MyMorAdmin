@@ -25,7 +25,6 @@ import { useReactToPrint } from "react-to-print";
 export default function UniversityReportIncidentPage(props) {
   const { navbarHeight } = props;
 
-  // UI / Modals
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
@@ -39,7 +38,6 @@ export default function UniversityReportIncidentPage(props) {
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [viewData, setViewData] = useState(null);
 
-  // Auth & roles
   const authUser = useSelector((state) => state.auth.user);
   const uid = authUser?.uid;
   const myEmail = (authUser?.email || "").toLowerCase();
@@ -47,7 +45,6 @@ export default function UniversityReportIncidentPage(props) {
   const isAdmin = (emp?.role || "").toLowerCase().includes("admin");
   const universityId = String(emp?.universityid || emp?.universityId || "");
 
-  // Assign & Notes
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [assignTarget, setAssignTarget] = useState(null);
   const [assignEmail, setAssignEmail] = useState("");
@@ -59,7 +56,6 @@ export default function UniversityReportIncidentPage(props) {
   const [noteTarget, setNoteTarget] = useState(null);
   const [noteText, setNoteText] = useState("");
 
-  // Filters & sorting
   const [filters, setFilters] = useState({
     report: "",
     user: "",
@@ -90,14 +86,12 @@ export default function UniversityReportIncidentPage(props) {
     );
   };
 
-  // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
   useEffect(() => {
     setCurrentPage(1);
   }, [filters, sortConfig]);
 
-  // Form
   const initialForm = {
     id: 0,
     incidenttype: "",
@@ -106,13 +100,11 @@ export default function UniversityReportIncidentPage(props) {
     datetime: "",
     isreport: false,
     image: null,
-    universityid: "",
     status: "Pending",
   };
 
   const [form, setForm] = useState(initialForm);
 
-  // Print
   const contentRef = useRef(null);
   const viewPrintRef = useRef(null);
   const listPrintRef = useRef(null);
@@ -152,7 +144,6 @@ export default function UniversityReportIncidentPage(props) {
     `,
   });
 
-  // Effects
   useEffect(() => {
     getList();
     loadAdmins();
@@ -162,13 +153,18 @@ export default function UniversityReportIncidentPage(props) {
   useEffect(() => {
     const doReset = async () => {
       if (!uid) return;
-      const refDoc = doc(db, "adminMenuState", uid, "menus", "universityreportincident");
+      const refDoc = doc(
+        db,
+        "adminMenuState",
+        uid,
+        "menus",
+        "universityreportincident"
+      );
       await setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
     };
     doReset();
   }, [uid]);
 
-  // Helpers
   const isValidEmail = (s = "") => /\S+@\S+\.\S+/.test(String(s).trim());
   const normalizeEmail = (s = "") => String(s).trim().toLowerCase();
 
@@ -184,11 +180,15 @@ export default function UniversityReportIncidentPage(props) {
 
   const canModify = (row) => {
     const singleEmail = (row?.assignedToEmail || "").toLowerCase();
-    const manyEmails = Array.isArray(row?.assignedToEmails) ? row.assignedToEmails : [];
+    const manyEmails = Array.isArray(row?.assignedToEmails)
+      ? row.assignedToEmails
+      : [];
     const emailOk = singleEmail === myEmail || manyEmails.includes(myEmail);
 
     const singleUid = row?.assignedToUid || null;
-    const manyUids = Array.isArray(row?.assignedToUids) ? row.assignedToUids : [];
+    const manyUids = Array.isArray(row?.assignedToUids)
+      ? row.assignedToUids
+      : [];
     const uidOk = singleUid === uid || manyUids.includes(uid);
 
     return !!(isAdmin || emailOk || uidOk);
@@ -250,9 +250,9 @@ export default function UniversityReportIncidentPage(props) {
   };
 
   const markNotesSeen = async (row) => {
-    if (!row?.id || !uid) return;
+    if (!row?.id || !uid || !universityId) return;
     try {
-      const refDoc = doc(db, "reportincident", row.id);
+      const refDoc = doc(db, "university", universityId, "reports", row.id);
       await updateDoc(refDoc, {
         [`notesSeenBy.${uid}`]: serverTimestamp(),
       });
@@ -280,7 +280,6 @@ export default function UniversityReportIncidentPage(props) {
       ? dayjs(dt.seconds * 1000).format("YYYY-MM-DD")
       : dayjs(dt).format("YYYY-MM-DD");
 
-  // Data
   const getList = async () => {
     if (!universityId) return;
 
@@ -300,13 +299,11 @@ export default function UniversityReportIncidentPage(props) {
         userMap[data.uid] = username;
       });
 
-      const reportincidentQuery = query(
-        collection(db, "reportincident"),
-        where("universityid", "==", universityId)
+      const reportSnapshot = await getDocs(
+        collection(db, "university", universityId, "reports")
       );
-      const reportincidentSnapshot = await getDocs(reportincidentQuery);
 
-      let rows = reportincidentSnapshot.docs.map((d) => {
+      let rows = reportSnapshot.docs.map((d) => {
         const data = d.data();
         return {
           id: d.id,
@@ -358,7 +355,6 @@ export default function UniversityReportIncidentPage(props) {
     }
   };
 
-  // Create / Update
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.incidenttype) return;
@@ -370,15 +366,16 @@ export default function UniversityReportIncidentPage(props) {
     setIsLoading(true);
     let imageUrl = "";
 
-    if (form.image) {
-      const imageRef = ref(storage, `reportincident/${Date.now()}_${form.image.name}`);
-      await uploadBytes(imageRef, form.image);
-      imageUrl = await getDownloadURL(imageRef);
-    }
-
     try {
+      if (form.image) {
+        const filename = `university/${universityId}/reports/${Date.now()}_${form.image.name}`;
+        const imageRef = ref(storage, filename);
+        await uploadBytes(imageRef, form.image);
+        imageUrl = await getDownloadURL(imageRef);
+      }
+
       if (editingData) {
-        const docRef = doc(db, "reportincident", form.id);
+        const docRef = doc(db, "university", universityId, "reports", form.id);
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
@@ -395,7 +392,6 @@ export default function UniversityReportIncidentPage(props) {
           datetime: form.datetime,
           isreport: form.isreport,
           ...(imageUrl && { imageUrl }),
-          universityid: universityId,
           updatedBy: uid,
           updatedDate: new Date(),
           updatedAt: serverTimestamp(),
@@ -404,7 +400,7 @@ export default function UniversityReportIncidentPage(props) {
 
         toast.success("Successfully updated");
       } else {
-        await addDoc(collection(db, "reportincident"), {
+        await addDoc(collection(db, "university", universityId, "reports"), {
           uid,
           incidenttype:
             form.incidenttype === "Other" ? form.other : form.incidenttype,
@@ -412,7 +408,6 @@ export default function UniversityReportIncidentPage(props) {
           datetime: form.datetime,
           isreport: form.isreport,
           imageUrl,
-          universityid: universityId,
           createdBy: uid,
           createdDate: new Date(),
           createdAt: serverTimestamp(),
@@ -441,11 +436,12 @@ export default function UniversityReportIncidentPage(props) {
     setFileName("No file chosen");
   };
 
-  // Delete
   const handleDelete = async () => {
-    if (!deleteData?.id) return;
+    if (!deleteData?.id || !universityId) return;
     try {
-      await deleteDoc(doc(db, "reportincident", deleteData.id));
+      await deleteDoc(
+        doc(db, "university", universityId, "reports", deleteData.id)
+      );
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -456,14 +452,12 @@ export default function UniversityReportIncidentPage(props) {
     setDelete(null);
   };
 
-  // View / Print
   const openView = async (row) => {
     await markNotesSeen(row);
     setViewData(row);
     setViewModalOpen(true);
   };
 
-  // Status
   const updateStatus = async (id, newStatus) => {
     try {
       const row = list.find((r) => r.id === id);
@@ -473,7 +467,7 @@ export default function UniversityReportIncidentPage(props) {
         return;
       }
 
-      const requestRef = doc(db, "reportincident", id);
+      const requestRef = doc(db, "university", universityId, "reports", id);
       await updateDoc(requestRef, {
         status: newStatus,
         updatedBy: authUser?.email || uid,
@@ -488,7 +482,6 @@ export default function UniversityReportIncidentPage(props) {
     }
   };
 
-  // Assign
   const openAssign = (row) => {
     setAssignTarget(row);
     setAssignEmail("");
@@ -503,10 +496,16 @@ export default function UniversityReportIncidentPage(props) {
   };
 
   const saveAssignment = async () => {
-    if (!assignTarget?.id) return;
+    if (!assignTarget?.id || !universityId) return;
 
     try {
-      const requestRef = doc(db, "reportincident", assignTarget.id);
+      const requestRef = doc(
+        db,
+        "university",
+        universityId,
+        "reports",
+        assignTarget.id
+      );
 
       const extra = normalizeEmail(assignEmail);
       const candidate =
@@ -561,7 +560,6 @@ export default function UniversityReportIncidentPage(props) {
     }
   };
 
-  // Notes
   const openNoteModal = (row) => {
     setNoteTarget(row);
     setNoteText("");
@@ -583,7 +581,7 @@ export default function UniversityReportIncidentPage(props) {
         return;
       }
 
-      const requestRef = doc(db, "reportincident", row.id);
+      const requestRef = doc(db, "university", universityId, "reports", row.id);
       const entry = {
         by: authUser?.email || uid,
         byUid: uid || null,
@@ -608,7 +606,6 @@ export default function UniversityReportIncidentPage(props) {
     }
   };
 
-  // Filter / sort / paginate
   const filtered = list.filter((r) => {
     const repStr = `${r.id || ""} ${r.uid || ""}`.toLowerCase();
     const userStr = (r.username || "").toLowerCase();
@@ -1125,10 +1122,7 @@ export default function UniversityReportIncidentPage(props) {
                     <div className="font-medium mb-1">Notes</div>
                     <ul className="space-y-2 text-sm">
                       {viewData.adminNotes.map((n, idx) => (
-                        <li
-                          key={idx}
-                          className="border rounded p-2 bg-gray-50"
-                        >
+                        <li key={idx} className="border rounded p-2 bg-gray-50">
                           <div className="text-gray-700">{n.text}</div>
                           <div className="text-[11px] text-gray-500 mt-1">
                             by {n.by} • {new Date(n.at).toLocaleString()}
