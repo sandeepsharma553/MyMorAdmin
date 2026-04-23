@@ -9,7 +9,6 @@ import {
   collection,
   getDocs,
   query,
-  where,
   setDoc,
   serverTimestamp,
   doc,
@@ -101,8 +100,10 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
   });
 
   const debounceRef = useRef(null);
+
   const debouncedFilter = (k, v) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+
     debounceRef.current = setTimeout(() => {
       setFilters((prev) => ({ ...prev, [k]: v }));
       setPage(1);
@@ -113,6 +114,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
 
   useEffect(() => {
     if (!adminId) return;
+
     const refDoc = doc(
       db,
       "adminMenuState",
@@ -120,51 +122,67 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
       "menus",
       "universityeventbooking"
     );
+
     setDoc(refDoc, { lastOpened: serverTimestamp() }, { merge: true });
   }, [adminId]);
 
   useEffect(() => {
     if (!universityId) return;
 
-    (async () => {
+    const loadBookings = async () => {
       setIsLoading(true);
       try {
         const qEvents = query(
-          collection(db, "universityeventbookings"),
-          where("universityid", "==", universityId)
+          collection(db, "university", String(universityId), "eventbookings")
         );
+
         const snap = await getDocs(qEvents);
         const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setBookings(filterByScope(docs));
+
+        setBookings(filterByScope ? filterByScope(docs) : docs);
       } catch (e) {
         console.error(e);
         toast.error("Failed to load bookings");
       } finally {
         setIsLoading(false);
       }
-    })();
-  }, [universityId]);
+    };
+
+    loadBookings();
+  }, [universityId, filterByScope]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [pageSize]);
 
   const toMillis = (t) => {
     if (!t) return 0;
     if (typeof t === "number") return t;
+
     if (typeof t === "string") {
       const ms = Date.parse(t);
       return Number.isNaN(ms) ? 0 : ms;
     }
-    if (t.seconds) return t.seconds * 1000;
+
+    if (t?.seconds) return t.seconds * 1000;
+
     return 0;
   };
 
   const updateStatus = async (id, status) => {
+    if (!universityId || !id) return;
+
     try {
-      await updateDoc(doc(db, "universityeventbookings", id), {
-        status,
-        updatedAt: serverTimestamp(),
-      });
+      await updateDoc(
+        doc(db, "university", String(universityId), "eventbookings", id),
+        {
+          status,
+          updatedAt: serverTimestamp(),
+        }
+      );
 
       setBookings((prev) =>
-        prev.map((i) => (i.id === id ? { ...i, status } : i))
+        prev.map((item) => (item.id === id ? { ...item, status } : item))
       );
 
       toast.success("Status updated");
@@ -181,20 +199,9 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
     const st = filters.status.trim().toLowerCase();
 
     return bookings.filter((b) => {
-      const userName =
-        b.userName ||
-        b.bookedByName ||
-        b.bookedBy ||
-        "";
-      const userEmail =
-        b.userEmail ||
-        b.bookedByEmail ||
-        "";
-      const eventName =
-        b.eventName ||
-        b.eventTitle ||
-        b.eventId ||
-        "";
+      const userName = b.userName || b.bookedByName || b.bookedBy || "";
+      const userEmail = b.userEmail || b.bookedByEmail || "";
+      const eventName = b.eventName || b.eventTitle || b.eventId || "";
 
       const uOK = !u || userName.toLowerCase().includes(u);
       const eOK = !e || userEmail.toLowerCase().includes(e);
@@ -242,7 +249,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
         }
 
         case "status":
-          return ((a.status || "Booked").localeCompare(b.status || "Booked")) * dir;
+          return (a.status || "Booked").localeCompare(b.status || "Booked") * dir;
 
         case "timestamp":
         default: {
@@ -256,6 +263,11 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
 
   const total = sorted.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   const current = sorted.slice((page - 1) * pageSize, page * pageSize);
 
   const changeSort = (key) =>
@@ -281,6 +293,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
       style={{ paddingTop: navbarHeight || 0 }}
     >
       <UniversityScopeBanner />
+
       <div className="flex justify-between items-center mb-3">
         <h1 className="text-2xl font-semibold">University Event Bookings</h1>
       </div>
@@ -339,6 +352,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
                       onChange={(e) => debouncedFilter("user", e.target.value)}
                     />
                   </th>
+
                   <th className="px-6 pb-3">
                     <input
                       className="w-full border border-gray-300 p-1 rounded text-sm"
@@ -347,6 +361,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
                       onChange={(e) => debouncedFilter("email", e.target.value)}
                     />
                   </th>
+
                   <th className="px-6 pb-3">
                     <input
                       className="w-full border border-gray-300 p-1 rounded text-sm"
@@ -355,19 +370,22 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
                       onChange={(e) => debouncedFilter("event", e.target.value)}
                     />
                   </th>
+
                   <th className="px-6 pb-3" />
                   <th className="px-6 pb-3" />
                   <th className="px-6 pb-3" />
+
                   <th className="px-6 pb-3">
                     <select
                       className="w-full border border-gray-300 p-1 rounded text-sm bg-white"
                       value={filters.status}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         setFilters((prev) => ({
                           ...prev,
                           status: e.target.value,
-                        }))
-                      }
+                        }));
+                        setPage(1);
+                      }}
                     >
                       <option value="All">All</option>
                       {STATUSES.map((s) => (
@@ -377,6 +395,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
                       ))}
                     </select>
                   </th>
+
                   <th className="px-6 pb-3" />
                 </tr>
               </thead>
@@ -399,7 +418,8 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
                       b.userEmail || b.bookedByEmail || "—";
                     const eventName =
                       b.eventName || b.eventTitle || b.eventId || "—";
-                    const bookingTime = b.bookingDate || b.createdAt || b.timestamp;
+                    const bookingTime =
+                      b.bookingDate || b.createdAt || b.timestamp;
                     const status = b.status || "Booked";
 
                     return (
@@ -410,7 +430,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
                               <img
                                 src={b.userPhotoURL}
                                 alt="user"
-                                className="w-8 h-8 rounded-full"
+                                className="w-8 h-8 rounded-full object-cover"
                               />
                             ) : null}
                             <span>{userName}</span>
@@ -475,6 +495,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
                                 Attended
                               </button>
                             )}
+
                             {status !== "Cancelled" && (
                               <button
                                 onClick={() => updateStatus(b.id, "Cancelled")}
@@ -483,6 +504,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
                                 Cancel
                               </button>
                             )}
+
                             {status !== "Booked" && (
                               <button
                                 onClick={() => updateStatus(b.id, "Booked")}

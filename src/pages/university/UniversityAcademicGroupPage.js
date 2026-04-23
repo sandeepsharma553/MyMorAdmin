@@ -110,19 +110,20 @@ export default function UniversityAcademicGroupPage(props) {
 
   const getAcademicCatList = async () => {
     if (!universityId) return;
+  
     setIsLoading(true);
     try {
       const academicCategoryQuery = query(
-        collection(db, "academiccategory"),
-        where("universityid", "==", universityId)
+        collection(db, "university", String(universityId), "academiccategory")
       );
-
+  
       const querySnapshot = await getDocs(academicCategoryQuery);
+  
       const documents = querySnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
-
+  
       setAcademicCatList(documents);
     } catch (e) {
       console.error(e);

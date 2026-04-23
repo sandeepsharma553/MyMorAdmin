@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import { MenuItem, Select, Checkbox, ListItemText } from "@mui/material";
 import {
   collection,
   getDocs,
@@ -45,7 +44,14 @@ export default function UniversityEmployeeAdminPage(props) {
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
 
+  const universityId = String(
+    emp?.universityid || emp?.universityId || ""
+  ).trim();
+
+  const universityName = emp?.university || emp?.universityName || "";
+
   const mountedRef = useRef(true);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -64,7 +70,6 @@ export default function UniversityEmployeeAdminPage(props) {
     role: "",
     isActive: true,
     permissions: [],
-    hostelid: "",
     image: null,
     imageUrl: "",
     password: "",
@@ -74,38 +79,29 @@ export default function UniversityEmployeeAdminPage(props) {
 
   const MENU_OPTIONS = useMemo(
     () => [
-      { key: "dashboard", label: "Dashboard" },
-      { key: "announcement", label: "Announcement" },
-      { key: "student", label: "Student" },
-      { key: "diningmenu", label: "Dining Menu" },
-      { key: "cleaningschedule", label: "Cleaning Schedule" },
-      { key: "maintenance", label: "Maintenance" },
-      { key: "bookingroom", label: "Book a Room" },
-      { key: "academicgroup", label: "Academic Groups" },
-      { key: "reportincident", label: "Report Incident" },
-      { key: "feedback", label: "Feedback" },
-      { key: "resources", label: "Resources" },
-      { key: "event", label: "Event" },
-      { key: "deal", label: "Deals" },
-      { key: "faq", label: "FAQs" },
-      { key: "checklist", label: "Checklists" },
-      { key: "roominfo", label: "Room Info" },
-      { key: "parcels", label: "Parcels" },
-      { key: "wellnessprompts", label: "Wellness Prompts" },
-      { key: "messages", label: "Messages" },
-      { key: "universitydashboard", label: "University Dashboard" },
-      { key: "universityannouncement", label: "University Announcements" },
-      { key: "universityevent", label: "University Events" },
-      { key: "universityresources", label: "University Resources" },
-      { key: "universityroombooking", label: "University Room Bookings" },
-      { key: "setting", label: "Setting" },
+      { key: "universitydashboard", label: "Dashboard" },
+      { key: "universityannouncement", label: "Announcements" },
+      { key: "universityevent", label: "Events" },
+      { key: "universityresources", label: "Resources" },
+      { key: "universityroombooking", label: "Room Bookings" },
+      { key: "universitydiningmenu", label: "Dining Menu" },
+      { key: "universitycleaningschedule", label: "Cleaning Schedule" },
+      { key: "universitytutorialschedule", label: "Tutorial Schedule" },
+      { key: "universityassessments", label: "Assessment Schedule" },
+      { key: "universitymaintenance", label: "Maintenance" },
+      { key: "universityacademicgroup", label: "Academic Groups" },
+      { key: "universityreportincident", label: "Report Incident" },
+      { key: "universityfeedback", label: "Feedback" },
+      { key: "universityeventbooking", label: "Event Booking" },
+      { key: "universityfaq", label: "FAQs" },
+      { key: "universitychecklist", label: "Checklists" },
+      { key: "universityroominfo", label: "Room Info" },
+      { key: "universityparcels", label: "Parcels" },
+      { key: "universitywellnessprompts", label: "Wellness Prompts" },
+      { key: "universitymessages", label: "Messages" },
+      { key: "universitysetting", label: "Setting" },
     ],
     []
-  );
-
-  const LABEL_BY_KEY = useMemo(
-    () => Object.fromEntries(MENU_OPTIONS.map(({ key, label }) => [key, label])),
-    [MENU_OPTIONS]
   );
 
   const pageSize = 10;
@@ -120,6 +116,7 @@ export default function UniversityEmployeeAdminPage(props) {
   }, [list, searchTerm]);
 
   const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
+
   const paginatedData = useMemo(() => {
     return filteredData.slice(
       (currentPage - 1) * pageSize,
@@ -128,16 +125,15 @@ export default function UniversityEmployeeAdminPage(props) {
   }, [filteredData, currentPage]);
 
   useEffect(() => {
+    if (!universityId) return;
     getList();
     getRoleList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [universityId]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [totalPages, currentPage]);
-
-  /* -------------------- Helpers -------------------- */
 
   const isEmailValid = (email) => {
     const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -145,19 +141,23 @@ export default function UniversityEmployeeAdminPage(props) {
   };
 
   const normalizePermissions = (raw) => {
-    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw)) return raw.filter(Boolean);
+
     if (!raw) return [];
+
     if (typeof raw === "string") {
       return raw
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
     }
+
     if (typeof raw === "object") {
       return Object.entries(raw)
         .filter(([, v]) => !!v)
         .map(([k]) => k);
     }
+
     return [];
   };
 
@@ -169,10 +169,12 @@ export default function UniversityEmployeeAdminPage(props) {
 
   const uploadImageIfNeeded = async (imageFile) => {
     if (!(imageFile instanceof File)) return null;
+
     const sref = ref(
       storage,
       `employee_image/${Date.now()}_${imageFile.name}`
     );
+
     await uploadBytes(sref, imageFile);
     return await getDownloadURL(sref);
   };
@@ -184,23 +186,30 @@ export default function UniversityEmployeeAdminPage(props) {
       limit(1)
     );
     const snap = await getDocs(qy);
+
     if (snap.empty) return null;
+
     const d = snap.docs[0];
     return { uid: d.id, data: d.data() || {} };
   };
 
-  /* -------------------- Data Fetch -------------------- */
-
   const getList = async () => {
     setIsLoading(true);
     try {
-      const q = query(collection(db, "employees"), where("uid", "==", uid));
+      const q = query(
+        collection(db, "employees"),
+        where("empType", "==", "university"),
+        where("universityid", "==", universityId)
+      );
+
       const querySnapshot = await getDocs(q);
+
       const documents = querySnapshot.docs.map((d) => ({
         id: d.id,
         ...d.data(),
         permissions: normalizePermissions(d.data()?.permissions),
       }));
+
       setList(documents);
     } catch (e) {
       console.error("getList error:", e);
@@ -211,17 +220,18 @@ export default function UniversityEmployeeAdminPage(props) {
   };
 
   const getRoleList = async () => {
+    if (!universityId) return;
+
     setIsLoading(true);
     try {
-      const qy = query(
-        collection(db, "role"),
-        where("hostelid", "==", emp?.hostelid || "")
-      );
+      const qy = query(collection(db, "university", universityId, "roles"));
       const snap = await getDocs(qy);
+
       const documents = snap.docs.map((docu) => ({
         id: docu.id,
         ...docu.data(),
       }));
+
       setRoletList(documents);
     } catch (e) {
       console.error("getRoleList error:", e);
@@ -230,8 +240,6 @@ export default function UniversityEmployeeAdminPage(props) {
       setIsLoading(false);
     }
   };
-
-  /* -------------------- Handlers -------------------- */
 
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
@@ -242,10 +250,53 @@ export default function UniversityEmployeeAdminPage(props) {
       setFileName(file ? file.name : "No file chosen");
       return;
     }
+
     setForm((p) => ({ ...p, [name]: value }));
   };
 
-  /* -------------------- ✅ UPDATED handleSubmit (same smart flow) -------------------- */
+  const allPermissionsSelected = useMemo(() => {
+    return (
+      MENU_OPTIONS.length > 0 &&
+      MENU_OPTIONS.every(({ key }) => (form.permissions || []).includes(key))
+    );
+  }, [MENU_OPTIONS, form.permissions]);
+
+  const handlePermissionToggle = (key, checked) => {
+    setForm((prev) => {
+      const current = new Set(normalizePermissions(prev.permissions));
+
+      if (checked) {
+        current.add(key);
+      } else {
+        current.delete(key);
+      }
+
+      return { ...prev, permissions: Array.from(current) };
+    });
+  };
+
+  const handleSelectAllPermissions = (checked) => {
+    setForm((prev) => {
+      const current = new Set(normalizePermissions(prev.permissions));
+
+      MENU_OPTIONS.forEach(({ key }) => {
+        if (checked) {
+          current.add(key);
+        } else {
+          current.delete(key);
+        }
+      });
+
+      return { ...prev, permissions: Array.from(current) };
+    });
+  };
+
+  const resetFormState = () => {
+    setModalOpen(false);
+    setEditing(null);
+    setForm(initialForm);
+    setFileName("No file chosen");
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -261,17 +312,15 @@ export default function UniversityEmployeeAdminPage(props) {
         return;
       }
 
-      if (!emp?.hostelid) {
-        toast.error("Hostel not found for this admin.");
+      if (!universityId) {
+        toast.error("University not found for this admin.");
         return;
       }
 
-      // ✅ upload image if new
       let imageUrl = form.imageUrl || "";
       const uploadedUrl = await uploadImageIfNeeded(form.image);
       if (uploadedUrl) imageUrl = uploadedUrl;
 
-      // ✅ base payload (hostel employee)
       const baseData = {
         name: (form.name || "").trim(),
         email: emailLower,
@@ -282,14 +331,20 @@ export default function UniversityEmployeeAdminPage(props) {
         role: form.role || "",
         isActive: !!form.isActive,
         permissions: normalizePermissions(form.permissions),
-        type: "admin", // panel access
-        hostelid: emp.hostelid,
-        uid, // creator uid (current logged in admin)
+        type: "admin",
+        empType: "university",
+        universityid: universityId,
+        universityId: universityId,
+        university: universityName,
+        campusId: "",
+        campusName: "",
+        disciplineId: "",
+        disciplineName: "",
+        createdBy: uid || "",
         ...(imageUrl ? { imageUrl } : {}),
         updatedAt: serverTimestamp(),
       };
 
-      // ---------------- EDIT MODE ----------------
       if (editingData) {
         const docRef = doc(db, "employees", form.id);
         const docSnap = await getDoc(docRef);
@@ -300,54 +355,58 @@ export default function UniversityEmployeeAdminPage(props) {
         }
 
         const old = docSnap.data() || {};
-        const mergedPerms = mergePermissions(old.permissions, baseData.permissions);
+        const mergedPerms = mergePermissions(
+          old.permissions,
+          baseData.permissions
+        );
 
-        // ✅ keep password as-is (do not overwrite)
         await updateDoc(docRef, {
           ...baseData,
           permissions: mergedPerms,
           password: old.password || "",
+          uid: old.uid || form.id,
         });
 
         toast.success("Employee updated successfully");
         await getList();
-
-        setModalOpen(false);
-        setEditing(null);
-        setForm(initialForm);
-        setFileName("No file chosen");
+        resetFormState();
         return;
       }
 
-      // ---------------- CREATE MODE ----------------
-
-      // ✅ Rule 1: block SAME email + SAME hostel (already assigned)
       const qSame = query(
         collection(db, "employees"),
         where("email", "==", emailLower),
-        where("hostelid", "==", emp.hostelid),
+        where("universityid", "==", universityId),
+        where("empType", "==", "university"),
         limit(1)
       );
+
       const sameSnap = await getDocs(qSame);
+
       if (!sameSnap.empty) {
-        toast.warn("This email is already assigned to an employee in this hostel.");
+        toast.warn(
+          "This email is already assigned to an employee in this university."
+        );
         return;
       }
 
-      // ✅ Rule 2: if employee exists by email (any hostel) => reuse UID, merge permissions, update hostelid
       const existingEmp = await findEmployeeByEmail(emailLower);
+
       if (existingEmp?.uid) {
         const existingUid = existingEmp.uid;
         const oldEmp = existingEmp.data || {};
 
-        const mergedPerms = mergePermissions(oldEmp.permissions, baseData.permissions);
+        const mergedPerms = mergePermissions(
+          oldEmp.permissions,
+          baseData.permissions
+        );
 
         await setDoc(
           doc(db, "employees", existingUid),
           {
             ...oldEmp,
             ...baseData,
-            hostelid: emp.hostelid,
+            uid: existingUid,
             permissions: mergedPerms,
             password: oldEmp.password || password,
             createdby: oldEmp.createdby || uid,
@@ -358,17 +417,12 @@ export default function UniversityEmployeeAdminPage(props) {
         );
 
         toast.success("Existing email found — employee assigned/updated!");
-
         await getList();
-        setModalOpen(false);
-        setEditing(null);
-        setForm(initialForm);
-        setFileName("No file chosen");
+        resetFormState();
         return;
       }
 
-      // ✅ Rule 3: create auth + employee doc
-      tempApp = initializeApp(firebaseConfig, "employeeCreator");
+      tempApp = initializeApp(firebaseConfig, `employeeCreator_${Date.now()}`);
       const tempAuth = getAuth(tempApp);
 
       try {
@@ -377,6 +431,7 @@ export default function UniversityEmployeeAdminPage(props) {
           emailLower,
           password
         );
+
         const user = userCredential.user;
 
         await updateProfile(user, {
@@ -386,6 +441,7 @@ export default function UniversityEmployeeAdminPage(props) {
 
         await setDoc(doc(db, "employees", user.uid), {
           ...baseData,
+          uid: user.uid,
           password,
           createdby: uid,
           createddate: new Date(),
@@ -394,21 +450,24 @@ export default function UniversityEmployeeAdminPage(props) {
 
         toast.success("Employee created successfully");
       } catch (err) {
-        // ✅ IMPORTANT: if auth already exists, try to assign by employee doc
         if (err?.code === "auth/email-already-in-use") {
           const fallbackEmp = await findEmployeeByEmail(emailLower);
 
           if (fallbackEmp?.uid) {
             const existingUid = fallbackEmp.uid;
             const oldEmp = fallbackEmp.data || {};
-            const mergedPerms = mergePermissions(oldEmp.permissions, baseData.permissions);
+
+            const mergedPerms = mergePermissions(
+              oldEmp.permissions,
+              baseData.permissions
+            );
 
             await setDoc(
               doc(db, "employees", existingUid),
               {
                 ...oldEmp,
                 ...baseData,
-                hostelid: emp.hostelid,
+                uid: existingUid,
                 permissions: mergedPerms,
                 password: oldEmp.password || password,
                 updatedAt: serverTimestamp(),
@@ -421,10 +480,7 @@ export default function UniversityEmployeeAdminPage(props) {
             );
 
             await getList();
-            setModalOpen(false);
-            setEditing(null);
-            setForm(initialForm);
-            setFileName("No file chosen");
+            resetFormState();
             return;
           }
 
@@ -437,12 +493,8 @@ export default function UniversityEmployeeAdminPage(props) {
         throw err;
       }
 
-      // ✅ final reset
       await getList();
-      setModalOpen(false);
-      setEditing(null);
-      setForm(initialForm);
-      setFileName("No file chosen");
+      resetFormState();
     } catch (error) {
       console.error("Error saving data:", error);
       toast.error("Failed to save employee.");
@@ -457,8 +509,9 @@ export default function UniversityEmployeeAdminPage(props) {
 
   const handleDelete = async () => {
     if (!deleteData) return;
+
     try {
-      const targetUid = form.id;
+      const targetUid = deleteData.id || form.id;
 
       const response = await fetch(
         "https://us-central1-mymor-one.cloudfunctions.net/deleteUserByUid",
@@ -468,7 +521,9 @@ export default function UniversityEmployeeAdminPage(props) {
           body: JSON.stringify({ uid: targetUid }),
         }
       );
+
       const data = await response.json();
+
       if (!response.ok) {
         throw new Error(data.error?.message || "Failed to delete user auth");
       }
@@ -487,13 +542,26 @@ export default function UniversityEmployeeAdminPage(props) {
     }
   };
 
+  if (!universityId) {
+    return (
+      <main
+        className="flex-1 p-6 bg-gray-100 overflow-auto"
+        style={{ paddingTop: navbarHeight || 0 }}
+      >
+        <div className="bg-white rounded-xl shadow p-10 text-center text-gray-500">
+          No university assigned.
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Employee</h1>
+        <h1 className="text-2xl font-semibold">University Employee Admin</h1>
         <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
@@ -611,7 +679,12 @@ export default function UniversityEmployeeAdminPage(props) {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item?.imageUrl ? (
-                        <img src={item.imageUrl} width={80} height={80} alt="employee" />
+                        <img
+                          src={item.imageUrl}
+                          width={80}
+                          height={80}
+                          alt="employee"
+                        />
                       ) : null}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -626,7 +699,6 @@ export default function UniversityEmployeeAdminPage(props) {
                             email: item.email || "",
                             permissions: normalizePermissions(item.permissions),
                             image: null,
-                            hostelid: item.hostelid || emp?.hostelid || "",
                           }));
                           setFileName("No file chosen");
                           setModalOpen(true);
@@ -654,7 +726,6 @@ export default function UniversityEmployeeAdminPage(props) {
         )}
       </div>
 
-      {/* Pagination controls */}
       <div className="flex justify-between items-center mt-4">
         <p className="text-sm text-gray-600">
           Page {currentPage} of {totalPages}
@@ -668,7 +739,9 @@ export default function UniversityEmployeeAdminPage(props) {
             Previous
           </button>
           <button
-            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+            onClick={() => setCurrentPage((p) =>
+              Math.min(p + 1, totalPages)
+            )}
             disabled={currentPage === totalPages}
             className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
           >
@@ -677,7 +750,6 @@ export default function UniversityEmployeeAdminPage(props) {
         </div>
       </div>
 
-      {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -706,7 +778,9 @@ export default function UniversityEmployeeAdminPage(props) {
               />
 
               {form.email && !isEmailValid(form.email) && (
-                <p className="text-red-500 text-sm mt-1">Invalid email format</p>
+                <p className="text-red-500 text-sm mt-1">
+                  Invalid email format
+                </p>
               )}
 
               <input
@@ -762,7 +836,6 @@ export default function UniversityEmployeeAdminPage(props) {
                 ))}
               </select>
 
-              {/* File */}
               <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                 <label className="cursor-pointer">
                   <input
@@ -783,30 +856,47 @@ export default function UniversityEmployeeAdminPage(props) {
                 <img src={form.imageUrl} alt="Image Preview" width="150" />
               ) : null}
 
-              {/* Permissions */}
-              <Select
-                className="w-full border border-gray-300 p-2 rounded"
-                multiple
-                displayEmpty
-                value={form.permissions || []}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, permissions: e.target.value }))
-                }
-                renderValue={(selected) =>
-                  selected?.length
-                    ? selected.map((k) => LABEL_BY_KEY[k]).join(", ")
-                    : "Select Permission"
-                }
-              >
-                {MENU_OPTIONS.map(({ key, label }) => (
-                  <MenuItem key={key} value={key}>
-                    <Checkbox checked={(form.permissions || []).includes(key)} />
-                    <ListItemText primary={label} />
-                  </MenuItem>
-                ))}
-              </Select>
+              <div>
+                <label className="block text-sm font-semibold text-gray-600 mb-2">
+                  Permissions
+                </label>
 
-              {/* Status */}
+                <div className="mb-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={allPermissionsSelected}
+                      onChange={(e) =>
+                        handleSelectAllPermissions(e.target.checked)
+                      }
+                    />
+                    <span>
+                      {allPermissionsSelected
+                        ? "Unselect all permissions"
+                        : "Select all permissions"}
+                    </span>
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {MENU_OPTIONS.map(({ key, label }) => (
+                    <label
+                      key={key}
+                      className="flex items-center gap-2 text-sm bg-gray-50 px-3 py-1.5 rounded border border-gray-200 cursor-pointer hover:bg-gray-100"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={(form.permissions || []).includes(key)}
+                        onChange={(e) =>
+                          handlePermissionToggle(key, e.target.checked)
+                        }
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               <label className="flex items-center gap-3 cursor-pointer select-none">
                 <span className="text-sm font-medium">Status</span>
                 <input
@@ -834,12 +924,7 @@ export default function UniversityEmployeeAdminPage(props) {
               <div className="flex justify-end mt-6 space-x-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    setModalOpen(false);
-                    setEditing(null);
-                    setForm(initialForm);
-                    setFileName("No file chosen");
-                  }}
+                  onClick={resetFormState}
                   className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
                 >
                   Cancel
@@ -854,7 +939,6 @@ export default function UniversityEmployeeAdminPage(props) {
         </div>
       )}
 
-      {/* Delete confirm */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
@@ -862,7 +946,8 @@ export default function UniversityEmployeeAdminPage(props) {
               Delete Employee
             </h2>
             <p className="mb-4">
-              Are you sure you want to delete <strong>{deleteData?.name}</strong>?
+              Are you sure you want to delete{" "}
+              <strong>{deleteData?.name}</strong>?
             </p>
             <div className="flex justify-end space-x-3">
               <button
