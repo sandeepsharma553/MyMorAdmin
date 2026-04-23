@@ -13,6 +13,8 @@ import {
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 
@@ -64,9 +66,7 @@ export default function UniversityAcademicGroupPage(props) {
   const uid = useSelector((state) => state.auth.user.uid);
   const emp = useSelector((state) => state.auth.employee);
 
-  const universityId = String(
-    emp?.universityid || emp?.universityId || emp?.university || ""
-  );
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const [fileName, setFileName] = useState("No file chosen");
 
@@ -113,7 +113,7 @@ export default function UniversityAcademicGroupPage(props) {
     setIsLoading(true);
     try {
       const academicCategoryQuery = query(
-        collection(db, "universityacademiccategory"),
+        collection(db, "academiccategory"),
         where("universityid", "==", universityId)
       );
 
@@ -136,7 +136,7 @@ export default function UniversityAcademicGroupPage(props) {
     if (!universityId) return;
     setIsLoading(true);
 
-    const groupRef = dbRef(database, "universitygroups/");
+    const groupRef = dbRef(database, "groups/");
     const handler = async (snapshot) => {
       const data = snapshot.val();
 
@@ -180,7 +180,7 @@ export default function UniversityAcademicGroupPage(props) {
             })
         );
 
-        setList(arr);
+        setList(filterByScope(arr));
       } else {
         setList([]);
       }
@@ -245,16 +245,17 @@ export default function UniversityAcademicGroupPage(props) {
         notifications: form.notifications !== false,
         autoAlert: form.autoAlert !== false,
         universityid: universityId,
+        ...scopePayload,
         ...(posterUrl ? { posterUrl } : {}),
       };
 
       if (editingData) {
-        await update(dbRef(database, `universitygroups/${form.id}`), {
+        await update(dbRef(database, `groups/${form.id}`), {
           ...payload,
         });
         toast.success("Group updated successfully!");
       } else {
-        const newGroupRef = push(dbRef(database, "universitygroups/"));
+        const newGroupRef = push(dbRef(database, "groups/"));
         await set(newGroupRef, {
           ...payload,
           creatorId: uid,
@@ -279,7 +280,7 @@ export default function UniversityAcademicGroupPage(props) {
     if (!deleteData) return;
 
     try {
-      const groupRef = dbRef(database, `universitygroups/${deleteData.id}`);
+      const groupRef = dbRef(database, `groups/${deleteData.id}`);
       await remove(groupRef);
       toast.success("Successfully deleted!");
       getList();
@@ -293,7 +294,7 @@ export default function UniversityAcademicGroupPage(props) {
   };
 
   const approve = async (gid, memberUid, item) => {
-    await set(dbRef(database, `universitygroups/${gid}/members/${memberUid}`), {
+    await set(dbRef(database, `groups/${gid}/members/${memberUid}`), {
       uid: item.uid,
       name: item.name || "",
       photoURL: item.photoURL ?? "",
@@ -302,7 +303,7 @@ export default function UniversityAcademicGroupPage(props) {
     });
 
     await update(
-      dbRef(database, `universitygroups/${gid}/joinRequests/${memberUid}`),
+      dbRef(database, `groups/${gid}/joinRequests/${memberUid}`),
       { status: "approved" }
     );
 
@@ -312,7 +313,7 @@ export default function UniversityAcademicGroupPage(props) {
 
   const reject = async (gid, memberUid) => {
     await update(
-      dbRef(database, `universitygroups/${gid}/joinRequests/${memberUid}`),
+      dbRef(database, `groups/${gid}/joinRequests/${memberUid}`),
       { status: "rejected" }
     );
     toast.info("User rejected");
@@ -378,6 +379,7 @@ export default function UniversityAcademicGroupPage(props) {
       className="flex-1 p-6 bg-gray-100 overflow-auto no-scrollbar"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">University Academic Group</h1>
         <button

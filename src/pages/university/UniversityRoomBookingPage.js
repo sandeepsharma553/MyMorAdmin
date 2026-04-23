@@ -16,6 +16,8 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -65,7 +67,7 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
 
   const uid = useSelector((s) => s.auth.user?.uid);
   const emp = useSelector((s) => s.auth.employee);
-  const universityId = String(emp?.universityid || emp?.universityId || "");
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const [currentPage, setCurrentPage] = useState(1);
   const [roomFilter, setRoomFilter] = useState("All");
@@ -291,7 +293,7 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
       setRooms(["All", ...uniqueRooms]);
       setAllTypes(["All", ...allTypesLocal]);
       setBookingTypeList(BookingType);
-      setList(roomFiltered);
+      setList(filterByScope(roomFiltered));
 
       setSelectedBookingIds(new Set());
       setSelectedTypeIds(new Set());
@@ -341,6 +343,7 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
         }
 
         await updateDoc(docRef, {
+          ...scopePayload,
           uid,
           roomname: form.roomname,
           description: form.description,
@@ -359,6 +362,7 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
         await addDoc(
           collection(db, "university", universityId, "bookingroomtype"),
           {
+            ...scopePayload,
             uid,
             roomname: form.roomname,
             description: form.description,
@@ -627,6 +631,7 @@ export default function UniversityRoomBookingPage({ navbarHeight }) {
       className="flex-1 p-1 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <div className="flex flex-wrap gap-2 justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">
           University Booking (When a notification appears, the app page should

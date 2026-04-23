@@ -13,6 +13,8 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import * as XLSX from "xlsx";
@@ -34,9 +36,7 @@ export default function UniversityCleaningSchedulePage(props) {
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
 
-  const universityId = String(
-    emp?.universityid || emp?.universityId || emp?.university || ""
-  );
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const [weekMode, setWeekMode] = useState("current");
 
@@ -116,7 +116,7 @@ export default function UniversityCleaningSchedulePage(props) {
         return (a.time || "").localeCompare(b.time || "");
       });
 
-      setList(documents);
+      setList(filterByScope(documents));
       setSelectedIds(new Set());
       setCurrentPage(1);
     } catch (err) {
@@ -162,6 +162,7 @@ export default function UniversityCleaningSchedulePage(props) {
           date: form.date,
           empname: form.empname,
           universityid: universityId,
+          ...scopePayload,
           updatedBy: uid,
           updatedDate: new Date(),
         });
@@ -191,6 +192,7 @@ export default function UniversityCleaningSchedulePage(props) {
           date: form.date,
           empname: form.empname,
           universityid: universityId,
+          ...scopePayload,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -294,6 +296,7 @@ export default function UniversityCleaningSchedulePage(props) {
           ...entry,
           uid,
           universityid: universityId,
+          ...scopePayload,
           createdBy: uid,
           createdDate: new Date(),
         });
@@ -474,6 +477,7 @@ export default function UniversityCleaningSchedulePage(props) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-semibold">University Cleaning Schedule</h1>

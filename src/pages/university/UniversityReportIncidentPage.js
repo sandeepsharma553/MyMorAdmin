@@ -15,6 +15,8 @@ import {
 } from "firebase/firestore";
 import { db, storage } from "../../firebase";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -43,7 +45,7 @@ export default function UniversityReportIncidentPage(props) {
   const myEmail = (authUser?.email || "").toLowerCase();
   const emp = useSelector((state) => state.auth.employee);
   const isAdmin = (emp?.role || "").toLowerCase().includes("admin");
-  const universityId = String(emp?.universityid || emp?.universityId || "");
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [assignTarget, setAssignTarget] = useState(null);
@@ -346,7 +348,7 @@ export default function UniversityReportIncidentPage(props) {
         });
       }
 
-      setList(rows);
+      setList(filterByScope(rows));
     } catch (error) {
       console.error(error);
       toast.error("Failed to load reports");
@@ -385,6 +387,7 @@ export default function UniversityReportIncidentPage(props) {
         }
 
         await updateDoc(docRef, {
+          ...scopePayload,
           uid,
           incidenttype:
             form.incidenttype === "Other" ? form.other : form.incidenttype,
@@ -401,6 +404,7 @@ export default function UniversityReportIncidentPage(props) {
         toast.success("Successfully updated");
       } else {
         await addDoc(collection(db, "university", universityId, "reports"), {
+          ...scopePayload,
           uid,
           incidenttype:
             form.incidenttype === "Other" ? form.other : form.incidenttype,
@@ -680,6 +684,7 @@ export default function UniversityReportIncidentPage(props) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">University Report Incident</h1>
         <div className="flex items-center gap-2">

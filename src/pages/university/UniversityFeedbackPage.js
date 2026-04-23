@@ -14,6 +14,8 @@ import {
 } from "firebase/firestore";
 import { db, storage } from "../../firebase";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -41,9 +43,7 @@ export default function UniversityFeedbackPage(props) {
   const myEmail = (authUser?.email || "").toLowerCase();
   const emp = useSelector((state) => state.auth.employee);
   const isAdmin = (emp?.role || "").toLowerCase().includes("admin");
-  const universityId = String(
-    emp?.universityid || emp?.universityId || emp?.university || ""
-  );
+  const { universityId, filterByScope } = useUniversityScope();
 
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [assignTarget, setAssignTarget] = useState(null);
@@ -296,7 +296,7 @@ export default function UniversityFeedbackPage(props) {
         });
       }
 
-      setList(rows);
+      setList(filterByScope(rows));
     } catch (error) {
       console.error(error);
       toast.error("Failed to load feedback");
@@ -635,6 +635,7 @@ export default function UniversityFeedbackPage(props) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">University Feedback</h1>
         <div className="flex items-center gap-2">

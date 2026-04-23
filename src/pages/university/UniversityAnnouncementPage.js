@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { db, storage } from "../../firebase";
@@ -44,9 +46,8 @@ export default function UniversityAnnouncementPage(props) {
   const user = useSelector((state) => state.auth.user);
   const emp = useSelector((state) => state.auth.employee);
 
-  const universityId = String(
-    emp?.universityid || emp?.universityId || emp?.university || user?.universityid || ""
-  );
+  // ── Campus / discipline scope (university module) ─────────────────────────
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const [visiblePoll, setVisiblePoll] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -185,7 +186,8 @@ export default function UniversityAnnouncementPage(props) {
           };
         });
 
-        setList(documents);
+        // Filter to this admin's campus + discipline scope
+        setList(filterByScope(documents));
         setSelectedIds(new Set());
         setIsLoading(false);
       },
@@ -524,6 +526,7 @@ export default function UniversityAnnouncementPage(props) {
           endDate: Timestamp.fromDate(new Date(form.date.endDate)),
         },
         universityid: universityId,
+        ...scopePayload,
         role: emp?.role || "",
         link: form.link || "",
         bookmarked: !!form.bookmarked,
@@ -710,6 +713,7 @@ export default function UniversityAnnouncementPage(props) {
 
   return (
     <main className="flex-1 p-6 bg-gray-100 overflow-auto">
+      <UniversityScopeBanner />
       <div className="flex justify-between items-center mb-3">
         <h1 className="text-2xl font-semibold">University Announcement</h1>
         <button

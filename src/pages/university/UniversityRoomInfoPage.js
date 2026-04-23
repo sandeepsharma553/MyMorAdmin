@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import {
@@ -30,7 +32,7 @@ const EMPTY = {
 
 export default function UniversityRoomInfoPage({ navbarHeight }) {
   const emp = useSelector((s) => s.auth.employee);
-  const universityId = String(emp?.universityid || emp?.universityId || "");
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +54,7 @@ export default function UniversityRoomInfoPage({ navbarHeight }) {
           orderBy("roomNumber")
         )
       );
-      setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setItems(filterByScope(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
     } catch {
       toast.error("Failed to load rooms");
     } finally {
@@ -89,6 +91,7 @@ export default function UniversityRoomInfoPage({ navbarHeight }) {
     setSubmitting(true);
     try {
       const data = {
+        ...scopePayload,
         ...form,
         capacity: Number(form.capacity) || 0,
         universityId,
@@ -148,6 +151,7 @@ export default function UniversityRoomInfoPage({ navbarHeight }) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <ToastContainer />
 
       <div className="flex justify-between items-center mb-4">

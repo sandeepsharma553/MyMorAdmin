@@ -61,6 +61,7 @@ import UniversityStudentPage from "../pages/university/UniversityStudentPage";
 import UniversityDiningMenuPage from "../pages/university/UniversityDiningMenuPage";
 import UniversityCleaningSchedulePage from "../pages/university/UniversityCleaningSchedulePage";
 import UniversityTutorialSchedulePage from "../pages/university/UniversityTutorialSchedulePage";
+import UniversityAssessmentsPage from "../pages/university/UniversityAssessmentsPage";
 import UniversityMaintenancePage from "../pages/university/UniversityMaintenancePage";
 import UniversityAcademicGroupPage from "../pages/university/UniversityAcademicGroupPage";
 import UniversityReportIncidentPage from "../pages/university/UniversityReportIncidentPage";
@@ -150,6 +151,7 @@ export default function AdminRoutes({ route }) {
       <Route path="/universitydiningmenu" element={<UniversityDiningMenuPage />} />
       <Route path="/universitycleaningschedule" element={<UniversityCleaningSchedulePage />} />
       <Route path="/universitytutorialschedule" element={<UniversityTutorialSchedulePage />} />
+      <Route path="/universityassessments" element={<UniversityAssessmentsPage />} />
       <Route path="/universitymaintenance" element={<UniversityMaintenancePage />} />
       <Route path="/universityacademicgroup" element={<UniversityAcademicGroupPage />} />
       <Route path="/universityreportincident" element={<UniversityReportIncidentPage />} />

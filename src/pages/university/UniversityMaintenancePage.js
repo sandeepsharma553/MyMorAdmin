@@ -15,6 +15,8 @@ import {
 } from "firebase/firestore";
 import { db, storage } from "../../firebase";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -62,9 +64,7 @@ export default function UniversityMaintenancePage(props) {
   const uid = authUser?.uid;
   const myEmail = (authUser?.email || "").toLowerCase();
   const isAdmin = (emp?.role || "").toLowerCase().includes("admin");
-  const universityId = String(
-    emp?.universityid || emp?.universityId || emp?.university || ""
-  );
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const [stats, setStats] = useState({
     total: 0,
@@ -342,7 +342,7 @@ export default function UniversityMaintenancePage(props) {
         );
       }
 
-      setList(rows);
+      setList(filterByScope(rows));
       setSelectedIds(new Set());
 
       const total = rows.length;
@@ -461,6 +461,7 @@ export default function UniversityMaintenancePage(props) {
           comments: form.comments,
           imageUrl,
           universityid: universityId,
+          ...scopePayload,
           updatedBy: uid,
           updatedDate: new Date().toISOString().split("T")[0],
           updatedAt: serverTimestamp(),
@@ -482,6 +483,7 @@ export default function UniversityMaintenancePage(props) {
           comments: form.comments,
           imageUrl,
           universityid: universityId,
+          ...scopePayload,
           createdBy: uid,
           createdDate: new Date().toISOString().split("T")[0],
           createdAt: serverTimestamp(),
@@ -870,6 +872,7 @@ export default function UniversityMaintenancePage(props) {
       className="flex-1 p-2 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">University Maintenance</h1>
         <div className="flex gap-2">

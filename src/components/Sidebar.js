@@ -24,6 +24,7 @@ import {
   MessageSquare,
   HeartPulse,
   Package,
+  ClipboardList,
 } from "lucide-react";
 
 import { useSelector, useDispatch } from "react-redux";
@@ -87,6 +88,7 @@ const SECTIONS = [
   { key: "universitydiningmenu", label: "Dining Menu", Icon: Menu },
   { key: "universitycleaningschedule", label: "Cleaning Schedule", Icon: BrushCleaning },
   { key: "universitytutorialschedule", label: "Tutorial Schedule", Icon: BrushCleaning },
+  { key: "universityassessments", label: "Assessments", Icon: ClipboardList },
   { key: "universitymaintenance", label: "Maintenance", Icon: SettingsCog },
   { key: "universityroombooking", label: "Book a Room", Icon: BookOpen },
   { key: "universityacademicgroup", label: "Academic Groups", Icon: Users },
@@ -456,6 +458,7 @@ export default function Sidebar({ onSectionClick, isLoading }) {
       "universitydiningmenu",
       "universitycleaningschedule",
       "universitytutorialschedule",
+      "universityassessments",
       "universitymaintenance",
       "universityroombooking",
       "universityacademicgroup",
@@ -552,8 +555,10 @@ export default function Sidebar({ onSectionClick, isLoading }) {
                       ? "universitycleaningschedule"
                       : s.key === "universitytutorialschedule"
                         ? "universitytutorialschedule"
-                        : s.key === "universitymaintenance"
-                          ? "universitymaintenance"
+                        : s.key === "universityassessments"
+                          ? "universityassessments"
+                          : s.key === "universitymaintenance"
+                            ? "universitymaintenance"
                           : s.key === "universityroombooking"
                             ? "universityroombooking"
                             : s.key === "universityacademicgroup"

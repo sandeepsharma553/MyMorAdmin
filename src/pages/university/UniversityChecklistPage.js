@@ -1,6 +1,8 @@
 // src/pages/UniversityChecklistPage.jsx
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import {
@@ -44,7 +46,7 @@ const toTime = (ts) => {
 
 export default function UniversityChecklistPage({ navbarHeight }) {
   const emp = useSelector((s) => s.auth.employee);
-  const universityId = String(emp?.universityid || emp?.universityId || "");
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const [tab, setTab] = useState("checklists");
   const [items, setItems] = useState([]);
@@ -71,7 +73,7 @@ export default function UniversityChecklistPage({ navbarHeight }) {
           orderBy("createdAt", "desc")
         )
       );
-      setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setItems(filterByScope(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
     } catch {
       toast.error("Failed to load checklists");
     } finally {
@@ -134,6 +136,7 @@ export default function UniversityChecklistPage({ navbarHeight }) {
     setSubmitting(true);
     try {
       const data = {
+        ...scopePayload,
         title: form.title,
         description: form.description,
         isPinned: form.isPinned,
@@ -197,6 +200,7 @@ export default function UniversityChecklistPage({ navbarHeight }) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <ToastContainer />
 
       <div className="flex justify-between items-center mb-4">

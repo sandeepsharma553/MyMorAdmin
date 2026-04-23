@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import {
@@ -35,7 +37,7 @@ const EMPTY = {
 
 export default function UniversityParcelPage({ navbarHeight }) {
   const emp = useSelector((s) => s.auth.employee);
-  const universityId = String(emp?.universityid || emp?.universityId || "");
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -58,7 +60,7 @@ export default function UniversityParcelPage({ navbarHeight }) {
           orderBy("receivedDate", "desc")
         )
       );
-      setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setItems(filterByScope(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
     } catch {
       toast.error("Failed to load parcels");
     } finally {
@@ -104,7 +106,7 @@ export default function UniversityParcelPage({ navbarHeight }) {
 
     setSubmitting(true);
     try {
-      const data = { ...form, universityId, updatedAt: serverTimestamp() };
+      const data = { ...scopePayload, ...form, universityId, updatedAt: serverTimestamp() };
 
       if (editing?.id) {
         await updateDoc(
@@ -172,6 +174,7 @@ export default function UniversityParcelPage({ navbarHeight }) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <ToastContainer />
 
       <div className="flex justify-between items-center mb-4">

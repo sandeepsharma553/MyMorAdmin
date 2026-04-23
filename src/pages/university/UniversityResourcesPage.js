@@ -14,6 +14,8 @@ import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 
 export default function UniversityResourcesPage(props) {
   const { navbarHeight } = props;
@@ -30,9 +32,7 @@ export default function UniversityResourcesPage(props) {
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
 
-  const universityId = String(
-    emp?.universityid || emp?.universityId || emp?.university || ""
-  );
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const initialForm = {
     title: "",
@@ -170,7 +170,7 @@ export default function UniversityResourcesPage(props) {
         ...docu.data(),
       }));
 
-      setList(documents);
+      setList(filterByScope(documents));
     } catch (e) {
       console.error(e);
       toast.error("Failed to load resources.");
@@ -262,6 +262,7 @@ export default function UniversityResourcesPage(props) {
           const { id, ...rest } = row;
 
           return {
+            ...scopePayload,
             ...rest,
             images: images.filter(Boolean),
             uid,
@@ -397,6 +398,7 @@ export default function UniversityResourcesPage(props) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <h1 className="text-2xl font-semibold">University Resources</h1>
         <div className="flex items-center gap-2">

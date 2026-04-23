@@ -17,6 +17,8 @@ import {
 } from "firebase/firestore";
 import { db, storage } from "../../firebase";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import {
@@ -95,9 +97,7 @@ export default function UniversityEventPage({ navbarHeight }) {
   const uid = useSelector((s) => s.auth.user?.uid);
   const user = useSelector((s) => s.auth.user);
   const emp = useSelector((s) => s.auth.employee);
-  const universityId = String(
-    emp?.universityid || emp?.universityId || user?.universityid || ""
-  );
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const initialFormData = {
     id: "",
@@ -203,7 +203,7 @@ export default function UniversityEventPage({ navbarHeight }) {
             (toMillis(a.startDateTime) ?? 0) - (toMillis(b.startDateTime) ?? 0)
         );
 
-        setList(docs);
+        setList(filterByScope(docs));
         setIsLoading(false);
       },
       (e) => {
@@ -565,6 +565,7 @@ export default function UniversityEventPage({ navbarHeight }) {
       const eventData = {
         ...form,
         universityid: universityId,
+        ...scopePayload,
         university: emp?.university || "",
         imageUrl: emp?.imageUrl ?? null,
         uid,
@@ -1020,6 +1021,7 @@ export default function UniversityEventPage({ navbarHeight }) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">University Event</h1>
         <button

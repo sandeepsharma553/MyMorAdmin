@@ -1,6 +1,8 @@
 // src/pages/UniversityStudentPage.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -30,7 +32,7 @@ export default function UniversityStudentPage(props) {
   const authUser = useSelector((state) => state.auth.user);
   const myUid = authUser?.uid;
 
-  const universityId = String(emp?.universityid || emp?.universityId || "");
+  const { universityId, filterByScope } = useUniversityScope();
 
   // UI State
   const [list, setList] = useState([]);
@@ -155,7 +157,7 @@ export default function UniversityStudentPage(props) {
         })
         .filter(Boolean);
 
-      setList(updatedList);
+      setList(filterByScope(updatedList));
       setCurrentPage(1);
     } catch (err) {
       console.error(err);
@@ -524,6 +526,7 @@ export default function UniversityStudentPage(props) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight ? `${navbarHeight}px` : undefined }}
     >
+      <UniversityScopeBanner />
       {/* Top bar */}
       <div className="flex flex-wrap gap-3 justify-between items-center mb-4">
         <div>

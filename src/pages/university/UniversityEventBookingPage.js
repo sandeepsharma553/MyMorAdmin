@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import dayjs from "dayjs";
@@ -82,9 +84,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
   const uid = useSelector((s) => s.auth.user?.uid);
   const emp = useSelector((s) => s.auth.employee);
 
-  const universityId = String(
-    emp?.universityid || emp?.universityId || emp?.university || ""
-  );
+  const { universityId, filterByScope } = useUniversityScope();
 
   const [isLoading, setIsLoading] = useState(false);
   const [bookings, setBookings] = useState([]);
@@ -135,7 +135,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
         );
         const snap = await getDocs(qEvents);
         const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setBookings(docs);
+        setBookings(filterByScope(docs));
       } catch (e) {
         console.error(e);
         toast.error("Failed to load bookings");
@@ -280,6 +280,7 @@ export default function UniversityEventBookingPage({ navbarHeight }) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <div className="flex justify-between items-center mb-3">
         <h1 className="text-2xl font-semibold">University Event Bookings</h1>
       </div>

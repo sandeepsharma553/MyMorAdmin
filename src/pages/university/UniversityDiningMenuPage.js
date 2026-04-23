@@ -15,6 +15,8 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import * as XLSX from "xlsx";
 import { MenuItem, Select, Checkbox, ListItemText } from "@mui/material";
 import { FadeLoader } from "react-spinners";
@@ -45,7 +47,7 @@ export default function UniversityDiningMenuPage(props) {
 
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
-  const universityId = String(emp?.universityid || emp?.universityId || "");
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const emptyMeals = {
     breakfast: { time: "", items: [{ name: "", tags: [] }] },
@@ -155,7 +157,7 @@ export default function UniversityDiningMenuPage(props) {
 
       weekMenus.sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
-      setList(weekMenus);
+      setList(filterByScope(weekMenus));
       setSelectedIds(new Set());
       setCurrentPage(1);
     } catch (e) {
@@ -208,6 +210,7 @@ export default function UniversityDiningMenuPage(props) {
         ...form,
         uid,
         universityid: universityId,
+        ...scopePayload,
       };
 
       if (editingData) {
@@ -355,6 +358,7 @@ export default function UniversityDiningMenuPage(props) {
           ...entry,
           uid,
           universityid: universityId,
+          ...scopePayload,
         };
 
         const docId = `${entry.date}_${universityId}`;
@@ -370,6 +374,7 @@ export default function UniversityDiningMenuPage(props) {
 
         await addDoc(getDiningMenuUploadsCollection(), {
           universityid: universityId,
+          ...scopePayload,
           createdCount,
           firstDate,
           lastDate,
@@ -477,6 +482,7 @@ export default function UniversityDiningMenuPage(props) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight ? `${navbarHeight}px` : undefined }}
     >
+      <UniversityScopeBanner />
       <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-semibold">University Dining Menu</h1>

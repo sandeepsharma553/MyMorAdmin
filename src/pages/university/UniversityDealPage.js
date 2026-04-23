@@ -17,6 +17,8 @@ import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 
 export default function UniversityDealPage(props) {
   const { navbarHeight } = props;
@@ -64,7 +66,7 @@ export default function UniversityDealPage(props) {
 
   const uid = useSelector((state) => state.auth?.user?.uid);
   const emp = useSelector((state) => state.auth?.employee);
-  const universityId = String(emp?.universityid || emp?.universityId || "");
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const initialForm = {
     id: 0,
@@ -163,7 +165,7 @@ export default function UniversityDealPage(props) {
         return am - bm;
       });
 
-      setList(documents);
+      setList(filterByScope(documents));
     } catch (error) {
       console.error(error);
       toast.error("Failed to load deals");
@@ -216,6 +218,7 @@ export default function UniversityDealPage(props) {
           : null,
         ...(posterUrl && { posterUrl }),
         universityid: universityId,
+        ...scopePayload,
         uid: uid,
       };
 
@@ -356,6 +359,7 @@ export default function UniversityDealPage(props) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       {/* Top bar */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">University Deals</h1>

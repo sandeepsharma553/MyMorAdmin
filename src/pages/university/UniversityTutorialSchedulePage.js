@@ -1,5 +1,4 @@
-// src/pages/UniversityTutorialSchedulePage.jsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   collection,
   addDoc,
@@ -8,466 +7,255 @@ import {
   doc,
   deleteDoc,
   getDoc,
-  query,
-  where,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import * as XLSX from "xlsx";
-import tutorialscheduleFile from "../../assets/excel/tutorial_schedule.xlsx";
 
-export default function UniversityTutorialSchedulePage(props) {
-  const { navbarHeight } = props;
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingData, setEditing] = useState(null);
-  const [deleteData, setDelete] = useState(null);
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+export default function UniversityTutorialSchedulePage({ navbarHeight }) {
+  const uid = useSelector((s) => s.auth.user?.uid);
+  const { universityId, filterByScope, scopePayload, campusId } = useUniversityScope();
 
-  const [list, setList] = useState([]);
-  const [fileName, setFileName] = useState("No file chosen");
-  const [data, setData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [units, setUnits] = useState([]);
+  const [tutorialsMap, setTutorialsMap] = useState({});
+  const [expandedUnits, setExpandedUnits] = useState(new Set());
+  const [disciplines, setDisciplines] = useState([]);
 
-  const uid = useSelector((state) => state.auth.user?.uid);
-  const emp = useSelector((state) => state.auth.employee);
-  const universityId = String(emp?.universityid || emp?.universityId || "");
+  // Unit modal
+  const [unitModalOpen, setUnitModalOpen] = useState(false);
+  const [editingUnit, setEditingUnit] = useState(null);
+  const initUnit = { unitCode: "", unitName: "", disciplineId: "", startDate: "", endDate: "" };
+  const [unitForm, setUnitForm] = useState(initUnit);
 
-  const [weekMode, setWeekMode] = useState("current");
+  // Inline tutorials inside the Add Unit modal (new units only)
+  const blankTut = () => ({ tutorName: "", day: "Monday", time: "", room: "" });
+  const [inlineTutorials, setInlineTutorials] = useState([blankTut()]);
 
-  const [filters, setFilters] = useState({
-    roomtype: "",
-    hall: "",
-    day: "",
-    time: "",
-    empname: "",
-  });
+  const addInlineTut = () => setInlineTutorials((p) => [...p, blankTut()]);
+  const removeInlineTut = (i) => setInlineTutorials((p) => p.filter((_, idx) => idx !== i));
+  const updateInlineTut = (i, field, value) =>
+    setInlineTutorials((p) => p.map((t, idx) => (idx === i ? { ...t, [field]: value } : t)));
 
-  const [sortConfig, setSortConfig] = useState({
-    key: "roomtype",
-    direction: "asc",
-  });
+  // Tutorial modal (for editing existing tutorials inline on the page)
+  const [tutModalOpen, setTutModalOpen] = useState(false);
+  const [editingTut, setEditingTut] = useState(null);
+  const [activeTutUnitId, setActiveTutUnitId] = useState(null);
+  const initTut = { tutorName: "", day: "Monday", time: "", room: "" };
+  const [tutForm, setTutForm] = useState(initTut);
 
-  const debounceRef = useRef(null);
-  const setFilterDebounced = (field, value) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setFilters((p) => ({ ...p, [field]: value }));
-    }, 250);
-  };
+  // Deletes
+  const [deleteUnit, setDeleteUnit] = useState(null);
+  const [deleteTut, setDeleteTut] = useState(null);
 
-  const onSort = (key) => {
-    setSortConfig((prev) =>
-      prev.key === key
-        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
-        : { key, direction: "asc" }
-    );
-  };
+  // Firestore refs
+  const unitsCol = () => collection(db, "university", universityId, "units");
+  const unitRef = (id) => doc(db, "university", universityId, "units", id);
+  const tutsCol = (unitId) => collection(db, "university", universityId, "units", unitId, "tutorials");
+  const tutRef = (unitId, tutId) => doc(db, "university", universityId, "units", unitId, "tutorials", tutId);
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10;
-
-  const [selectedIds, setSelectedIds] = useState(new Set());
-  const headerCheckboxRef = useRef(null);
-
-  const initialForm = {
-    id: "",
-    roomtype: "",
-    time: "",
-    hall: "",
-    day: "",
-    date: "",
-    empname: "",
-  };
-
-  const [form, setForm] = useState(initialForm);
-
-  const getTutorialsCollection = () =>
-    collection(db, "university", universityId, "tutorials");
-
-  const getTutorialDocRef = (docId) =>
-    doc(db, "university", universityId, "tutorials", docId);
-
-  const resetForm = () => {
-    setForm(initialForm);
-  };
-
-  const getDayFromDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { weekday: "long" });
-  };
-
-  const getList = async () => {
-    if (!universityId) return;
-
-    setIsLoading(true);
+  const loadDisciplines = async () => {
     try {
-      const snapshot = await getDocs(getTutorialsCollection());
-
-      const documents = snapshot.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      }));
-
-      documents.sort((a, b) => {
-        const dcmp = String(a.date || "").localeCompare(String(b.date || ""));
-        if (dcmp !== 0) return dcmp;
-        return String(a.time || "").localeCompare(String(b.time || ""));
-      });
-
-      setList(documents);
-      setSelectedIds(new Set());
-      setCurrentPage(1);
+      const snap = await getDoc(doc(db, "university", universityId));
+      if (!snap.exists()) return;
+      const campuses = snap.data().campuses || [];
+      let discs = [];
+      if (campusId) {
+        discs = campuses.find((c) => c.id === campusId)?.disciplines || [];
+      } else {
+        campuses.forEach((c) => discs.push(...(c.disciplines || [])));
+      }
+      setDisciplines(discs);
     } catch (e) {
       console.error(e);
-      toast.error("Failed to load tutorial schedules");
+    }
+  };
+
+  const loadUnits = async () => {
+    setIsLoading(true);
+    try {
+      const snap = await getDocs(unitsCol());
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setUnits(filterByScope(docs));
+    } catch (e) {
+      toast.error("Failed to load units");
     } finally {
       setIsLoading(false);
     }
   };
 
+  const loadTutorials = async (unitId) => {
+    try {
+      const snap = await getDocs(tutsCol(unitId));
+      setTutorialsMap((p) => ({
+        ...p,
+        [unitId]: snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      }));
+    } catch (e) {
+      toast.error("Failed to load tutorials");
+    }
+  };
+
   useEffect(() => {
-    if (universityId) getList();
+    if (universityId) {
+      loadDisciplines();
+      loadUnits();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [universityId]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filters, sortConfig, weekMode]);
-
-  const handleAdd = async (e) => {
-    e.preventDefault();
-
-    if (!form.roomtype) {
-      toast.warning("Room type is required");
-      return;
-    }
-
-    if (!universityId) {
-      toast.error("No university assigned.");
-      return;
-    }
-
-    try {
-      if (editingData) {
-        const docRef = getTutorialDocRef(form.id);
-        const snap = await getDoc(docRef);
-
-        if (!snap.exists()) {
-          toast.warning("Tutorial schedule does not exist!");
-          return;
-        }
-
-        await updateDoc(docRef, {
-          uid,
-          roomtype: form.roomtype,
-          hall: form.hall,
-          day: form.day,
-          time: form.time,
-          date: form.date,
-          empname: form.empname,
-          universityid: universityId,
-          updatedBy: uid,
-          updatedDate: new Date(),
-          isPrivate: false,
-        });
-
-        toast.success("Successfully updated");
+  const toggleExpand = (unitId) => {
+    setExpandedUnits((prev) => {
+      const next = new Set(prev);
+      if (next.has(unitId)) {
+        next.delete(unitId);
       } else {
-        const duplicateQuery = query(
-          getTutorialsCollection(),
-          where("roomtype", "==", form.roomtype),
-          where("date", "==", form.date),
-          where("hall", "==", form.hall)
-        );
-        const duplicateSnap = await getDocs(duplicateQuery);
-
-        if (!duplicateSnap.empty) {
-          toast.warn("Tutorial schedule already exists for this room type, hall and date");
-          return;
-        }
-
-        await addDoc(getTutorialsCollection(), {
-          uid,
-          roomtype: form.roomtype,
-          hall: form.hall,
-          day: form.day,
-          time: form.time,
-          date: form.date,
-          empname: form.empname,
-          universityid: universityId,
-          createdBy: uid,
-          createdDate: new Date(),
-          isPrivate: false,
-        });
-
-        toast.success("Successfully saved");
+        next.add(unitId);
+        if (!tutorialsMap[unitId]) loadTutorials(unitId);
       }
-
-      getList();
-    } catch (error) {
-      console.error("Error saving data:", error);
-      toast.error("Save failed");
-    }
-
-    setModalOpen(false);
-    setEditing(null);
-    resetForm();
+      return next;
+    });
   };
 
-  const handleDelete = async () => {
-    if (!deleteData) return;
-
-    try {
-      await deleteDoc(getTutorialDocRef(deleteData.id));
-      toast.success("Successfully deleted!");
-      getList();
-    } catch (error) {
-      console.error("Error deleting document: ", error);
-      toast.error("Delete failed");
-    }
-
-    setConfirmDeleteOpen(false);
-    setDelete(null);
-  };
-
-  const readExcel = (file) => {
-    setIsLoading(true);
-    const reader = new FileReader();
-
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target.result;
-        const workbook = XLSX.read(bstr, { type: "binary" });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-        const cleanedData = jsonData.map((row) => {
-          const date =
-            typeof row.Date === "number"
-              ? XLSX.SSF.format("yyyy-mm-dd", row.Date)
-              : new Date(row.Date).toISOString().split("T")[0];
-
-          return {
-            roomtype: row["Room Type"] || "",
-            hall: row["Hall"] || "",
-            day: row["Day"] || getDayFromDate(date),
-            time: row["Time"] || "",
-            date,
-            empname: row["Name"] || "",
-            universityid: universityId,
-            isPrivate: false,
-          };
-        });
-
-        setData(cleanedData);
-      } catch (error) {
-        console.error(error);
-        toast.error("Failed to parse Excel file");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    reader.readAsBinaryString(file);
-  };
-
-  const saveToFirebase = async () => {
-    if (!universityId) {
-      toast.error("No university assigned.");
+  const saveUnit = async (e) => {
+    e.preventDefault();
+    if (!unitForm.unitCode.trim() || !unitForm.unitName.trim()) {
+      toast.warning("Unit code and name are required");
       return;
     }
-
-    setIsLoading(true);
     try {
-      for (const entry of data) {
-        const qy = query(
-          getTutorialsCollection(),
-          where("roomtype", "==", entry.roomtype),
-          where("date", "==", entry.date),
-          where("hall", "==", entry.hall)
-        );
-        const qs = await getDocs(qy);
+      const disc = disciplines.find((d) => d.id === unitForm.disciplineId);
+      const unitCode = unitForm.unitCode.toUpperCase().trim();
+      const payload = {
+        unitCode,
+        unitName: unitForm.unitName.trim(),
+        disciplineId: unitForm.disciplineId || "",
+        disciplineName: disc?.name || "",
+        startDate: unitForm.startDate,
+        endDate: unitForm.endDate,
+        universityId,
+        ...scopePayload,
+        updatedBy: uid,
+        updatedDate: new Date(),
+      };
 
-        if (!qs.empty) {
-          toast.warn(
-            `Duplicate: ${entry.roomtype} on ${entry.date} in ${entry.hall}. Skipping...`
-          );
-          continue;
-        }
-
-        await addDoc(getTutorialsCollection(), {
-          ...entry,
-          uid,
-          universityid: universityId,
+      if (editingUnit) {
+        await updateDoc(unitRef(editingUnit.id), payload);
+        toast.success("Unit updated");
+      } else {
+        // Create unit then save all inline tutorials as sub-documents
+        const newUnitRef = await addDoc(unitsCol(), {
+          ...payload,
           createdBy: uid,
           createdDate: new Date(),
         });
+        const validTuts = inlineTutorials.filter(
+          (t) => t.tutorName.trim() && t.time.trim() && t.room.trim()
+        );
+        for (const tut of validTuts) {
+          await addDoc(tutsCol(newUnitRef.id), {
+            tutorName: tut.tutorName.trim(),
+            day: tut.day,
+            time: tut.time.trim(),
+            room: tut.room.trim(),
+            unitId: newUnitRef.id,
+            unitCode,
+            universityId,
+            ...scopePayload,
+            createdBy: uid,
+            createdDate: new Date(),
+          });
+        }
+        toast.success("Unit and tutorials saved");
       }
 
-      toast.success("Tutorial schedule saved (duplicates skipped)!");
-      getList();
-      setFileName("No file chosen");
-      setData([]);
-    } catch (error) {
-      console.error("Error saving data: ", error);
-      toast.error("Upload failed");
-    } finally {
-      setIsLoading(false);
+      setUnitModalOpen(false);
+      setEditingUnit(null);
+      setUnitForm(initUnit);
+      setInlineTutorials([blankTut()]);
+      loadUnits();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to save unit");
     }
   };
 
-  const handleDownload = async () => {
+  const confirmDeleteUnit = async () => {
+    if (!deleteUnit) return;
     try {
-      const response = await fetch(tutorialscheduleFile);
-      const blob = await response.blob();
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = "tutorial_schedule.xlsx";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error(error);
-      toast.error("Download failed");
+      const snap = await getDocs(tutsCol(deleteUnit.id));
+      const batch = writeBatch(db);
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      batch.delete(unitRef(deleteUnit.id));
+      await batch.commit();
+      toast.success("Unit deleted");
+      setDeleteUnit(null);
+      setUnits((p) => p.filter((u) => u.id !== deleteUnit.id));
+    } catch (e) {
+      toast.error("Failed to delete unit");
     }
   };
 
-  const handleBulkDelete = async () => {
-    if (selectedIds.size === 0) return;
-    if (!window.confirm(`Delete ${selectedIds.size} Tutorial schedule(s)?`)) return;
-
-    setIsLoading(true);
+  const saveTutorial = async (e) => {
+    e.preventDefault();
+    if (!tutForm.tutorName || !tutForm.day || !tutForm.time || !tutForm.room) {
+      toast.warning("All tutorial fields are required");
+      return;
+    }
     try {
-      const ids = Array.from(selectedIds);
-      const chunkSize = 450;
-
-      for (let i = 0; i < ids.length; i += chunkSize) {
-        const chunk = ids.slice(i, i + chunkSize);
-        const batch = writeBatch(db);
-        chunk.forEach((id) => batch.delete(getTutorialDocRef(id)));
-        await batch.commit();
+      const unit = units.find((u) => u.id === activeTutUnitId);
+      const payload = {
+        tutorName: tutForm.tutorName.trim(),
+        day: tutForm.day,
+        time: tutForm.time.trim(),
+        room: tutForm.room.trim(),
+        unitId: activeTutUnitId,
+        unitCode: unit?.unitCode || "",
+        universityId,
+        ...scopePayload,
+        updatedBy: uid,
+        updatedDate: new Date(),
+      };
+      if (editingTut) {
+        await updateDoc(tutRef(activeTutUnitId, editingTut.id), payload);
+        toast.success("Tutorial updated");
+      } else {
+        await addDoc(tutsCol(activeTutUnitId), {
+          ...payload,
+          createdBy: uid,
+          createdDate: new Date(),
+        });
+        toast.success("Tutorial added");
       }
-
-      toast.success("Selected schedules deleted");
-      setSelectedIds(new Set());
-      getList();
-    } catch (err) {
-      console.error(err);
-      toast.error("Bulk delete failed");
-    } finally {
-      setIsLoading(false);
+      setTutModalOpen(false);
+      setEditingTut(null);
+      setTutForm(initTut);
+      loadTutorials(activeTutUnitId);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to save tutorial");
     }
   };
 
-  const WEEK_START = 1;
-
-  const toYMD = (d) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  };
-
-  const addDays = (d, n) => {
-    const x = new Date(d);
-    x.setDate(x.getDate() + n);
-    return x;
-  };
-
-  const startOfWeek = (date, weekStartsOn = WEEK_START) => {
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    const dow = d.getDay();
-    const diff = (dow - weekStartsOn + 7) % 7;
-    d.setDate(d.getDate() - diff);
-    return d;
-  };
-
-  const endOfWeek = (date, weekStartsOn = WEEK_START) => {
-    const s = startOfWeek(date, weekStartsOn);
-    const e = addDays(s, 6);
-    e.setHours(23, 59, 59, 999);
-    return e;
-  };
-
-  const today = new Date();
-  const curWeekStart = startOfWeek(today);
-  const curWeekEnd = endOfWeek(today);
-  const nextWeekStart = addDays(curWeekStart, 7);
-  const nextWeekEnd = addDays(curWeekEnd, 7);
-
-  const curStartYMD = toYMD(curWeekStart);
-  const curEndYMD = toYMD(curWeekEnd);
-  const nextStartYMD = toYMD(nextWeekStart);
-  const nextEndYMD = toYMD(nextWeekEnd);
-
-  const timeFiltered = list.filter((r) => {
-    const d = String(r?.date || "").slice(0, 10);
-    if (!d) return false;
-
-    if (weekMode === "current") {
-      return d >= curStartYMD && d <= curEndYMD;
+  const confirmDeleteTut = async () => {
+    if (!deleteTut) return;
+    try {
+      await deleteDoc(tutRef(deleteTut.unitId, deleteTut.id));
+      toast.success("Tutorial deleted");
+      const unitId = deleteTut.unitId;
+      setDeleteTut(null);
+      loadTutorials(unitId);
+    } catch (e) {
+      toast.error("Failed to delete tutorial");
     }
-    if (weekMode === "future") {
-      return d >= nextStartYMD && d <= nextEndYMD;
-    }
-    return d < curStartYMD;
-  });
-
-  const filteredData = timeFiltered.filter((r) => {
-    const rt = String(r.roomtype || "").toLowerCase();
-    const hl = String(r.hall || "").toLowerCase();
-    const dy = String(r.day || "").toLowerCase();
-    const tm = String(r.time || "").toLowerCase();
-    const en = String(r.empname || "").toLowerCase();
-
-    return (
-      (!filters.roomtype || rt.includes(filters.roomtype.toLowerCase())) &&
-      (!filters.hall || hl.includes(filters.hall.toLowerCase())) &&
-      (!filters.day || dy.includes(filters.day.toLowerCase())) &&
-      (!filters.time || tm.includes(filters.time.toLowerCase())) &&
-      (!filters.empname || en.includes(filters.empname.toLowerCase()))
-    );
-  });
-
-  const sortedData = [...filteredData].sort((a, b) => {
-    const dir = sortConfig.direction === "asc" ? 1 : -1;
-    const key = sortConfig.key;
-    const va = String(a[key] || "").toLowerCase();
-    const vb = String(b[key] || "").toLowerCase();
-    return va.localeCompare(vb) * dir;
-  });
-
-  const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
-  const paginatedData = sortedData.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
-
-  const pageIds = paginatedData.map((r) => r.id);
-  const allPageSelected =
-    pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
-  const somePageSelected =
-    pageIds.some((id) => selectedIds.has(id)) && !allPageSelected;
-
-  useEffect(() => {
-    if (headerCheckboxRef.current) {
-      headerCheckboxRef.current.indeterminate = somePageSelected;
-    }
-  }, [somePageSelected, allPageSelected]);
-
-  const viewLabel =
-    weekMode === "past"
-      ? "Previous Weeks"
-      : weekMode === "future"
-      ? "Next Week"
-      : "This Week";
+  };
 
   if (!universityId) {
     return (
@@ -475,7 +263,7 @@ export default function UniversityTutorialSchedulePage(props) {
         className="flex-1 p-6 bg-gray-100 overflow-auto"
         style={{ paddingTop: navbarHeight || 0 }}
       >
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-10 text-center text-gray-500">
+        <div className="bg-white rounded-xl shadow-sm p-10 text-center text-gray-500">
           No university assigned.
         </div>
         <ToastContainer />
@@ -488,381 +276,342 @@ export default function UniversityTutorialSchedulePage(props) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
-      <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
-        <div>
-          <h1 className="text-2xl font-semibold">University Tutorial Schedule</h1>
-          <div className="text-xs text-gray-500 mt-1">View: {viewLabel}</div>
-        </div>
+      <UniversityScopeBanner />
 
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            {["past", "current", "future"].map((k) => {
-              const active = weekMode === k;
-              return (
-                <button
-                  key={k}
-                  onClick={() => setWeekMode(k)}
-                  className={`px-3 py-1.5 rounded-full text-sm border ${
-                    active
-                      ? "bg-black text-white border-black"
-                      : "bg-white text-gray-700 border-gray-300"
-                  }`}
-                >
-                  {k[0].toUpperCase() + k.slice(1)}
-                </button>
-              );
-            })}
-          </div>
-
-          <button
-            className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition"
-            onClick={handleDownload}
-          >
-            Download Excel File
-          </button>
-
-          <div className="flex items-center gap-4 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
-            <label className="cursor-pointer">
-              <input
-                type="file"
-                accept=".xlsx, .xls"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files.length > 0) setFileName(e.target.files[0].name);
-                  else setFileName("No file chosen");
-
-                  const file = e.target.files[0];
-                  if (file) readExcel(file);
-                }}
-              />
-              📁 Choose File
-            </label>
-            <span className="text-sm text-gray-600 truncate max-w-[150px]">
-              {fileName}
-            </span>
-          </div>
-
-          <button
-            className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition disabled:opacity-50"
-            disabled={!data.length || isLoading}
-            onClick={saveToFirebase}
-          >
-            Upload Excel
-          </button>
-
-          <button
-            className="px-4 py-2 bg-black text-white rounded hover:bg-black"
-            onClick={() => {
-              setEditing(null);
-              resetForm();
-              setModalOpen(true);
-            }}
-          >
-            + Add
-          </button>
-        </div>
+      <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
+        <h1 className="text-2xl font-semibold">Tutorial Schedule</h1>
+        <button
+          className="bg-black text-white px-6 py-2 rounded-xl hover:bg-gray-800 transition"
+          onClick={() => {
+            setEditingUnit(null);
+            setUnitForm(initUnit);
+            setUnitModalOpen(true);
+          }}
+        >
+          + Add Unit
+        </button>
       </div>
 
-      {selectedIds.size > 0 && (
-        <div className="mb-2 flex items-center gap-3">
-          <span className="text-sm text-gray-700">{selectedIds.size} selected</span>
-          <button
-            onClick={handleBulkDelete}
-            className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
-          >
-            Delete selected
-          </button>
-          <button
-            onClick={() => setSelectedIds(new Set(sortedData.map((r) => r.id)))}
-            className="px-3 py-1.5 bg-gray-200 rounded text-sm"
-          >
-            Select all ({sortedData.length})
-          </button>
-          <button
-            onClick={() => setSelectedIds(new Set())}
-            className="px-3 py-1.5 bg-gray-200 rounded text-sm"
-          >
-            Clear selection
-          </button>
+      {isLoading ? (
+        <div className="flex justify-center items-center h-64">
+          <FadeLoader color="#36d7b7" loading={isLoading} />
+        </div>
+      ) : units.length === 0 ? (
+        <div className="bg-white rounded-xl p-10 text-center text-gray-500 shadow-sm">
+          No units yet. Click "Add Unit" to get started.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {units.map((unit) => {
+            const expanded = expandedUnits.has(unit.id);
+            const tutorials = tutorialsMap[unit.id] || [];
+            return (
+              <div
+                key={unit.id}
+                className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
+              >
+                {/* Unit header */}
+                <div
+                  className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 select-none"
+                  onClick={() => toggleExpand(unit.id)}
+                >
+                  <div className="flex items-center flex-wrap gap-3">
+                    <span className="font-bold text-gray-900">{unit.unitCode}</span>
+                    <span className="text-gray-600 text-sm">{unit.unitName}</span>
+                    {unit.disciplineName && (
+                      <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                        {unit.disciplineName}
+                      </span>
+                    )}
+                    {unit.startDate && unit.endDate && (
+                      <span className="text-xs text-gray-400">
+                        {unit.startDate} → {unit.endDate}
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    className="flex items-center gap-3 ml-4"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      className="text-blue-600 hover:underline text-sm"
+                      onClick={() => {
+                        setEditingUnit(unit);
+                        setUnitForm({
+                          unitCode: unit.unitCode,
+                          unitName: unit.unitName,
+                          disciplineId: unit.disciplineId || "",
+                          startDate: unit.startDate || "",
+                          endDate: unit.endDate || "",
+                        });
+                        setUnitModalOpen(true);
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="text-red-600 hover:underline text-sm"
+                      onClick={() => setDeleteUnit(unit)}
+                    >
+                      Delete
+                    </button>
+                    <span className="text-gray-400 text-sm">{expanded ? "▲" : "▼"}</span>
+                  </div>
+                </div>
+
+                {/* Tutorials panel */}
+                {expanded && (
+                  <div className="border-t border-gray-100 px-4 pb-4 pt-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-medium text-gray-700">
+                        Tutorials ({tutorials.length})
+                      </span>
+                      <button
+                        className="text-sm bg-gray-900 text-white px-4 py-1.5 rounded-lg hover:bg-gray-700"
+                        onClick={() => {
+                          setActiveTutUnitId(unit.id);
+                          setEditingTut(null);
+                          setTutForm(initTut);
+                          setTutModalOpen(true);
+                        }}
+                      >
+                        + Add Tutorial
+                      </button>
+                    </div>
+
+                    {tutorials.length === 0 ? (
+                      <p className="text-sm text-gray-400 py-2">No tutorials yet.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-500 border-b border-gray-100">
+                              <th className="pb-2 pr-6 font-medium">Tutor</th>
+                              <th className="pb-2 pr-6 font-medium">Day</th>
+                              <th className="pb-2 pr-6 font-medium">Time</th>
+                              <th className="pb-2 pr-6 font-medium">Room</th>
+                              <th className="pb-2 font-medium">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tutorials.map((tut) => (
+                              <tr
+                                key={tut.id}
+                                className="border-b border-gray-50 last:border-0"
+                              >
+                                <td className="py-2.5 pr-6 text-gray-800">{tut.tutorName}</td>
+                                <td className="py-2.5 pr-6 text-gray-800">{tut.day}</td>
+                                <td className="py-2.5 pr-6 text-gray-800">{tut.time}</td>
+                                <td className="py-2.5 pr-6 text-gray-800">{tut.room}</td>
+                                <td className="py-2.5">
+                                  <button
+                                    className="text-blue-600 hover:underline mr-4"
+                                    onClick={() => {
+                                      setActiveTutUnitId(unit.id);
+                                      setEditingTut(tut);
+                                      setTutForm({
+                                        tutorName: tut.tutorName,
+                                        day: tut.day,
+                                        time: tut.time,
+                                        room: tut.room,
+                                      });
+                                      setTutModalOpen(true);
+                                    }}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    className="text-red-600 hover:underline"
+                                    onClick={() =>
+                                      setDeleteTut({ ...tut, unitId: unit.id })
+                                    }
+                                  >
+                                    Delete
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      <div className="overflow-x-auto bg-white rounded shadow">
-        {isLoading ? (
-          <div className="flex justify-center items-center h-64">
-            <FadeLoader color="#36d7b7" loading={isLoading} />
-          </div>
-        ) : (
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                {[
-                  { key: "roomtype", label: "Room Type" },
-                  { key: "hall", label: "Hall" },
-                  { key: "day", label: "Day" },
-                  { key: "time", label: "Time" },
-                  { key: "empname", label: "Name" },
-                  { key: "actions", label: "Actions", sortable: false },
-                  { key: "select", label: "", sortable: false },
-                ].map((col) => (
-                  <th
-                    key={col.key}
-                    className="px-6 py-3 text-left text-sm font-medium text-gray-600 select-none"
-                  >
-                    {col.sortable === false ? (
-                      <span>{col.label}</span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="flex items-center gap-1 hover:underline"
-                        onClick={() => onSort(col.key)}
-                        title="Sort"
-                      >
-                        <span>{col.label}</span>
-                        {sortConfig.key === col.key && (
-                          <span className="text-gray-400">
-                            {sortConfig.direction === "asc" ? "▲" : "▼"}
-                          </span>
-                        )}
-                      </button>
-                    )}
-                  </th>
-                ))}
-              </tr>
-
-              <tr className="border-t border-gray-200">
-                <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="Filter room type"
-                    defaultValue={filters.roomtype}
-                    onChange={(e) => setFilterDebounced("roomtype", e.target.value)}
-                  />
-                </th>
-                <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="Filter hall"
-                    defaultValue={filters.hall}
-                    onChange={(e) => setFilterDebounced("hall", e.target.value)}
-                  />
-                </th>
-                <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="Filter day"
-                    defaultValue={filters.day}
-                    onChange={(e) => setFilterDebounced("day", e.target.value)}
-                  />
-                </th>
-                <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder='Filter time (e.g. "09:00")'
-                    defaultValue={filters.time}
-                    onChange={(e) => setFilterDebounced("time", e.target.value)}
-                  />
-                </th>
-                <th className="px-6 pb-3">
-                  <input
-                    className="w-full border border-gray-300 p-1 rounded text-sm"
-                    placeholder="Filter name"
-                    defaultValue={filters.empname}
-                    onChange={(e) => setFilterDebounced("empname", e.target.value)}
-                  />
-                </th>
-                <th className="px-6 pb-3" />
-                <th className="px-6 pb-3">
-                  <input
-                    ref={headerCheckboxRef}
-                    type="checkbox"
-                    aria-label="Select all on page"
-                    checked={allPageSelected}
-                    onChange={(e) => {
-                      setSelectedIds((prev) => {
-                        const next = new Set(prev);
-                        if (e.target.checked) pageIds.forEach((id) => next.add(id));
-                        else pageIds.forEach((id) => next.delete(id));
-                        return next;
-                      });
-                    }}
-                  />
-                </th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-gray-200">
-              {paginatedData.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="px-6 py-4 text-center text-gray-500">
-                    No matching schedules found.
-                  </td>
-                </tr>
-              ) : (
-                paginatedData.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {item.roomtype}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {item.hall}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {item.day}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {item.time}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {item.empname || "-"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button
-                        className="text-blue-600 hover:underline mr-3"
-                        onClick={() => {
-                          setEditing(item);
-                          setForm(item);
-                          setModalOpen(true);
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="text-red-600 hover:underline"
-                        onClick={() => {
-                          setDelete(item);
-                          setConfirmDeleteOpen(true);
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(item.id)}
-                        onChange={(e) => {
-                          setSelectedIds((prev) => {
-                            const next = new Set(prev);
-                            if (e.target.checked) next.add(item.id);
-                            else next.delete(item.id);
-                            return next;
-                          });
-                        }}
-                      />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <div className="flex justify-between items-center mt-4">
-        <p className="text-sm text-gray-600">
-          Page {currentPage} of {totalPages}
-        </p>
-        <div className="space-x-2">
-          <button
-            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-            disabled={currentPage === 1}
-            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
-          >
-            Previous
-          </button>
-          <button
-            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-            disabled={currentPage === totalPages}
-            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
-          >
-            Next
-          </button>
-        </div>
-      </div>
-
-      {modalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-20">
-          <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold mb-4">
-              {editingData ? "Edit Tutorial Schedule" : "Add Tutorial Schedule"}
+      {/* Add / Edit Unit Modal */}
+      {unitModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-20 p-4">
+          <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-xl shadow-xl">
+            <h2 className="text-xl font-bold mb-5">
+              {editingUnit ? "Edit Unit" : "Add Unit"}
             </h2>
-            <form onSubmit={handleAdd} className="space-y-4">
-              <div className="space-y-2">
-                <label className="block font-medium mb-1">Room Type</label>
-                <input
-                  type="text"
-                  className="w-full border border-gray-300 p-2 rounded"
-                  value={form.roomtype}
-                  onChange={(e) => setForm({ ...form, roomtype: e.target.value })}
-                  required
-                />
-
-                <label className="block font-medium mb-1">Hall</label>
-                <input
-                  type="text"
-                  className="w-full border border-gray-300 p-2 rounded"
-                  value={form.hall}
-                  onChange={(e) => setForm({ ...form, hall: e.target.value })}
-                  required
-                />
-
-                <label className="block font-medium mb-1">Date</label>
-                <input
-                  type="date"
-                  className="w-full border border-gray-300 p-2 rounded"
-                  value={form.date}
-                  onChange={(e) => {
-                    const selectedDate = e.target.value;
-                    const day = getDayFromDate(selectedDate);
-                    setForm((prev) => ({ ...prev, date: selectedDate, day }));
-                  }}
-                  required
-                />
-
-                <label className="block font-medium mb-1">Day</label>
-                <input
-                  type="text"
-                  className="w-full border border-gray-300 p-2 rounded"
-                  value={form.day}
-                  onChange={(e) => setForm({ ...form, day: e.target.value })}
-                  required
-                />
-
-                <label className="block font-medium mb-1">Time</label>
-                <input
-                  type="text"
-                  className="w-full border border-gray-300 p-2 rounded"
-                  value={form.time}
-                  onChange={(e) => setForm({ ...form, time: e.target.value })}
-                  placeholder='e.g. "09:00-10:00" or "9:00 am-10:30 am"'
-                  required
-                />
-
-                <label className="block font-medium mb-1">Name</label>
-                <input
-                  type="text"
-                  className="w-full border border-gray-300 p-2 rounded"
-                  value={form.empname}
-                  onChange={(e) => setForm({ ...form, empname: e.target.value })}
-                  required
-                />
+            <form onSubmit={saveUnit} className="space-y-4">
+              {/* Unit details */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Unit Code</label>
+                  <input
+                    className="w-full border border-gray-300 p-2 rounded"
+                    value={unitForm.unitCode}
+                    onChange={(e) => setUnitForm((p) => ({ ...p, unitCode: e.target.value }))}
+                    placeholder="e.g. SWP6003"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Unit Name</label>
+                  <input
+                    className="w-full border border-gray-300 p-2 rounded"
+                    value={unitForm.unitName}
+                    onChange={(e) => setUnitForm((p) => ({ ...p, unitName: e.target.value }))}
+                    placeholder="e.g. Social Work Practice"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Discipline</label>
+                  <select
+                    className="w-full border border-gray-300 p-2 rounded"
+                    value={unitForm.disciplineId}
+                    onChange={(e) =>
+                      setUnitForm((p) => ({ ...p, disciplineId: e.target.value }))
+                    }
+                  >
+                    <option value="">— Select discipline —</option>
+                    {disciplines.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="sm:col-span-1" />
+                <div>
+                  <label className="block text-sm font-medium mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    className="w-full border border-gray-300 p-2 rounded"
+                    value={unitForm.startDate}
+                    onChange={(e) =>
+                      setUnitForm((p) => ({ ...p, startDate: e.target.value }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">End Date</label>
+                  <input
+                    type="date"
+                    className="w-full border border-gray-300 p-2 rounded"
+                    value={unitForm.endDate}
+                    onChange={(e) =>
+                      setUnitForm((p) => ({ ...p, endDate: e.target.value }))
+                    }
+                  />
+                </div>
               </div>
 
-              <div className="flex justify-end mt-6 space-x-3">
+              {/* Inline tutorials — only shown when adding a new unit */}
+              {!editingUnit && (
+                <div className="border-t border-gray-100 pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-semibold text-gray-700">Tutorials</span>
+                    <button
+                      type="button"
+                      onClick={addInlineTut}
+                      className="text-sm text-indigo-600 hover:underline font-medium"
+                    >
+                      + Add Tutorial
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {inlineTutorials.map((tut, i) => (
+                      <div
+                        key={i}
+                        className="grid grid-cols-12 gap-2 items-start bg-gray-50 rounded-lg p-3"
+                      >
+                        <div className="col-span-3">
+                          <label className="block text-xs text-gray-500 mb-1">Tutor</label>
+                          <input
+                            className="w-full border border-gray-300 p-1.5 rounded text-sm"
+                            value={tut.tutorName}
+                            onChange={(e) => updateInlineTut(i, "tutorName", e.target.value)}
+                            placeholder="e.g. Tsitsi"
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <label className="block text-xs text-gray-500 mb-1">Day</label>
+                          <select
+                            className="w-full border border-gray-300 p-1.5 rounded text-sm"
+                            value={tut.day}
+                            onChange={(e) => updateInlineTut(i, "day", e.target.value)}
+                          >
+                            {DAYS.map((d) => (
+                              <option key={d} value={d}>{d}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-span-3">
+                          <label className="block text-xs text-gray-500 mb-1">Time</label>
+                          <input
+                            className="w-full border border-gray-300 p-1.5 rounded text-sm"
+                            value={tut.time}
+                            onChange={(e) => updateInlineTut(i, "time", e.target.value)}
+                            placeholder="09:00–10:30"
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs text-gray-500 mb-1">Room</label>
+                          <input
+                            className="w-full border border-gray-300 p-1.5 rounded text-sm"
+                            value={tut.room}
+                            onChange={(e) => updateInlineTut(i, "room", e.target.value)}
+                            placeholder="3.02"
+                          />
+                        </div>
+                        <div className="col-span-1 flex items-end justify-center pb-0.5">
+                          {inlineTutorials.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeInlineTut(i)}
+                              className="text-red-400 hover:text-red-600 text-lg leading-none mt-5"
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Tutorials with empty fields will be skipped.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => {
-                    setModalOpen(false);
-                    setEditing(null);
-                    resetForm();
+                    setUnitModalOpen(false);
+                    setEditingUnit(null);
+                    setInlineTutorials([blankTut()]);
                   }}
-                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
                 >
                   Cancel
                 </button>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                  Save
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-black text-white rounded hover:bg-gray-800"
+                >
+                  {editingUnit ? "Save Unit" : "Save Unit & Tutorials"}
                 </button>
               </div>
             </form>
@@ -870,33 +619,137 @@ export default function UniversityTutorialSchedulePage(props) {
         </div>
       )}
 
-      {confirmDeleteOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
-            <h2 className="text-xl font-semibold mb-4 text-red-600">
-              Delete Tutorial Schedule
+      {/* Add / Edit Tutorial Modal */}
+      {tutModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-20">
+          <div className="bg-white w-full max-w-md p-6 rounded-xl shadow-xl">
+            <h2 className="text-xl font-bold mb-1">
+              {editingTut ? "Edit Tutorial" : "Add Tutorial"}
             </h2>
-            <p className="mb-4">
-              Are you sure you want to delete{" "}
-              <strong>
-                {deleteData?.roomtype} / {deleteData?.hall} ({deleteData?.day}{" "}
-                {deleteData?.time})
-              </strong>
-              ?
+            {(() => {
+              const u = units.find((u) => u.id === activeTutUnitId);
+              return u ? (
+                <p className="text-sm text-gray-500 mb-4">
+                  {u.unitCode} — {u.unitName}
+                </p>
+              ) : null;
+            })()}
+            <form onSubmit={saveTutorial} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Tutor Name</label>
+                <input
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={tutForm.tutorName}
+                  onChange={(e) =>
+                    setTutForm((p) => ({ ...p, tutorName: e.target.value }))
+                  }
+                  placeholder="e.g. Tsitsi"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Day</label>
+                <select
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={tutForm.day}
+                  onChange={(e) => setTutForm((p) => ({ ...p, day: e.target.value }))}
+                >
+                  {DAYS.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Time</label>
+                <input
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={tutForm.time}
+                  onChange={(e) => setTutForm((p) => ({ ...p, time: e.target.value }))}
+                  placeholder="e.g. 09:00 - 10:30"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Room</label>
+                <input
+                  className="w-full border border-gray-300 p-2 rounded"
+                  value={tutForm.room}
+                  onChange={(e) => setTutForm((p) => ({ ...p, room: e.target.value }))}
+                  placeholder="e.g. 3.02"
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTutModalOpen(false);
+                    setEditingTut(null);
+                  }}
+                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-black text-white rounded hover:bg-gray-800"
+                >
+                  Save Tutorial
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Unit confirm */}
+      {deleteUnit && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl w-80 shadow-xl">
+            <h2 className="text-lg font-semibold mb-3 text-red-600">Delete Unit</h2>
+            <p className="mb-4 text-sm">
+              Delete <strong>{deleteUnit.unitCode}</strong> and all its tutorials? This
+              cannot be undone.
             </p>
-            <div className="flex justify-end space-x-3">
+            <div className="flex justify-end gap-3">
               <button
-                onClick={() => {
-                  setConfirmDeleteOpen(false);
-                  setDelete(null);
-                }}
-                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                onClick={() => setDeleteUnit(null)}
+                className="px-4 py-2 bg-gray-200 rounded"
               >
                 Cancel
               </button>
               <button
-                onClick={handleDelete}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                onClick={confirmDeleteUnit}
+                className="px-4 py-2 bg-red-600 text-white rounded"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Tutorial confirm */}
+      {deleteTut && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl w-80 shadow-xl">
+            <h2 className="text-lg font-semibold mb-3 text-red-600">Delete Tutorial</h2>
+            <p className="mb-4 text-sm">
+              Delete tutorial by <strong>{deleteTut.tutorName}</strong> on {deleteTut.day}{" "}
+              at {deleteTut.time}?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteTut(null)}
+                className="px-4 py-2 bg-gray-200 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteTut}
+                className="px-4 py-2 bg-red-600 text-white rounded"
               >
                 Delete
               </button>

@@ -15,6 +15,8 @@ import { db } from "../../firebase";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { useSelector } from "react-redux";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 import EditorPro from "../../components/EditorPro";
 
 // ---- helpers ----
@@ -29,7 +31,7 @@ export default function UniversityFaqPage(props) {
 
   const uid = useSelector((state) => state.auth?.user?.uid);
   const emp = useSelector((state) => state.auth?.employee);
-  const universityId = String(emp?.universityid || emp?.universityId || "");
+  const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
@@ -86,7 +88,7 @@ export default function UniversityFaqPage(props) {
         return (a.title || "").localeCompare(b.title || "");
       });
 
-      setList(docs);
+      setList(filterByScope(docs));
       setCurrentPage(1);
     } catch (err) {
       console.error(err);
@@ -117,6 +119,7 @@ export default function UniversityFaqPage(props) {
 
     try {
       const faqData = {
+        ...scopePayload,
         title: form.title.trim(),
         question: form.question.trim(),
         answer: form.answer,
@@ -185,6 +188,7 @@ export default function UniversityFaqPage(props) {
       className="flex-1 p-6 bg-gray-100 overflow-auto"
       style={{ paddingTop: navbarHeight || 0 }}
     >
+      <UniversityScopeBanner />
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">University FAQ</h1>
         <button
