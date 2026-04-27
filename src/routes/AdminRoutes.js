@@ -80,6 +80,12 @@ import ParcelPage from "../pages/admin/ParcelPage";
 import WellnessPromptsPage from "../pages/admin/WellnessPromptsPage";
 import MessagesPage from "../pages/admin/MessagesPage";
 import UniversitySettingPage from "../pages/university/UniversitySettingPage";
+import FirstWeekJourneyPage from "../pages/admin/FirstWeekJourneyPage";
+import OrientationPage from "../pages/admin/OrientationPage";
+import GuestLogPage from "../pages/admin/GuestLogPage";
+import InspectionPage from "../pages/admin/InspectionPage";
+import WellbeingPage from "../pages/admin/WellbeingPage";
+import LostAndFoundPage from "../pages/admin/LostAndFoundPage";
 
 export default function AdminRoutes({ route }) {
 
@@ -172,6 +178,14 @@ export default function AdminRoutes({ route }) {
       <Route path="/parcels" element={<ParcelPage />} />
       <Route path="/wellnessprompts" element={<WellnessPromptsPage />} />
       <Route path="/messages" element={<MessagesPage />} />
+
+      {/* ── Phase 1 expansion routes ── */}
+      <Route path="/firstweekjourney" element={<FirstWeekJourneyPage />} />
+      <Route path="/orientation" element={<OrientationPage />} />
+      <Route path="/guestlog" element={<GuestLogPage />} />
+      <Route path="/inspection" element={<InspectionPage />} />
+      <Route path="/wellbeing" element={<WellbeingPage />} />
+      <Route path="/lostandfound" element={<LostAndFoundPage />} />
     </Routes>
   );
 }

@@ -108,6 +108,12 @@ export default function AdminEmployeePage({ navbarHeight }) {
     { key: "parcels", label: "Parcels" },
     { key: "wellnessprompts", label: "Wellness Prompts" },
     { key: "messages", label: "Messages" },
+    { key: "firstweekjourney", label: "First Week Journey" },
+    { key: "orientation", label: "Orientation" },
+    { key: "guestlog", label: "Guest Log" },
+    { key: "inspection", label: "Inspection" },
+    { key: "wellbeing", label: "Wellbeing" },
+    { key: "lostandfound", label: "Lost & Found" },
     { key: "setting", label: "Setting" },
     { key: "employee", label: "Employee" },
     { key: "uniclub", label: "UniClub" },
@@ -139,6 +145,12 @@ export default function AdminEmployeePage({ navbarHeight }) {
     parcels: "parcels",
     wellnessprompts: "wellnessprompts",
     messages: "messages",
+    firstweekjourney: "firstweekjourney",
+    orientation: "orientation",
+    guestlog: "guestlog",
+    inspection: "inspection",
+    wellbeing: "wellbeing",
+    lostandfound: "lostandfound",
   };
 
   /* -------------------- Helpers -------------------- */

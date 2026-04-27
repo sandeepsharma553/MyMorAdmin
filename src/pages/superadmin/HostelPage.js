@@ -53,6 +53,11 @@ const DEFAULT_FEATURES = {
   roominfo:false,
   wellnessprompts:false,
   messages:false,
+  firstweekjourney:false,
+  orientation:false,
+  guestlog:false,
+  inspection:false,
+  lostandfound:false,
 };
 
 const pageSize = 10;

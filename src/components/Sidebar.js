@@ -25,6 +25,12 @@ import {
   HeartPulse,
   Package,
   ClipboardList,
+  Compass,
+  GraduationCap,
+  UserCheck,
+  FileCheck,
+  Heart,
+  Archive,
 } from "lucide-react";
 
 import { useSelector, useDispatch } from "react-redux";
@@ -79,6 +85,12 @@ const SECTIONS = [
   { key: "parcels", label: "Parcels", Icon: Package },
   { key: "wellnessprompts", label: "Wellness Prompts", Icon: HeartPulse },
   { key: "messages", label: "Messages", Icon: MessageSquare },
+  { key: "firstweekjourney", label: "First Week Journey", Icon: Compass },
+  { key: "orientation", label: "Orientation", Icon: GraduationCap },
+  { key: "guestlog", label: "Guest Log", Icon: UserCheck },
+  { key: "inspection", label: "Inspection", Icon: FileCheck },
+  { key: "wellbeing", label: "Wellbeing", Icon: Heart },
+  { key: "lostandfound", label: "Lost & Found", Icon: Archive },
 
   // university
   { key: "universitydashboard", label: "Dashboard", Icon: LayoutDashboard },
@@ -517,6 +529,12 @@ export default function Sidebar({ onSectionClick, isLoading }) {
       "parcels",
       "wellnessprompts",
       "messages",
+      "firstweekjourney",
+      "orientation",
+      "guestlog",
+      "inspection",
+      "wellbeing",
+      "lostandfound",
     ]);
 
     const byOrg = SECTIONS.filter((s) => {
