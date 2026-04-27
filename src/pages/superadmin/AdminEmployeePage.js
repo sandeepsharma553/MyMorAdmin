@@ -79,6 +79,7 @@ export default function AdminEmployeePage({ navbarHeight }) {
     image: null,
     imageUrl: "",
     password: "",
+    empType: "hostel",
   };
 
   const [form, setForm] = useState(initialForm);

@@ -240,6 +240,7 @@ const initialForm = {
       mapLocation: "",
     },
   },
+  empType: "business",
 };
 
 export default function BusinessesAndDealsPage({ navbarHeight }) {

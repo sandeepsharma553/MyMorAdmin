@@ -94,6 +94,7 @@ const initialForm = {
   image: null,
   imageUrl: "",
   password: "",
+  empType: "university",
 };
 
 export default function UniversityEmployeePage({ navbarHeight }) {
