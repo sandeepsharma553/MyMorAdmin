@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  collection,
   addDoc,
   getDocs,
   updateDoc,
@@ -12,7 +11,7 @@ import {
   Timestamp,
   orderBy
 } from "firebase/firestore";
-import { db } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { useSelector } from "react-redux";
@@ -75,8 +74,7 @@ export default function FaqPage(props) {
     try {
       // orderBy is optional; using createdAt desc if present, else by title asc
       const q = query(
-        collection(db, "faqquestions"),
-        where("hostelid", "==", emp.hostelid)
+        hostelCol(emp.hostelid, "faqquestions")
       );
 
       const snap = await getDocs(q);
@@ -126,7 +124,7 @@ export default function FaqPage(props) {
 
       if (editingData?.id) {
         // update
-        const ref = doc(db, "faqquestions", editingData.id);
+        const ref = doc(hostelCol(emp.hostelid, "faqquestions"),editingData.id);
         const snap = await getDoc(ref);
         if (!snap.exists()) {
           toast.warning("FAQ does not exist! Cannot update.");
@@ -136,7 +134,7 @@ export default function FaqPage(props) {
         }
       } else {
         // create
-        await addDoc(collection(db, "faqquestions"), faqData);
+        await addDoc(hostelCol(emp.hostelid, "faqquestions"), faqData);
         toast.success("FAQ created successfully");
       }
 
@@ -153,7 +151,7 @@ export default function FaqPage(props) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "faqquestions", deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, "faqquestions"),deleteData.id));
       toast.success("Successfully deleted!");
       await getList();
     } catch (error) {

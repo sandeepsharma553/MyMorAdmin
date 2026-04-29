@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc
+  addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc
 } from "firebase/firestore";
-import { db } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -213,7 +213,7 @@ const SettingPage = () => {
     try {
       setLoadingKey("events");
       const evSnap = await getDocs(
-        query(collection(db, "eventcategory"), where("hostelid", "==", hostelId))
+        query(hostelCol(hostelId, "eventcategory"))
       );
       const evRows = evSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       evRows.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -229,7 +229,7 @@ const SettingPage = () => {
     try {
       setLoadingKey("academics");
       const acSnap = await getDocs(
-        query(collection(db, "academiccategory"), where("hostelid", "==", hostelId))
+        query(hostelCol(hostelId, "academiccategory"))
       );
       const acRows = acSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       acRows.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -298,7 +298,7 @@ const SettingPage = () => {
       }
 
       if (!editingData) {
-        await addDoc(collection(db, currentCollection), {
+        await addDoc(hostelCol(hostelId, currentCollection), {
           uid: uid || "",
           name,
           hostelid: hostelId || "",
@@ -307,7 +307,7 @@ const SettingPage = () => {
         });
         toast.success("Successfully saved");
       } else {
-        const ref = doc(db, currentCollection, form.id);
+        const ref = doc(hostelCol(hostelId, currentCollection), form.id);
         const snap = await getDoc(ref);
         if (!snap.exists()) {
           toast.warning("Data does not exist! Cannot update.");
@@ -342,7 +342,7 @@ const SettingPage = () => {
   const doDelete = async () => {
     try {
       if (!toDelete?.id) return;
-      await deleteDoc(doc(db, currentCollection, toDelete.id));
+      await deleteDoc(doc(hostelCol(hostelId, currentCollection), toDelete.id));
       toast.success("Successfully deleted!");
 
       await fetchAll();

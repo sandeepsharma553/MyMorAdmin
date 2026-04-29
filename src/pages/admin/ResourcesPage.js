@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, getDoc
+  addDoc, getDocs, updateDoc, doc, deleteDoc, query, getDoc
 } from "firebase/firestore";
-import { db, storage } from "../../firebase";
+import { storage } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -132,18 +133,11 @@ export default function ResourcesPage(props) {
   const getList = async () => {
     setIsLoading(true);
     try {
-      const resourcesQuery = query(collection(db, "resources"));
+      const resourcesQuery = query(hostelCol(emp.hostelid, "resources"));
       const querySnapshot = await getDocs(resourcesQuery);
       const documents = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      const filteredDocs = documents
-        .map(group => {
-          const filteredResources = (group.resources || []).filter(r => r.hostelid === emp.hostelid);
-          return { ...group, resources: filteredResources };
-        })
-        .filter(group => (group.resources || []).length > 0);
-
-      setList(filteredDocs);
+      setList(documents);
     } catch (e) {
       console.error(e);
       toast.error("Failed to load resources.");
@@ -227,7 +221,7 @@ export default function ResourcesPage(props) {
 
       if (editingData) {
         const { docId, index } = editingData;
-        const docRef = doc(db, "resources", docId);
+        const docRef = doc(hostelCol(emp.hostelid, "resources"),docId);
         const snap = await getDoc(docRef);
         if (!snap.exists()) throw new Error("Document missing");
 
@@ -237,7 +231,7 @@ export default function ResourcesPage(props) {
 
         toast.success("Resource updated successfully");
       } else {
-        await addDoc(collection(db, "resources"), { resources: cleanedRows });
+        await addDoc(hostelCol(emp.hostelid, "resources"), { resources: cleanedRows });
         toast.success("Resource added successfully");
       }
 
@@ -254,7 +248,7 @@ export default function ResourcesPage(props) {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      const docRef = doc(db, "resources", deleteData.docId);
+      const docRef = doc(hostelCol(emp.hostelid, "resources"),deleteData.docId);
       const snap = await getDoc(docRef);
       if (!snap.exists()) {
         toast.error("Document not found");
@@ -280,7 +274,7 @@ export default function ResourcesPage(props) {
   // ---- Pin helpers ----
   const updateResourcePart = async (row, patch) => {
     const index = Number(row.rowId.split("-").pop());
-    const refDoc = doc(db, "resources", row.docId);
+    const refDoc = doc(hostelCol(emp.hostelid, "resources"),row.docId);
     const snap = await getDoc(refDoc);
     if (!snap.exists()) {
       toast.error("Document missing");

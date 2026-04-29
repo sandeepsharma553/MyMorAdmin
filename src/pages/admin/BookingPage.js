@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
-import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
+import { collection,
+  addDoc, getDocs, updateDoc, doc, deleteDoc,
   query, where, getDoc, writeBatch, setDoc, serverTimestamp
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -150,8 +151,7 @@ export default function BookingPage({ navbarHeight }) {
 
       // Bookings
       const bookingQ = query(
-        collection(db, "bookingroom"),
-        where("hostelid", "==", emp?.hostelid)
+        hostelCol(emp?.hostelid, "roombookings")
       );
       const bookingSnap = await getDocs(bookingQ);
       const allBookings = bookingSnap.docs.map((d) => {
@@ -169,7 +169,7 @@ export default function BookingPage({ navbarHeight }) {
       });
 
       // Room types
-      const bookingTypeSnap = await getDocs(query(collection(db, "bookingroomtype"), where("hostelid", "==", emp.hostelid)));
+      const bookingTypeSnap = await getDocs(query(hostelCol(emp.hostelid, "bookingroomtype")));
       const BookingType = bookingTypeSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       const uniqueRooms = Array.from(new Set(BookingType.map((b) => b.roomname))).filter(Boolean);
@@ -217,7 +217,7 @@ export default function BookingPage({ navbarHeight }) {
 
     try {
       if (editingData) {
-        const docRef = doc(db, "bookingroomtype", form.id);
+        const docRef = doc(hostelCol(emp.hostelid, "bookingroomtype"),form.id);
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) { toast.warning("BookingRoomType does not exist!"); return; }
         await updateDoc(docRef, {
@@ -236,7 +236,7 @@ export default function BookingPage({ navbarHeight }) {
         });
         toast.success("Successfully updated");
       } else {
-        await addDoc(collection(db, "bookingroomtype"), {
+        await addDoc(hostelCol(emp.hostelid, "bookingroomtype"), {
           uid,
           roomname: form.roomname,
           description: form.description,
@@ -267,7 +267,7 @@ export default function BookingPage({ navbarHeight }) {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, "bookingroomtype", deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, "bookingroomtype"),deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch {
@@ -288,7 +288,7 @@ export default function BookingPage({ navbarHeight }) {
       const CHUNK = 400;
       for (let i = 0; i < ids.length; i += CHUNK) {
         const batch = writeBatch(db);
-        ids.slice(i, i + CHUNK).forEach((id) => batch.delete(doc(db, "bookingroom", id)));
+        ids.slice(i, i + CHUNK).forEach((id) => batch.delete(doc(hostelCol(emp.hostelid, "roombookings"),id)));
         await batch.commit();
       }
       toast.success("Selected bookings deleted");
@@ -311,7 +311,7 @@ export default function BookingPage({ navbarHeight }) {
       const CHUNK = 400;
       for (let i = 0; i < ids.length; i += CHUNK) {
         const batch = writeBatch(db);
-        ids.slice(i, i + CHUNK).forEach((id) => batch.delete(doc(db, "bookingroomtype", id)));
+        ids.slice(i, i + CHUNK).forEach((id) => batch.delete(doc(hostelCol(emp.hostelid, "bookingroomtype"),id)));
         await batch.commit();
       }
       toast.success("Selected room types deleted");
@@ -329,7 +329,7 @@ export default function BookingPage({ navbarHeight }) {
   const handleReject = async () => {
     if (!editingData) return;
     try {
-      await updateDoc(doc(db, "bookingroom", editingData.id), { status: "Rejected" });
+      await updateDoc(doc(hostelCol(emp.hostelid, "roombookings"),editingData.id), { status: "Rejected" });
       toast.success("Booking has been rejected.");
       getList();
     } catch {

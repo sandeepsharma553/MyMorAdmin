@@ -4,6 +4,7 @@ import {
   query, where, getDoc, writeBatch, serverTimestamp
 } from "firebase/firestore";
 import { db, storage } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -311,7 +312,7 @@ export default function MaintenancePage(props) {
     });
 
     // Maintenance
-    const maintenanceQuery = query(collection(db, "maintenance"), where("hostelid", "==", emp.hostelid));
+    const maintenanceQuery = query(hostelCol(emp.hostelid, "maintenance"));
     const maintenanceSnapshot = await getDocs(maintenanceQuery);
     let rows = maintenanceSnapshot.docs.map((d) => {
       const data = d.data();
@@ -356,7 +357,7 @@ export default function MaintenancePage(props) {
   const getProblemCatList = async () => {
     if (!emp?.hostelid) return;
     setIsLoading(true);
-    const q1 = query(collection(db, "problemcategory"), where("hostelid", "==", emp.hostelid));
+    const q1 = query(hostelCol(emp.hostelid, "problemcategory"));
     const s1 = await getDocs(q1);
     setProblemCatList(s1.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
     setIsLoading(false);
@@ -365,7 +366,7 @@ export default function MaintenancePage(props) {
   const getItemCatList = async () => {
     if (!emp?.hostelid) return;
     setIsLoading(true);
-    const q2 = query(collection(db, "itemcategory"), where("hostelid", "==", emp.hostelid));
+    const q2 = query(hostelCol(emp.hostelid, "itemcategory"));
     const s2 = await getDocs(q2);
     setItemCatList(s2.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
     setIsLoading(false);
@@ -374,7 +375,7 @@ export default function MaintenancePage(props) {
   const getItemList = async () => {
     if (!emp?.hostelid) return;
     setIsLoading(true);
-    const q3 = query(collection(db, "maintenanceitems"), where("hostelid", "==", emp.hostelid));
+    const q3 = query(hostelCol(emp.hostelid, "maintenanceitems"));
     const s3 = await getDocs(q3);
     setItemList(s3.docs.map((docu) => ({ id: docu.id, ...docu.data() })));
     setIsLoading(false);
@@ -416,7 +417,7 @@ export default function MaintenancePage(props) {
 
     if (editingData) {
       try {
-        const docRefm = doc(db, "maintenance", form.id);
+        const docRefm = doc(hostelCol(emp.hostelid, "maintenance"),form.id);
         const docSnap = await getDoc(docRefm);
         if (!docSnap.exists()) {
           toast.warning("Maintenance does not exist! Cannot update.");
@@ -446,7 +447,7 @@ export default function MaintenancePage(props) {
       }
     } else {
       try {
-        await addDoc(collection(db, "maintenance"), {
+        await addDoc(hostelCol(emp.hostelid, "maintenance"), {
           uid,
           roomno: form.roomno,
           problemcategory: form.problemcategory,
@@ -486,7 +487,7 @@ export default function MaintenancePage(props) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "maintenance", deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, "maintenance"),deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -506,7 +507,7 @@ export default function MaintenancePage(props) {
       const CHUNK = 400;
       for (let i = 0; i < ids.length; i += CHUNK) {
         const batch = writeBatch(db);
-        ids.slice(i, i + CHUNK).forEach((id) => batch.delete(doc(db, "maintenance", id)));
+        ids.slice(i, i + CHUNK).forEach((id) => batch.delete(doc(hostelCol(emp.hostelid, "maintenance"),id)));
         await batch.commit();
       }
       toast.success("Selected requests deleted");
@@ -530,7 +531,7 @@ export default function MaintenancePage(props) {
       const row = list.find(r => r.id === id);
       if (!row) return;
       if (!canModify(row)) { toast.error("You don't have permission to update this."); return; }
-      const requestRef = doc(db, "maintenance", id);
+      const requestRef = doc(hostelCol(emp.hostelid, "maintenance"),id);
       await updateDoc(requestRef, {
         status: newStatus, updatedBy: authUser?.email || uid,
         updatedAt: serverTimestamp(),
@@ -548,7 +549,7 @@ export default function MaintenancePage(props) {
     if (!msg) return;
     try {
       if (!canModify(row)) { toast.error("You don't have permission to add a note here."); return; }
-      const requestRef = doc(db, "maintenance", row.id);
+      const requestRef = doc(hostelCol(emp.hostelid, "maintenance"),row.id);
       const entry = { by: authUser?.email || uid, byUid: uid || null, at: new Date().toISOString(), text: msg };
       const prevNotes = Array.isArray(row.adminNotes) ? row.adminNotes : [];
       await updateDoc(requestRef, { adminNotes: [...prevNotes, entry] });
@@ -586,7 +587,7 @@ export default function MaintenancePage(props) {
     }
 
     try {
-      const requestRef = doc(db, "maintenance", assignTarget.id);
+      const requestRef = doc(hostelCol(emp.hostelid, "maintenance"),assignTarget.id);
 
       // Resolve UIDs
       const resolved = await resolveEmployeesByEmails(emails);
@@ -728,7 +729,7 @@ export default function MaintenancePage(props) {
     if (!row || !msg) { toast.error("Write something before saving."); return; }
     try {
       if (!canModify(row)) { toast.error("You don't have permission to add a note here."); return; }
-      const requestRef = doc(db, "maintenance", row.id);
+      const requestRef = doc(hostelCol(emp.hostelid, "maintenance"),row.id);
       const entry = { by: authUser?.email || uid, byUid: uid || null, at: new Date().toISOString(), text: msg };
       const prevNotes = Array.isArray(row.adminNotes) ? row.adminNotes : [];
       await updateDoc(requestRef, { adminNotes: [...prevNotes, entry] });
@@ -751,7 +752,7 @@ export default function MaintenancePage(props) {
     if (!uid || !row?.id) return;
     try {
       const total = Array.isArray(row?.adminNotes) ? row.adminNotes.length : 0;
-      const requestRef = doc(db, "maintenance", row.id);
+      const requestRef = doc(hostelCol(emp.hostelid, "maintenance"),row.id);
       const payload = { count: total, at: new Date().toISOString() };
 
       // write to Firestore: noteSeenBy.<uid> = { count, at }

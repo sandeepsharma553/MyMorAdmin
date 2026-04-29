@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc, getDoc,
+  addDoc, getDocs, updateDoc, doc, deleteDoc, getDoc,
   query, where, writeBatch
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -67,8 +68,7 @@ export default function CleaningSchedulePage(props) {
     setIsLoading(true);
     try {
       const qy = query(
-        collection(db, "cleaningschedule"),
-        where("hostelid", "==", emp.hostelid),
+        hostelCol(emp.hostelid, "cleaningschedule")
       );
       const qs = await getDocs(qy);
       const documents = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -105,7 +105,7 @@ export default function CleaningSchedulePage(props) {
 
     try {
       if (editingData) {
-        const docRef = doc(db, "cleaningschedule", form.id);
+        const docRef = doc(hostelCol(emp.hostelid, "cleaningschedule"),form.id);
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) {
           toast.warning("CleaningSchedule does not exist! Cannot update.");
@@ -125,7 +125,7 @@ export default function CleaningSchedulePage(props) {
         });
         toast.success("Successfully updated");
       } else {
-        await addDoc(collection(db, "cleaningschedule"), {
+        await addDoc(hostelCol(emp.hostelid, "cleaningschedule"), {
           uid,
           roomtype: form.roomtype,
           hall: form.hall,
@@ -154,7 +154,7 @@ export default function CleaningSchedulePage(props) {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, "cleaningschedule", deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, "cleaningschedule"),deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -203,18 +203,17 @@ export default function CleaningSchedulePage(props) {
     try {
       for (const entry of data) {
         const qy = query(
-          collection(db, "cleaningschedule"),
+          hostelCol(emp.hostelid, "cleaningschedule"),
           where("roomtype", "==", entry.roomtype),
           where("date", "==", entry.date),
-          where("hall", "==", entry.hall),
-          where("hostelid", "==", emp.hostelid)
+          where("hall", "==", entry.hall)
         );
         const qs = await getDocs(qy);
         if (!qs.empty) {
           toast.warn(`Duplicate: ${entry.roomtype} on ${entry.date} in ${entry.hall}. Skipping...`);
           continue;
         }
-        await addDoc(collection(db, "cleaningschedule"), { ...entry, createdBy: uid, createdDate: new Date() });
+        await addDoc(hostelCol(emp.hostelid, "cleaningschedule"), { ...entry, createdBy: uid, createdDate: new Date() });
       }
 
       toast.success("Cleaning schedule saved (duplicates skipped)!");
@@ -251,7 +250,7 @@ export default function CleaningSchedulePage(props) {
       for (let i = 0; i < ids.length; i += chunkSize) {
         const chunk = ids.slice(i, i + chunkSize);
         const batch = writeBatch(db);
-        chunk.forEach((id) => batch.delete(doc(db, "cleaningschedule", id)));
+        chunk.forEach((id) => batch.delete(doc(hostelCol(emp.hostelid, "cleaningschedule"),id)));
         await batch.commit();
       }
       toast.success("Selected schedules deleted");

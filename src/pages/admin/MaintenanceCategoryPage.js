@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc,
+  addDoc, getDocs, updateDoc, doc, deleteDoc,
   query, where, getDoc, writeBatch
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -133,7 +134,7 @@ const MaintenanceCategoryPage = () => {
   const getProblemCatList = async () => {
     setIsLoading(true);
     try {
-      const q1 = query(collection(db, "problemcategory"), where("hostelid", "==", emp.hostelid));
+      const q1 = query(hostelCol(emp.hostelid, "problemcategory"));
       const snap = await getDocs(q1);
       setProblemCatList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } finally { setIsLoading(false); }
@@ -142,7 +143,7 @@ const MaintenanceCategoryPage = () => {
   const getItemCatList = async () => {
     setIsLoading(true);
     try {
-      const q1 = query(collection(db, "itemcategory"), where("hostelid", "==", emp.hostelid));
+      const q1 = query(hostelCol(emp.hostelid, "itemcategory"));
       const snap = await getDocs(q1);
       setItemCatList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } finally { setIsLoading(false); }
@@ -151,7 +152,7 @@ const MaintenanceCategoryPage = () => {
   const getItemList = async () => {
     setIsLoading(true);
     try {
-      const q1 = query(collection(db, "maintenanceitems"), where("hostelid", "==", emp.hostelid));
+      const q1 = query(hostelCol(emp.hostelid, "maintenanceitems"));
       const snap = await getDocs(q1);
       setItemList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } finally { setIsLoading(false); }
@@ -160,7 +161,7 @@ const MaintenanceCategoryPage = () => {
   const getTypeList = async () => {
     setIsLoading(true);
     try {
-      const q1 = query(collection(db, "maintenancetype"), where("hostelid", "==", emp.hostelid));
+      const q1 = query(hostelCol(emp.hostelid, "maintenancetype"));
       const snap = await getDocs(q1);
       setTypeList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } finally { setIsLoading(false); }
@@ -240,7 +241,7 @@ const MaintenanceCategoryPage = () => {
       if (!problemForm.name) return;
 
       if (editingData?.type === "problem") {
-        const ref = doc(db, "problemcategory", problemForm.id);
+        const ref = doc(hostelCol(emp.hostelid, "problemcategory"),problemForm.id);
         const snap = await getDoc(ref);
         if (!snap.exists()) {
           toast.warning("Record not found");
@@ -253,16 +254,15 @@ const MaintenanceCategoryPage = () => {
         toast.success("Updated");
       } else {
         const qDup = query(
-          collection(db, "problemcategory"),
-          where("name", "==", problemForm.name),
-          where("hostelid", "==", emp.hostelid)
+          hostelCol(emp.hostelid, "problemcategory"),
+          where("name", "==", problemForm.name)
         );
         const dupSnap = await getDocs(qDup);
         if (!dupSnap.empty) {
           toast.warn("Duplicate found! Not adding.");
           return;
         }
-        await addDoc(collection(db, "problemcategory"), {
+        await addDoc(hostelCol(emp.hostelid, "problemcategory"), {
           uid, name: problemForm.name, hostelid: emp.hostelid,
           createdBy: uid, createdDate: new Date(),
         });
@@ -278,7 +278,7 @@ const MaintenanceCategoryPage = () => {
   const deleteProblem = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "problemcategory", deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, "problemcategory"),deleteData.id));
       toast.success("Deleted");
       await getProblemCatList();
     } catch (e) { console.error(e); }
@@ -295,7 +295,7 @@ const MaintenanceCategoryPage = () => {
       // EDIT mode = single record update
       if (editingData?.type === "itemcat") {
         if (!itemCatForm.name) return;
-        const ref = doc(db, "itemcategory", itemCatForm.id);
+        const ref = doc(hostelCol(emp.hostelid, "itemcategory"),itemCatForm.id);
         const snap = await getDoc(ref);
         if (!snap.exists()) {
           toast.warning("Record not found");
@@ -319,8 +319,7 @@ const MaintenanceCategoryPage = () => {
         // Load existing for dedupe within (hostelid + problemId)
         const existingSnap = await getDocs(
           query(
-            collection(db, "itemcategory"),
-            where("hostelid", "==", emp.hostelid),
+            hostelCol(emp.hostelid, "itemcategory"),
             where("problemId", "==", itemCatForm.problemId)
           )
         );
@@ -334,7 +333,7 @@ const MaintenanceCategoryPage = () => {
         } else {
           const batch = writeBatch(db);
           toCreate.forEach((name) => {
-            const ref = doc(collection(db, "itemcategory"));
+            const ref = doc(hostelCol(emp.hostelid, "itemcategory"));
             batch.set(ref, {
               uid,
               name,
@@ -359,7 +358,7 @@ const MaintenanceCategoryPage = () => {
   const deleteItemCategory = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "itemcategory", deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, "itemcategory"),deleteData.id));
       toast.success("Deleted");
       await getItemCatList();
     } catch (e) { console.error(e); }
@@ -376,7 +375,7 @@ const MaintenanceCategoryPage = () => {
       // EDIT mode = single
       if (editingData?.type === "item") {
         if (!itemForm.name) return;
-        const ref = doc(db, "maintenanceitems", itemForm.id);
+        const ref = doc(hostelCol(emp.hostelid, "maintenanceitems"),itemForm.id);
         const snap = await getDoc(ref);
         if (!snap.exists()) {
           toast.warning("Record not found");
@@ -399,8 +398,7 @@ const MaintenanceCategoryPage = () => {
 
         const existingSnap = await getDocs(
           query(
-            collection(db, "maintenanceitems"),
-            where("hostelid", "==", emp.hostelid),
+            hostelCol(emp.hostelid, "maintenanceitems"),
             where("problemId", "==", itemForm.problemId),
             where("itemCategoryId", "==", itemForm.itemCategoryId)
           )
@@ -415,7 +413,7 @@ const MaintenanceCategoryPage = () => {
         } else {
           const batch = writeBatch(db);
           toCreate.forEach((name) => {
-            const ref = doc(collection(db, "maintenanceitems"));
+            const ref = doc(hostelCol(emp.hostelid, "maintenanceitems"));
             batch.set(ref, {
               uid,
               name,
@@ -441,7 +439,7 @@ const MaintenanceCategoryPage = () => {
   const deleteItem = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "maintenanceitems", deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, "maintenanceitems"),deleteData.id));
       toast.success("Deleted");
       await getItemList();
     } catch (e) { console.error(e); }
@@ -456,7 +454,7 @@ const MaintenanceCategoryPage = () => {
       if (!typeForm.name) return;
 
       if (editingData?.type === "maintype") {
-        const ref = doc(db, "maintenancetype", typeForm.id);
+        const ref = doc(hostelCol(emp.hostelid, "maintenancetype"),typeForm.id);
         const snap = await getDoc(ref);
         if (!snap.exists()) {
           toast.warning("Record not found");
@@ -469,16 +467,15 @@ const MaintenanceCategoryPage = () => {
         toast.success("Updated");
       } else {
         const qDup = query(
-          collection(db, "maintenancetype"),
-          where("name", "==", typeForm.name),
-          where("hostelid", "==", emp.hostelid)
+          hostelCol(emp.hostelid, "maintenancetype"),
+          where("name", "==", typeForm.name)
         );
         const dupSnap = await getDocs(qDup);
         if (!dupSnap.empty) {
           toast.warn("Duplicate found! Not adding.");
           return;
         }
-        await addDoc(collection(db, "maintenancetype"), {
+        await addDoc(hostelCol(emp.hostelid, "maintenancetype"), {
           uid, name: typeForm.name, hostelid: emp.hostelid,
           createdBy: uid, createdDate: new Date(),
         });
@@ -494,7 +491,7 @@ const MaintenanceCategoryPage = () => {
   const deleteType = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "maintenancetype", deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, "maintenancetype"),deleteData.id));
       toast.success("Deleted");
       await getTypeList();
     } catch (e) { console.error(e); }
@@ -1268,13 +1265,13 @@ export default MaintenanceCategoryPage;
 //     try {
 //       if (!form.name) return;
 //       if (editingData) {
-//         const docRef = doc(db, "problemcategory", form.id);
+//         const docRef = doc(hostelCol(emp.hostelid, "problemcategory"),form.id);
 //         const docSnap = await getDoc(docRef);
 //         if (!docSnap.exists()) {
 //           toast.warning("data does not exist! Cannot update.");
 //           return;
 //         }
-//         await updateDoc(doc(db, "problemcategory", form.id), {
+//         await updateDoc(doc(hostelCol(emp.hostelid, "problemcategory"),form.id), {
 //           uid,
 //           name: form.name,
 //           hostelid: emp.hostelid,
@@ -1313,7 +1310,7 @@ export default MaintenanceCategoryPage;
 //   const handleDelete = async () => {
 //     if (!deleteData) return;
 //     try {
-//       await deleteDoc(doc(db, "problemcategory", form.id));
+//       await deleteDoc(doc(hostelCol(emp.hostelid, "problemcategory"),form.id));
 //       toast.success("Successfully deleted!");
 //       getProblemCatList();
 //     } catch (error) {
@@ -1328,13 +1325,13 @@ export default MaintenanceCategoryPage;
 //     try {
 //       if (!form.name) return;
 //       if (editingData) {
-//         const docRef = doc(db, "itemcategory", form.id);
+//         const docRef = doc(hostelCol(emp.hostelid, "itemcategory"),form.id);
 //         const docSnap = await getDoc(docRef);
 //         if (!docSnap.exists()) {
 //           toast.warning("data does not exist! Cannot update.");
 //           return;
 //         }
-//         await updateDoc(doc(db, "itemcategory", form.id), {
+//         await updateDoc(doc(hostelCol(emp.hostelid, "itemcategory"),form.id), {
 //           uid,
 //           name: form.name,
 //           hostelid: emp.hostelid,
@@ -1372,7 +1369,7 @@ export default MaintenanceCategoryPage;
 //   const handleItemCatDelete = async () => {
 //     if (!deleteData) return;
 //     try {
-//       await deleteDoc(doc(db, "itemcategory", form.id));
+//       await deleteDoc(doc(hostelCol(emp.hostelid, "itemcategory"),form.id));
 //       toast.success("Successfully deleted!");
 //       getItemCatList();
 //     } catch (error) {
@@ -1387,13 +1384,13 @@ export default MaintenanceCategoryPage;
 //     try {
 //       if (!form.name) return;
 //       if (editingData) {
-//         const docRef = doc(db, "maintenanceitems", form.id);
+//         const docRef = doc(hostelCol(emp.hostelid, "maintenanceitems"),form.id);
 //         const docSnap = await getDoc(docRef);
 //         if (!docSnap.exists()) {
 //           toast.warning("data does not exist! Cannot update.");
 //           return;
 //         }
-//         await updateDoc(doc(db, "maintenanceitems", form.id), {
+//         await updateDoc(doc(hostelCol(emp.hostelid, "maintenanceitems"),form.id), {
 //           uid,
 //           name: form.name,
 //           hostelid: emp.hostelid,
@@ -1431,7 +1428,7 @@ export default MaintenanceCategoryPage;
 //   const handleItemDelete = async () => {
 //     if (!deleteData) return;
 //     try {
-//       await deleteDoc(doc(db, "maintenanceitems", form.id));
+//       await deleteDoc(doc(hostelCol(emp.hostelid, "maintenanceitems"),form.id));
 //       toast.success("Successfully deleted!");
 //       getItemList();
 //     } catch (error) {
@@ -1446,13 +1443,13 @@ export default MaintenanceCategoryPage;
 //     try {
 //       if (!form.name) return;
 //       if (editingData) {
-//         const docRef = doc(db, "maintenancetype", form.id);
+//         const docRef = doc(hostelCol(emp.hostelid, "maintenancetype"),form.id);
 //         const docSnap = await getDoc(docRef);
 //         if (!docSnap.exists()) {
 //           toast.warning("data does not exist! Cannot update.");
 //           return;
 //         }
-//         await updateDoc(doc(db, "maintenancetype", form.id), {
+//         await updateDoc(doc(hostelCol(emp.hostelid, "maintenancetype"),form.id), {
 //           uid,
 //           name: form.name,
 //           hostelid: emp.hostelid,
@@ -1490,7 +1487,7 @@ export default MaintenanceCategoryPage;
 //   const handleTypeDelete = async () => {
 //     if (!deleteData) return;
 //     try {
-//       await deleteDoc(doc(db, "maintenancetype", form.id));
+//       await deleteDoc(doc(hostelCol(emp.hostelid, "maintenancetype"),form.id));
 //       toast.success("Successfully deleted!");
 //       getTypeList();
 //     } catch (error) {

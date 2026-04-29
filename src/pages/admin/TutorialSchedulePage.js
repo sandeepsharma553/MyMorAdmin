@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, deleteDoc, getDoc,
+  addDoc, getDocs, updateDoc, doc, deleteDoc, getDoc,
   query, where, writeBatch
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -66,7 +67,7 @@ export default function TutorialSchedulePage(props) {
     if (!emp?.hostelid) return;
     setIsLoading(true);
     try {
-      const qy = query(collection(db, "tutorialschedule"), where("hostelid", "==", emp.hostelid));
+      const qy = query(hostelCol(emp.hostelid, "tutorialschedule"));
       const snapshot = await getDocs(qy);
       const documents = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
       // stable sort: date -> time
@@ -97,7 +98,7 @@ export default function TutorialSchedulePage(props) {
 
     try {
       if (editingData) {
-        const docRef = doc(db, "tutorialschedule", form.id);
+        const docRef = doc(hostelCol(emp.hostelid, "tutorialschedule"),form.id);
         const snap = await getDoc(docRef);
         if (!snap.exists()) { toast.warning("Tutorial schedule does not exist!"); return; }
 
@@ -116,7 +117,7 @@ export default function TutorialSchedulePage(props) {
         });
         toast.success("Successfully updated");
       } else {
-        await addDoc(collection(db, "tutorialschedule"), {
+        await addDoc(hostelCol(emp.hostelid, "tutorialschedule"), {
           uid,
           roomtype: form.roomtype,
           hall: form.hall,
@@ -146,7 +147,7 @@ export default function TutorialSchedulePage(props) {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, "tutorialschedule", deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, "tutorialschedule"),deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -197,18 +198,17 @@ export default function TutorialSchedulePage(props) {
     try {
       for (const entry of data) {
         const qy = query(
-          collection(db, "tutorialschedule"),
+          hostelCol(emp.hostelid, "tutorialschedule"),
           where("roomtype", "==", entry.roomtype),
           where("date", "==", entry.date),
-          where("hall", "==", entry.hall),
-          where("hostelid", "==", emp.hostelid)
+          where("hall", "==", entry.hall)
         );
         const qs = await getDocs(qy);
         if (!qs.empty) {
           toast.warn(`Duplicate: ${entry.roomtype} on ${entry.date} in ${entry.hall}. Skipping...`);
           continue;
         }
-        await addDoc(collection(db, "tutorialschedule"), { ...entry, createdBy: uid, createdDate: new Date() });
+        await addDoc(hostelCol(emp.hostelid, "tutorialschedule"), { ...entry, createdBy: uid, createdDate: new Date() });
       }
 
       toast.success("Tutorial schedule saved (duplicates skipped)!");
@@ -246,7 +246,7 @@ export default function TutorialSchedulePage(props) {
       for (let i = 0; i < ids.length; i += chunkSize) {
         const chunk = ids.slice(i, i + chunkSize);
         const batch = writeBatch(db);
-        chunk.forEach((id) => batch.delete(doc(db, "tutorialschedule", id)));
+        chunk.forEach((id) => batch.delete(doc(hostelCol(emp.hostelid, "tutorialschedule"),id)));
         await batch.commit();
       }
       toast.success("Selected schedules deleted");

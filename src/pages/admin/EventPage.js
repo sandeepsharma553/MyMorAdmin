@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  collection,
   addDoc,
   getDocs,
   updateDoc,
@@ -13,6 +12,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db, storage } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -190,8 +190,7 @@ const [qrReady, setQrReady] = useState(false);
       try {
         if (!emp?.hostelid) return;
         const qB = query(
-          collection(db, "eventbookings"),
-          where("hostelid", "==", emp.hostelid)
+          hostelCol(emp.hostelid, "eventbookings")
         );
         const snap = await getDocs(qB);
 
@@ -214,8 +213,7 @@ const [qrReady, setQrReady] = useState(false);
     setIsLoading(true);
     try {
       const qEvents = query(
-        collection(db, "events"),
-        where("hostelid", "==", emp.hostelid)
+        hostelCol(emp.hostelid, "events")
       );
       const snap = await getDocs(qEvents);
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -235,8 +233,7 @@ const [qrReady, setQrReady] = useState(false);
     setIsLoading(true);
     try {
       const qPay = query(
-        collection(db, "eventpaymenttype"),
-        where("hostelid", "==", emp.hostelid)
+        hostelCol(emp.hostelid, "eventpaymenttype")
       );
       const snap = await getDocs(qPay);
       setPaymentList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
@@ -248,8 +245,7 @@ const [qrReady, setQrReady] = useState(false);
   const getCategory = async () => {
     try {
       const qCat = query(
-        collection(db, "eventcategory"),
-        where("hostelid", "==", emp.hostelid)
+        hostelCol(emp.hostelid, "eventcategory")
       );
       const snap = await getDocs(qCat);
       setCategory(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
@@ -540,14 +536,14 @@ const [qrReady, setQrReady] = useState(false);
       delete eventData.posterFiles;
 
       if (editingData) {
-        const ref = doc(db, "events", editingData.id);
+        const ref = doc(hostelCol(emp.hostelid, "events"),editingData.id);
         const snap = await getDoc(ref);
         if (!snap.exists())
           return toast.warning("Event does not exist! Cannot update.");
         await updateDoc(ref, eventData);
         toast.success("Event updated successfully");
       } else {
-        await addDoc(collection(db, "events"), eventData);
+        await addDoc(hostelCol(emp.hostelid, "events"), eventData);
         toast.success("Event created successfully");
       }
 
@@ -564,7 +560,7 @@ const [qrReady, setQrReady] = useState(false);
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "events", deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, "events"),deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (e) {
@@ -660,7 +656,7 @@ const [qrReady, setQrReady] = useState(false);
     pinned.forEach((ev, i) => {
       const order = i + 1;
       if (ev.pinnedOrder !== order)
-        batch.update(doc(db, "events", ev.id), { pinnedOrder: order });
+        batch.update(doc(hostelCol(emp.hostelid, "events"),ev.id), { pinnedOrder: order });
     });
     await batch.commit();
     await getList();
@@ -674,8 +670,8 @@ const [qrReady, setQrReady] = useState(false);
     const a = pinned[idx];
     const b = pinned[swapIdx];
     const batch = writeBatch(db);
-    batch.update(doc(db, "events", a.id), { pinnedOrder: b.pinnedOrder });
-    batch.update(doc(db, "events", b.id), { pinnedOrder: a.pinnedOrder });
+    batch.update(doc(hostelCol(emp.hostelid, "events"),a.id), { pinnedOrder: b.pinnedOrder });
+    batch.update(doc(hostelCol(emp.hostelid, "events"),b.id), { pinnedOrder: a.pinnedOrder });
     await batch.commit();
     await getList();
   };
@@ -689,7 +685,7 @@ const [qrReady, setQrReady] = useState(false);
     sequence.splice(newOrder - 1, 0, { ...item });
     const batch = writeBatch(db);
     sequence.forEach((ev, i) =>
-      batch.update(doc(db, "events", ev.id), { pinnedOrder: i + 1 })
+      batch.update(doc(hostelCol(emp.hostelid, "events"),ev.id), { pinnedOrder: i + 1 })
     );
     await batch.commit();
     await getList();
@@ -697,7 +693,7 @@ const [qrReady, setQrReady] = useState(false);
 
   const togglePin = async (item, makePinned) => {
     try {
-      const ref = doc(db, "events", item.id);
+      const ref = doc(hostelCol(emp.hostelid, "events"),item.id);
       if (makePinned) {
         const currentPinned = getPinnedSorted();
         const nextOrder =
@@ -873,7 +869,7 @@ const [qrReady, setQrReady] = useState(false);
         return;
       }
   
-      const bRef = doc(db, "eventbookings", bookingId);
+      const bRef = doc(hostelCol(emp.hostelid, "eventbookings"), bookingId);
       const bSnap = await getDoc(bRef);
   
       if (!bSnap.exists()) {

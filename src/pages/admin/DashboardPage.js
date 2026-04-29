@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import {
-  collection,
   query,
   where,
   getDocs,
@@ -9,7 +8,7 @@ import {
 } from "firebase/firestore";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-import { db } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 
@@ -52,8 +51,7 @@ export default function DashboardPage(props) {
     const fetchMaintenance = async () => {
       try {
         const q = query(
-          collection(db, "maintenance"),
-          where("hostelid", "==", emp.hostelid)
+          hostelCol(emp.hostelid, "maintenance")
         );
         const snap = await getDocs(q);
 
@@ -82,8 +80,7 @@ export default function DashboardPage(props) {
     const fetchTutorials = async () => {
       try {
         const q = query(
-          collection(db, "tutorialschedule"),
-          where("hostelid", "==", emp.hostelid),
+          hostelCol(emp.hostelid, "tutorialschedule"),
           where("date", "==", todayStr),
           orderBy("time")
         );
@@ -97,8 +94,7 @@ export default function DashboardPage(props) {
     const fetchMenus = async () => {
       try {
         const q = query(
-          collection(db, "menus"),
-          where("hostelid", "==", emp.hostelid),
+          hostelCol(emp.hostelid, "menus"),
           where("date", "==", todayStr),
           limit(1)
         );
@@ -127,8 +123,7 @@ export default function DashboardPage(props) {
     const fetchReports = async () => {
       try {
         const q = query(
-          collection(db, "reportincident"),
-          where("hostelid", "==", emp.hostelid),
+          hostelCol(emp.hostelid, "reports"),
           orderBy("createdDate", "desc"),
           limit(3)
         );

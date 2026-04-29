@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc } from "firebase/firestore";
-import { db } from "../../firebase";
+import { addDoc, getDocs, updateDoc, doc, deleteDoc, query, where, getDoc } from "firebase/firestore";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -84,8 +84,7 @@ const EventSettingPage = (props) => {
     const getpaymentList = async () => {
         setIsLoading(true);
         const maintenanceCategoryQuery = query(
-            collection(db, "eventpaymenttype"),
-            where("hostelid", "==", emp.hostelid)
+            hostelCol(emp.hostelid, "eventpaymenttype")
         );
 
         const querySnapshot = await getDocs(maintenanceCategoryQuery);
@@ -104,13 +103,13 @@ const EventSettingPage = (props) => {
         try {
             if (!form.name) return;
             if (editingData) {
-                const docRef = doc(db, "eventpaymenttype", form.id);
+                const docRef = doc(hostelCol(emp.hostelid, "eventpaymenttype"),form.id);
                 const docSnap = await getDoc(docRef);
                 if (!docSnap.exists()) {
                     toast.warning("data does not exist! Cannot update.");
                     return;
                 }
-                await updateDoc(doc(db, "eventpaymenttype", form.id), {
+                await updateDoc(doc(hostelCol(emp.hostelid, "eventpaymenttype"),form.id), {
                     uid,
                     name: form.name,
                     hostelid: emp.hostelid,
@@ -120,14 +119,13 @@ const EventSettingPage = (props) => {
                 toast.success("Successfully updated");
                 getpaymentList();
             } else {
-                const q = query(collection(db, "eventpaymenttype"), where("name", "==", form.name),
-                    where("hostelid", "==", emp.hostelid));
+                const q = query(hostelCol(emp.hostelid, "eventpaymenttype"), where("name", "==", form.name));
                 const querySnapshot = await getDocs(q);
                 if (!querySnapshot.empty) {
                     toast.warn("Duplicate found! Not adding.");
                     return;
                 }
-                await addDoc(collection(db, "eventpaymenttype"), {
+                await addDoc(hostelCol(emp.hostelid, "eventpaymenttype"), {
                     uid,
                     name: form.name,
                     hostelid: emp.hostelid,
@@ -149,7 +147,7 @@ const EventSettingPage = (props) => {
     const handleDelete = async () => {
         if (!deleteData) return;
         try {
-            await deleteDoc(doc(db, "eventpaymenttype", form.id));
+            await deleteDoc(doc(hostelCol(emp.hostelid, "eventpaymenttype"),form.id));
             toast.success("Successfully deleted!");
             getpaymentList();
         } catch (error) {

@@ -2,6 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getAnalytics } from "firebase/analytics";
+import { initializeFirestore } from "firebase/firestore";
 import { getFirestore } from "firebase/firestore";
 import { getDatabase } from 'firebase/database';
 import { getStorage } from "firebase/storage";
@@ -47,21 +48,30 @@ const prodConfig = {
   messagingSenderId: process.env.REACT_APP_FIREBASE_PROD_MESSAGING_SENDER_ID,
   appId: process.env.REACT_APP_FIREBASE_PROD_APP_ID,
   measurementId: process.env.REACT_APP_FIREBASE_PROD_MEASUREMENT_ID
-  
+
 };
 
 const firebaseConfig = process.env.REACT_APP_ENV === 'production' ? prodConfig : devConfig;
 console.log(process.env.REACT_APP_ENV)
 const app = initializeApp(firebaseConfig);
+const FIRESTORE_DATABASE_ID =
+  process.env.REACT_APP_ENV === "production"
+    ? process.env.REACT_APP_FIREBASE_PROD_DATABASE_ID || "mymor-aus"
+    : process.env.REACT_APP_FIREBASE_DEV_DATABASE_ID || "mymor-dev-aus";
+const db = initializeFirestore(
+  app,
+  {},
+  FIRESTORE_DATABASE_ID
+);
+
+const firestore = db;
+
 const auth = getAuth(app);
 const analytics = getAnalytics(app);
-const db = getFirestore(app);
-//const db = getDatabase(app);
-const firestore = getFirestore(app)
 const storage = getStorage(app);
 const database = getDatabase(app);
 const messaging = getMessaging(app)
 const VAPID_KEY = process.env.REACT_APP_ENV === 'production'
   ? process.env.REACT_APP_FIREBASE_PROD_VAPID_KEY
   : process.env.REACT_APP_FIREBASE_DEV_VAPID_KEY;
-export { auth,analytics,db,firestore,storage,database,firebaseConfig,messaging,VAPID_KEY };
+export { auth, analytics, db, firestore, storage, database, firebaseConfig, messaging, VAPID_KEY };

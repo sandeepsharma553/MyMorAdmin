@@ -4,6 +4,7 @@ import {
   query, where, getDoc, setDoc, serverTimestamp
 } from "firebase/firestore"; // ✅ includes setDoc, serverTimestamp
 import { db, storage } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -187,7 +188,7 @@ export default function ReportIncidentPage(props) {
   const markNotesSeen = async (row) => {
     if (!row?.id || !uid) return;
     try {
-      const refDoc = doc(db, "reportincident", row.id);
+      const refDoc = doc(hostelCol(emp.hostelid, "reports"),row.id);
       await updateDoc(refDoc, { [`notesSeenBy.${uid}`]: serverTimestamp() });
       // Update local list immediately so badge hides
       setList((prev) =>
@@ -220,10 +221,9 @@ const getList = async () => {
     userMap[data.uid] = username;
   });
 
-  // incidents  (collection: reportincident)
+  // incidents  (collection: reports)
   const reportincidentQuery = query(
-    collection(db, "reportincident"),
-    where("hostelid", "==", emp.hostelid)
+    hostelCol(emp.hostelid, "reports")
   );
   const reportincidentSnapshot = await getDocs(reportincidentQuery);
   let rows = reportincidentSnapshot.docs.map((d) => {
@@ -289,7 +289,7 @@ const getList = async () => {
 
     try {
       if (editingData) {
-        const docRef = doc(db, "reportincident", form.id);
+        const docRef = doc(hostelCol(emp.hostelid, "reports"),form.id);
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) {
           toast.warning("Report does not exist! Cannot update.");
@@ -311,7 +311,7 @@ const getList = async () => {
         });
         toast.success("Successfully updated");
       } else {
-        await addDoc(collection(db, "reportincident"), {
+        await addDoc(hostelCol(emp.hostelid, "reports"), {
           uid,
           incidenttype: form.incidenttype === "Other" ? form.other : form.incidenttype,
           description: form.description,
@@ -351,7 +351,7 @@ const getList = async () => {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "reportincident", deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, "reports"),deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -373,7 +373,7 @@ const getList = async () => {
   // === Status ===
   // const updateStatus = async (id, newStatus) => {
   //   try {
-  //     const requestRef = doc(db, "reportincident", id);
+  //     const requestRef = doc(hostelCol(emp.hostelid, "reports"),id);
   //     await updateDoc(requestRef, { status: newStatus });
   //     toast.success("Status updated!");
   //     getList();
@@ -387,7 +387,7 @@ const getList = async () => {
         const row = list.find(r => r.id === id);
         if (!row) return;
         if (!canModify(row)) { toast.error("You don't have permission to update this."); return; }
-        const requestRef = doc(db, "reportincident", id);
+        const requestRef = doc(hostelCol(emp.hostelid, "reports"),id);
         await updateDoc(requestRef, {
           status: newStatus, updatedBy: authUser?.email || uid,
           updatedAt: serverTimestamp(),
@@ -415,7 +415,7 @@ const getList = async () => {
   const saveAssignment = async () => {
     if (!assignTarget?.id) return;
     try {
-      const requestRef = doc(db, "reportincident", assignTarget.id);
+      const requestRef = doc(hostelCol(emp.hostelid, "reports"),assignTarget.id);
 
       // combine tokens + last typed email (if any) safely
       const extra = normalizeEmail(assignEmail);
@@ -471,7 +471,7 @@ const getList = async () => {
     if (!row || !msg) { toast.error("Write something before saving."); return; }
     try {
       if (!canModify(row)) { toast.error("You don't have permission to add a note here."); return; }
-      const requestRef = doc(db, "reportincident", row.id);
+      const requestRef = doc(hostelCol(emp.hostelid, "reports"),row.id);
       const entry = { by: authUser?.email || uid, byUid: uid || null, at: new Date().toISOString(), text: msg };
       const prevNotes = Array.isArray(row.adminNotes) ? row.adminNotes : [];
       await updateDoc(requestRef, {

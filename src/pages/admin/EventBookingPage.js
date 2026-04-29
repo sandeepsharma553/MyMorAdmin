@@ -4,12 +4,12 @@ import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import dayjs from "dayjs";
 import {
-  collection,
   getDocs,
   query,
   where, setDoc, serverTimestamp, doc
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 
 // Small, reusable pager
 const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
@@ -95,8 +95,7 @@ export default function EventBookingPage() {
       setIsLoading(true);
       try {
         const qEvents = query(
-          collection(db, "eventbookings"),
-          where("hostelid", "==", emp.hostelid)
+          hostelCol(emp.hostelid, "eventbookings")
         );
         const snap = await getDocs(qEvents);
         const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));

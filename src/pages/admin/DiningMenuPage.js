@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  collection, addDoc, getDocs, updateDoc, doc, setDoc, deleteDoc,
+  addDoc, getDocs, updateDoc, doc, setDoc, deleteDoc,
   query, where, getDoc, Timestamp, writeBatch
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import * as XLSX from "xlsx";
 import { MenuItem, Select, Checkbox, ListItemText } from '@mui/material';
@@ -75,8 +76,7 @@ export default function DiningMenuPage(props) {
     try {
       const { start, end } = getWeekRange(dateStr, mode);
       const qy = query(
-        collection(db, 'menus'),
-        where("hostelid", "==", emp.hostelid),
+        hostelCol(emp.hostelid, 'menus'),
         where("date", ">=", start),
         where("date", "<=", end),
       );
@@ -130,7 +130,7 @@ export default function DiningMenuPage(props) {
       return;
     }
     try {
-      const menusRef = collection(db, 'menus');
+      const menusRef = hostelCol(emp.hostelid, 'menus');
       if (editingData) {
         const docId = `${editingData.date}_${editingData.hostelid}`;
         await updateDoc(doc(menusRef, docId), form);
@@ -174,7 +174,7 @@ export default function DiningMenuPage(props) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, 'menus', deleteData.id));
+      await deleteDoc(doc(hostelCol(emp.hostelid, 'menus'), deleteData.id));
       toast.success('Successfully deleted!');
       getList(date, weekMode);
     } catch (error) {
@@ -247,7 +247,7 @@ export default function DiningMenuPage(props) {
   const saveToFirebase1 = async () => {
     setIsLoading(true);
     try {
-      const menusRef = collection(db, "menus");
+      const menusRef = hostelCol(emp.hostelid, "menus");
       for (const entry of data) {
         const qy = query(
           menusRef,
@@ -275,8 +275,8 @@ export default function DiningMenuPage(props) {
   const saveToFirebase = async () => {
     setIsLoading(true);
     try {
-      const menusRef = collection(db, "menus");
-  
+      const menusRef = hostelCol(emp.hostelid, "menus");
+
       // ✅ Sorted so range (firstDate → lastDate) clean aaye
       const sortedData = [...data].sort((a, b) =>
         String(a.date).localeCompare(String(b.date))
@@ -313,7 +313,7 @@ export default function DiningMenuPage(props) {
         toast.success(`Data saved! (${createdCount} new menu(s))`);
   
         // 🔔 TRIGGER DOC – ye Cloud Function ko bolega “Excel upload hua”
-        await addDoc(collection(db, "menus_uploads"), {
+        await addDoc(hostelCol(emp.hostelid, "menus_uploads"), {
           hostelid: emp.hostelid,
           createdCount,
           firstDate,
@@ -385,7 +385,7 @@ export default function DiningMenuPage(props) {
       for (let i = 0; i < ids.length; i += chunkSize) {
         const chunk = ids.slice(i, i + chunkSize);
         const batch = writeBatch(db);
-        chunk.forEach((id) => batch.delete(doc(db, "menus", id)));
+        chunk.forEach((id) => batch.delete(doc(hostelCol(emp.hostelid, "menus"), id)));
         await batch.commit();
       }
       toast.success("Selected menus deleted");

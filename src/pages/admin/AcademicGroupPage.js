@@ -12,7 +12,8 @@ import {
   off,
 } from "firebase/database";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { getDocs, query, where } from "firebase/firestore";
+import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -111,8 +112,7 @@ export default function AcademicGroupPage(props) {
     setIsLoading(true);
     try {
       const academicCategoryQuery = query(
-        collection(db, "academiccategory"),
-        where("hostelid", "==", emp.hostelid)
+        hostelCol(emp.hostelid, "academiccategory")
       );
       const querySnapshot = await getDocs(academicCategoryQuery);
       const documents = querySnapshot.docs.map((doc) => ({
