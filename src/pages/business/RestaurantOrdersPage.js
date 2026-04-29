@@ -1,10 +1,8 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
-  collection,
   getDocs,
   orderBy,
   query,
-  where,
   doc,
   updateDoc,
   Timestamp,
@@ -12,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { useSelector } from "react-redux";
 import { db } from "../../firebase";
+import { restaurantCol } from "../../utils/firestorePaths";
 import {
   PAYMENT_STATUSES,
 } from "../../components/RestaurantShared";
@@ -798,19 +797,13 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
       let snap;
       try {
         const q = query(
-          collection(db, "orders"),
-          where("restaurantId", "==", restaurantId),
+          restaurantCol(restaurantId, "orders"),
           orderBy("createdAt", "desc")
         );
         snap = await getDocs(q);
       } catch (error) {
-        console.error("Primary query failed, trying fallback:", error);
-        const fallbackQ = query(
-          collection(db, "orders"),
-          where("restaurantid", "==", restaurantId),
-          orderBy("createdAt", "desc")
-        );
-        snap = await getDocs(fallbackQ);
+        console.error("Primary query failed:", error);
+        snap = { docs: [] };
       }
 
       const mapped = snap.docs.map((d) =>
@@ -918,7 +911,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
   const quickUpdateStatus = async (orderId, status) => {
     try {
       setUpdatingOrderId(orderId);
-      await updateDoc(doc(db, "orders", orderId), {
+      await updateDoc(doc(restaurantCol(restaurantId, "orders"),orderId), {
         status,
         updatedAt: Timestamp.now(),
       });
@@ -979,7 +972,7 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
             nextOrderStatus = foundOrder.status || "placed";
           }
 
-          await updateDoc(doc(db, "orders", id), {
+          await updateDoc(doc(restaurantCol(restaurantId, "orders"),id), {
             items: updatedItems,
             status: nextOrderStatus,
             updatedAt: Timestamp.now(),

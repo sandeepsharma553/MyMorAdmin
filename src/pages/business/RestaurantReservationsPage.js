@@ -1,10 +1,8 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
-  collection,
   getDocs,
   orderBy,
   query,
-  where,
   doc,
   updateDoc,
   Timestamp,
@@ -12,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { useSelector } from "react-redux";
 import { db } from "../../firebase";
+import { restaurantCol } from "../../utils/firestorePaths";
 import { RESERVATION_STATUSES } from "../../components/RestaurantShared";
 import { toast, ToastContainer } from "react-toastify";
 
@@ -91,8 +90,7 @@ export default function RestaurantReservationsPage({ navbarHeight }) {
       });
 
       const q = query(
-        collection(db, "reservations"),
-        where("restaurantId", "==", restaurantId),
+        restaurantCol(restaurantId, "reservations"),
         orderBy("slotAt", "desc")
       );
 
@@ -124,7 +122,7 @@ export default function RestaurantReservationsPage({ navbarHeight }) {
 
   const quickUpdateStatus = async (reservationId, status) => {
     try {
-      await updateDoc(doc(db, "reservations", reservationId), {
+      await updateDoc(doc(restaurantCol(restaurantId, "reservations"), reservationId), {
         status,
         updatedAt: Timestamp.now(),
       });

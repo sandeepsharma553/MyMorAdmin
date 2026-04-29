@@ -1,16 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  collection,
+  collectionGroup,
   onSnapshot,
   query,
-  where,
-  orderBy,
   doc,
   updateDoc,
   serverTimestamp,
+  where,
 } from "firebase/firestore";
-import { db } from "../../firebase";
 import { useSelector } from "react-redux";
+import { db } from "../../firebase";
+import { serviceCol } from "../../utils/firestorePaths";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -63,6 +63,8 @@ function Label({ children }) {
 
 export default function ServiceBookingPage({ navbarHeight }) {
   const uid = useSelector((state) => state.auth.user?.uid);
+  const emp = useSelector((state) => state.auth.employee);
+  const restaurantId = emp?.restaurantid || null;
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -83,11 +85,11 @@ export default function ServiceBookingPage({ navbarHeight }) {
   });
 
   useEffect(() => {
-    if (!uid) return;
+    if (!restaurantId) return;
 
     const qy = query(
-      collection(db, "servicebookings"),
-      where("providerUid", "==", uid),
+      collectionGroup(db, "servicebookings"),
+      where("restaurantId", "==", restaurantId)
     );
 
     const unsub = onSnapshot(
@@ -104,7 +106,7 @@ export default function ServiceBookingPage({ navbarHeight }) {
     );
 
     return () => unsub();
-  }, [uid]);
+  }, [restaurantId]);
 
   const stats = useMemo(() => {
     return {
@@ -162,9 +164,10 @@ export default function ServiceBookingPage({ navbarHeight }) {
     });
   };
 
-  const quickUpdateStatus = async (id, bookingStatus) => {
+  const quickUpdateStatus = async (booking, bookingStatus) => {
+    const { id, serviceId } = booking;
     try {
-      await updateDoc(doc(db, "servicebookings", id), {
+      await updateDoc(doc(serviceCol(serviceId, "servicebookings"), id), {
         bookingStatus,
         updatedAt: serverTimestamp(),
       });
@@ -187,7 +190,7 @@ export default function ServiceBookingPage({ navbarHeight }) {
     setSaving(true);
 
     try {
-      await updateDoc(doc(db, "servicebookings", selectedBooking.id), {
+      await updateDoc(doc(serviceCol(selectedBooking.serviceId, "servicebookings"), selectedBooking.id), {
         bookingStatus: editForm.bookingStatus,
         paymentStatus: editForm.paymentStatus,
         adminNote: editForm.adminNote.trim(),
@@ -357,25 +360,25 @@ export default function ServiceBookingPage({ navbarHeight }) {
                   <td className="p-3 align-top">
                     <div className="flex flex-wrap gap-2">
                       <button
-                        onClick={() => quickUpdateStatus(item.id, "confirmed")}
+                        onClick={() => quickUpdateStatus(item, "confirmed")}
                         className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
                       >
                         Confirm
                       </button>
                       <button
-                        onClick={() => quickUpdateStatus(item.id, "in_progress")}
+                        onClick={() => quickUpdateStatus(item, "in_progress")}
                         className="rounded-lg border border-purple-200 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-50"
                       >
                         Start
                       </button>
                       <button
-                        onClick={() => quickUpdateStatus(item.id, "completed")}
+                        onClick={() => quickUpdateStatus(item, "completed")}
                         className="rounded-lg border border-green-200 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50"
                       >
                         Complete
                       </button>
                       <button
-                        onClick={() => quickUpdateStatus(item.id, "rejected")}
+                        onClick={() => quickUpdateStatus(item, "rejected")}
                         className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
                       >
                         Reject

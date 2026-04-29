@@ -8,7 +8,9 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  serverTimestamp, getDocs, where
+  serverTimestamp,
+  getDocs,
+  where,
 } from "firebase/firestore";
 import {
   ref as storageRef,
@@ -295,6 +297,8 @@ export default function ProductPage({ navbarHeight }) {
   const [form, setForm] = useState(initialForm);
   const [categoryOption, setCategoryOption] = useState([]);
   const uid = useSelector((state) => state.auth.user?.uid);
+  const emp = useSelector((state) => state.auth.employee);
+  const restaurantId = emp?.restaurantid || null;
   const [open, setOpen] = useState({
     basic: true,
     pricing: true,
@@ -313,7 +317,12 @@ export default function ProductPage({ navbarHeight }) {
 
   /* ---------------- load firestore ---------------- */
   useEffect(() => {
-    const qy = query(collection(db, "products"), where("uid", "==", uid));
+    if (!restaurantId) { setLoading(false); return; }
+    const qy = query(
+      collection(db, "products"),
+      where("restaurantId", "==", restaurantId),
+      orderBy("createdAt", "desc")
+    );
     const unsub = onSnapshot(
       qy,
       (snap) => {
@@ -326,7 +335,7 @@ export default function ProductPage({ navbarHeight }) {
       }
     );
     return () => unsub();
-  }, []);
+  }, [restaurantId]);
   useEffect(() => {
     getCategory();
   }, []);
@@ -811,6 +820,7 @@ export default function ProductPage({ navbarHeight }) {
       } else {
         await addDoc(collection(db, "products"), {
           ...payload,
+          restaurantId,
           createdAt: serverTimestamp(),
         });
         toast.success("Product created ✅");

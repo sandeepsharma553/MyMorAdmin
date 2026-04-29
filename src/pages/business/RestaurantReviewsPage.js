@@ -1,9 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
-  collection,
   getDocs,
   query,
-  where,
   doc,
   updateDoc,
   Timestamp,
@@ -11,6 +9,7 @@ import {
 } from "firebase/firestore";
 import { useSelector } from "react-redux";
 import { db } from "../../firebase";
+import { restaurantCol } from "../../utils/firestorePaths";
 import { REVIEW_STATUSES } from "../../components/RestaurantShared";
 import { toast, ToastContainer } from "react-toastify";
 
@@ -48,8 +47,7 @@ export default function RestaurantReviewsPage({ navbarHeight }) {
       });
 
       const q = query(
-        collection(db, "reviews"),
-        where("restaurantId", "==", restaurantId)
+        restaurantCol(restaurantId, "reviews")
       );
 
       const snap = await getDocs(q);
@@ -76,7 +74,7 @@ export default function RestaurantReviewsPage({ navbarHeight }) {
 
   const quickUpdateStatus = async (reviewId, status) => {
     try {
-      await updateDoc(doc(db, "reviews", reviewId), {
+      await updateDoc(doc(restaurantCol(restaurantId, "reviews"),reviewId), {
         status,
         moderatedAt: Timestamp.now(),
       });

@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
   onSnapshot,
-  orderBy,
   query,
   addDoc,
   updateDoc,
@@ -592,6 +591,8 @@ export default function ServicePage({ navbarHeight }) {
   const [categoryOption, setCategoryOption] = useState([]);
   const [subCategoryOption, setSubCategoryOption] = useState([]);
   const uid = useSelector((state) => state.auth.user?.uid);
+  const emp = useSelector((state) => state.auth.employee);
+  const restaurantId = emp?.restaurantid || null;
   const [open, setOpen] = useState({
     basic: true,
     pricing: true,
@@ -606,7 +607,11 @@ export default function ServicePage({ navbarHeight }) {
   });
 
   useEffect(() => {
-    const qy = query(collection(db, "services"), where("uid", "==", uid));
+    if (!restaurantId) return;
+    const qy = query(
+      collection(db, "services"),
+      where("restaurantId", "==", restaurantId)
+    );
     const unsub = onSnapshot(
       qy,
       (snap) => {
@@ -619,7 +624,7 @@ export default function ServicePage({ navbarHeight }) {
       }
     );
     return () => unsub();
-  }, []);
+  }, [restaurantId]);
 
   useEffect(() => {
     getCategory();
@@ -1115,6 +1120,7 @@ export default function ServicePage({ navbarHeight }) {
       } else {
         await addDoc(collection(db, "services"), {
           ...payload,
+          restaurantId,
           createdAt: serverTimestamp(),
         });
         toast.success("Service created ✅");
