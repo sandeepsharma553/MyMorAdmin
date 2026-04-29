@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import { db, database, storage } from "../../firebase";
-import { ref as dbRef, onValue, off, set, push, update, remove, get } from 'firebase/database';
+import { db, storage } from "../../firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { collection, getDocs, Timestamp } from "firebase/firestore";
+import {
+  collection, doc, getDocs, addDoc, updateDoc, deleteDoc, getDoc,
+  onSnapshot, query, where, orderBy, Timestamp, deleteField,
+} from "firebase/firestore";
 import dayjs from 'dayjs';
 import { DateRange } from 'react-date-range';
 import 'react-date-range/dist/styles.css';
@@ -104,32 +106,33 @@ export default function AnnouncementPage(props) {
 
   // ===== Realtime load =====
   useEffect(() => {
+    if (!emp?.hostelid) return;
     setIsLoading(true);
-    const groupRef = dbRef(database, 'announcements/');
-    const cb = (snapshot) => {
-      const data = snapshot.val();
-      const documents = data
-        ? Object.entries(data).map(([id, value]) => {
-            const posterUrls = Array.isArray(value.posterUrls)
-              ? value.posterUrls
-              : (value.posterUrl ? [value.posterUrl] : []);
-            return {
-              id,
-              ...value,
-              posterUrls,
-              isPinned: !!value.isPinned,
-              pinnedOrder: Number.isFinite(value?.pinnedOrder) ? Number(value.pinnedOrder) : 0,
-              pinnedAt: typeof value?.pinnedAt === 'number' ? value.pinnedAt : null,
-            };
-          })
-          .filter(item => item.hostelid === emp?.hostelid)
-        : [];
+    const q = query(
+      collection(db, 'announcements'),
+      where('hostelid', '==', emp.hostelid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      const documents = snapshot.docs.map((d) => {
+        const value = d.data();
+        const posterUrls = Array.isArray(value.posterUrls)
+          ? value.posterUrls
+          : (value.posterUrl ? [value.posterUrl] : []);
+        return {
+          id: d.id,
+          ...value,
+          posterUrls,
+          isPinned: !!value.isPinned,
+          pinnedOrder: Number.isFinite(value?.pinnedOrder) ? Number(value.pinnedOrder) : 0,
+          pinnedAt: typeof value?.pinnedAt === 'number' ? value.pinnedAt : null,
+        };
+      });
       setList(documents);
       setSelectedIds(new Set());
       setIsLoading(false);
-    };
-    onValue(groupRef, cb, () => setIsLoading(false));
-    return () => { off(groupRef); };
+    }, () => setIsLoading(false));
+    return () => unsub();
   }, [emp?.hostelid]);
 
   // ===== Helpers =====
@@ -265,15 +268,14 @@ export default function AnnouncementPage(props) {
     return urls;
   };
 
-  // ===== POLL PATCH (preserve votes) =====
-  const buildPollPatchPreserveVotes = (id, dbPoll, formPoll) => {
+  // ===== POLL PATCH (preserve votes) — Firestore dot-notation =====
+  const buildPollPatchPreserveVotes = (_id, dbPoll, formPoll) => {
     const updates = {};
-    const base = `announcements/${id}/pollData`;
     if (!formPoll || !formPoll.question?.trim()) return updates;
 
-    updates[`${base}/question`] = formPoll.question.trim();
-    updates[`${base}/allowMulti`] = !!formPoll.allowMulti;
-    updates[`${base}/allowaddoption`] = !!formPoll.allowaddoption;
+    updates['pollData.question'] = formPoll.question.trim();
+    updates['pollData.allowMulti'] = !!formPoll.allowMulti;
+    updates['pollData.allowaddoption'] = !!formPoll.allowaddoption;
 
     const newOpts = formPoll.options || {};
     const oldOpts = (dbPoll && dbPoll.options) || {};
@@ -281,15 +283,15 @@ export default function AnnouncementPage(props) {
     Object.entries(newOpts).forEach(([key, val]) => {
       const txt = (val?.text || '').trim();
       if (!txt) return;
-      updates[`${base}/options/${key}/text`] = txt;
+      updates[`pollData.options.${key}.text`] = txt;
       if (!oldOpts[key]) {
-        updates[`${base}/options/${key}/votes`] = {};
+        updates[`pollData.options.${key}.votes`] = {};
       }
     });
 
     Object.keys(oldOpts).forEach((key) => {
       if (!(key in newOpts)) {
-        updates[`${base}/options/${key}`] = null;
+        updates[`pollData.options.${key}`] = deleteField();
       }
     });
 
@@ -302,12 +304,11 @@ export default function AnnouncementPage(props) {
 
   const togglePin = async (item, makePinned) => {
     try {
-      const patch = {
+      await updateDoc(doc(db, 'announcements', item.id), {
         isPinned: makePinned,
         pinnedAt: makePinned ? Date.now() : null,
         pinnedOrder: makePinned ? maxPinnedOrder() + 1 : 0,
-      };
-      await update(dbRef(database, `announcements/${item.id}`), patch);
+      });
       toast.success(makePinned ? 'Pinned' : 'Unpinned');
     } catch (e) {
       console.error(e);
@@ -319,10 +320,7 @@ export default function AnnouncementPage(props) {
     const n = Number(value);
     if (!Number.isFinite(n) || n < 0) return;
     try {
-      await update(dbRef(database, `announcements/${item.id}`), {
-        isPinned: true,
-        pinnedOrder: n,
-      });
+      await updateDoc(doc(db, 'announcements', item.id), { isPinned: true, pinnedOrder: n });
       toast.success('Order updated');
     } catch (e) {
       console.error(e);
@@ -430,34 +428,23 @@ export default function AnnouncementPage(props) {
 
       if (editingData) {
         // EDIT (preserve votes)
-        const refPath = `announcements/${form.id}`;
-        const announcementRef = dbRef(database, refPath);
-        const snapshot = await get(announcementRef);
+        const annRef = doc(db, 'announcements', form.id);
+        const snapshot = await getDoc(annRef);
         if (!snapshot.exists()) {
           toast.warning('Announcement does not exist! Cannot update.');
           setIsLoading(false);
           return;
         }
-        const existing = snapshot.val() || {};
-
+        const existing = snapshot.data() || {};
         const { postersFiles, id, pollData: _ignored, ...rest } = payload;
-        const baseUpdates = {};
-        Object.entries(rest).forEach(([k, v]) => {
-          if (v === undefined) return;
-          baseUpdates[`${refPath}/${k}`] = v;
-        });
-
         const pollPatch = buildPollPatchPreserveVotes(form.id, existing.pollData, form.pollData);
-
-        await update(dbRef(database), { ...baseUpdates, ...pollPatch });
-
+        await updateDoc(annRef, { ...rest, ...pollPatch });
         toast.success('Announcement updated successfully');
       } else {
         // CREATE
-        const newRef = push(dbRef(database, 'announcements/'));
         const { postersFiles, id, ...toPersist } = payload;
         if (!toPersist.pollData) delete toPersist.pollData;
-        await set(newRef, toPersist);
+        await addDoc(collection(db, 'announcements'), toPersist);
         toast.success('Announcement created successfully');
       }
 
@@ -476,8 +463,7 @@ export default function AnnouncementPage(props) {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      const itemRef = dbRef(database, `announcements/${deleteData.id}`);
-      await remove(itemRef);
+      await deleteDoc(doc(db, 'announcements', deleteData.id));
       toast.success('Successfully deleted!');
     } catch (error) {
       console.error('Error deleting document: ', error);
@@ -589,9 +575,9 @@ export default function AnnouncementPage(props) {
               if (!window.confirm(`Delete ${selectedIds.size} announcement(s)?`)) return;
               try {
                 setIsLoading(true);
-                const updatesObj = {};
-                selectedIds.forEach(id => { updatesObj[`announcements/${id}`] = null; });
-                await update(dbRef(database), updatesObj);
+                await Promise.all(
+                  [...selectedIds].map(id => deleteDoc(doc(db, 'announcements', id)))
+                );
                 toast.success('Selected announcements deleted');
                 setSelectedIds(new Set());
               } catch (err) {
