@@ -14,7 +14,7 @@ import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import { enUS } from 'date-fns/locale';
 import { format } from 'date-fns';
-import { hostelCol } from "../../utils/firestorePaths";
+
 export default function AnnouncementPage(props) {
   const { navbarHeight } = props;
   const [modalOpen, setModalOpen] = useState(false);
@@ -107,49 +107,34 @@ export default function AnnouncementPage(props) {
   // ===== Realtime load =====
   useEffect(() => {
     if (!emp?.hostelid) return;
-  
     setIsLoading(true);
-  
     const q = query(
-      hostelCol(emp.hostelid, "announcements"),
-      orderBy("createdAt", "desc")
+      collection(db, 'announcements'),
+      where('hostelid', '==', emp.hostelid),
+      orderBy('createdAt', 'desc')
     );
-  
-    const unsub = onSnapshot(
-      q,
-      (snapshot) => {
-        const documents = snapshot.docs.map((d) => {
-          const value = d.data();
-          const posterUrls = Array.isArray(value.posterUrls)
-            ? value.posterUrls
-            : value.posterUrl
-            ? [value.posterUrl]
-            : [];
-  
-          return {
-            id: d.id,
-            ...value,
-            posterUrls,
-            isPinned: !!value.isPinned,
-            pinnedOrder: Number.isFinite(value?.pinnedOrder)
-              ? Number(value.pinnedOrder)
-              : 0,
-            pinnedAt: typeof value?.pinnedAt === "number" ? value.pinnedAt : null,
-          };
-        });
-  
-        setList(documents);
-        setSelectedIds(new Set());
-        setIsLoading(false);
-      },
-      (error) => {
-        console.error(error);
-        setIsLoading(false);
-      }
-    );
-  
+    const unsub = onSnapshot(q, (snapshot) => {
+      const documents = snapshot.docs.map((d) => {
+        const value = d.data();
+        const posterUrls = Array.isArray(value.posterUrls)
+          ? value.posterUrls
+          : (value.posterUrl ? [value.posterUrl] : []);
+        return {
+          id: d.id,
+          ...value,
+          posterUrls,
+          isPinned: !!value.isPinned,
+          pinnedOrder: Number.isFinite(value?.pinnedOrder) ? Number(value.pinnedOrder) : 0,
+          pinnedAt: typeof value?.pinnedAt === 'number' ? value.pinnedAt : null,
+        };
+      });
+      setList(documents);
+      setSelectedIds(new Set());
+      setIsLoading(false);
+    }, () => setIsLoading(false));
     return () => unsub();
   }, [emp?.hostelid]);
+
   // ===== Helpers =====
   const toJsDate = (d) => {
     if (!d) return null;
@@ -271,19 +256,15 @@ export default function AnnouncementPage(props) {
   // ===== Upload helper (multi) =====
   const uploadAllPosters = async (files) => {
     if (!files || !files.length) return [];
-  
     const urls = [];
-  
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      const path = `hostel/${emp.hostelid}/announcements_posters/${Date.now()}_${i}_${f.name}`;
+      const path = `announcements_posters/${Date.now()}_${i}_${f.name}`;
       const storRef = storageRef(storage, path);
-  
       await uploadBytes(storRef, f);
       const url = await getDownloadURL(storRef);
       urls.push(url);
     }
-  
     return urls;
   };
 
@@ -323,35 +304,30 @@ export default function AnnouncementPage(props) {
 
   const togglePin = async (item, makePinned) => {
     try {
-      await updateDoc(doc(hostelCol(emp.hostelid, "announcements"), item.id), {
+      await updateDoc(doc(db, 'announcements', item.id), {
         isPinned: makePinned,
         pinnedAt: makePinned ? Date.now() : null,
         pinnedOrder: makePinned ? maxPinnedOrder() + 1 : 0,
       });
-  
-      toast.success(makePinned ? "Pinned" : "Unpinned");
+      toast.success(makePinned ? 'Pinned' : 'Unpinned');
     } catch (e) {
       console.error(e);
-      toast.error("Could not update pin");
+      toast.error('Could not update pin');
     }
   };
 
   const setPinnedOrder = async (item, value) => {
     const n = Number(value);
     if (!Number.isFinite(n) || n < 0) return;
-  
     try {
-      await updateDoc(doc(hostelCol(emp.hostelid, "announcements"), item.id), {
-        isPinned: true,
-        pinnedOrder: n,
-      });
-  
-      toast.success("Order updated");
+      await updateDoc(doc(db, 'announcements', item.id), { isPinned: true, pinnedOrder: n });
+      toast.success('Order updated');
     } catch (e) {
       console.error(e);
-      toast.error("Order update failed");
+      toast.error('Order update failed');
     }
   };
+
   const nudgeOrder = async (item, delta) => {
     const n = Number(item.pinnedOrder || 0) + delta;
     if (n < 0) return;
@@ -451,33 +427,27 @@ export default function AnnouncementPage(props) {
       };
 
       if (editingData) {
-        const annRef = doc(hostelCol(emp.hostelid, "announcements"), form.id);
+        // EDIT (preserve votes)
+        const annRef = doc(db, 'announcements', form.id);
         const snapshot = await getDoc(annRef);
-      
         if (!snapshot.exists()) {
-          toast.warning("Announcement does not exist! Cannot update.");
+          toast.warning('Announcement does not exist! Cannot update.');
           setIsLoading(false);
           return;
         }
-      
         const existing = snapshot.data() || {};
         const { postersFiles, id, pollData: _ignored, ...rest } = payload;
-        const pollPatch = buildPollPatchPreserveVotes(
-          form.id,
-          existing.pollData,
-          form.pollData
-        );
-      
+        const pollPatch = buildPollPatchPreserveVotes(form.id, existing.pollData, form.pollData);
         await updateDoc(annRef, { ...rest, ...pollPatch });
-        toast.success("Announcement updated successfully");
+        toast.success('Announcement updated successfully');
       } else {
+        // CREATE
         const { postersFiles, id, ...toPersist } = payload;
-      
         if (!toPersist.pollData) delete toPersist.pollData;
-      
-        await addDoc(hostelCol(emp.hostelid, "announcements"), toPersist);
-        toast.success("Announcement created successfully");
+        await addDoc(collection(db, 'announcements'), toPersist);
+        toast.success('Announcement created successfully');
       }
+
     } catch (error) {
       console.error("Error saving data:", error);
       toast.error('Failed to save announcement');
@@ -492,20 +462,17 @@ export default function AnnouncementPage(props) {
 
   const handleDelete = async () => {
     if (!deleteData) return;
-  
     try {
-      await deleteDoc(
-        doc(hostelCol(emp.hostelid, "announcements"), deleteData.id)
-      );
-      toast.success("Successfully deleted!");
+      await deleteDoc(doc(db, 'announcements', deleteData.id));
+      toast.success('Successfully deleted!');
     } catch (error) {
-      console.error("Error deleting document: ", error);
-      toast.error("Failed to delete");
+      console.error('Error deleting document: ', error);
+      toast.error('Failed to delete');
     }
-  
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
+
   const addOption = () => {
     setForm((prev) => {
       const options = prev.pollData?.options || {};
@@ -609,9 +576,7 @@ export default function AnnouncementPage(props) {
               try {
                 setIsLoading(true);
                 await Promise.all(
-                  [...selectedIds].map((id) =>
-                    deleteDoc(doc(hostelCol(emp.hostelid, "announcements"), id))
-                  )
+                  [...selectedIds].map(id => deleteDoc(doc(db, 'announcements', id)))
                 );
                 toast.success('Selected announcements deleted');
                 setSelectedIds(new Set());
