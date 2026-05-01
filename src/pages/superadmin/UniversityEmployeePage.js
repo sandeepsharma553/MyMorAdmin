@@ -43,7 +43,7 @@ const ALL_MENU_OPTIONS = [
   { key: "universityreportincident", label: "Report Incident", featureFlag: "reportincident" },
   { key: "universityfeedback", label: "Feedback", featureFlag: "feedback" },
   { key: "universityeventbooking", label: "Event Booking", featureFlag: "events" },
-  { key: "universitydeal", label: "Deals", featureFlag: "deals" },
+  // { key: "universitydeal", label: "Deals", featureFlag: "deals" },
   { key: "universityfaq", label: "FAQs", featureFlag: "faq" },
   { key: "universitychecklist", label: "Checklists", featureFlag: "checklist" },
   { key: "universityroominfo", label: "Room Info", featureFlag: "roominfo" },

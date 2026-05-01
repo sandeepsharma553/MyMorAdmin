@@ -24,7 +24,7 @@ const DEFAULT_FEATURES = {
   universityModule: false,
   events: false,
   eventbooking: false,
-  deals: false,
+  // deals: false,
   announcement: false,
   hostelevent: false,
   diningmenu: false,
