@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 
 import { useSelector, useDispatch } from "react-redux";
-import { db, database } from "../firebase";
+import { db } from "../firebase";
 import {
   collection,
   doc,
@@ -44,7 +44,6 @@ import {
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { ref as dbRef, onValue } from "firebase/database";
 import { setActiveOrg } from "../app/features/AuthSlice";
 
 const hasPermission = (perm, key) =>
@@ -236,17 +235,16 @@ function useRtdbMembersBadgeCount({ uid, menuKey, clubId, enabled = true }) {
 
   useEffect(() => {
     if (!enabled || !clubId) return;
-    const mRef = dbRef(database, `uniclubs/${clubId}/members`);
-    return onValue(mRef, (snap) => {
-      const val = snap.val() || {};
-      setMembers(Object.values(val));
+    const unsub = onSnapshot(collection(db, 'uniclubs', clubId, 'members'), (snap) => {
+      setMembers(snap.docs.map((d) => d.data()));
     });
+    return () => unsub();
   }, [enabled, clubId]);
 
   return useMemo(() => {
     if (!enabled) return 0;
     if (!openedAt) return members.length;
-    return members.filter((m) => Number(m?.joinedAt || 0) > openedAt).length;
+    return members.filter((m) => Number(m?.joinedAt?.toMillis?.() ?? m?.joinedAt || 0) > openedAt).length;
   }, [enabled, members, openedAt]);
 }
 
@@ -256,15 +254,14 @@ function useRtdbJoinReqBadgeCount({ uid, menuKey, clubId, enabled = true }) {
 
   useEffect(() => {
     if (!enabled || !clubId) return;
-    const rRef = dbRef(database, `uniclubs/${clubId}/joinRequests`);
-    return onValue(rRef, (snap) => {
-      const val = snap.val() || {};
-      setRequests(Object.values(val));
+    const unsub = onSnapshot(collection(db, 'uniclubs', clubId, 'joinRequests'), (snap) => {
+      setRequests(snap.docs.map((d) => d.data()));
     });
+    return () => unsub();
   }, [enabled, clubId]);
 
   const getReqAt = (r) =>
-    Number(r?.requestedAt || r?.createdAt || r?.requestedAtMs || r?.time || 0);
+    Number(r?.requestedAt?.toMillis?.() ?? r?.requestedAt || r?.createdAt?.toMillis?.() ?? r?.createdAt || r?.requestedAtMs || r?.time || 0);
 
   return useMemo(() => {
     if (!enabled) return 0;

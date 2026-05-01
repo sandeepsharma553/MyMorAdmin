@@ -6,11 +6,12 @@ import dayjs from "dayjs";
 import {
   collection,
   getDocs,
+  getDoc,
+  doc,
   query,
   where,
 } from "firebase/firestore";
-import { db,database } from "../../firebase";
-import { ref as dbRef, query as datquery, onValue, off, } from 'firebase/database';
+import { db } from "../../firebase";
 import { useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
 // Small, reusable pager
 const Pager = ({ page, setPage, pageSize, setPageSize, total }) => {
@@ -123,18 +124,12 @@ export default function SubgroupEventBooking() {
     // if we already have a good name, no need to fetch
     if (!isBlank(groupNameResolved) && groupNameResolved !== "Club") return;
 
-    // RTDB: uniclubsubgroup/{groupId}  OR query based on your schema
-    const refPath = dbRef(database, `uniclubsubgroup/${groupId}`);
-
-    const cb = (snap) => {
-      const val = snap.val();
+    getDoc(doc(db, 'uniclubsubgroup', groupId)).then((snap) => {
+      const val = snap.exists() ? snap.data() : null;
       const title = val?.title || val?.name || "";
       if (!isBlank(title)) setGroupNameResolved(title);
       else setGroupNameResolved(emp?.uniclub || "Club");
-    };
-
-    onValue(refPath, cb, { onlyOnce: true });
-    return () => off(refPath, "value", cb);
+    }).catch(() => setGroupNameResolved(emp?.uniclub || "Club"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId]);
 

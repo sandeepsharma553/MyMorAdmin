@@ -4,7 +4,6 @@ import { getAuth } from "firebase/auth";
 import { getAnalytics } from "firebase/analytics";
 import { initializeFirestore } from "firebase/firestore";
 import { getFirestore } from "firebase/firestore";
-import { getDatabase } from 'firebase/database';
 import { getStorage } from "firebase/storage";
 import { getMessaging } from "firebase/messaging"
 // const firebaseConfig = {
@@ -69,9 +68,8 @@ const firestore = db;
 const auth = getAuth(app);
 const analytics = getAnalytics(app);
 const storage = getStorage(app);
-const database = getDatabase(app);
 const messaging = getMessaging(app)
 const VAPID_KEY = process.env.REACT_APP_ENV === 'production'
   ? process.env.REACT_APP_FIREBASE_PROD_VAPID_KEY
   : process.env.REACT_APP_FIREBASE_DEV_VAPID_KEY;
-export { auth, analytics, db, firestore, storage, database, firebaseConfig, messaging, VAPID_KEY };
+export { auth, analytics, db, firestore, storage, firebaseConfig, messaging, VAPID_KEY };

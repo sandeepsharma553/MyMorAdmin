@@ -14,7 +14,7 @@ import {
   limit,
   serverTimestamp,
 } from "firebase/firestore";
-import { db, storage, firebaseConfig, database } from "../../firebase";
+import { db, storage, firebaseConfig } from "../../firebase";
 import { initializeApp, deleteApp } from "firebase/app";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import {
@@ -22,7 +22,6 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
 } from "firebase/auth";
-import { ref as dbRef, onValue, off } from "firebase/database";
 import { useSelector } from "react-redux";
 
 export default function UniclubStudentPage(props) {
@@ -174,26 +173,25 @@ export default function UniclubStudentPage(props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emp?.uniclubid]);
 
-  const fetchSubgroups = () => {
+  const fetchSubgroups = async () => {
     if (!emp?.uniclubid) {
       setSubgroups([]);
       return;
     }
-    const r = dbRef(database, `uniclubsubgroup`);
-    const handler = (snap) => {
-      const val = snap.val() || {};
-      const rows = Object.entries(val)
-        .map(([id, v]) => ({
-          id,
-          ...v,
-          name: v.title || v.name || "Subgroup",
-        }))
-        .filter((sg) => sg.parentGroupId === emp.uniclubid);
+    try {
+      const snap = await getDocs(
+        query(collection(db, "uniclubsubgroup"), where("parentGroupId", "==", emp.uniclubid))
+      );
+      const rows = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        name: d.data().title || d.data().name || "Subgroup",
+      }));
       setSubgroups(rows);
-    };
-
-    onValue(r, handler);
-    return () => off(r, "value", handler);
+    } catch (err) {
+      console.error("fetchSubgroups error:", err);
+      setSubgroups([]);
+    }
   };
 
   const getList = async () => {

@@ -14,19 +14,13 @@ import {
   where,
   getDoc,serverTimestamp
 } from "firebase/firestore";
-import { db, storage, auth, firebaseConfig, database } from "../../firebase";
+import { db, storage, auth, firebaseConfig } from "../../firebase";
 import { initializeApp, deleteApp } from "firebase/app";
 import {
   ref as storageRef,
   uploadBytes,
   getDownloadURL,
 } from "firebase/storage";
-import {
-  ref as dbRef,
-  get as rtdbGet,
-  set as rtdbSet,
-  remove as rtdbRemove,
-} from "firebase/database";
 import {
   getAuth,
   createUserWithEmailAndPassword,
@@ -164,35 +158,29 @@ export default function UniclubMembersPage(props) {
 
     setIsLoading(true);
     try {
-      // 1) RTDB members
-      const memRef = dbRef(database, `uniclubs/${emp.uniclubid}/members`);
-      const memSnap = await rtdbGet(memRef);
-      const memVal = memSnap.val() || {};
-      const memberUids = Object.keys(memVal);
-      if (memberUids.length === 0) {
+      // 1) Firestore members subcollection
+      const membersSnap = await getDocs(collection(db, "uniclubs", emp.uniclubid, "members"));
+      if (membersSnap.empty) {
         setList([]);
         return;
       }
 
       // 2) Firestore users docs for those uids
       const userDocs = await Promise.all(
-        memberUids.map(async (mUid) => {
+        membersSnap.docs.map(async (memberDoc) => {
+          const memberData = memberDoc.data();
+          const mUid = memberDoc.id;
           const d = await getDoc(doc(db, "users", mUid));
           if (!d.exists()) return null;
           const data = d.data();
-          const rtdbMember = memVal[mUid] || {};
           return {
             id: d.id,
             ...data,
-
-            // existing
-            role: rtdbMember.role || "member",
-            status: rtdbMember.status || "active",
-
-            // ✅ membership fields
-            membershipStartAt: rtdbMember.membershipStartAt || null,
-            membershipEndAt: rtdbMember.membershipEndAt || null,
-            revokedAt: rtdbMember.revokedAt || null,
+            role: memberData.role || "member",
+            status: memberData.status || "active",
+            membershipStartAt: memberData.membershipStartAt?.toMillis?.() ?? memberData.membershipStartAt ?? null,
+            membershipEndAt: memberData.membershipEndAt?.toMillis?.() ?? memberData.membershipEndAt ?? null,
+            revokedAt: memberData.revokedAt?.toMillis?.() ?? memberData.revokedAt ?? null,
           };
         })
       );
@@ -215,16 +203,13 @@ export default function UniclubMembersPage(props) {
         return;
       }
 
-      const ref = dbRef(database, "uniclubs");
-      const snap = await rtdbGet(ref);
-      const val = snap.val() || {};
-      const filtered = Object.entries(val)
-        .filter(([id, c]) => c.id === emp?.uniclubid)
-        .map(([id, c]) => ({
-          id,
-          title: c.title || "Unnamed Club",
-        }));
-
+      const snap = await getDocs(
+        query(collection(db, "uniclubs"), where("id", "==", emp.uniclubid))
+      );
+      const filtered = snap.docs.map((d) => ({
+        id: d.id,
+        title: d.data().title || "Unnamed Club",
+      }));
       setClubs(filtered);
     } catch (err) {
       console.error("getClubs error:", err);
@@ -238,17 +223,14 @@ export default function UniclubMembersPage(props) {
       return;
     }
     try {
-      const ref = dbRef(database, `uniclubsubgroup`);
-      const snap = await rtdbGet(ref);
-      const val = snap.val() || {};
-      const arr = Object.entries(val).map(([id, g]) => ({
-        id,
-        title: g.title || "Untitled Subgroup",
-        parentGroupId: g.parentGroupId || null,
-      }));
-      const filtered = arr.filter(
-        (x) => String(x.parentGroupId || "") === String(emp?.uniclubid)
+      const snap = await getDocs(
+        query(collection(db, "uniclubsubgroup"), where("parentGroupId", "==", emp.uniclubid))
       );
+      const filtered = snap.docs.map((d) => ({
+        id: d.id,
+        title: d.data().title || "Untitled Subgroup",
+        parentGroupId: d.data().parentGroupId || null,
+      }));
       setSubGroups(filtered);
     } catch (err) {
       console.error("fetchSubGroups error:", err);
@@ -289,21 +271,15 @@ export default function UniclubMembersPage(props) {
   const revokeMembership = async (memberUid) => {
     try {
       if (!emp?.uniclubid) return;
-      const memberRef = dbRef(
-        database,
-        `uniclubs/${emp.uniclubid}/members/${memberUid}`
-      );
-      const snap = await rtdbGet(memberRef);
+      const memberRef = doc(db, "uniclubs", emp.uniclubid, "members", memberUid);
+      const snap = await getDoc(memberRef);
       if (!snap.exists()) return;
 
-      const old = snap.val() || {};
       const now = Date.now();
-
-      await rtdbSet(memberRef, {
-        ...old,
+      await updateDoc(memberRef, {
         status: "revoked",
         revokedAt: now,
-        membershipEndAt: now, // end immediately
+        membershipEndAt: now,
       });
 
       toast.success("Membership revoked");
@@ -318,24 +294,19 @@ export default function UniclubMembersPage(props) {
   const reactivateMembership = async (memberUid, days = DEFAULT_MEMBERSHIP_DAYS) => {
     try {
       if (!emp?.uniclubid) return;
-      const memberRef = dbRef(
-        database,
-        `uniclubs/${emp.uniclubid}/members/${memberUid}`
-      );
-      const snap = await rtdbGet(memberRef);
+      const memberRef = doc(db, "uniclubs", emp.uniclubid, "members", memberUid);
+      const snap = await getDoc(memberRef);
       if (!snap.exists()) return;
 
-      const old = snap.val() || {};
+      const old = snap.data() || {};
       const now = Date.now();
       const endAt = now + Number(days || DEFAULT_MEMBERSHIP_DAYS) * dayMs;
 
-      await rtdbSet(memberRef, {
-        ...old,
+      await updateDoc(memberRef, {
         status: "active",
         revokedAt: null,
         membershipStartAt: now,
         membershipEndAt: endAt,
-        // keep joinedAt if already exists else set
         joinedAt: old.joinedAt || now,
       });
 
@@ -402,26 +373,16 @@ export default function UniclubMembersPage(props) {
 
         await updateDoc(docRef, updated);
 
-        // 🔁 sync RTDB member node for this staff's club
+        // 🔁 sync Firestore member doc for this staff's club
         if (emp?.uniclubid) {
-          const memberRef = dbRef(
-            database,
-            `uniclubs/${emp.uniclubid}/members/${form.id}`
-          );
-          const memberSnap = await rtdbGet(memberRef);
+          const memberRef = doc(db, "uniclubs", emp.uniclubid, "members", form.id);
+          const memberSnap = await getDoc(memberRef);
           if (memberSnap.exists()) {
-            const old = memberSnap.val() || {};
-            await rtdbSet(memberRef, {
-              ...old,
+            await updateDoc(memberRef, {
               uid: form.id,
               name: form.firstname,
-              photoURL: finalImageUrl || old.photoURL || "",
-              paymentMethod: form.paymentMethod || old.paymentMethod || "",
-              // ✅ keep membership fields unchanged on normal update
-              membershipStartAt: old.membershipStartAt || null,
-              membershipEndAt: old.membershipEndAt || null,
-              revokedAt: old.revokedAt || null,
-              status: old.status || "active",
+              photoURL: finalImageUrl || memberSnap.data().photoURL || "",
+              paymentMethod: form.paymentMethod || memberSnap.data().paymentMethod || "",
             });
           }
         }
@@ -487,23 +448,15 @@ export default function UniclubMembersPage(props) {
             return;
           }
 
-          // 🔗 Add as member in the SELECTED club in RTDB
-          const memberRef = dbRef(
-            database,
-            `uniclubs/${form.clubid}/members/${newUser.uid}`
-          );
-          await rtdbSet(memberRef, {
+          // 🔗 Add as member in the SELECTED club in Firestore
+          await setDoc(doc(db, "uniclubs", form.clubid, "members", newUser.uid), {
             uid: newUser.uid,
             name: form.firstname,
             photoURL: finalImageUrl || "",
             role: "member",
             status: "active",
             paymentMethod: form.paymentMethod || "",
-            // keep old joinedAt for history field, but store numeric too
-            joinedAt: Date.now(),                 // ✅ numeric for badge
-            joinedAtServerAt: serverTimestamp(),
-
-            // ✅ for countdown
+            joinedAt: serverTimestamp(),
             membershipStartAt: startAt,
             membershipEndAt: endAt,
             revokedAt: null,
@@ -511,11 +464,8 @@ export default function UniclubMembersPage(props) {
 
           // 🔗 Also add to chosen sub-group (optional)
           if (form.subGroupid) {
-            await rtdbSet(
-              dbRef(
-                database,
-                `${"uniclubsubgroup"}/${form.subGroupid}/members/${newUser.uid}`
-              ),
+            await setDoc(
+              doc(db, "uniclubsubgroup", form.subGroupid, "members", newUser.uid),
               {
                 uid: newUser.uid,
                 name: form.firstname,
@@ -569,13 +519,9 @@ export default function UniclubMembersPage(props) {
         // 2) delete Firestore user
         await deleteDoc(doc(db, "users", targetUid));
 
-        // 3) remove from RTDB members of this club
+        // 3) remove from Firestore members subcollection
         if (emp?.uniclubid) {
-          const memberRef = dbRef(
-            database,
-            `uniclubs/${emp.uniclubid}/members/${targetUid}`
-          );
-          await rtdbRemove(memberRef);
+          await deleteDoc(doc(db, "uniclubs", emp.uniclubid, "members", targetUid));
         }
 
         toast.success("Successfully deleted!");

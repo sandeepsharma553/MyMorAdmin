@@ -13,15 +13,7 @@ import {
   getDoc,
   limit,
 } from "firebase/firestore";
-import {
-  ref as dbRef,
-  onValue,
-  off,
-  orderByChild,
-  equalTo,
-  query as rtdbQuery,
-} from "firebase/database";
-import { db, storage, firebaseConfig, database } from "../../firebase";
+import { db, storage, firebaseConfig } from "../../firebase";
 import { initializeApp, deleteApp } from "firebase/app";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
@@ -349,17 +341,19 @@ export default function UniclubEmployeePage(props) {
     }
   };
 
-  const getClub = (uniId) => {
+  const getClub = async (uniId) => {
     setIsLoading(true);
-    const refQ = rtdbQuery(dbRef(database, "uniclubs"), orderByChild("universityid"), equalTo(uniId));
-    const handler = (snap) => {
-      const val = snap.val();
-      const arr = val ? Object.entries(val).map(([id, v]) => ({ id, name: v.title })) : [];
-      setUniclub(arr);
+    try {
+      const snap = await getDocs(
+        query(collection(db, "uniclubs"), where("universityid", "==", uniId))
+      );
+      setUniclub(snap.docs.map((d) => ({ id: d.id, name: d.data().title })));
+    } catch (err) {
+      console.error("getClub error:", err);
+      setUniclub([]);
+    } finally {
       setIsLoading(false);
-    };
-    onValue(refQ, handler, { onlyOnce: false });
-    return () => off(refQ, "value", handler);
+    }
   };
 
   /* -------------------- Helpers -------------------- */

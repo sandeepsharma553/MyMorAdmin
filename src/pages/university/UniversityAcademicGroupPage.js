@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
-import { db, database, storage } from "../../firebase";
-import {
-  ref as dbRef,
-  onValue,
-  set,
-  push,
-  update,
-  remove,
-  serverTimestamp,
-  off,
-} from "firebase/database";
+import { db, storage } from "../../firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  where,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { useSelector } from "react-redux";
 import { useUniversityScope } from "../../hooks/useUniversityScope";
 import UniversityScopeBanner from "../../components/UniversityScopeBanner";
@@ -136,62 +136,38 @@ export default function UniversityAcademicGroupPage(props) {
   const getList = async () => {
     if (!universityId) return;
     setIsLoading(true);
-
-    const groupRef = dbRef(database, "groups/");
-    const handler = async (snapshot) => {
-      const data = snapshot.val();
-
-      if (data) {
-        const arr = await Promise.all(
-          Object.entries(data)
-            .filter(
-              ([_, v]) =>
-                String(v.universityid || v.universityId || "") === universityId &&
-                v.creatorId === uid
-            )
-            .map(async ([gid, v]) => {
-              const membersObj = v.members || {};
-              const requests = v.joinRequests || {};
-
-              const membersArr = Object.entries(membersObj).map(([memberUid, m]) => ({
-                uid: memberUid,
-                name: m?.name || "Unknown",
-                photoURL: m?.photoURL || "",
-                isAdmin: !!m?.isAdmin,
-                joinedAt:
-                  typeof m?.joinedAt === "number"
-                    ? m.joinedAt
-                    : m?.joinedAt?.seconds
-                    ? m.joinedAt.seconds * 1000
-                    : null,
-              }));
-
-              const pendingCount = Object.values(requests).filter(
-                (r) => r?.status === "pending"
-              ).length;
-
-              return {
-                id: gid,
-                ...v,
-                members: membersArr,
-                memberCount: membersArr.length,
-                requests,
-                pendingCount,
-              };
-            })
-        );
-
-        setList(filterByScope(arr));
-      } else {
-        setList([]);
-      }
-
+    try {
+      const snapshot = await getDocs(
+        query(
+          collection(db, "groups"),
+          where("universityid", "==", universityId),
+          where("creatorId", "==", uid)
+        )
+      );
+      const arr = snapshot.docs.map((d) => {
+        const v = d.data();
+        const membersObj = v.members || {};
+        const requests = v.joinRequests || {};
+        const membersArr = Object.entries(membersObj).map(([memberUid, m]) => ({
+          uid: memberUid,
+          name: m?.name || "Unknown",
+          photoURL: m?.photoURL || "",
+          isAdmin: !!m?.isAdmin,
+          joinedAt:
+            typeof m?.joinedAt === "number"
+              ? m.joinedAt
+              : m?.joinedAt?.toMillis?.() ?? null,
+        }));
+        const pendingCount = Object.values(requests).filter((r) => r?.status === "pending").length;
+        return { id: d.id, ...v, members: membersArr, memberCount: membersArr.length, requests, pendingCount };
+      });
+      setList(filterByScope(arr));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load groups");
+    } finally {
       setIsLoading(false);
-    };
-
-    onValue(groupRef, handler, { onlyOnce: false });
-
-    return () => off(groupRef, "value", handler);
+    }
   };
 
   const handleChange = (e) => {
@@ -251,16 +227,15 @@ export default function UniversityAcademicGroupPage(props) {
       };
 
       if (editingData) {
-        await update(dbRef(database, `groups/${form.id}`), {
-          ...payload,
-        });
+        await updateDoc(doc(db, "groups", String(form.id)), { ...payload });
         toast.success("Group updated successfully!");
       } else {
-        const newGroupRef = push(dbRef(database, "groups/"));
-        await set(newGroupRef, {
+        const newGroupRef = doc(collection(db, "groups"));
+        await setDoc(newGroupRef, {
+          id: newGroupRef.id,
           ...payload,
           creatorId: uid,
-          createdAt: Date.now(),
+          createdAt: serverTimestamp(),
           admins: { [uid]: true },
         });
         toast.success("Group created successfully");
@@ -281,8 +256,7 @@ export default function UniversityAcademicGroupPage(props) {
     if (!deleteData) return;
 
     try {
-      const groupRef = dbRef(database, `groups/${deleteData.id}`);
-      await remove(groupRef);
+      await deleteDoc(doc(db, "groups", String(deleteData.id)));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -295,28 +269,20 @@ export default function UniversityAcademicGroupPage(props) {
   };
 
   const approve = async (gid, memberUid, item) => {
-    await set(dbRef(database, `groups/${gid}/members/${memberUid}`), {
+    await setDoc(doc(db, "groups", gid, "members", memberUid), {
       uid: item.uid,
       name: item.name || "",
       photoURL: item.photoURL ?? "",
       isAdmin: false,
-      joinedAt: Date.now(),
+      joinedAt: serverTimestamp(),
     });
-
-    await update(
-      dbRef(database, `groups/${gid}/joinRequests/${memberUid}`),
-      { status: "approved" }
-    );
-
+    await updateDoc(doc(db, "groups", gid, "joinRequests", memberUid), { status: "approved" });
     toast.success("User approved");
     setSelected(null);
   };
 
   const reject = async (gid, memberUid) => {
-    await update(
-      dbRef(database, `groups/${gid}/joinRequests/${memberUid}`),
-      { status: "rejected" }
-    );
+    await updateDoc(doc(db, "groups", gid, "joinRequests", memberUid), { status: "rejected" });
     toast.info("User rejected");
     setSelected(null);
   };

@@ -1,18 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
-import { db, database, storage } from "../../firebase";
-import {
-  ref as dbRef,
-  onValue,
-  set,
-  push,
-  update,
-  remove,
-  get,
-  serverTimestamp,
-  off,
-} from "firebase/database";
+import { db, storage } from "../../firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  where,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
@@ -129,58 +128,40 @@ export default function AcademicGroupPage(props) {
   };
 
   const getList = async () => {
-    if (!emp?.hostelid) return; // guard
+    if (!emp?.hostelid) return;
     setIsLoading(true);
-    const groupRef = dbRef(database, "groups/");
-    const handler = async (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const arr = await Promise.all(
-          Object.entries(data)
-            // keep by hostel + creator
-            .filter(([_, v]) => v.hostelid === emp.hostelid && v.creatorId === emp.id)
-            .map(async ([gid, v]) => {
-              const membersObj = v.members || {};
-              const requests = v.joinRequests || {};
-
-              const membersArr = Object.entries(membersObj).map(([uid, m]) => ({
-                uid,
-                name: m?.name || "Unknown",
-                photoURL: m?.photoURL || "",
-                isAdmin: !!m?.isAdmin,
-                // Support number or Firestore-like {seconds}
-                joinedAt:
-                  typeof m?.joinedAt === "number"
-                    ? m.joinedAt
-                    : m?.joinedAt?.seconds
-                      ? m.joinedAt.seconds * 1000
-                      : null,
-              }));
-
-              const pendingCount = Object.values(requests).filter((r) => r?.status === "pending").length;
-
-              return {
-                id: gid,
-                ...v,
-                members: membersArr,
-                memberCount: membersArr.length,
-                requests,
-                pendingCount,
-              };
-            })
-        );
-        
-        setList(arr);
-      } else {
-        setList([]);
-      }
+    try {
+      const snapshot = await getDocs(
+        query(
+          collection(db, "groups"),
+          where("hostelid", "==", emp.hostelid),
+          where("creatorId", "==", emp.id)
+        )
+      );
+      const arr = snapshot.docs.map((d) => {
+        const v = d.data();
+        const membersObj = v.members || {};
+        const requests = v.joinRequests || {};
+        const membersArr = Object.entries(membersObj).map(([mUid, m]) => ({
+          uid: mUid,
+          name: m?.name || "Unknown",
+          photoURL: m?.photoURL || "",
+          isAdmin: !!m?.isAdmin,
+          joinedAt:
+            typeof m?.joinedAt === "number"
+              ? m.joinedAt
+              : m?.joinedAt?.toMillis?.() ?? null,
+        }));
+        const pendingCount = Object.values(requests).filter((r) => r?.status === "pending").length;
+        return { id: d.id, ...v, members: membersArr, memberCount: membersArr.length, requests, pendingCount };
+      });
+      setList(arr);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load groups");
+    } finally {
       setIsLoading(false);
-    };
-
-    onValue(groupRef, handler, { onlyOnce: false });
-
-    // cleanup on unmount
-    return () => off(groupRef, "value", handler);
+    }
   };
 
   // CRUD Handlers
@@ -240,21 +221,16 @@ const handleAdd = async (e) => {
     };
 
     if (editingData) {
-      // ✅ update only whitelisted fields
-      await update(dbRef(database, `groups/${form.id}`), {
-        ...payload,
-        // if you *really* want to change creator on edit (usually you shouldn't),
-        // include creatorId: uid, but I'd recommend NOT changing it.
-      });
+      await updateDoc(doc(db, "groups", String(form.id)), { ...payload });
       toast.success("Group updated successfully!");
     } else {
-      // Create
-      const newGroupRef = push(dbRef(database, "groups/"));
-      await set(newGroupRef, {
+      const newGroupRef = doc(collection(db, "groups"));
+      await setDoc(newGroupRef, {
+        id: newGroupRef.id,
         ...payload,
         creatorId: uid,
         createdAt: serverTimestamp(),
-        admins: { [uid]: true }, // optional
+        admins: { [uid]: true },
       });
       toast.success("Group created successfully");
     }
@@ -289,7 +265,7 @@ const handleAdd = async (e) => {
       }
 
       if (editingData) {
-        await update(dbRef(database, `groups/${form.id}`), {
+        await updateDoc(doc(db, "groups", String(form.id)), {
           ...form,
           creatorId: uid,
           hostelid: emp.hostelid,
@@ -298,12 +274,14 @@ const handleAdd = async (e) => {
         toast.success("Group updated successfully!");
       } else {
         const { id, poster, ...payload } = form;
-        const newGroupRef = push(dbRef(database, "groups/"));
-        await set(newGroupRef, {
+        const newGroupRef = doc(collection(db, "groups"));
+        await setDoc(newGroupRef, {
+          id: newGroupRef.id,
           ...payload,
           creatorId: uid,
           hostelid: emp.hostelid,
           ...(posterUrl && { posterUrl }),
+          createdAt: serverTimestamp(),
         });
         toast.success("Group created successfully");
       }
@@ -322,8 +300,7 @@ const handleAdd = async (e) => {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      const groupRef = dbRef(database, `groups/${deleteData.id}`); // FIX: use deleteData.id
-      await remove(groupRef);
+      await deleteDoc(doc(db, "groups", String(deleteData.id)));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -335,20 +312,20 @@ const handleAdd = async (e) => {
   };
 
   const approve = async (gid, uid, item) => {
-    await set(dbRef(database, `groups/${gid}/members/${uid}`), {
+    await setDoc(doc(db, "groups", gid, "members", uid), {
       uid: item.uid,
       name: item.name || "",
       photoURL: item.photoURL ?? "",
       isAdmin: false,
       joinedAt: serverTimestamp(),
     });
-    await update(dbRef(database, `groups/${gid}/joinRequests/${uid}`), { status: "approved" });
+    await updateDoc(doc(db, "groups", gid, "joinRequests", uid), { status: "approved" });
     toast.success("User approved");
     setSelected(null);
   };
 
   const reject = async (gid, uid) => {
-    await update(dbRef(database, `groups/${gid}/joinRequests/${uid}`), { status: "rejected" });
+    await updateDoc(doc(db, "groups", gid, "joinRequests", uid), { status: "rejected" });
     toast.info("User rejected");
     setSelected(null);
   };

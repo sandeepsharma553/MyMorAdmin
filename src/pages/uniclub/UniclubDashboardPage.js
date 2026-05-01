@@ -5,8 +5,7 @@ import {
   where,
   getDocs, getDoc, doc
 } from "firebase/firestore";
-import { ref as rtdbRef, get as rtdbGet } from "firebase/database";
-import { db, database } from "../../firebase";
+import { db } from "../../firebase";
 import { useSelector } from "react-redux";
 
 const getDateDaysAgo = (days) => {
@@ -41,19 +40,12 @@ export default function UniclubDashboardPage(props) {
 
         if (emp?.uniclubid) {
           try {
-            const clubRef = rtdbRef(database, `uniclubs/${emp.uniclubid}`);
-            const clubSnap = await rtdbGet(clubRef);
-
+            const clubSnap = await getDoc(doc(db, 'uniclubs', emp.uniclubid));
             if (clubSnap.exists()) {
-              const club = clubSnap.val();
-              const img =
-                club.image
-
-              setClubImage(img);
+              setClubImage(clubSnap.data().image);
             }
-
           } catch (err) {
-            console.error("Failed to load club image from RTDB", err);
+            console.error("Failed to load club image from Firestore", err);
           }
         } else {
           setClubImage(null);
@@ -88,18 +80,14 @@ export default function UniclubDashboardPage(props) {
         const since7dMs = since7d.getTime();
 
         for (const clubId of clubIds) {
-          // RTDB path: uniclubs/{clubId}/members
-          const membersRef = rtdbRef(database, `uniclubs/${clubId}/members`);
-          const snap = await rtdbGet(membersRef);
+          const membersSnap = await getDocs(collection(db, 'uniclubs', clubId, 'members'));
 
-          if (!snap.exists()) continue;
-
-          const membersObj = snap.val() || {};
-
-          Object.values(membersObj).forEach((member) => {
+          membersSnap.docs.forEach((memberDoc) => {
+            const member = memberDoc.data();
             totalMembers += 1;
 
-            if (member.joinedAt && Number(member.joinedAt) >= since7dMs) {
+            const joinedAtMs = member.joinedAt?.toMillis?.() ?? Number(member.joinedAt);
+            if (member.joinedAt && joinedAtMs >= since7dMs) {
               newMembers7d += 1;
             }
           });

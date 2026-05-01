@@ -2,10 +2,24 @@ import React, { useState, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
-import { db, database, storage } from "../../firebase";
-import { ref as dbRef, query as datquery, onValue, off, set, push, update, remove, get, orderByChild, equalTo } from 'firebase/database';
+import { db, storage } from "../../firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { collection, getDocs, serverTimestamp, Timestamp } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  where,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
+  Timestamp,
+  deleteField,
+  orderBy,
+  getDoc,
+} from "firebase/firestore";
 import dayjs from 'dayjs';
 import { DateRange } from 'react-date-range';
 import 'react-date-range/dist/styles.css';
@@ -111,32 +125,31 @@ export default function UniclubAnnouncementPage(props) {
   useEffect(() => {
 
     setIsLoading(true);
-    const groupRef = datquery(dbRef(database, 'discoverannouncements'),
-      orderByChild('groupid'),
-      equalTo(groupId));
-    const cb = (snapshot) => {
-      const data = snapshot.val();
-      const documents = data
-        ? Object.entries(data).map(([id, value]) => {
-          const posterUrls = Array.isArray(value.posterUrls)
-            ? value.posterUrls
-            : (value.posterUrl ? [value.posterUrl] : []);
-          return {
-            id,
-            ...value,
-            posterUrls,
-            isPinned: !!value.isPinned,
-            pinnedOrder: Number.isFinite(value?.pinnedOrder) ? Number(value.pinnedOrder) : 0,
-            pinnedAt: typeof value?.pinnedAt === 'number' ? value.pinnedAt : null,
-          };
-        })
-        : [];
+    const q = query(
+      collection(db, 'discoverannouncements'),
+      where('groupid', '==', groupId),
+      orderBy('createdAt', 'desc')
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      const documents = snapshot.docs.map((d) => {
+        const value = d.data();
+        const posterUrls = Array.isArray(value.posterUrls)
+          ? value.posterUrls
+          : (value.posterUrl ? [value.posterUrl] : []);
+        return {
+          id: d.id,
+          ...value,
+          posterUrls,
+          isPinned: !!value.isPinned,
+          pinnedOrder: Number.isFinite(value?.pinnedOrder) ? Number(value.pinnedOrder) : 0,
+          pinnedAt: value?.pinnedAt?.toMillis?.() ?? (typeof value?.pinnedAt === 'number' ? value.pinnedAt : null),
+        };
+      });
       setList(documents);
       setSelectedIds(new Set());
       setIsLoading(false);
-    };
-    onValue(groupRef, cb, () => setIsLoading(false));
-    return () => { off(groupRef); };
+    }, () => setIsLoading(false));
+    return () => unsub();
   }, [groupId]);
 
   // ===== Helpers =====
@@ -274,35 +287,23 @@ export default function UniclubAnnouncementPage(props) {
     return urls;
   };
 
-  // ===== POLL PATCH (preserve votes) – scoped to group =====
-  const buildPollPatchPreserveVotes = (id, dbPoll, formPoll) => {
-    const updates = {};
-    const base = `${'discoverannouncements'}/${id}/pollData`;
-    if (!formPoll || !formPoll.question?.trim()) return updates;
-
-    updates[`${base}/question`] = formPoll.question.trim();
-    updates[`${base}/allowMulti`] = !!formPoll.allowMulti;
-    updates[`${base}/allowaddoption`] = !!formPoll.allowaddoption;
-
+  // ===== POLL PATCH (preserve votes) =====
+  const buildPollWithPreservedVotes = (existingPollData, formPoll) => {
+    if (!formPoll || !formPoll.question?.trim()) return null;
+    const oldOpts = existingPollData?.options || {};
     const newOpts = formPoll.options || {};
-    const oldOpts = (dbPoll && dbPoll.options) || {};
-
+    const preservedOptions = {};
     Object.entries(newOpts).forEach(([key, val]) => {
       const txt = (val?.text || '').trim();
       if (!txt) return;
-      updates[`${base}/options/${key}/text`] = txt;
-      if (!oldOpts[key]) {
-        updates[`${base}/options/${key}/votes`] = {};
-      }
+      preservedOptions[key] = { text: txt, votes: oldOpts[key]?.votes || {} };
     });
-
-    Object.keys(oldOpts).forEach((key) => {
-      if (!(key in newOpts)) {
-        updates[`${base}/options/${key}`] = null;
-      }
-    });
-
-    return updates;
+    return {
+      question: formPoll.question.trim(),
+      allowMulti: !!formPoll.allowMulti,
+      allowaddoption: !!formPoll.allowaddoption,
+      options: preservedOptions,
+    };
   };
 
   // ===== Pin helpers (order) =====
@@ -316,7 +317,7 @@ export default function UniclubAnnouncementPage(props) {
         pinnedAt: makePinned ? Date.now() : null,
         pinnedOrder: makePinned ? maxPinnedOrder() + 1 : 0,
       };
-      await update(dbRef(database, `${'discoverannouncements'}/${item.id}`), patch);
+      await updateDoc(doc(db, 'discoverannouncements', item.id), patch);
       toast.success(makePinned ? 'Pinned' : 'Unpinned');
     } catch (e) {
       console.error(e);
@@ -328,7 +329,7 @@ export default function UniclubAnnouncementPage(props) {
     const n = Number(value);
     if (!Number.isFinite(n) || n < 0) return;
     try {
-      await update(dbRef(database, `${'discoverannouncements'}/${item.id}`), {
+      await updateDoc(doc(db, 'discoverannouncements', item.id), {
         isPinned: true,
         pinnedOrder: n,
       });
@@ -449,33 +450,29 @@ export default function UniclubAnnouncementPage(props) {
 
       if (editingData) {
         // EDIT (preserve votes)
-        const refPath = `${'discoverannouncements'}/${form.id}`;
-        const announcementRef = dbRef(database, refPath);
-        const snapshot = await get(announcementRef);
+        const docRef = doc(db, 'discoverannouncements', form.id);
+        const snapshot = await getDoc(docRef);
         if (!snapshot.exists()) {
           toast.warning('Announcement does not exist! Cannot update.');
           setIsLoading(false);
           return;
         }
-        const existing = snapshot.val() || {};
-
-        const { postersFiles, id, pollData: _ignored, ...rest } = payload;
-        const baseUpdates = {};
-        Object.entries(rest).forEach(([k, v]) => {
-          if (v === undefined) return;
-          baseUpdates[`${refPath}/${k}`] = v;
-        });
-
-        const pollPatch = buildPollPatchPreserveVotes(form.id, existing.pollData, form.pollData);
-        await update(dbRef(database), { ...baseUpdates, ...pollPatch });
-
+        const existing = snapshot.data() || {};
+        const { postersFiles, id: _id, ...rest } = payload;
+        const updatePayload = { ...rest };
+        if (cleanPollData) {
+          updatePayload.pollData = buildPollWithPreservedVotes(existing.pollData, cleanPollData);
+        } else {
+          updatePayload.pollData = deleteField();
+        }
+        await updateDoc(docRef, updatePayload);
         toast.success('Announcement updated successfully');
       } else {
         // CREATE
-        const newRef = push(dbRef(database, 'discoverannouncements'));
-        const { postersFiles, id, ...toPersist } = payload;
+        const newRef = doc(collection(db, 'discoverannouncements'));
+        const { postersFiles, id: _id2, ...toPersist } = payload;
         if (!toPersist.pollData) delete toPersist.pollData;
-        await set(newRef, toPersist);
+        await setDoc(newRef, { id: newRef.id, ...toPersist });
         toast.success('Announcement created successfully');
       }
 
@@ -494,8 +491,7 @@ export default function UniclubAnnouncementPage(props) {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      const itemRef = dbRef(database, `${'discoverannouncements'}/${deleteData.id}`);
-      await remove(itemRef);
+      await deleteDoc(doc(db, 'discoverannouncements', deleteData.id));
       toast.success('Successfully deleted!');
     } catch (error) {
       console.error('Error deleting document: ', error);
@@ -623,9 +619,7 @@ export default function UniclubAnnouncementPage(props) {
               if (!window.confirm(`Delete ${selectedIds.size} announcement(s)?`)) return;
               try {
                 setIsLoading(true);
-                const updatesObj = {};
-                selectedIds.forEach(id => { updatesObj[`${'discoverannouncements'}/${id}`] = null; });
-                await update(dbRef(database), updatesObj);
+                await Promise.all([...selectedIds].map((id) => deleteDoc(doc(db, 'discoverannouncements', id))));
                 toast.success('Selected announcements deleted');
                 setSelectedIds(new Set());
               } catch (err) {

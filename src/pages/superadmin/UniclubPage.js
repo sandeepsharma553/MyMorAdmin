@@ -1,19 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { database, storage, db } from "../../firebase";
-import {
-  ref as dbRef,
-  onValue,
-  set as rtdbSet,
-  push,
-  update as rtdbUpdate,
-  remove,
-  off,
-  serverTimestamp,
-  get as rtdbGet,
-  orderByChild,
-  equalTo,
-  query,
-} from "firebase/database";
+import { storage, db } from "../../firebase";
 import {
   collection,
   getDocs,
@@ -24,6 +10,7 @@ import {
   query as dbQuery,
   where,
   getDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useSelector } from "react-redux";
@@ -225,51 +212,25 @@ export default function UniclubPage({ navbarHeight }) {
     setCurrentPage(1);
   }, [filters, sortConfig, filterUniversityId, showPinnedOnly]);
 
-  const getList = () => {
+  const getList = async () => {
     if (!uid) {
       setList([]);
       setIsLoading(false);
       return;
     }
-  
     setIsLoading(true);
-  
-    const refQ = query(
-      dbRef(database, "uniclubs"),
-      orderByChild("creatorId"),
-      equalTo(uid)
-    );
-  
-    const handler = (snap) => {
+    try {
+      const snap = await getDocs(
+        dbQuery(collection(db, "uniclubs"), where("creatorId", "==", uid))
+      );
       if (!mountedRef.current) return;
-  
-      const val = snap.val();
-  
-      if (!val) {
-        // 🔥 IMPORTANT: no data case
-        setList([]);
-        setIsLoading(false);
-        return;
-      }
-  
-      const arr = Object.entries(val).map(([id, v]) => ({
-        id,
-        ...v,
-      }));
-  
-      setList(arr);
-      setIsLoading(false);
-    };
-  
-    onValue(refQ, handler, (error) => {
-      console.error("RTDB error:", error);
-      if (mountedRef.current) {
-        setList([]);
-        setIsLoading(false);
-      }
-    });
-  
-    return () => off(refQ, "value", handler);
+      setList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (error) {
+      console.error("getList error:", error);
+      if (mountedRef.current) setList([]);
+    } finally {
+      if (mountedRef.current) setIsLoading(false);
+    }
   };
   
 
@@ -340,7 +301,7 @@ export default function UniclubPage({ navbarHeight }) {
     return true;
   };
 
-  // ---------------- PIN HELPERS (RTDB) ----------------
+  // ---------------- PIN HELPERS ----------------
   const eNumber = (v) => (v === "" || v === null || v === undefined ? NaN : Number(v));
 
   const getPinnedSorted = () =>
@@ -350,7 +311,6 @@ export default function UniclubPage({ navbarHeight }) {
         const ao = Number.isFinite(eNumber(a.pinnedOrder)) ? Number(a.pinnedOrder) : 1e9;
         const bo = Number.isFinite(eNumber(b.pinnedOrder)) ? Number(b.pinnedOrder) : 1e9;
         if (ao !== bo) return ao - bo;
-
         const aPA = Number(a.pinnedAt || 0);
         const bPA = Number(b.pinnedAt || 0);
         return bPA - aPA;
@@ -358,16 +318,14 @@ export default function UniclubPage({ navbarHeight }) {
 
   const renumberPinned = async () => {
     const pinned = getPinnedSorted();
-    const updates = {};
-    pinned.forEach((club, i) => {
-      const order = i + 1;
-      if (Number(club.pinnedOrder) !== order) {
-        updates[`uniclubs/${club.id}/pinnedOrder`] = order;
-      }
-    });
-    if (Object.keys(updates).length) {
-      await rtdbUpdate(dbRef(database), updates);
-    }
+    await Promise.all(
+      pinned.map(async (club, i) => {
+        const order = i + 1;
+        if (Number(club.pinnedOrder) !== order) {
+          await updateDoc(doc(db, "uniclubs", club.id), { pinnedOrder: order });
+        }
+      })
+    );
     getList();
   };
 
@@ -376,55 +334,42 @@ export default function UniclubPage({ navbarHeight }) {
     const idx = pinned.findIndex((e) => e.id === item.id);
     const swapIdx = idx + dir;
     if (idx === -1 || swapIdx < 0 || swapIdx >= pinned.length) return;
-
     const a = pinned[idx];
     const b = pinned[swapIdx];
-
-    const updates = {
-      [`uniclubs/${a.id}/pinnedOrder`]: Number(b.pinnedOrder) || swapIdx + 1,
-      [`uniclubs/${b.id}/pinnedOrder`]: Number(a.pinnedOrder) || idx + 1,
-    };
-    await rtdbUpdate(dbRef(database), updates);
+    await Promise.all([
+      updateDoc(doc(db, "uniclubs", a.id), { pinnedOrder: Number(b.pinnedOrder) || swapIdx + 1 }),
+      updateDoc(doc(db, "uniclubs", b.id), { pinnedOrder: Number(a.pinnedOrder) || idx + 1 }),
+    ]);
     getList();
   };
 
   const applyPinOrder = async (item, newOrderRaw) => {
     if (!item.isPinned) return;
-
     let newOrder = Math.max(1, Math.floor(Number(newOrderRaw) || 1));
     const pinned = getPinnedSorted().filter((e) => e.id !== item.id);
-
     newOrder = Math.min(newOrder, pinned.length + 1);
-
     const sequence = [...pinned];
     sequence.splice(newOrder - 1, 0, { ...item });
-
-    const updates = {};
-    sequence.forEach((club, i) => {
-      updates[`uniclubs/${club.id}/pinnedOrder`] = i + 1;
-    });
-
-    await rtdbUpdate(dbRef(database), updates);
+    await Promise.all(
+      sequence.map((club, i) => updateDoc(doc(db, "uniclubs", club.id), { pinnedOrder: i + 1 }))
+    );
     getList();
   };
 
   const togglePin = async (item, makePinned) => {
     try {
-      const base = `uniclubs/${item.id}`;
-
       if (makePinned) {
         const currentPinned = getPinnedSorted();
         const last = currentPinned[currentPinned.length - 1];
         const nextOrder = (Number(last?.pinnedOrder) || currentPinned.length || 0) + 1;
-
-        await rtdbUpdate(dbRef(database, base), {
+        await updateDoc(doc(db, "uniclubs", item.id), {
           isPinned: true,
           pinnedAt: Date.now(),
           pinnedOrder: nextOrder,
         });
         toast.success("Pinned");
       } else {
-        await rtdbUpdate(dbRef(database, base), {
+        await updateDoc(doc(db, "uniclubs", item.id), {
           isPinned: false,
           pinnedAt: null,
           pinnedOrder: null,
@@ -432,7 +377,6 @@ export default function UniclubPage({ navbarHeight }) {
         await renumberPinned();
         toast.success("Unpinned");
       }
-
       getList();
     } catch (e) {
       console.error(e);
@@ -528,11 +472,11 @@ export default function UniclubPage({ navbarHeight }) {
       let clubId;
       if (editingData?.id) {
         clubId = editingData.id;
-        await rtdbUpdate(dbRef(database, `uniclubs/${clubId}`), payload);
+        await updateDoc(doc(db, "uniclubs", clubId), payload);
         toast.success("Uniclub updated successfully!");
       } else {
-        const newRef = push(dbRef(database, "uniclubs/"));
-        clubId = newRef.key;
+        const newRef = doc(collection(db, "uniclubs"));
+        clubId = newRef.id;
 
         // if creating and pinned, put it at bottom of pinned list
         let createPinnedOrder = null;
@@ -544,7 +488,7 @@ export default function UniclubPage({ navbarHeight }) {
           createPinnedAt = Date.now();
         }
 
-        await rtdbSet(newRef, {
+        await setDoc(newRef, {
           ...payload,
           id: clubId,
           pinnedOrder: payload.isPinned ? createPinnedOrder : null,
@@ -553,7 +497,7 @@ export default function UniclubPage({ navbarHeight }) {
 
         // add creator as admin
         if (user?.uid) {
-          await rtdbSet(dbRef(database, `uniclubs/${clubId}/members/${user.uid}`), {
+          await setDoc(doc(db, "uniclubs", clubId, "members", user.uid), {
             uid: user.uid,
             name: user.displayName || "",
             photoURL: user.photoURL ?? "",
@@ -565,27 +509,31 @@ export default function UniclubPage({ navbarHeight }) {
         toast.success("Uniclub created successfully");
       }
 
-      const base = `uniclubs/${clubId}`;
-
       // successor logic
       if (form.successorUid && form.successorUid !== user?.uid) {
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/joinedAt`), serverTimestamp());
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/name`), form.successor?.name || "");
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/photoURL`), form.successor?.photoURL || "");
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/role`), "admin");
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/status`), "active");
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/uid`), form.successorUid);
+        await setDoc(
+          doc(db, "uniclubs", clubId, "members", form.successorUid),
+          {
+            uid: form.successorUid,
+            name: form.successor?.name || "",
+            photoURL: form.successor?.photoURL || "",
+            role: "admin",
+            status: "active",
+            joinedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
         if (user?.uid) {
-          await rtdbSet(dbRef(database, `${base}/members/${user.uid}/role`), "moderator");
+          await updateDoc(doc(db, "uniclubs", clubId, "members", user.uid), { role: "moderator" });
         }
-        await rtdbSet(dbRef(database, `${base}/uid`), form.successorUid);
+        await updateDoc(doc(db, "uniclubs", clubId), { uid: form.successorUid });
       }
 
       // role assignment
       if (form.memberId && form.roleId) {
         await Promise.all([
-          rtdbSet(dbRef(database, `${base}/roles/${form.memberId}`), { roleId: form.roleId, roleName: form.role }),
-          rtdbSet(dbRef(database, `${base}/members/${form.memberId}/role`), form.role || "contributor"),
+          setDoc(doc(db, "uniclubs", clubId, "roles", form.memberId), { roleId: form.roleId, roleName: form.role }),
+          updateDoc(doc(db, "uniclubs", clubId, "members", form.memberId), { role: form.role || "contributor" }),
         ]);
       }
 
@@ -605,7 +553,7 @@ export default function UniclubPage({ navbarHeight }) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await remove(dbRef(database, `uniclubs/${deleteData.id}`));
+      await deleteDoc(doc(db, "uniclubs", deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -616,9 +564,8 @@ export default function UniclubPage({ navbarHeight }) {
     setDelete(null);
   };
 
-  /* ---------- Approve / Reject join requests (if you use it elsewhere) ---------- */
+  /* ---------- Approve / Reject join requests ---------- */
   const approveRequest = async (clubId, req) => {
-    const base = `uniclubs/${clubId}`;
     const memberRecord = {
       uid: req.uid,
       name: req.name || req.displayName || "",
@@ -629,7 +576,10 @@ export default function UniclubPage({ navbarHeight }) {
       answers: req.answers || null,
     };
     try {
-      await Promise.all([rtdbSet(dbRef(database, `${base}/members/${req.uid}`), memberRecord), remove(dbRef(database, `${base}/joinRequests/${req.uid}`))]);
+      await Promise.all([
+        setDoc(doc(db, "uniclubs", clubId, "members", req.uid), memberRecord),
+        deleteDoc(doc(db, "uniclubs", clubId, "joinRequests", req.uid)),
+      ]);
       getList();
       toast.success("Request approved");
     } catch (e) {

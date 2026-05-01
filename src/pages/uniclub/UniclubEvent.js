@@ -13,8 +13,7 @@ import {
   Timestamp,
   writeBatch,
 } from "firebase/firestore";
-import { db, storage, database } from "../../firebase";
-import { ref as dbRef, get as rtdbGet } from "firebase/database";
+import { db, storage } from "../../firebase";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
@@ -300,16 +299,10 @@ export default function UniclubEventPage({ navbarHeight }) {
         setClubs([]);
         return;
       }
-      const ref = dbRef(database, "uniclubs");
-      const snap = await rtdbGet(ref);
-      const val = snap.val() || {};
-      const filtered = Object.entries(val)
-        .filter(([id, c]) => c.universityid === emp?.universityId)
-        .map(([id, c]) => ({
-          id,
-          title: c.title || "Unnamed Club",
-        }));
-      setClubs(filtered);
+      const snap = await getDocs(
+        query(collection(db, "uniclubs"), where("universityid", "==", emp.universityId))
+      );
+      setClubs(snap.docs.map((d) => ({ id: d.id, title: d.data().title || "Unnamed Club" })));
     } catch (err) {
       console.error("getClubs error:", err);
       setClubs([]);
@@ -322,18 +315,16 @@ export default function UniclubEventPage({ navbarHeight }) {
       return;
     }
     try {
-      const ref = dbRef(database, "uniclubsubgroup");
-      const snap = await rtdbGet(ref);
-      const val = snap.val() || {};
-      const arr = Object.entries(val).map(([id, g]) => ({
-        id,
-        title: g.title || "Untitled Subgroup",
-        parentGroupId: g.parentGroupId || null,
-      }));
-      const filtered = arr.filter(
-        (x) => String(x.parentGroupId || "") === String(emp?.uniclubid)
+      const snap = await getDocs(
+        query(collection(db, "uniclubsubgroup"), where("parentGroupId", "==", emp.uniclubid))
       );
-      setSubGroups(filtered);
+      setSubGroups(
+        snap.docs.map((d) => ({
+          id: d.id,
+          title: d.data().title || "Untitled Subgroup",
+          parentGroupId: d.data().parentGroupId || null,
+        }))
+      );
     } catch (err) {
       console.error("fetchSubGroups error:", err);
       setSubGroups([]);

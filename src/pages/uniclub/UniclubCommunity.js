@@ -3,22 +3,21 @@ import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 
-import { db, database, storage } from "../../firebase";
-import {
-  ref as dbRef,
-  query as rtdbQuery,
-  onValue,
-  off,
-  set,
-  push,
-  update,
-  remove,
-  get,
-  orderByChild,
-  equalTo,
-} from "firebase/database";
+import { db, storage } from "../../firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { collection, getDocs } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  where,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
+  orderBy,
+} from "firebase/firestore";
 import EditorPro from "../../components/EditorPro";
 
 export default function UniclubCommunity(props) {
@@ -116,28 +115,26 @@ export default function UniclubCommunity(props) {
     }
 
     setIsLoading(true);
-    const q = rtdbQuery(
-      dbRef(database, "community"),
-      orderByChild("groupId"),
-      equalTo(groupId)
+    const q = query(
+      collection(db, "community"),
+      where("groupId", "==", groupId),
+      orderBy("createdAt", "desc")
     );
 
-    const cb = (snapshot) => {
-      const data = snapshot.val() || {};
-      const docs = Object.entries(data).map(([id, value]) => ({
-        id,
-        ...value,
-        createdAt: value.createdAt || 0,
-      }));
-
-      docs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map((d) => {
+        const value = d.data();
+        return {
+          id: d.id,
+          ...value,
+          createdAt: value.createdAt?.toMillis?.() ?? value.createdAt ?? 0,
+        };
+      });
       setList(docs);
       setSelectedIds(new Set());
       setIsLoading(false);
-    };
-
-    onValue(q, cb, () => setIsLoading(false));
-    return () => off(q);
+    }, () => setIsLoading(false));
+    return () => unsub();
   }, [groupId]);
 
   // ===== derived list =====
@@ -234,45 +231,28 @@ export default function UniclubCommunity(props) {
       const userName = await fetchEmployeeUsername(uid);
 
       if (editingData) {
-        const refPath = `community/${form.id}`;
-        const itemRef = dbRef(database, refPath);
-
-        const snap = await get(itemRef);
-        if (!snap.exists()) {
-          toast.error("Post does not exist anymore.");
-          return;
-        }
-
-        // ✅ keep likes/comments from DB (do NOT wipe)
-        const existing = snap.val() || {};
-
-        await update(itemRef, {
+        await updateDoc(doc(db, "community", form.id), {
           senderId: user?.uid || uid || null,
           sender: userName || user?.displayName || emp?.name || "Member",
           content: cleanContent,
           photoURL: user?.photoURL || "",
-          createdAt: existing.createdAt || Date.now(),
-          likes: existing.likes || [],
-          comments: existing.comments || [],
           mediaUrl: mediaUrl || null,
           mediaType: mediaType || null,
           groupId: groupId || null,
-          id: form.id, // ✅ same as RN
+          id: form.id,
           role: emp?.role || "member",
         });
-
         toast.success("Community updated successfully");
       } else {
-        const postRef = push(dbRef(database, "community"));
-        const id = postRef.key;
-
-        await set(postRef, {
+        const postRef = doc(collection(db, "community"));
+        const id = postRef.id;
+        await setDoc(postRef, {
           senderId: user?.uid || uid || null,
           sender: userName || user?.displayName || emp?.name || "Member",
           content: cleanContent,
-          id, // ✅ same as RN
+          id,
           photoURL: user?.photoURL || "",
-          createdAt: Date.now(),
+          createdAt: serverTimestamp(),
           likes: [],
           comments: [],
           mediaUrl: mediaUrl || null,
@@ -280,7 +260,6 @@ export default function UniclubCommunity(props) {
           groupId: groupId || null,
           role: emp?.role || "member",
         });
-
         toast.success("Community created successfully");
       }
 
@@ -302,7 +281,7 @@ export default function UniclubCommunity(props) {
 
     try {
       setIsLoading(true);
-      await remove(dbRef(database, `community/${deleteData.id}`));
+      await deleteDoc(doc(db, "community", deleteData.id));
       toast.success("Successfully deleted!");
     } catch (err) {
       console.error(err);
@@ -320,11 +299,7 @@ export default function UniclubCommunity(props) {
 
     try {
       setIsLoading(true);
-      const updatesObj = {};
-      selectedIds.forEach((id) => {
-        updatesObj[`community/${id}`] = null;
-      });
-      await update(dbRef(database), updatesObj);
+      await Promise.all([...selectedIds].map((id) => deleteDoc(doc(db, "community", id))));
       toast.success("Selected posts deleted");
       setSelectedIds(new Set());
     } catch (err) {

@@ -1,22 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   collection, getDocs, query, where, serverTimestamp, doc,
-  setDoc,
+  setDoc, onSnapshot, updateDoc, deleteDoc, getDoc,
 } from "firebase/firestore";
-import { database, storage, db } from "../../firebase";
-import {
-  ref as dbRef,
-  onValue,
-  set as rtdbSet,
-  push,
-  update as rtdbUpdate,
-  remove,
-  off,
-  get as rtdbGet,
-  orderByChild,
-  equalTo,
-  query as rtdbQuery,
-} from "firebase/database";
+import { storage, db } from "../../firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
@@ -351,105 +338,71 @@ export default function UniclubPage({ navbarHeight }) {
   // ✅ Live listeners tied to separate modals now
   useEffect(() => {
     if (!reqModalOpen || !activeClubId) return;
-
-    const reqRef = dbRef(database, `uniclubs/${activeClubId}/joinRequests`);
     let alive = true;
-
-    const handler = async (snap) => {
-      try {
-        const val = snap.val() || {};
-        const arr = Object.entries(val).map(([uid, r]) => ({ uid, ...(r || {}) }));
-
-        const uids = arr.map((r) => r.uid);
-        const usersMap = await fetchUsersMapByUids(uids);
-
-        const merged = arr.map((r) => {
-          const u = usersMap[r.uid] || {};
-          return {
-            ...r,
-            studentId: u.studentId || u.studentID || "",
-            email: u.email || "",
-          };
-        });
-
-        if (alive) setRequests(merged);
-      } catch (e) {
-        console.log("joinRequests merge error", e);
-        if (alive) setRequests([]);
+    const unsub = onSnapshot(
+      collection(db, "uniclubs", activeClubId, "joinRequests"),
+      async (snap) => {
+        try {
+          const arr = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+          const uids = arr.map((r) => r.uid);
+          const usersMap = await fetchUsersMapByUids(uids);
+          const merged = arr.map((r) => {
+            const u = usersMap[r.uid] || {};
+            return { ...r, studentId: u.studentId || u.studentID || "", email: u.email || "" };
+          });
+          if (alive) setRequests(merged);
+        } catch (e) {
+          console.log("joinRequests merge error", e);
+          if (alive) setRequests([]);
+        }
       }
-    };
-
-    onValue(reqRef, handler);
-    return () => {
-      alive = false;
-      off(reqRef, "value", handler);
-    };
+    );
+    return () => { alive = false; unsub(); };
   }, [reqModalOpen, activeClubId]);
 
-
   useEffect(() => {
-    const memRef = dbRef(database, `uniclubs/${activeClubId}/members`);
+    if (!activeClubId) return;
     let alive = true;
-
-    const handler = async (snap) => {
-      try {
-        const val = snap.val() || {};
-        const arr = Object.entries(val).map(([uid, m]) => ({ uid, ...(m || {}) }));
-
-        const uids = arr.map((m) => m.uid);
-        const usersMap = await fetchUsersMapByUids(uids);
-
-        const merged = arr.map((m) => {
-          const u = usersMap[m.uid] || {};
-          return {
-            ...m,
-            studentId: u.studentId || u.studentID || "",
-            email: u.email || "",
-          };
-        });
-
-        if (alive) setMembersList(merged);
-      } catch (e) {
-        console.log("members merge error", e);
-        if (alive) setMembersList([]);
+    const unsub = onSnapshot(
+      collection(db, "uniclubs", activeClubId, "members"),
+      async (snap) => {
+        try {
+          const arr = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+          const uids = arr.map((m) => m.uid);
+          const usersMap = await fetchUsersMapByUids(uids);
+          const merged = arr.map((m) => {
+            const u = usersMap[m.uid] || {};
+            return { ...m, studentId: u.studentId || u.studentID || "", email: u.email || "" };
+          });
+          if (alive) setMembersList(merged);
+        } catch (e) {
+          console.log("members merge error", e);
+          if (alive) setMembersList([]);
+        }
       }
-    };
-
-    onValue(memRef, handler);
-    return () => {
-      alive = false;
-      off(memRef, "value", handler);
-    };
+    );
+    return () => { alive = false; unsub(); };
   }, [memModalOpen, activeClubId, emp?.name]);
 
   console.log(emp)
   /* ---------- Data IO ---------- */
-  const getList = () => {
+  const getList = async () => {
     if (!emp?.universityId) return;
-
     setIsLoading(true);
-
-    const ref = rtdbQuery(dbRef(database, "uniclubs"), orderByChild("universityid"), equalTo(emp.universityId));
-
-    const handler = async (snap) => {
-      const val = snap.val();
-      const rawEntries = val ? Object.entries(val) : [];
-
-      // filter only own club if emp.uniclubid exists
-      const filteredEntries = emp?.uniclubid ? rawEntries.filter(([id]) => id === emp.uniclubid) : rawEntries;
-
-      const arr = filteredEntries.map(([id, v]) => ({ id, ...v }));
+    try {
+      let constraints = [where("universityid", "==", emp.universityId)];
+      if (emp?.uniclubid) constraints.push(where("id", "==", emp.uniclubid));
+      const snap = await getDocs(query(collection(db, "uniclubs"), ...constraints));
+      const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       const withCounts = await Promise.all(
         arr.map(async (item) => {
           try {
             const [reqSnap, memSnap] = await Promise.all([
-              rtdbGet(dbRef(database, `uniclubs/${item.id}/joinRequests`)),
-              rtdbGet(dbRef(database, `uniclubs/${item.id}/members`)),
+              getDocs(collection(db, "uniclubs", item.id, "joinRequests")),
+              getDocs(collection(db, "uniclubs", item.id, "members")),
             ]);
-            const requestsCount = reqSnap.exists() ? Object.keys(reqSnap.val()).length : 0;
-            const membersCount = memSnap.exists() ? Object.keys(memSnap.val()).length : 0;
-            return { ...item, requestsCount, membersCount };
+            return { ...item, requestsCount: reqSnap.size, membersCount: memSnap.size };
           } catch {
             return { ...item, requestsCount: 0, membersCount: 0 };
           }
@@ -457,32 +410,31 @@ export default function UniclubPage({ navbarHeight }) {
       );
 
       setList(withCounts);
+    } catch (err) {
+      console.error("getList error:", err);
+      toast.error("Failed to load uniclubs");
+    } finally {
       setIsLoading(false);
-    };
-
-    onValue(ref, handler, { onlyOnce: false });
-    return () => off(ref, "value", handler);
+    }
   };
 
   const getMembers = async () => {
+    if (!emp?.uniclubid) return;
     setIsLoading(true);
-
-    const memRef = dbRef(database, `uniclubs/${emp?.uniclubid}/members`);
-
-    const handler = (snap) => {
-      const val = snap.val() || {};
-      const rows = Object.entries(val)
-        .map(([uid, m]) => ({
-          id: uid,
-          name: m?.user || m?.name || "User",
-          photoURL: m?.imageUrl || m?.photoURL || "",
-        }))
+    try {
+      const snap = await getDocs(collection(db, "uniclubs", emp.uniclubid, "members"));
+      const rows = snap.docs
+        .map((d) => {
+          const m = d.data();
+          return { id: d.id, name: m?.user || m?.name || "User", photoURL: m?.imageUrl || m?.photoURL || "" };
+        })
         .filter((u) => u.name !== (emp?.name || ""));
       setMembers(rows);
-    };
-
-    onValue(memRef, handler);
-    return () => off(memRef, "value", handler);
+    } catch (err) {
+      console.error("getMembers error:", err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getCategory = async () => {
@@ -893,16 +845,16 @@ export default function UniclubPage({ navbarHeight }) {
       let clubId;
       if (editingData?.id) {
         clubId = editingData.id;
-        await rtdbUpdate(dbRef(database, `uniclubs/${clubId}`), payload);
+        await updateDoc(doc(db, "uniclubs", clubId), payload);
         toast.success("Uniclub updated successfully!");
       } else {
-        const newRef = push(dbRef(database, "uniclubs/"));
-        clubId = newRef.key;
-        await rtdbSet(newRef, { ...payload, id: clubId });
+        const newRef = doc(collection(db, "uniclubs"));
+        clubId = newRef.id;
+        await setDoc(newRef, { ...payload, id: clubId });
 
         // add creator as admin
         if (user?.uid) {
-          await rtdbSet(dbRef(database, `uniclubs/${clubId}/members/${user.uid}`), {
+          await setDoc(doc(db, "uniclubs", clubId, "members", user.uid), {
             uid: user.uid,
             name: user.displayName || "",
             photoURL: user.photoURL ?? "",
@@ -914,27 +866,31 @@ export default function UniclubPage({ navbarHeight }) {
         toast.success("Uniclub created successfully");
       }
 
-      const base = `uniclubs/${clubId}`;
-
       // ownership transfer
       if (form.successorUid && form.successorUid !== user?.uid) {
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/joinedAt`), serverTimestamp());
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/name`), form.successor?.name || "");
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/photoURL`), form.successor?.photoURL || "");
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/role`), "admin");
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/status`), "active");
-        await rtdbSet(dbRef(database, `${base}/members/${form.successorUid}/uid`), form.successorUid);
+        await setDoc(
+          doc(db, "uniclubs", clubId, "members", form.successorUid),
+          {
+            uid: form.successorUid,
+            name: form.successor?.name || "",
+            photoURL: form.successor?.photoURL || "",
+            role: "admin",
+            status: "active",
+            joinedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
         if (user?.uid) {
-          await rtdbSet(dbRef(database, `${base}/members/${user.uid}/role`), "moderator");
+          await updateDoc(doc(db, "uniclubs", clubId, "members", user.uid), { role: "moderator" });
         }
-        await rtdbSet(dbRef(database, `${base}/uid`), form.successorUid);
+        await updateDoc(doc(db, "uniclubs", clubId), { uid: form.successorUid });
       }
 
       // moderator + role
       if (form.memberId && form.roleId) {
         await Promise.all([
-          rtdbSet(dbRef(database, `${base}/roles/${form.memberId}`), { roleId: form.roleId, roleName: form.role }),
-          rtdbSet(dbRef(database, `${base}/members/${form.memberId}/role`), form.role || "contributor"),
+          setDoc(doc(db, "uniclubs", clubId, "roles", form.memberId), { roleId: form.roleId, roleName: form.role }),
+          updateDoc(doc(db, "uniclubs", clubId, "members", form.memberId), { role: form.role || "contributor" }),
         ]);
       }
 
@@ -954,7 +910,7 @@ export default function UniclubPage({ navbarHeight }) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await remove(dbRef(database, `uniclubs/${deleteData.id}`));
+      await deleteDoc(doc(db, "uniclubs", deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -967,7 +923,6 @@ export default function UniclubPage({ navbarHeight }) {
 
   /* ---------- Approve / Reject join requests ---------- */
   const approveRequest = async (clubId, req) => {
-    const base = `uniclubs/${clubId}`;
     const memberRecord = {
       uid: req.uid,
       name: req.name || req.displayName || "",
@@ -978,10 +933,9 @@ export default function UniclubPage({ navbarHeight }) {
       answers: req.answers || null,
     };
     try {
-      await rtdbSet(dbRef(database, `${base}/joinRequests/${req.uid}/status`), "approved");
       await Promise.all([
-        rtdbSet(dbRef(database, `${base}/members/${req.uid}`), memberRecord),
-        remove(dbRef(database, `${base}/joinRequests/${req.uid}`)),
+        setDoc(doc(db, "uniclubs", clubId, "members", req.uid), memberRecord),
+        deleteDoc(doc(db, "uniclubs", clubId, "joinRequests", req.uid)),
       ]);
 
       setRequests((prev) => prev.filter((r) => r.uid !== req.uid));
@@ -999,10 +953,8 @@ export default function UniclubPage({ navbarHeight }) {
   };
 
   const rejectRequest = async (clubId, req) => {
-    const base = `uniclubs/${clubId}`;
     try {
-      await rtdbSet(dbRef(database, `${base}/joinRequests/${req.uid}/status`), "rejected");
-      await remove(dbRef(database, `${base}/joinRequests/${req.uid}`));
+      await deleteDoc(doc(db, "uniclubs", clubId, "joinRequests", req.uid));
       setRequests((prev) => prev.filter((r) => r.uid !== req.uid));
       getList();
       toast.success("Request rejected");

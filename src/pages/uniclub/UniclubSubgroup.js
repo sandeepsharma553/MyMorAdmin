@@ -1,17 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { database, storage, db } from "../../firebase";
 import {
-  ref as dbRef,
-  onValue,
-  set as rtdbSet,
-  push,
-  update as rtdbUpdate,
-  remove,
-  off,
-  serverTimestamp,
-  get as rtdbGet,
-} from "firebase/database";
+  collection, getDocs, query, where, doc,
+  onSnapshot, setDoc, updateDoc, deleteDoc,
+  serverTimestamp, getDoc,
+} from "firebase/firestore";
+import { storage, db } from "../../firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useSelector } from "react-redux";
 import { FadeLoader } from "react-spinners";
@@ -232,80 +225,60 @@ export default function UniclubSubgroup({ navbarHeight }) {
   // Live listeners tied to separate modals
   useEffect(() => {
     if (!reqModalOpen || !activeClubId) return;
-    const reqRef = dbRef(database, `${basePath}/${activeClubId}/joinRequests`);
-    const handler = (snap) => {
-      const val = snap.val() || {};
-      const arr = Object.entries(val).map(([uid, r]) => ({ uid, ...r }));
-      setRequests(arr);
-    };
-    onValue(reqRef, handler);
-    return () => off(reqRef, "value", handler);
+    const unsub = onSnapshot(
+      collection(db, basePath, activeClubId, "joinRequests"),
+      (snap) => setRequests(snap.docs.map((d) => ({ uid: d.id, ...d.data() })))
+    );
+    return unsub;
   }, [reqModalOpen, activeClubId, basePath]);
 
   useEffect(() => {
     if (!memModalOpen || !activeClubId) return;
-    const memRef = dbRef(database, `${basePath}/${activeClubId}/members`);
-    const handler = (snap) => {
-      const val = snap.val() || {};
-      const arr = Object.entries(val).map(([uid, m]) => ({ uid, ...m }));
-      setMembersList(arr);
-    };
-    onValue(memRef, handler);
-    return () => off(memRef, "value", handler);
+    const unsub = onSnapshot(
+      collection(db, basePath, activeClubId, "members"),
+      (snap) => setMembersList(snap.docs.map((d) => ({ uid: d.id, ...d.data() })))
+    );
+    return unsub;
   }, [memModalOpen, activeClubId, basePath]);
 
   /* ---------- Data IO ---------- */
-  const getList = () => {
+  const getList = async () => {
     setIsLoading(true);
-
-    // ✅ if committee is subgroup-scoped -> load only that subgroup
-    const path = isSubgroupCommittee
-      ? `${basePath}/${scopedSubgroupId}`
-      : `${basePath}`;
-
-    const ref = dbRef(database, path);
-
-    const handler = async (snap) => {
+    try {
       let arr = [];
 
       if (isSubgroupCommittee) {
-        // single subgroup object
-        const v = snap.val();
-        arr = v ? [{ id: scopedSubgroupId, ...v }] : [];
+        const snap = await getDoc(doc(db, basePath, scopedSubgroupId));
+        arr = snap.exists() ? [{ id: snap.id, ...snap.data() }] : [];
       } else {
-        // all subgroups
-        const val = snap.val();
-        arr = val ? Object.entries(val).map(([id, v]) => ({ id, ...v })) : [];
+        const snap = await getDocs(
+          query(collection(db, basePath), where("parentGroupId", "==", groupId))
+        );
+        arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       }
 
-      // ✅ counts
+      // counts from subcollections
       const withCounts = await Promise.all(
         arr.map(async (item) => {
           try {
             const [reqSnap, memSnap] = await Promise.all([
-              rtdbGet(dbRef(database, `${basePath}/${item.id}/joinRequests`)),
-              rtdbGet(dbRef(database, `${basePath}/${item.id}/members`)),
+              getDocs(collection(db, basePath, item.id, "joinRequests")),
+              getDocs(collection(db, basePath, item.id, "members")),
             ]);
-            const requestsCount = reqSnap.exists() ? Object.keys(reqSnap.val()).length : 0;
-            const membersCount = memSnap.exists() ? Object.keys(memSnap.val()).length : 0;
-            return { ...item, requestsCount, membersCount };
+            return { ...item, requestsCount: reqSnap.size, membersCount: memSnap.size };
           } catch {
             return { ...item, requestsCount: 0, membersCount: 0 };
           }
         })
       );
 
-      // ✅ keep existing behavior when NOT scoped
-      const filtered = isSubgroupCommittee
-        ? withCounts // already a single subgroup
-        : withCounts.filter((x) => String(x.parentGroupId || "") === String(groupId));
-
-      setList(filtered);
+      setList(withCounts);
+    } catch (err) {
+      console.error("getList error:", err);
+      toast.error("Failed to load subgroups");
+    } finally {
       setIsLoading(false);
-    };
-
-    onValue(ref, handler, { onlyOnce: false });
-    return () => off(ref, "value", handler);
+    }
   };
 
 
@@ -624,15 +597,15 @@ export default function UniclubSubgroup({ navbarHeight }) {
       let clubId;
       if (editingData?.id) {
         clubId = editingData.id;
-        await rtdbUpdate(dbRef(database, `${basePath}/${clubId}`), payload);
+        await updateDoc(doc(db, basePath, clubId), payload);
         toast.success("Subgroup updated successfully!");
       } else {
-        const newRef = push(dbRef(database, `${basePath}`));
-        clubId = newRef.key;
-        await rtdbSet(newRef, { ...payload, id: clubId });
+        const newRef = doc(collection(db, basePath));
+        clubId = newRef.id;
+        await setDoc(newRef, { ...payload, id: clubId });
 
         if (user?.uid) {
-          await rtdbSet(dbRef(database, `${basePath}/${clubId}/members/${user.uid}`), {
+          await setDoc(doc(db, basePath, clubId, "members", user.uid), {
             uid: user.uid,
             name: user.displayName || "",
             photoURL: user.photoURL ?? "",
@@ -644,51 +617,36 @@ export default function UniclubSubgroup({ navbarHeight }) {
         toast.success("Subgroup created successfully");
       }
 
-      const base = `${basePath}/${clubId}`;
       if (form.successorUid && form.successorUid !== user?.uid) {
-        await rtdbSet(
-          dbRef(database, `${base}/members/${form.successorUid}/joinedAt`),
-          serverTimestamp()
-        );
-        await rtdbSet(
-          dbRef(database, `${base}/members/${form.successorUid}/name`),
-          form.successor.name
-        );
-        await rtdbSet(
-          dbRef(database, `${base}/members/${form.successorUid}/photoURL`),
-          form.successor.photoURL
-        );
-        await rtdbSet(
-          dbRef(database, `${base}/members/${form.successorUid}/role`),
-          "admin"
-        );
-        await rtdbSet(
-          dbRef(database, `${base}/members/${form.successorUid}/status`),
-          "active"
-        );
-        await rtdbSet(
-          dbRef(database, `${base}/members/${form.successorUid}/uid`),
-          form.successorUid
+        await setDoc(
+          doc(db, basePath, clubId, "members", form.successorUid),
+          {
+            uid: form.successorUid,
+            name: form.successor?.name || "",
+            photoURL: form.successor?.photoURL || "",
+            role: "admin",
+            status: "active",
+            joinedAt: serverTimestamp(),
+          },
+          { merge: true }
         );
         if (user?.uid) {
-          await rtdbSet(
-            dbRef(database, `${base}/members/${user.uid}/role`),
-            "moderator"
-          );
+          await updateDoc(doc(db, basePath, clubId, "members", user.uid), {
+            role: "moderator",
+          });
         }
-        await rtdbSet(dbRef(database, `${base}/uid`), form.successorUid);
+        await updateDoc(doc(db, basePath, clubId), { uid: form.successorUid });
       }
 
       if (form.memberId && form.roleId) {
         await Promise.all([
-          rtdbSet(dbRef(database, `${base}/roles/${form.memberId}`), {
+          setDoc(doc(db, basePath, clubId, "roles", form.memberId), {
             roleId: form.roleId,
             roleName: form.role,
           }),
-          rtdbSet(
-            dbRef(database, `${base}/members/${form.memberId}/role`),
-            form.role || "contributor"
-          ),
+          updateDoc(doc(db, basePath, clubId, "members", form.memberId), {
+            role: form.role || "contributor",
+          }),
         ]);
       }
 
@@ -707,7 +665,7 @@ export default function UniclubSubgroup({ navbarHeight }) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await remove(dbRef(database, `${basePath}/${deleteData.id}`));
+      await deleteDoc(doc(db, basePath, deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (error) {
@@ -720,7 +678,6 @@ export default function UniclubSubgroup({ navbarHeight }) {
 
   /* ---------- Approve / Reject join requests ---------- */
   const approveRequest = async (clubId, req) => {
-    const base = `${basePath}/${clubId}`;
     const memberRecord = {
       uid: req.uid,
       name: req.name || req.displayName || "",
@@ -732,8 +689,8 @@ export default function UniclubSubgroup({ navbarHeight }) {
     };
     try {
       await Promise.all([
-        rtdbSet(dbRef(database, `${base}/members/${req.uid}`), memberRecord),
-        remove(dbRef(database, `${base}/joinRequests/${req.uid}`)),
+        setDoc(doc(db, basePath, clubId, "members", req.uid), memberRecord),
+        deleteDoc(doc(db, basePath, clubId, "joinRequests", req.uid)),
       ]);
 
       setRequests((prev) => prev.filter((r) => r.uid !== req.uid));
@@ -751,9 +708,8 @@ export default function UniclubSubgroup({ navbarHeight }) {
   };
 
   const rejectRequest = async (clubId, req) => {
-    const base = `${basePath}/${clubId}`;
     try {
-      await remove(dbRef(database, `${base}/joinRequests/${req.uid}`));
+      await deleteDoc(doc(db, basePath, clubId, "joinRequests", req.uid));
       setRequests((prev) => prev.filter((r) => r.uid !== req.uid));
       getList();
       toast.success("Request rejected");
