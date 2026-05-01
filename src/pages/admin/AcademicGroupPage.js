@@ -10,7 +10,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
-  serverTimestamp,
+  serverTimestamp,collection
 } from "firebase/firestore";
 import { hostelCol } from "../../utils/firestorePaths";
 import { useSelector } from "react-redux";
@@ -134,8 +134,9 @@ export default function AcademicGroupPage(props) {
 
   const getList = async () => {
     if (!emp?.hostelid) return;
-
+  
     setIsLoading(true);
+  
     try {
       const snapshot = await getDocs(
         query(
@@ -143,38 +144,58 @@ export default function AcademicGroupPage(props) {
           where("creatorId", "==", uid)
         )
       );
-
-      const arr = snapshot.docs.map((d) => {
-        const v = d.data();
-
-        const membersObj = v.members || {};
-        const requests = v.joinRequests || {};
-
-        const membersArr = Object.entries(membersObj).map(([mUid, m]) => ({
-          uid: mUid,
-          name: m?.name || "Unknown",
-          photoURL: m?.photoURL || "",
-          isAdmin: !!m?.isAdmin,
-          joinedAt:
-            typeof m?.joinedAt === "number"
-              ? m.joinedAt
-              : m?.joinedAt?.toMillis?.() ?? null,
-        }));
-
-        const pendingCount = Object.values(requests).filter(
-          (r) => r?.status === "pending"
-        ).length;
-
-        return {
-          id: d.id,
-          ...v,
-          members: membersArr,
-          memberCount: membersArr.length,
-          requests,
-          pendingCount,
-        };
-      });
-
+  
+      const arr = await Promise.all(
+        snapshot.docs.map(async (d) => {
+          const v = d.data();
+  
+          const membersSnap = await getDocs(
+            collection(hostelCol(emp.hostelid, "groups"), d.id, "members")
+          );
+  
+          const requestsSnap = await getDocs(
+            collection(hostelCol(emp.hostelid, "groups"), d.id, "joinRequests")
+          );
+  
+          const membersArr = membersSnap.docs.map((mDoc) => {
+            const m = mDoc.data();
+  
+            return {
+              uid: mDoc.id,
+              name: m?.name || "Unknown",
+              email: m?.email || "",
+              photoURL: m?.photoURL || "",
+              isAdmin: !!m?.isAdmin,
+              joinedAt:
+                typeof m?.joinedAt === "number"
+                  ? m.joinedAt
+                  : m?.joinedAt?.toMillis?.() ?? null,
+            };
+          });
+  
+          const requests = {};
+          requestsSnap.docs.forEach((rDoc) => {
+            requests[rDoc.id] = {
+              uid: rDoc.id,
+              ...rDoc.data(),
+            };
+          });
+  
+          const pendingCount = Object.values(requests).filter(
+            (r) => r?.status === "pending"
+          ).length;
+  
+          return {
+            id: d.id,
+            ...v,
+            members: membersArr,
+            memberCount: membersArr.length,
+            requests,
+            pendingCount,
+          };
+        })
+      );
+  
       setList(arr);
     } catch (error) {
       console.error(error);
@@ -183,7 +204,6 @@ export default function AcademicGroupPage(props) {
       setIsLoading(false);
     }
   };
-
   const handleChange = (e) => {
     const { name, value, type, checked, files } = e.target;
 
@@ -316,23 +336,28 @@ export default function AcademicGroupPage(props) {
 
   const approve = async (gid, requestUid, item) => {
     if (!emp?.hostelid) return;
-
+  
     try {
-      const groupRef = doc(hostelCol(emp.hostelid, "groups"), gid);
-
-      await updateDoc(groupRef, {
-        [`members.${requestUid}`]: {
+      await setDoc(
+        doc(hostelCol(emp.hostelid, "groups"), gid, "members", requestUid),
+        {
           uid: item.uid || requestUid,
           name: item.name || "",
           photoURL: item.photoURL || "",
           email: item.email || "",
           isAdmin: false,
-          joinedAt: Date.now(),
-        },
-        [`joinRequests.${requestUid}.status`]: "approved",
-        [`joinRequests.${requestUid}.updatedAt`]: new Date().toISOString(),
-      });
-
+          joinedAt: serverTimestamp(),
+        }
+      );
+  
+      await updateDoc(
+        doc(hostelCol(emp.hostelid, "groups"), gid, "joinRequests", requestUid),
+        {
+          status: "approved",
+          updatedAt: serverTimestamp(),
+        }
+      );
+  
       toast.success("User approved");
       setSelected(null);
       await getList();
@@ -344,15 +369,16 @@ export default function AcademicGroupPage(props) {
 
   const reject = async (gid, requestUid) => {
     if (!emp?.hostelid) return;
-
+  
     try {
-      const groupRef = doc(hostelCol(emp.hostelid, "groups"), gid);
-
-      await updateDoc(groupRef, {
-        [`joinRequests.${requestUid}.status`]: "rejected",
-        [`joinRequests.${requestUid}.updatedAt`]: new Date().toISOString(),
-      });
-
+      await updateDoc(
+        doc(hostelCol(emp.hostelid, "groups"), gid, "joinRequests", requestUid),
+        {
+          status: "rejected",
+          updatedAt: serverTimestamp(),
+        }
+      );
+  
       toast.info("User rejected");
       setSelected(null);
       await getList();
