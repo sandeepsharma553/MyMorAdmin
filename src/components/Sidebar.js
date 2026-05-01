@@ -244,7 +244,9 @@ function useRtdbMembersBadgeCount({ uid, menuKey, clubId, enabled = true }) {
   return useMemo(() => {
     if (!enabled) return 0;
     if (!openedAt) return members.length;
-    return members.filter((m) => Number(m?.joinedAt?.toMillis?.() ?? m?.joinedAt || 0) > openedAt).length;
+    return members.filter((m) =>
+      Number((m?.joinedAt?.toMillis?.() ?? m?.joinedAt ?? 0)) > openedAt
+    ).length;
   }, [enabled, members, openedAt]);
 }
 
@@ -261,8 +263,15 @@ function useRtdbJoinReqBadgeCount({ uid, menuKey, clubId, enabled = true }) {
   }, [enabled, clubId]);
 
   const getReqAt = (r) =>
-    Number(r?.requestedAt?.toMillis?.() ?? r?.requestedAt || r?.createdAt?.toMillis?.() ?? r?.createdAt || r?.requestedAtMs || r?.time || 0);
-
+    Number(
+      r?.requestedAt?.toMillis?.() ??
+      r?.requestedAt ??
+      r?.createdAt?.toMillis?.() ??
+      r?.createdAt ??
+      r?.requestedAtMs ??
+      r?.time ??
+      0
+    );
   return useMemo(() => {
     if (!enabled) return 0;
     if (!openedAt) return requests.length;

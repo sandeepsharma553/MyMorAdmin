@@ -55,7 +55,7 @@ console.log(process.env.REACT_APP_ENV)
 const app = initializeApp(firebaseConfig);
 const FIRESTORE_DATABASE_ID =
   process.env.REACT_APP_ENV === "production"
-    ? process.env.REACT_APP_FIREBASE_PROD_DATABASE_ID || "mymor-aus"
+    ? process.env.REACT_APP_FIREBASE_PROD_DATABASE_ID || "mymor-australia"
     : process.env.REACT_APP_FIREBASE_DEV_DATABASE_ID || "mymor-dev-aus";
 const db = initializeFirestore(
   app,
@@ -67,7 +67,15 @@ const firestore = db;
 
 const auth = getAuth(app);
 const analytics = getAnalytics(app);
-const storage = getStorage(app);
+
+// Always write to the Australia-Southeast1 bucket, not the default US-Central1 bucket
+const STORAGE_BUCKET_AU =
+  process.env.REACT_APP_ENV === "production"
+    ? process.env.REACT_APP_FIREBASE_PROD_STORAGE_BUCKET_AU || "mymor-one"
+    : process.env.REACT_APP_FIREBASE_DEV_STORAGE_BUCKET_AU || null;
+const storage = STORAGE_BUCKET_AU
+  ? getStorage(app, `gs://${STORAGE_BUCKET_AU}`)
+  : getStorage(app);
 const messaging = getMessaging(app)
 const VAPID_KEY = process.env.REACT_APP_ENV === 'production'
   ? process.env.REACT_APP_FIREBASE_PROD_VAPID_KEY
