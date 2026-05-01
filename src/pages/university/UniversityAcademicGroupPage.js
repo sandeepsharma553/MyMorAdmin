@@ -1,3 +1,4 @@
+// src/pages/UniversityAcademicGroupPage.jsx
 import React, { useState, useEffect, useRef } from "react";
 import { db, storage } from "../../firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -49,19 +50,6 @@ export default function UniversityAcademicGroupPage(props) {
   });
 
   const debounceRef = useRef(null);
-  const setFilterDebounced = (field, value) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setFilters((prev) => ({ ...prev, [field]: value }));
-    }, 250);
-  };
-
-  const onSort = (key) =>
-    setSortConfig((prev) =>
-      prev.key === key
-        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
-        : { key, direction: "asc" }
-    );
 
   const uid = useSelector((state) => state.auth.user.uid);
   const emp = useSelector((state) => state.auth.employee);
@@ -69,6 +57,9 @@ export default function UniversityAcademicGroupPage(props) {
   const { universityId, filterByScope, scopePayload } = useUniversityScope();
 
   const [fileName, setFileName] = useState("No file chosen");
+
+  const universityGroupsCol = () =>
+    collection(db, "university", String(universityId), "groups");
 
   const initialForm = {
     id: 0,
@@ -108,22 +99,37 @@ export default function UniversityAcademicGroupPage(props) {
     setCurrentPage(1);
   }, [filters, sortConfig]);
 
+  const setFilterDebounced = (field, value) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setFilters((prev) => ({ ...prev, [field]: value }));
+    }, 250);
+  };
+
+  const onSort = (key) =>
+    setSortConfig((prev) =>
+      prev.key === key
+        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: "asc" }
+    );
+
   const getAcademicCatList = async () => {
     if (!universityId) return;
-  
+
     setIsLoading(true);
+
     try {
       const academicCategoryQuery = query(
         collection(db, "university", String(universityId), "academiccategory")
       );
-  
+
       const querySnapshot = await getDocs(academicCategoryQuery);
-  
-      const documents = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
+
+      const documents = querySnapshot.docs.map((docu) => ({
+        id: docu.id,
+        ...docu.data(),
       }));
-  
+
       setAcademicCatList(documents);
     } catch (e) {
       console.error(e);
@@ -135,32 +141,68 @@ export default function UniversityAcademicGroupPage(props) {
 
   const getList = async () => {
     if (!universityId) return;
+
     setIsLoading(true);
+
     try {
       const snapshot = await getDocs(
         query(
-          collection(db, "groups"),
-          where("universityid", "==", universityId),
+          universityGroupsCol(),
           where("creatorId", "==", uid)
         )
       );
-      const arr = snapshot.docs.map((d) => {
-        const v = d.data();
-        const membersObj = v.members || {};
-        const requests = v.joinRequests || {};
-        const membersArr = Object.entries(membersObj).map(([memberUid, m]) => ({
-          uid: memberUid,
-          name: m?.name || "Unknown",
-          photoURL: m?.photoURL || "",
-          isAdmin: !!m?.isAdmin,
-          joinedAt:
-            typeof m?.joinedAt === "number"
-              ? m.joinedAt
-              : m?.joinedAt?.toMillis?.() ?? null,
-        }));
-        const pendingCount = Object.values(requests).filter((r) => r?.status === "pending").length;
-        return { id: d.id, ...v, members: membersArr, memberCount: membersArr.length, requests, pendingCount };
-      });
+
+      const arr = await Promise.all(
+        snapshot.docs.map(async (d) => {
+          const v = d.data();
+
+          const membersSnap = await getDocs(
+            collection(universityGroupsCol(), d.id, "members")
+          );
+
+          const requestsSnap = await getDocs(
+            collection(universityGroupsCol(), d.id, "joinRequests")
+          );
+
+          const membersArr = membersSnap.docs.map((mDoc) => {
+            const m = mDoc.data();
+
+            return {
+              uid: mDoc.id,
+              name: m?.name || "Unknown",
+              email: m?.email || "",
+              photoURL: m?.photoURL || "",
+              isAdmin: !!m?.isAdmin,
+              joinedAt:
+                typeof m?.joinedAt === "number"
+                  ? m.joinedAt
+                  : m?.joinedAt?.toMillis?.() ?? null,
+            };
+          });
+
+          const requests = {};
+          requestsSnap.docs.forEach((rDoc) => {
+            requests[rDoc.id] = {
+              uid: rDoc.id,
+              ...rDoc.data(),
+            };
+          });
+
+          const pendingCount = Object.values(requests).filter(
+            (r) => r?.status === "pending"
+          ).length;
+
+          return {
+            id: d.id,
+            ...v,
+            members: membersArr,
+            memberCount: membersArr.length,
+            requests,
+            pendingCount,
+          };
+        })
+      );
+
       setList(filterByScope(arr));
     } catch (e) {
       console.error(e);
@@ -185,6 +227,12 @@ export default function UniversityAcademicGroupPage(props) {
 
   const handleAdd = async (e) => {
     e.preventDefault();
+
+    if (!universityId) {
+      toast.error("University not found.");
+      return;
+    }
+
     if (!form.title) return;
 
     try {
@@ -197,7 +245,10 @@ export default function UniversityAcademicGroupPage(props) {
       const isNewImage = form.poster instanceof File;
 
       if (isNewImage) {
-        const storRef = storageRef(storage, `university_group_posters/${form.poster.name}`);
+        const storRef = storageRef(
+          storage,
+          `university/${universityId}/group_posters/${Date.now()}_${form.poster.name}`
+        );
         await uploadBytes(storRef, form.poster);
         posterUrl = await getDownloadURL(storRef);
       }
@@ -227,38 +278,80 @@ export default function UniversityAcademicGroupPage(props) {
       };
 
       if (editingData) {
-        await updateDoc(doc(db, "groups", String(form.id)), { ...payload });
+        await updateDoc(
+          doc(universityGroupsCol(), String(form.id)),
+          {
+            ...payload,
+            updatedBy: uid,
+            updatedAt: serverTimestamp(),
+          }
+        );
+
         toast.success("Group updated successfully!");
       } else {
-        const newGroupRef = doc(collection(db, "groups"));
+        const newGroupRef = doc(universityGroupsCol());
+
         await setDoc(newGroupRef, {
           id: newGroupRef.id,
           ...payload,
           creatorId: uid,
+          createdBy: uid,
           createdAt: serverTimestamp(),
           admins: { [uid]: true },
         });
+
+        await setDoc(
+          doc(universityGroupsCol(), newGroupRef.id, "members", uid),
+          {
+            uid,
+            name: emp?.name || emp?.username || emp?.email || "Admin",
+            email: emp?.email || "",
+            photoURL: emp?.photoURL || "",
+            isAdmin: true,
+            joinedAt: serverTimestamp(),
+          }
+        );
+
         toast.success("Group created successfully");
       }
+
+      await getList();
+      setModalOpen(false);
+      setEditing(null);
+      setForm(initialForm);
+      setFileName("No file chosen");
     } catch (error) {
       console.error("Error saving group:", error);
       toast.error("Failed to save group.");
     }
-
-    getList();
-    setModalOpen(false);
-    setEditing(null);
-    setForm(initialForm);
-    setFileName("No file chosen");
   };
 
   const handleDelete = async () => {
-    if (!deleteData) return;
+    if (!deleteData?.id || !universityId) return;
 
     try {
-      await deleteDoc(doc(db, "groups", String(deleteData.id)));
+      const subcols = [
+        "messages",
+        "members",
+        "joinRequests",
+        "pinnedMessages",
+        "unreadCounts",
+      ];
+
+      await Promise.all(
+        subcols.map(async (sub) => {
+          const subSnap = await getDocs(
+            collection(universityGroupsCol(), String(deleteData.id), sub)
+          );
+
+          return Promise.all(subSnap.docs.map((d) => deleteDoc(d.ref)));
+        })
+      );
+
+      await deleteDoc(doc(universityGroupsCol(), String(deleteData.id)));
+
       toast.success("Successfully deleted!");
-      getList();
+      await getList();
     } catch (error) {
       console.error("Error deleting group: ", error);
       toast.error("Failed to delete group.");
@@ -269,22 +362,57 @@ export default function UniversityAcademicGroupPage(props) {
   };
 
   const approve = async (gid, memberUid, item) => {
-    await setDoc(doc(db, "groups", gid, "members", memberUid), {
-      uid: item.uid,
-      name: item.name || "",
-      photoURL: item.photoURL ?? "",
-      isAdmin: false,
-      joinedAt: serverTimestamp(),
-    });
-    await updateDoc(doc(db, "groups", gid, "joinRequests", memberUid), { status: "approved" });
-    toast.success("User approved");
-    setSelected(null);
+    if (!universityId) return;
+
+    try {
+      await setDoc(
+        doc(universityGroupsCol(), gid, "members", memberUid),
+        {
+          uid: item.uid || memberUid,
+          name: item.name || "",
+          email: item.email || "",
+          photoURL: item.photoURL ?? "",
+          isAdmin: false,
+          joinedAt: serverTimestamp(),
+        }
+      );
+
+      await updateDoc(
+        doc(universityGroupsCol(), gid, "joinRequests", memberUid),
+        {
+          status: "approved",
+          updatedAt: serverTimestamp(),
+        }
+      );
+
+      toast.success("User approved");
+      setSelected(null);
+      await getList();
+    } catch (error) {
+      console.error("Approve error:", error);
+      toast.error("Failed to approve user.");
+    }
   };
 
   const reject = async (gid, memberUid) => {
-    await updateDoc(doc(db, "groups", gid, "joinRequests", memberUid), { status: "rejected" });
-    toast.info("User rejected");
-    setSelected(null);
+    if (!universityId) return;
+
+    try {
+      await updateDoc(
+        doc(universityGroupsCol(), gid, "joinRequests", memberUid),
+        {
+          status: "rejected",
+          updatedAt: serverTimestamp(),
+        }
+      );
+
+      toast.info("User rejected");
+      setSelected(null);
+      await getList();
+    } catch (error) {
+      console.error("Reject error:", error);
+      toast.error("Failed to reject user.");
+    }
   };
 
   const filteredData = list.filter((g) => {
@@ -323,6 +451,7 @@ export default function UniversityAcademicGroupPage(props) {
   });
 
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
+
   const paginatedData = sortedData.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
@@ -347,13 +476,16 @@ export default function UniversityAcademicGroupPage(props) {
       style={{ paddingTop: navbarHeight || 0 }}
     >
       <UniversityScopeBanner />
+
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">University Academic Group</h1>
+
         <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
             setEditing(null);
             setForm(initialForm);
+            setFileName("No file chosen");
             setModalOpen(true);
           }}
         >
@@ -420,7 +552,6 @@ export default function UniversityAcademicGroupPage(props) {
                       onChange={(e) =>
                         setFilters((p) => ({ ...p, category: e.target.value }))
                       }
-                      title="Filter by category"
                     >
                       <option value="All">All categories</option>
                       {academicCatlist.map((c) => (
@@ -436,7 +567,6 @@ export default function UniversityAcademicGroupPage(props) {
                       onChange={(e) =>
                         setFilters((p) => ({ ...p, groupType: e.target.value }))
                       }
-                      title="Filter by group type"
                     >
                       <option value="All">All types</option>
                       <option value="Public">Public</option>
@@ -455,7 +585,6 @@ export default function UniversityAcademicGroupPage(props) {
                     onChange={(e) =>
                       setFilters((p) => ({ ...p, pending: e.target.value }))
                     }
-                    title="Filter by pending requests"
                   >
                     <option value="All">All</option>
                     <option value="HasPending">Has pending</option>
@@ -509,61 +638,58 @@ export default function UniversityAcademicGroupPage(props) {
 
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center gap-3">
-                        {item.type !== "Your" ? (
-                          <>
-                            <button
-                              className="text-blue-600 hover:underline"
-                              onClick={() => {
-                                setEditing(item);
-                                setForm({
-                                  id: item.id,
-                                  title: item.title || "",
-                                  description: item.description || "",
-                                  category: item.category || "",
-                                  tags: item.tags || "",
-                                  type: item.type || "Popular",
-                                  groupType: item.groupType || "Public",
-                                  joinQuestions: item.joinQuestions || "",
-                                  restrictions: item.restrictions || "",
-                                  maxMembers: item.maxMembers || "",
-                                  postApproval: !!item.postApproval,
-                                  groupChat: item.groupChat !== false,
-                                  eventsEnabled: item.eventsEnabled !== false,
-                                  pollsEnabled: !!item.pollsEnabled,
-                                  resourcesEnabled: !!item.resourcesEnabled,
-                                  location: item.location || "",
-                                  campusSpecific: !!item.campusSpecific,
-                                  notifications: item.notifications !== false,
-                                  autoAlert: item.autoAlert !== false,
-                                  universityid: item.universityid || universityId,
-                                  poster: null,
-                                  posterUrl: item.posterUrl || "",
-                                });
-                                setModalOpen(true);
-                              }}
-                            >
-                              Edit
-                            </button>
+                        <button
+                          className="text-blue-600 hover:underline"
+                          onClick={() => {
+                            setEditing(item);
+                            setForm({
+                              id: item.id,
+                              title: item.title || "",
+                              description: item.description || "",
+                              category: item.category || "",
+                              tags: item.tags || "",
+                              type: item.type || "Popular",
+                              groupType: item.groupType || "Public",
+                              joinQuestions: item.joinQuestions || "",
+                              restrictions: item.restrictions || "",
+                              maxMembers: item.maxMembers || "",
+                              postApproval: !!item.postApproval,
+                              groupChat: item.groupChat !== false,
+                              eventsEnabled: item.eventsEnabled !== false,
+                              pollsEnabled: !!item.pollsEnabled,
+                              resourcesEnabled: !!item.resourcesEnabled,
+                              location: item.location || "",
+                              campusSpecific: !!item.campusSpecific,
+                              notifications: item.notifications !== false,
+                              autoAlert: item.autoAlert !== false,
+                              universityid: item.universityid || universityId,
+                              poster: null,
+                              posterUrl: item.posterUrl || "",
+                            });
+                            setFileName("No file chosen");
+                            setModalOpen(true);
+                          }}
+                        >
+                          Edit
+                        </button>
 
-                            <button
-                              className="text-red-600 hover:underline"
-                              onClick={() => {
-                                setDelete(item);
-                                setForm(item);
-                                setConfirmDeleteOpen(true);
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            className="text-blue-600 hover:underline"
-                            onClick={() => setViewGroup(item)}
-                          >
-                            View
-                          </button>
-                        )}
+                        <button
+                          className="text-red-600 hover:underline"
+                          onClick={() => {
+                            setDelete(item);
+                            setForm(item);
+                            setConfirmDeleteOpen(true);
+                          }}
+                        >
+                          Delete
+                        </button>
+
+                        <button
+                          className="text-blue-600 hover:underline"
+                          onClick={() => setViewGroup(item)}
+                        >
+                          View
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -578,6 +704,7 @@ export default function UniversityAcademicGroupPage(props) {
         <p className="text-sm text-gray-600">
           Page {currentPage} of {totalPages}
         </p>
+
         <div className="space-x-2">
           <button
             onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
@@ -586,6 +713,7 @@ export default function UniversityAcademicGroupPage(props) {
           >
             Previous
           </button>
+
           <button
             onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
             disabled={currentPage === totalPages}
@@ -600,7 +728,9 @@ export default function UniversityAcademicGroupPage(props) {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-bold mb-4">
-              {editingData ? "Edit University Academic Group" : "Add University Academic Group"}
+              {editingData
+                ? "Edit University Academic Group"
+                : "Add University Academic Group"}
             </h2>
 
             <form onSubmit={handleAdd} className="space-y-4">
@@ -649,6 +779,7 @@ export default function UniversityAcademicGroupPage(props) {
 
                 <section className="space-y-4">
                   <h2 className="text-xl font-semibold">📸 Upload Logo</h2>
+
                   <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                     <label className="cursor-pointer">
                       <input
@@ -660,10 +791,12 @@ export default function UniversityAcademicGroupPage(props) {
                       />
                       📁 Choose File
                     </label>
+
                     <span className="text-sm text-gray-600 truncate max-w-[150px]">
                       {fileName}
                     </span>
                   </div>
+
                   {form.posterUrl && (
                     <img src={form.posterUrl} alt="Poster Preview" width="150" />
                   )}
@@ -671,6 +804,7 @@ export default function UniversityAcademicGroupPage(props) {
 
                 <section className="space-y-4">
                   <h2 className="text-xl font-semibold">🔒 Privacy & Access</h2>
+
                   <select
                     name="groupType"
                     value={form.groupType}
@@ -692,6 +826,7 @@ export default function UniversityAcademicGroupPage(props) {
                 >
                   Cancel
                 </button>
+
                 <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
                   Save
                 </button>
@@ -707,9 +842,12 @@ export default function UniversityAcademicGroupPage(props) {
             <h2 className="text-xl font-semibold mb-4 text-red-600">
               Delete Group
             </h2>
+
             <p className="mb-4">
-              Are you sure you want to delete <strong>{deleteData?.title}</strong>?
+              Are you sure you want to delete{" "}
+              <strong>{deleteData?.title}</strong>?
             </p>
+
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
@@ -720,6 +858,7 @@ export default function UniversityAcademicGroupPage(props) {
               >
                 Cancel
               </button>
+
               <button
                 onClick={handleDelete}
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
@@ -741,16 +880,22 @@ export default function UniversityAcademicGroupPage(props) {
             {Object.entries(selectedGroup.requests || {})
               .filter(([_, r]) => r.status === "pending")
               .map(([memberUid, r]) => (
-                <div key={memberUid} className="border border-gray-200 rounded p-3 mb-3">
+                <div
+                  key={memberUid}
+                  className="border border-gray-200 rounded p-3 mb-3"
+                >
                   <div className="text-sm text-gray-700 mb-1">
                     <strong>User ID:</strong> {memberUid}
                   </div>
+
                   <div className="text-sm text-gray-700 mb-1">
                     <strong>Name:</strong> {r.name || "Unknown"}
                   </div>
+
                   <div className="text-sm text-gray-700 mb-2">
                     <strong>Email:</strong> {r.email || "N/A"}
                   </div>
+
                   <div className="flex justify-end space-x-2">
                     <button
                       onClick={() => approve(selectedGroup.id, memberUid, r)}
@@ -758,6 +903,7 @@ export default function UniversityAcademicGroupPage(props) {
                     >
                       Approve
                     </button>
+
                     <button
                       onClick={() => reject(selectedGroup.id, memberUid)}
                       className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
@@ -792,26 +938,34 @@ export default function UniversityAcademicGroupPage(props) {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-lg p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-semibold mb-4">Group Details</h2>
+
             <div className="space-y-2">
               <p>
                 <strong>Name:</strong> {viewGroup?.title}
               </p>
+
               <p>
                 <strong>Description:</strong> {viewGroup?.description}
               </p>
+
               <p>
                 <strong>Category:</strong> {viewGroup?.category || "—"}
               </p>
+
               <p>
                 <strong>Members:</strong> {viewGroup?.memberCount}
               </p>
+
               <p>
-                <strong>Pending requests:</strong> {viewGroup?.pendingCount ?? 0}
+                <strong>Pending requests:</strong>{" "}
+                {viewGroup?.pendingCount ?? 0}
               </p>
+
               <p>
                 <strong>Creator ID:</strong> {viewGroup?.creatorId}
               </p>
             </div>
+
             <div className="flex justify-end mt-6">
               <button
                 onClick={() => setViewGroup(null)}
@@ -843,9 +997,11 @@ function MembersModal({ group, onClose }) {
 
   const filtered = (group.members || []).filter((m) => {
     if (!q) return true;
+
     const name = (m.name || "").toLowerCase();
     const uid = (m.uid || "").toLowerCase();
     const query = q.toLowerCase();
+
     return name.includes(query) || uid.includes(query);
   });
 
@@ -859,9 +1015,9 @@ function MembersModal({ group, onClose }) {
 
   const fmtDate = (ms) => {
     if (!ms) return "—";
+
     try {
-      const d = new Date(ms);
-      return d.toLocaleString();
+      return new Date(ms).toLocaleString();
     } catch {
       return "—";
     }
@@ -875,6 +1031,7 @@ function MembersModal({ group, onClose }) {
             Members — {group.title}{" "}
             <span className="text-gray-500">({sorted.length})</span>
           </h2>
+
           <button
             onClick={onClose}
             className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
@@ -899,16 +1056,28 @@ function MembersModal({ group, onClose }) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-2 text-left text-sm text-gray-600">User</th>
-                <th className="px-4 py-2 text-left text-sm text-gray-600">UID</th>
-                <th className="px-4 py-2 text-left text-sm text-gray-600">Role</th>
-                <th className="px-4 py-2 text-left text-sm text-gray-600">Joined</th>
+                <th className="px-4 py-2 text-left text-sm text-gray-600">
+                  User
+                </th>
+                <th className="px-4 py-2 text-left text-sm text-gray-600">
+                  UID
+                </th>
+                <th className="px-4 py-2 text-left text-sm text-gray-600">
+                  Role
+                </th>
+                <th className="px-4 py-2 text-left text-sm text-gray-600">
+                  Joined
+                </th>
               </tr>
             </thead>
+
             <tbody className="divide-y divide-gray-200">
               {pageData.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-gray-500">
+                  <td
+                    colSpan={4}
+                    className="px-4 py-6 text-center text-gray-500"
+                  >
                     No members found.
                   </td>
                 </tr>
@@ -926,10 +1095,15 @@ function MembersModal({ group, onClose }) {
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-gray-200" />
                         )}
+
                         <span className="text-gray-800">{m.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-2 text-sm text-gray-600">{m.uid}</td>
+
+                    <td className="px-4 py-2 text-sm text-gray-600">
+                      {m.uid}
+                    </td>
+
                     <td className="px-4 py-2 text-sm">
                       {m.isAdmin ? (
                         <span className="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-700">
@@ -941,6 +1115,7 @@ function MembersModal({ group, onClose }) {
                         </span>
                       )}
                     </td>
+
                     <td className="px-4 py-2 text-sm text-gray-600">
                       {fmtDate(m.joinedAt)}
                     </td>
@@ -955,6 +1130,7 @@ function MembersModal({ group, onClose }) {
           <p className="text-sm text-gray-600">
             Page {page} of {totalPages}
           </p>
+
           <div className="space-x-2">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -963,6 +1139,7 @@ function MembersModal({ group, onClose }) {
             >
               Previous
             </button>
+
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
