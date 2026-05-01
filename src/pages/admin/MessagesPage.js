@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
+import { db } from "../../firebase";
 import {
-  ref as dbRef,
-  query as rtdbQuery,
-  orderByChild,
-  equalTo,
-  onValue,
-  off,
-  push,
-  update,
+  collection,
+  query,
+  where,
+  onSnapshot,
+  orderBy,
+  addDoc,
+  updateDoc,
+  doc,
   serverTimestamp,
-} from "firebase/database";
-import { database } from "../../firebase";
+} from "firebase/firestore";
 import {
   MessageSquare,
   Send,
@@ -51,46 +51,31 @@ export default function MessagesPage({ navbarHeight }) {
 
   useEffect(() => {
     if (!hostelId) return;
-    const convRef = rtdbQuery(
-      dbRef(database, "dms/conversations"),
-      orderByChild("hostelId"),
-      equalTo(hostelId)
-    );
-    const unsub = onValue(convRef, (snap) => {
-      const data = snap.val() || {};
-      const list = Object.entries(data).map(([id, v]) => ({ id, ...v }));
-      list.sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0));
+    const q = query(collection(db, 'dms_conversations'), where('hostelId', '==', hostelId), orderBy('lastMessageAt', 'desc'));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setConversations(list);
       setLoading(false);
     });
-    return () => off(convRef, "value", unsub);
+    return () => unsub();
   }, [hostelId]);
 
   useEffect(() => {
-    if (msgUnsubRef.current) {
-      off(
-        dbRef(database, `dms/messages/${selected?.id || "_invalid"}`),
-        "value",
-        msgUnsubRef.current
-      );
-    }
+    if (msgUnsubRef.current) { msgUnsubRef.current(); }
 
     if (!selected?.id) {
       setMessages([]);
       return;
     }
 
-    const msgRef = dbRef(database, `dms/messages/${selected.id}`);
-    const unsub = onValue(msgRef, (snap) => {
-      const data = snap.val() || {};
-      const list = Object.entries(data)
-        .map(([id, v]) => ({ id, ...v }))
-        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-      setMessages(list);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    const msgRef = collection(db, 'dms_conversations', selected.id, 'messages');
+    const q = query(msgRef, orderBy('timestamp', 'asc'));
+    const unsub = onSnapshot(q, (snap) => {
+      setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     });
     msgUnsubRef.current = unsub;
-    return () => off(msgRef, "value", unsub);
+    return () => unsub();
   }, [selected?.id]);
 
   const send = async () => {
@@ -98,14 +83,14 @@ export default function MessagesPage({ navbarHeight }) {
     if (!trimmed || sending || !selected?.id) return;
     setSending(true);
     try {
-      await push(dbRef(database, `dms/messages/${selected.id}`), {
+      await addDoc(collection(db, 'dms_conversations', selected.id, 'messages'), {
         senderId: user.uid,
-        senderName: user.displayName || "Support",
-        senderRole: "admin",
+        senderName: user.displayName || 'Support',
+        senderRole: 'admin',
         text: trimmed,
         timestamp: serverTimestamp(),
       });
-      await update(dbRef(database, `dms/conversations/${selected.id}`), {
+      await updateDoc(doc(db, 'dms_conversations', selected.id), {
         lastMessage: trimmed,
         lastMessageAt: serverTimestamp(),
         assignedAdminId: user.uid,
@@ -120,14 +105,15 @@ export default function MessagesPage({ navbarHeight }) {
 
   const setStatus = async (id, status) => {
     try {
-      await update(dbRef(database, `dms/conversations/${id}`), { status });
+      await updateDoc(doc(db, 'dms_conversations', id), { status });
       if (selected?.id === id) setSelected((prev) => ({ ...prev, status }));
     } catch {}
   };
 
   const toTime = (ts) => {
-    if (!ts) return "";
-    return new Date(ts).toLocaleString("en-GB", {
+    const ms = ts?.toMillis?.() ?? (typeof ts === 'number' ? ts : null);
+    if (!ms) return "";
+    return new Date(ms).toLocaleString("en-GB", {
       day: "numeric",
       month: "short",
       hour: "2-digit",
