@@ -57,7 +57,7 @@ export default function UniversityReportIncidentPage(props) {
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [noteTarget, setNoteTarget] = useState(null);
   const [noteText, setNoteText] = useState("");
-
+  const [incidentTypes, setIncidentTypes] = useState([]);
   const [filters, setFilters] = useState({
     report: "",
     user: "",
@@ -149,6 +149,7 @@ export default function UniversityReportIncidentPage(props) {
   useEffect(() => {
     getList();
     loadAdmins();
+    loadIncidentTypes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [universityId]);
 
@@ -166,7 +167,28 @@ export default function UniversityReportIncidentPage(props) {
     };
     doReset();
   }, [uid]);
-
+  const loadIncidentTypes = async () => {
+    try {
+      if (!universityId) return;
+  
+      const snap = await getDocs(
+        collection(db, "university", universityId, "reportitems")
+      );
+  
+      const types = snap.docs
+        .map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }))
+        .filter((item) => item.name)
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  
+      setIncidentTypes(types);
+    } catch (error) {
+      console.error("Error loading incident types:", error);
+      toast.error("Failed to load incident types");
+    }
+  };
   const isValidEmail = (s = "") => /\S+@\S+\.\S+/.test(String(s).trim());
   const normalizeEmail = (s = "") => String(s).trim().toLowerCase();
 
@@ -985,10 +1007,12 @@ export default function UniversityReportIncidentPage(props) {
                   required
                 >
                   <option value="">select</option>
-                  <option value="Harassment">Harassment</option>
-                  <option value="Discrimination">Discrimination</option>
-                  <option value="Bullying">Bullying</option>
-                  <option value="Other">Other</option>
+                  {incidentTypes.map((type) => (
+  <option key={type.id} value={type.name}>
+    {type.name}
+  </option>
+))}
+<option value="Other">Other</option>
                 </select>
 
                 {form.incidenttype === "Other" && (

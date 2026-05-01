@@ -47,7 +47,7 @@ export default function ReportIncidentPage(props) {
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [noteTarget, setNoteTarget] = useState(null);
   const [noteText, setNoteText] = useState("");
-
+  const [incidentTypes, setIncidentTypes] = useState([]);
   // === Filters & sorting ===
   const [filters, setFilters] = useState({
     report: "",
@@ -100,6 +100,7 @@ export default function ReportIncidentPage(props) {
   useEffect(() => {
     getList();
     loadAdmins();
+    loadIncidentTypes();
   }, []);
 
   // ✅ Page open par reportincident badge reset
@@ -111,7 +112,24 @@ export default function ReportIncidentPage(props) {
     };
     doReset();
   }, [uid]);
-
+  const loadIncidentTypes = async () => {
+    try {
+      if (!emp?.hostelid) return;
+  
+      const q = query(hostelCol(emp.hostelid, "reportitems"));
+      const snap = await getDocs(q);
+  
+      const types = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((x) => x.name)
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  
+      setIncidentTypes(types);
+    } catch (error) {
+      console.error("Error loading incident types:", error);
+      toast.error("Failed to load incident types");
+    }
+  };
   // === Helpers ===
   const isValidEmail = (s = "") => /\S+@\S+\.\S+/.test(String(s).trim());
   const normalizeEmail = (s = "") => String(s).trim().toLowerCase();
@@ -835,10 +853,13 @@ const getList = async () => {
                   required
                 >
                   <option value="">select</option>
-                  <option value="Harassment">Harassment</option>
-                  <option value="Discrimination">Discrimination</option>
-                  <option value="Bullying">Bullying</option>
-                  <option value="Other">Other</option>
+                  {incidentTypes.map((type) => (
+  <option key={type.id} value={type.name}>
+    {type.name}
+  </option>
+))}
+<option value="Other">Other</option>
+                
                 </select>
 
                 {form.incidenttype === "Other" && (
