@@ -926,7 +926,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     if (!form.email.trim()) return toast.error("Email is required");
 
     const emailLower = (form.email || "").toLowerCase().trim();
-    const password = (form.password || "").trim() || `${form.name?.trim?.() || "Business"}321`;
+    const password = (form.password || "").trim() || `${form.name?.trim?.() || "Business"}654321`;
 
     if (!isEmailValid(emailLower)) {
       return toast.error("Please enter a valid email address");

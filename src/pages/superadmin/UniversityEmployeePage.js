@@ -354,7 +354,7 @@ export default function UniversityEmployeePage({ navbarHeight }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const emailLower = (form.email || "").toLowerCase().trim();
-    const password = `${form.name?.trim() || "User"}321`;
+    const password = `${form.name?.trim() || "User"}654321`;
     let tempApp = null;
 
     try {

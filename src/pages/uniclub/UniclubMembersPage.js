@@ -390,7 +390,7 @@ export default function UniclubMembersPage(props) {
         toast.success("Student updated successfully");
       } else {
         // ---------- CREATE NEW STUDENT ----------
-        const password = `${form.firstname}321`; // demo only
+        const password = `${form.firstname}654321`; // demo only
 
         const tempApp = initializeApp(firebaseConfig, "userCreator");
         try {

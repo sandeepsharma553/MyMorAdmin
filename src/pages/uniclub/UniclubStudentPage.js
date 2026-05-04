@@ -425,7 +425,7 @@ export default function UniclubStudentPage(props) {
     e.preventDefault();
 
     const emailLower = (form.email || "").toLowerCase().trim();
-    const password = `${(form.firstname || "User").trim()}321`;
+    const password = `${(form.firstname || "User").trim()}654321`;
 
     let tempApp = null;
 

@@ -302,7 +302,7 @@ export default function UniversityEmployeeAdminPage(props) {
     e.preventDefault();
 
     const emailLower = (form.email || "").toLowerCase().trim();
-    const password = `${(form.name || "User").trim()}321`;
+    const password = `${(form.name || "User").trim()}654321`;
 
     let tempApp = null;
 
