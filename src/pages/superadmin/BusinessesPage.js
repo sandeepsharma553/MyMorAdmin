@@ -58,7 +58,7 @@ const DAYS = [
 ];
 
 const BUSINESS_PERMISSION_OPTIONS = [
-  { key: "dashboard", label: "Dashboard" },
+  { key: "businessdashboard", label: "Dashboard" },
   { key: "businessemp", label: "Employee" },
   { key: "deal", label: "Deal" },
   { key: "restaurant", label: "Restaurant" },
@@ -1084,7 +1084,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         }
 
         toast.success("Business saved ✅");
-
+        setModalOpen(false);
         setEditingBiz((p) => ({
           ...(p || {}),
           ...payload,
@@ -1225,6 +1225,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           uid: user.uid,
           adminUID: user.uid,
         });
+        
       } catch (err) {
         if (err?.code === "auth/email-already-in-use") {
           toast.warn(
@@ -1398,7 +1399,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                 <th className="p-3 font-semibold">Location</th>
                 <th className="p-3 font-semibold">Contact</th>
                 <th className="p-3 font-semibold">Password</th>
-                <th className="p-3 font-semibold">Permissions</th>
                 <th className="p-3 font-semibold w-48">Actions</th>
               </tr>
             </thead>
@@ -1449,22 +1449,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                     <span>{b.password || "—"}</span>
                   </td>
 
-                  <td className="p-3">
-                    <div className="flex flex-wrap gap-1">
-                      {(b.permissions || []).length ? (
-                        (b.permissions || []).map((perm) => (
-                          <span
-                            key={perm}
-                            className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700"
-                          >
-                            {perm}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </div>
-                  </td>
+                 
 
                   <td className="p-3">
                     <div className="flex gap-2">

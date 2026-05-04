@@ -31,6 +31,12 @@ import {
   FileCheck,
   Heart,
   Archive,
+  ShoppingBag,
+  Cog,
+  CalendarRange,
+  QrCode,
+  UtensilsCrossed,
+  BadgePercent,
 } from "lucide-react";
 
 import { useSelector, useDispatch } from "react-redux";
@@ -114,6 +120,7 @@ const SECTIONS = [
   { key: "universitywellbeing", label: "Wellbeing", Icon: Heart },
   { key: "universitylostandfound", label: "Lost & Found", Icon: Archive },
   { key: "universitysetting", label: "Setting", Icon: SettingsIcon },
+
   { key: "uniclubdashboard", label: "Dashboard", Icon: LayoutDashboard },
   { key: "uniclub", label: "Uniclub", Icon: Handshake },
   { key: "uniclubemp", label: "Uni Club Employee", Icon: UserPlus },
@@ -127,6 +134,28 @@ const SECTIONS = [
   { key: "subgroupannouncement", label: "Announcement", Icon: Bell },
   { key: "subgroupevent", label: "Event", Icon: Calendar },
   { key: "subgroupeventbooking", label: "Event Booking", Icon: Calendar },
+
+  // business
+  { key: "businessdashboard", label: "Dashboard", Icon: LayoutDashboard },
+  { key: "businessemp", label: "Employee", Icon: UserPlus },
+  { key: "restaurant", label: "Restaurant", Icon: Utensils },
+  { key: "product", label: "Product", Icon: ShoppingBag },
+  { key: "service", label: "Service", Icon: Cog },
+  { key: "managerestaurant", label: "Restaurant", Icon: Utensils },
+  { key: "hours", label: "Hours", Icon: Utensils },
+  { key: "serviceModes", label: "Service Modes", Icon: Utensils },
+  { key: "delivery", label: "Delivery / Pickup", Icon: Utensils },
+  { key: "menu", label: "Menus / Modifiers", Icon: UtensilsCrossed },
+  { key: "deals", label: "Deals", Icon: BadgePercent },
+  { key: "qr", label: "QR / Tables", Icon: QrCode },
+  { key: "reservations", label: "Reservations", Icon: CalendarRange },
+  { key: "ops", label: "Operations", Icon: Utensils },
+  { key: "reviews", label: "Reviews", Icon: Utensils },
+  { key: "analytics", label: "Analytics", Icon: Utensils },
+  { key: "orders", label: "Orders", Icon: ShoppingBag },
+  { key: "inventory", label: "Inventory", Icon: Package },
+  { key: "productorder", label: "Order", Icon: ShoppingBag },
+  { key: "servicebooking", label: "Service Booking", Icon: BookOpen },
 
   { key: "setting", label: "Setting", Icon: SettingsIcon },
   { key: "contact", label: "Contact", Icon: HelpCircle },
@@ -240,7 +269,7 @@ function useRtdbMembersBadgeCount({ uid, menuKey, clubId, enabled = true }) {
 
   useEffect(() => {
     if (!enabled || !clubId) return;
-    const unsub = onSnapshot(collection(db, 'uniclubs', clubId, 'members'), (snap) => {
+    const unsub = onSnapshot(collection(db, "uniclubs", clubId, "members"), (snap) => {
       setMembers(snap.docs.map((d) => d.data()));
     });
     return () => unsub();
@@ -261,7 +290,7 @@ function useRtdbJoinReqBadgeCount({ uid, menuKey, clubId, enabled = true }) {
 
   useEffect(() => {
     if (!enabled || !clubId) return;
-    const unsub = onSnapshot(collection(db, 'uniclubs', clubId, 'joinRequests'), (snap) => {
+    const unsub = onSnapshot(collection(db, "uniclubs", clubId, "joinRequests"), (snap) => {
       setRequests(snap.docs.map((d) => d.data()));
     });
     return () => unsub();
@@ -270,13 +299,14 @@ function useRtdbJoinReqBadgeCount({ uid, menuKey, clubId, enabled = true }) {
   const getReqAt = (r) =>
     Number(
       r?.requestedAt?.toMillis?.() ??
-      r?.requestedAt ??
-      r?.createdAt?.toMillis?.() ??
-      r?.createdAt ??
-      r?.requestedAtMs ??
-      r?.time ??
-      0
+        r?.requestedAt ??
+        r?.createdAt?.toMillis?.() ??
+        r?.createdAt ??
+        r?.requestedAtMs ??
+        r?.time ??
+        0
     );
+
   return useMemo(() => {
     if (!enabled) return 0;
     if (!openedAt) return requests.length;
@@ -308,14 +338,16 @@ export default function Sidebar({ onSectionClick, isLoading }) {
   const hasHostel = isValidId(hostelid);
   const hasUniversity = isValidId(universityid);
   const hasUniclub = isValidId(uniclubid);
+  const hasBusiness = !hasHostel && !hasUniversity && !hasUniclub;
 
   const availableOrgs = useMemo(() => {
     const arr = [];
     if (hasHostel) arr.push("hostel");
     if (hasUniversity) arr.push("university");
     if (hasUniclub) arr.push("uniclub");
+    if (hasBusiness) arr.push("business");
     return arr;
-  }, [hasHostel, hasUniversity, hasUniclub]);
+  }, [hasHostel, hasUniversity, hasUniclub, hasBusiness]);
 
   const showOrgSwitcher = availableOrgs.length > 1;
 
@@ -337,8 +369,23 @@ export default function Sidebar({ onSectionClick, isLoading }) {
     if (hasUniclub) {
       dispatch(setActiveOrg("uniclub"));
       navigate("/uniclubdashboard", { replace: true });
+      return;
     }
-  }, [activeOrg, availableOrgs, hasHostel, hasUniversity, hasUniclub, dispatch, navigate]);
+
+    if (hasBusiness) {
+      dispatch(setActiveOrg("business"));
+      navigate("/businessdashboard", { replace: true });
+    }
+  }, [
+    activeOrg,
+    availableOrgs,
+    hasHostel,
+    hasUniversity,
+    hasUniclub,
+    hasBusiness,
+    dispatch,
+    navigate,
+  ]);
 
   useEffect(() => {
     const pathKey = location.pathname.replace(/^\/+/, "").split("/")[0];
@@ -528,10 +575,36 @@ export default function Sidebar({ onSectionClick, isLoading }) {
       "contact",
     ]);
 
+    const businessKeys = new Set([
+      "businessdashboard",
+      "businessemp",
+      "restaurant",
+      "product",
+      "service",
+      "managerestaurant",
+      "hours",
+      "serviceModes",
+      "delivery",
+      "reservations",
+      "qr",
+      "menu",
+      "deals",
+      "ops",
+      "reviews",
+      "analytics",
+      "orders",
+      "inventory",
+      "productorder",
+      "servicebooking",
+      "setting",
+      "contact",
+    ]);
+
     const byOrg = SECTIONS.filter((s) => {
       if (activeOrg === "hostel") return hostelKeys.has(s.key);
       if (activeOrg === "university") return universityKeys.has(s.key);
       if (activeOrg === "uniclub") return uniclubKeys.has(s.key);
+      if (activeOrg === "business") return businessKeys.has(s.key);
       return s.key === "contact";
     });
 
@@ -607,6 +680,22 @@ export default function Sidebar({ onSectionClick, isLoading }) {
                 }}
               >
                 UniClub
+              </button>
+            )}
+
+            {hasBusiness && (
+              <button
+                className={`flex-1 py-2 rounded font-semibold text-sm ${
+                  activeOrg === "business"
+                    ? "bg-emerald-600 text-white"
+                    : "bg-gray-100"
+                }`}
+                onClick={() => {
+                  dispatch(setActiveOrg("business"));
+                  navigate("/businessdashboard");
+                }}
+              >
+                Business
               </button>
             )}
           </div>
