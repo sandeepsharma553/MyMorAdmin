@@ -23,7 +23,6 @@ import LocationPicker from "./LocationPicker";
 const DEFAULT_FEATURES = {
   events: false,
   eventbooking: false,
-  deals: false,
   announcement: false,
   hostelevent: false,
   diningmenu: false,
