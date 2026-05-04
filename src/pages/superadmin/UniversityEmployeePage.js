@@ -43,7 +43,6 @@ const ALL_MENU_OPTIONS = [
   { key: "universityreportincident", label: "Report Incident", featureFlag: "reportincident" },
   { key: "universityfeedback", label: "Feedback", featureFlag: "feedback" },
   { key: "universityeventbooking", label: "Event Booking", featureFlag: "events" },
-  // { key: "universitydeal", label: "Deals", featureFlag: "deals" },
   { key: "universityfaq", label: "FAQs", featureFlag: "faq" },
   { key: "universitychecklist", label: "Checklists", featureFlag: "checklist" },
   { key: "universityroominfo", label: "Room Info", featureFlag: "roominfo" },
@@ -51,11 +50,10 @@ const ALL_MENU_OPTIONS = [
   { key: "universitywellnessprompts", label: "Wellness Prompts", featureFlag: "wellnessprompts" },
   { key: "universitymessages", label: "Messages", featureFlag: "messages" },
   { key: "universitysetting", label: "Setting", featureFlag: "setting" },
-  { key: "universityfirstweekjourney", label: "First Week Journey", featureFlag: 'firstweekjourney' },
-  { key: "universityorientation", label: "Orientation", featureFlag: 'orientation' },
-  { key: "universitywellbeing", label: "Wellbeing", featureFlag: 'wellbeing' },
-  { key: "universitylostandfound", label: "Lost & Found", featureFlag: 'lostandfound' },
-
+  { key: "universityfirstweekjourney", label: "First Week Journey", featureFlag: "firstweekjourney" },
+  { key: "universityorientation", label: "Orientation", featureFlag: "orientation" },
+  { key: "universitywellbeing", label: "Wellbeing", featureFlag: "wellbeing" },
+  { key: "universitylostandfound", label: "Lost & Found", featureFlag: "lostandfound" },
 ];
 
 const ALWAYS_ALLOWED = [
@@ -68,20 +66,31 @@ const ALWAYS_ALLOWED = [
 const normalizePermissions = (raw) => {
   if (Array.isArray(raw)) return raw.filter(Boolean);
   if (!raw) return [];
-  if (typeof raw === "string") return raw.split(",").map((s) => s.trim()).filter(Boolean);
-  if (typeof raw === "object") return Object.entries(raw).filter(([, v]) => !!v).map(([k]) => k);
+  if (typeof raw === "string") {
+    return raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  if (typeof raw === "object") {
+    return Object.entries(raw)
+      .filter(([, v]) => !!v)
+      .map(([k]) => k);
+  }
   return [];
 };
 
-const uniquePermissions = (arr = []) => Array.from(new Set(normalizePermissions(arr)));
+const uniquePermissions = (arr = []) =>
+  Array.from(new Set(normalizePermissions(arr)));
+
 const mergePermissions = (a = [], b = []) =>
   Array.from(new Set([...normalizePermissions(a), ...normalizePermissions(b)]));
 
-// Normalize empTypes: old string → single-element array, array → as-is, null → []
 const normalizeEmpTypes = (val) =>
   Array.isArray(val) ? val : val ? [val] : [];
 
-const isEmailValid = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || "").trim());
+const isEmailValid = (email) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || "").trim());
 
 const initialForm = {
   id: "",
@@ -91,7 +100,6 @@ const initialForm = {
   address: "",
   universityId: "",
   university: "",
-  // Campus + discipline — only used when university module is enabled
   campusId: "",
   campusName: "",
   disciplineId: "",
@@ -122,43 +130,48 @@ export default function UniversityEmployeePage({ navbarHeight }) {
   const [filterUniId, setFilterUniId] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [allowedMenuKeys, setAllowedMenuKeys] = useState(ALWAYS_ALLOWED);
+
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
-  // ── Derived: selected university object ───────────────────────────────────
   const selectedUniversity = useMemo(
     () => universities.find((u) => u.id === form.universityId) || null,
     [form.universityId, universities]
   );
 
-  // Show campus/discipline selectors only when the university has the module on
-  const universityModuleEnabled = !!(selectedUniversity?.features?.universityModule);
+  const universityModuleEnabled = !!(
+    selectedUniversity?.features?.universityModule
+  );
 
-  // Campuses from the selected university
   const availableCampuses = useMemo(
-    () => (Array.isArray(selectedUniversity?.campuses) ? selectedUniversity.campuses : []),
+    () =>
+      Array.isArray(selectedUniversity?.campuses)
+        ? selectedUniversity.campuses
+        : [],
     [selectedUniversity]
   );
 
-  // Disciplines for the selected campus
   const availableDisciplines = useMemo(
-    () => availableCampuses.find((c) => c.id === form.campusId)?.disciplines || [],
+    () =>
+      availableCampuses.find((c) => c.id === form.campusId)?.disciplines || [],
     [form.campusId, availableCampuses]
   );
 
-  // ── Table filtering ───────────────────────────────────────────────────────
   const filteredData = useMemo(() => {
     const term = searchTerm.toLowerCase();
+
     return list.filter((item) => {
       const matchSearch =
-        item.name?.toLowerCase().includes(term) ||
-        item.email?.toLowerCase().includes(term) ||
-        item.campusName?.toLowerCase().includes(term) ||
-        item.disciplineName?.toLowerCase().includes(term);
+        item.name?.toLowerCase?.().includes(term) ||
+        item.email?.toLowerCase?.().includes(term) ||
+        item.campusName?.toLowerCase?.().includes(term) ||
+        item.disciplineName?.toLowerCase?.().includes(term);
 
       const matchUni =
         filterUniId === "all" ||
@@ -172,7 +185,11 @@ export default function UniversityEmployeePage({ navbarHeight }) {
   const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
 
   const paginatedData = useMemo(
-    () => filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    () =>
+      filteredData.slice(
+        (currentPage - 1) * pageSize,
+        currentPage * pageSize
+      ),
     [filteredData, currentPage]
   );
 
@@ -184,14 +201,17 @@ export default function UniversityEmployeePage({ navbarHeight }) {
   const allPermissionsSelected = useMemo(
     () =>
       visibleMenuOptions.length > 0 &&
-      visibleMenuOptions.every(({ key }) => (form.permissions || []).includes(key)),
+      visibleMenuOptions.every(({ key }) =>
+        (form.permissions || []).includes(key)
+      ),
     [visibleMenuOptions, form.permissions]
   );
 
   const handlePermissionToggle = (key, checked) => {
     setForm((prev) => {
       const cur = new Set(normalizePermissions(prev.permissions));
-      checked ? cur.add(key) : cur.delete(key);
+      if (checked) cur.add(key);
+      else cur.delete(key);
       return { ...prev, permissions: Array.from(cur) };
     });
   };
@@ -199,24 +219,49 @@ export default function UniversityEmployeePage({ navbarHeight }) {
   const handleSelectAllPermissions = (checked) => {
     setForm((prev) => {
       const cur = new Set(normalizePermissions(prev.permissions));
-      visibleMenuOptions.forEach(({ key }) => (checked ? cur.add(key) : cur.delete(key)));
+      visibleMenuOptions.forEach(({ key }) => {
+        if (checked) cur.add(key);
+        else cur.delete(key);
+      });
       return { ...prev, permissions: Array.from(cur) };
     });
   };
 
-  useEffect(() => { getList(); }, []);
-  useEffect(() => { if (currentPage > totalPages) setCurrentPage(totalPages); }, [totalPages, currentPage]);
+  useEffect(() => {
+    getList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [totalPages, currentPage]);
 
   const getList = async () => {
     setIsLoading(true);
+
     try {
-      // Dual query: new array field (empTypes) + legacy string field (empType)
       const [snap1, snap2] = await Promise.all([
-        getDocs(query(collection(db, "employees"), where("type", "==", "admin"), where("empTypes", "array-contains", "university"))),
-        getDocs(query(collection(db, "employees"), where("type", "==", "admin"), where("empType", "==", "university"))),
+        getDocs(
+          query(
+            collection(db, "employees"),
+            where("type", "==", "admin"),
+            where("empTypes", "array-contains", "university")
+          )
+        ),
+        getDocs(
+          query(
+            collection(db, "employees"),
+            where("type", "==", "admin"),
+            where("empType", "==", "university")
+          )
+        ),
       ]);
+
       const byId = new Map();
-      [...snap1.docs, ...snap2.docs].forEach((d) => { if (!byId.has(d.id)) byId.set(d.id, d); });
+
+      [...snap1.docs, ...snap2.docs].forEach((d) => {
+        if (!byId.has(d.id)) byId.set(d.id, d);
+      });
 
       setList(
         Array.from(byId.values()).map((d) => ({
@@ -227,23 +272,25 @@ export default function UniversityEmployeePage({ navbarHeight }) {
       );
 
       const uniSnap = await getDocs(collection(db, "university"));
-      setUniversities(
-        uniSnap.docs.map((d) => ({
-          id: d.id,
-          name: d.data().name,
-          features: d.data().features || {},
-          campuses: d.data().campuses || [],   // include campuses array
-        }))
-      );
+
+      if (mountedRef.current) {
+        setUniversities(
+          uniSnap.docs.map((d) => ({
+            id: d.id,
+            name: d.data().name,
+            features: d.data().features || {},
+            campuses: d.data().campuses || [],
+          }))
+        );
+      }
     } catch (err) {
-      console.error(err);
+      console.error("getList error:", err);
       toast.error("Failed to load data");
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
   };
 
-  // ── University selected → update allowed menu keys, reset campus/discipline ─
   const handleUniversityChange = (e) => {
     const uniId = e.target.value;
     const uni = universities.find((u) => u.id === uniId);
@@ -252,16 +299,18 @@ export default function UniversityEmployeePage({ navbarHeight }) {
     const allowed = Array.from(
       new Set([
         ...ALWAYS_ALLOWED,
-        ...ALL_MENU_OPTIONS.filter((opt) => opt.featureFlag && features[opt.featureFlag]).map((opt) => opt.key),
+        ...ALL_MENU_OPTIONS.filter(
+          (opt) => opt.featureFlag && features[opt.featureFlag]
+        ).map((opt) => opt.key),
       ])
     );
 
     setAllowedMenuKeys(allowed);
+
     setForm((prev) => ({
       ...prev,
       universityId: uniId,
       university: uni?.name || "",
-      // Reset campus/discipline when university changes
       campusId: "",
       campusName: "",
       disciplineId: "",
@@ -270,10 +319,10 @@ export default function UniversityEmployeePage({ navbarHeight }) {
     }));
   };
 
-  // ── Campus selected → reset discipline ────────────────────────────────────
   const handleCampusChange = (e) => {
     const campusId = e.target.value;
     const campus = availableCampuses.find((c) => c.id === campusId);
+
     setForm((prev) => ({
       ...prev,
       campusId,
@@ -283,10 +332,10 @@ export default function UniversityEmployeePage({ navbarHeight }) {
     }));
   };
 
-  // ── Discipline selected ───────────────────────────────────────────────────
   const handleDisciplineChange = (e) => {
     const disciplineId = e.target.value;
     const disc = availableDisciplines.find((d) => d.id === disciplineId);
+
     setForm((prev) => ({
       ...prev,
       disciplineId,
@@ -294,33 +343,65 @@ export default function UniversityEmployeePage({ navbarHeight }) {
     }));
   };
 
-  // ── Lookup helpers ────────────────────────────────────────────────────────
   const findUserByEmail = async (email) => {
-    const snap = await getDocs(query(collection(db, "users"), where("email", "==", email), limit(1)));
+    const snap = await getDocs(
+      query(collection(db, "users"), where("email", "==", email), limit(1))
+    );
+
     if (snap.empty) return null;
-    return { uid: snap.docs[0].id, data: snap.docs[0].data() };
+
+    return {
+      uid: snap.docs[0].id,
+      data: snap.docs[0].data(),
+    };
   };
 
   const findEmployeeByEmail = async (email) => {
-    const snap = await getDocs(query(collection(db, "employees"), where("email", "==", email), limit(1)));
+    const snap = await getDocs(
+      query(collection(db, "employees"), where("email", "==", email), limit(1))
+    );
+
     if (snap.empty) return null;
-    return { uid: snap.docs[0].id, data: snap.docs[0].data() };
+
+    return {
+      uid: snap.docs[0].id,
+      data: snap.docs[0].data(),
+    };
   };
 
-  // ── Assign / promote helper ───────────────────────────────────────────────
-  const assignUniversityAdmin = async ({ targetUid, baseData, passwordFallback }) => {
+  const assignUniversityAdmin = async ({
+    targetUid,
+    baseData,
+    passwordFallback,
+  }) => {
     const empRef = doc(db, "employees", targetUid);
     const empSnap = await getDoc(empRef);
-    const existing = empSnap.exists() ? empSnap.data() : {};
-    const mergedPerms = mergePermissions(existing.permissions, baseData.permissions);
-    const mergedEmpTypes = Array.from(new Set([...normalizeEmpTypes(existing.empTypes || existing.empType), "university"]));
+    const existing = empSnap.exists() ? empSnap.data() || {} : {};
+
+    const mergedPerms = mergePermissions(
+      existing.permissions,
+      baseData.permissions
+    );
+
+    const mergedEmpTypes = Array.from(
+      new Set([
+        ...normalizeEmpTypes(existing.empTypes || existing.empType),
+        "university",
+      ])
+    );
 
     await setDoc(
       empRef,
       {
         ...existing,
         ...baseData,
+
+        // IMPORTANT: uid hamesha actual user/employee uid
         uid: targetUid,
+
+        // creator/admin uid alag field me
+        createdBy: existing.createdBy || baseData.createdBy || currentUserUid,
+
         email: baseData.email,
         name: baseData.name,
         type: "admin",
@@ -349,37 +430,65 @@ export default function UniversityEmployeePage({ navbarHeight }) {
         disciplineId: baseData.disciplineId || "",
         disciplineName: baseData.disciplineName || "",
         updateddate: new Date(),
-        roles: { student: true, universityAdmin: true },
+        roles: {
+          student: true,
+          universityAdmin: true,
+        },
       },
       { merge: true }
     );
   };
 
-  // ── Submit ────────────────────────────────────────────────────────────────
+  const resetAndClose = () => {
+    setModalOpen(false);
+    setEditing(null);
+    setForm(initialForm);
+    setFileName("No file chosen");
+    setAllowedMenuKeys(ALWAYS_ALLOWED);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     const emailLower = (form.email || "").toLowerCase().trim();
     const password = `${form.name?.trim() || "User"}654321`;
+
     let tempApp = null;
 
     try {
-      if (!isEmailValid(emailLower)) { toast.error("Invalid email address"); return; }
-      if (!form.universityId) { toast.error("Please select a university"); return; }
+      if (!isEmailValid(emailLower)) {
+        toast.error("Invalid email address");
+        return;
+      }
 
-      // Campus required when university module is enabled
+      if (!form.universityId) {
+        toast.error("Please select a university");
+        return;
+      }
+
       if (universityModuleEnabled && !form.campusId) {
         toast.error("Please select a campus — this university uses the University Module");
         return;
       }
-      // Discipline required only when the campus has disciplines configured
-      if (universityModuleEnabled && form.campusId && availableDisciplines.length > 0 && !form.disciplineId) {
+
+      if (
+        universityModuleEnabled &&
+        form.campusId &&
+        availableDisciplines.length > 0 &&
+        !form.disciplineId
+      ) {
         toast.error("Please select a discipline for this campus");
         return;
       }
 
       let imageUrl = form.imageUrl || "";
+
       if (form.image instanceof File) {
-        const sref = ref(storage, `employee_image/${Date.now()}_${form.image.name}`);
+        const sref = ref(
+          storage,
+          `employee_image/${Date.now()}_${form.image.name}`
+        );
+
         await uploadBytes(sref, form.image);
         imageUrl = await getDownloadURL(sref);
       }
@@ -405,20 +514,37 @@ export default function UniversityEmployeePage({ navbarHeight }) {
         empTypes: ["university"],
         isActive: !!form.isActive,
         permissions: cleanPermissions,
+
+        // creator/admin uid
+        createdBy: currentUserUid,
+
         ...(imageUrl ? { imageUrl } : {}),
       };
 
-      /* EDIT */
       if (editingData) {
         const docRef = doc(db, "employees", form.id);
         const docSnap = await getDoc(docRef);
-        if (!docSnap.exists()) { toast.warn("Employee not found"); return; }
+
+        if (!docSnap.exists()) {
+          toast.warn("Employee not found");
+          return;
+        }
 
         const old = docSnap.data() || {};
-        const mergedEmpTypes = Array.from(new Set([...normalizeEmpTypes(old.empTypes || old.empType), "university"]));
+
+        const mergedEmpTypes = Array.from(
+          new Set([
+            ...normalizeEmpTypes(old.empTypes || old.empType),
+            "university",
+          ])
+        );
+
         await updateDoc(docRef, {
           ...baseData,
-          uid: old.uid || form.id,
+
+          // IMPORTANT: uid hamesha actual user/employee uid
+          uid: form.id,
+
           createdBy: old.createdBy || currentUserUid,
           empTypes: mergedEmpTypes,
           permissions: cleanPermissions,
@@ -439,7 +565,10 @@ export default function UniversityEmployeePage({ navbarHeight }) {
             disciplineId: form.disciplineId || "",
             disciplineName: form.disciplineName || "",
             updateddate: new Date(),
-            roles: { student: true, universityAdmin: true },
+            roles: {
+              student: true,
+              universityAdmin: true,
+            },
           },
           { merge: true }
         );
@@ -450,53 +579,77 @@ export default function UniversityEmployeePage({ navbarHeight }) {
         return;
       }
 
-      /* CREATE: check duplicate */
       const dupSnap = await getDocs(
         query(
           collection(db, "employees"),
           where("email", "==", emailLower),
           where("universityId", "==", form.universityId),
-          where("empType", "==", "university"),
+          where("type", "==", "admin"),
+          where("empTypes", "array-contains", "university"),
           limit(1)
         )
       );
-      if (!dupSnap.empty) { toast.warn("This email is already assigned to this university."); return; }
 
-      /* Existing user? → promote */
+      if (!dupSnap.empty) {
+        toast.warn("This email is already assigned to this university.");
+        return;
+      }
+
       const existingUser = await findUserByEmail(emailLower);
+
       if (existingUser?.uid) {
-        await assignUniversityAdmin({ targetUid: existingUser.uid, baseData, passwordFallback: existingUser.data?.password || password });
+        await assignUniversityAdmin({
+          targetUid: existingUser.uid,
+          baseData,
+          passwordFallback: existingUser.data?.password || password,
+        });
+
         toast.success("Existing user promoted to University Admin!");
         resetAndClose();
         await getList();
         return;
       }
 
-      /* Existing employee? → assign */
       const existingEmp = await findEmployeeByEmail(emailLower);
+
       if (existingEmp?.uid) {
-        await assignUniversityAdmin({ targetUid: existingEmp.uid, baseData, passwordFallback: existingEmp.data?.password || password });
+        await assignUniversityAdmin({
+          targetUid: existingEmp.uid,
+          baseData,
+          passwordFallback: existingEmp.data?.password || password,
+        });
+
         toast.success("Existing employee assigned as University Admin!");
         resetAndClose();
         await getList();
         return;
       }
 
-      /* Brand new → create Auth account */
       tempApp = initializeApp(firebaseConfig, `uniEmpCreator_${Date.now()}`);
       const tempAuth = getAuth(tempApp);
 
       try {
-        const cred = await createUserWithEmailAndPassword(tempAuth, emailLower, password);
+        const cred = await createUserWithEmailAndPassword(
+          tempAuth,
+          emailLower,
+          password
+        );
+
         const newUid = cred.user.uid;
 
-        await updateProfile(cred.user, { displayName: baseData.name, photoURL: imageUrl || undefined });
+        await updateProfile(cred.user, {
+          displayName: baseData.name,
+          photoURL: imageUrl || undefined,
+        });
 
         await setDoc(doc(db, "employees", newUid), {
           ...baseData,
+
+          // IMPORTANT: uid hamesha actual user/employee uid
           uid: newUid,
-          empTypes: ["university"],
+
           createdBy: currentUserUid,
+          empTypes: ["university"],
           password,
           createdAt: serverTimestamp(),
         });
@@ -517,7 +670,10 @@ export default function UniversityEmployeePage({ navbarHeight }) {
           createdby: currentUserUid,
           createddate: new Date(),
           password,
-          roles: { student: true, universityAdmin: true },
+          roles: {
+            student: true,
+            universityAdmin: true,
+          },
         });
 
         toast.success("University employee created!");
@@ -526,69 +682,90 @@ export default function UniversityEmployeePage({ navbarHeight }) {
           toast.warn("Auth account exists but no user doc found. Please check Firebase.");
           return;
         }
+
         throw err;
       }
 
       resetAndClose();
       await getList();
     } catch (err) {
-      console.error(err);
+      console.error("handleSubmit error:", err);
       toast.error("Failed to save employee.");
     } finally {
-      if (tempApp) { try { await deleteApp(tempApp); } catch { } }
+      if (tempApp) {
+        try {
+          await deleteApp(tempApp);
+        } catch {}
+      }
     }
   };
 
-  // ── Enable / Disable ──────────────────────────────────────────────────────
   const handleDisable = async () => {
     if (!deleteData) return;
+
     try {
-      const res = await fetch("https://us-central1-mymor-one.cloudfunctions.net/disableUserByUid", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid: form.id }),
-      });
+      const res = await fetch(
+        "https://us-central1-mymor-one.cloudfunctions.net/disableUserByUid",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid: form.id }),
+        }
+      );
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      await updateDoc(doc(db, "employees", form.id), { status: "disabled", isActive: false, updatedAt: serverTimestamp() });
+
+      if (!res.ok) throw new Error(data.error || "Failed to disable account");
+
+      await updateDoc(doc(db, "employees", form.id), {
+        status: "disabled",
+        isActive: false,
+        updatedAt: serverTimestamp(),
+      });
+
       toast.success("Account disabled!");
       await getList();
-    } catch {
+    } catch (err) {
+      console.error("handleDisable error:", err);
       toast.error("Failed to disable account");
     }
+
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
 
   const handleEnable = async () => {
     try {
-      const res = await fetch("https://us-central1-mymor-one.cloudfunctions.net/enableUserByUid", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid: form.id }),
-      });
+      const res = await fetch(
+        "https://us-central1-mymor-one.cloudfunctions.net/enableUserByUid",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid: form.id }),
+        }
+      );
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      await updateDoc(doc(db, "employees", form.id), { status: "active", isActive: true, updatedAt: serverTimestamp() });
+
+      if (!res.ok) throw new Error(data.error || "Failed to enable account");
+
+      await updateDoc(doc(db, "employees", form.id), {
+        status: "active",
+        isActive: true,
+        updatedAt: serverTimestamp(),
+      });
+
       toast.success("Account enabled!");
       await getList();
-    } catch {
+    } catch (err) {
+      console.error("handleEnable error:", err);
       toast.error("Failed to enable account");
     }
+
     setConfirmDeleteOpen(false);
     setDelete(null);
   };
 
-  // ── Reset ─────────────────────────────────────────────────────────────────
-  const resetAndClose = () => {
-    setModalOpen(false);
-    setEditing(null);
-    setForm(initialForm);
-    setFileName("No file chosen");
-    setAllowedMenuKeys(ALWAYS_ALLOWED);
-  };
-
-  // ── Open edit modal ───────────────────────────────────────────────────────
   const openEdit = (item) => {
     setEditing(item);
 
@@ -600,10 +777,13 @@ export default function UniversityEmployeePage({ navbarHeight }) {
     const allowed = Array.from(
       new Set([
         ...ALWAYS_ALLOWED,
-        ...ALL_MENU_OPTIONS.filter((opt) => opt.featureFlag && features[opt.featureFlag]).map((opt) => opt.key),
+        ...ALL_MENU_OPTIONS.filter(
+          (opt) => opt.featureFlag && features[opt.featureFlag]
+        ).map((opt) => opt.key),
         ...savedPerms,
       ])
     );
+
     setAllowedMenuKeys(allowed);
 
     setForm({
@@ -612,7 +792,6 @@ export default function UniversityEmployeePage({ navbarHeight }) {
       id: item.id,
       universityId: uniId,
       university: item.university || uni?.name || "",
-      // Restore campus/discipline from saved record
       campusId: item.campusId || "",
       campusName: item.campusName || "",
       disciplineId: item.disciplineId || "",
@@ -620,24 +799,29 @@ export default function UniversityEmployeePage({ navbarHeight }) {
       permissions: savedPerms,
       image: null,
     });
+
     setFileName("No file chosen");
     setModalOpen(true);
   };
 
   const universityOptions = useMemo(
-    () => [...universities].sort((a, b) => (a.name || "").localeCompare(b.name || "")),
+    () =>
+      [...universities].sort((a, b) =>
+        (a.name || "").localeCompare(b.name || "")
+      ),
     [universities]
   );
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
+    <main
+      className="flex-1 p-6 bg-gray-100 overflow-auto"
+      style={{ paddingTop: navbarHeight || 0 }}
+    >
       <ToastContainer />
 
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">University Employee</h1>
+
         <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-gray-800"
           onClick={() => {
@@ -652,16 +836,21 @@ export default function UniversityEmployeePage({ navbarHeight }) {
         </button>
       </div>
 
-      {/* Filters */}
       <div className="mb-4 flex flex-col md:flex-row gap-3 md:items-center">
         <select
           className="p-2 border border-gray-300 rounded w-full md:w-1/3"
           value={filterUniId}
-          onChange={(e) => { setFilterUniId(e.target.value); setCurrentPage(1); }}
+          onChange={(e) => {
+            setFilterUniId(e.target.value);
+            setCurrentPage(1);
+          }}
         >
           <option value="all">All Universities</option>
+
           {universityOptions.map((u) => (
-            <option key={u.id} value={u.id}>{u.name}</option>
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
           ))}
         </select>
 
@@ -670,20 +859,26 @@ export default function UniversityEmployeePage({ navbarHeight }) {
           placeholder="Search name, email, campus or discipline"
           className="p-2 border border-gray-300 rounded w-full md:w-1/3"
           value={searchTerm}
-          onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setCurrentPage(1);
+          }}
         />
 
         {(filterUniId !== "all" || searchTerm) && (
           <button
             className="px-3 py-2 bg-gray-200 rounded"
-            onClick={() => { setSearchTerm(""); setFilterUniId("all"); setCurrentPage(1); }}
+            onClick={() => {
+              setSearchTerm("");
+              setFilterUniId("all");
+              setCurrentPage(1);
+            }}
           >
             Clear
           </button>
         )}
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto bg-white rounded shadow">
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
@@ -693,8 +888,22 @@ export default function UniversityEmployeePage({ navbarHeight }) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                {["University", "Campus", "Discipline", "Name", "Email", "Mobile", "Password", "Status", "Image", "Actions"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-sm font-medium text-gray-500 whitespace-nowrap">
+                {[
+                  "University",
+                  "Campus",
+                  "Discipline",
+                  "Name",
+                  "Email",
+                  "Mobile",
+                  "Password",
+                  "Status",
+                  "Image",
+                  "Actions",
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-sm font-medium text-gray-500 whitespace-nowrap"
+                  >
                     {h}
                   </th>
                 ))}
@@ -704,7 +913,10 @@ export default function UniversityEmployeePage({ navbarHeight }) {
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="px-6 py-4 text-center text-gray-500">
+                  <td
+                    colSpan="10"
+                    className="px-6 py-4 text-center text-gray-500"
+                  >
                     No university employees found.
                   </td>
                 </tr>
@@ -714,54 +926,93 @@ export default function UniversityEmployeePage({ navbarHeight }) {
                     <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">
                       {item.university || "—"}
                     </td>
+
                     <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">
                       {item.campusName ? (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
                           {item.campusName}
                         </span>
-                      ) : "—"}
+                      ) : (
+                        "—"
+                      )}
                     </td>
+
                     <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">
                       {item.disciplineName ? (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
                           {item.disciplineName}
                         </span>
-                      ) : "—"}
+                      ) : (
+                        "—"
+                      )}
                     </td>
+
                     <td className="px-4 py-4 text-sm text-gray-700 font-semibold whitespace-nowrap">
                       {item.name}
                     </td>
-                    <td className="px-4 py-4 text-sm text-gray-500">{item.email}</td>
-                    <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">{item.mobileNo || "—"}</td>
-                    <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">{item.password || "—"}</td>
+
+                    <td className="px-4 py-4 text-sm text-gray-500">
+                      {item.email}
+                    </td>
+
+                    <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">
+                      {item.mobileNo || "—"}
+                    </td>
+
+                    <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">
+                      {item.password || "—"}
+                    </td>
+
                     <td className="px-4 py-4 text-sm whitespace-nowrap">
                       <span
                         className="px-2 py-1 rounded-full text-xs font-bold text-white"
-                        style={{ backgroundColor: item.isActive ? "green" : "red" }}
+                        style={{
+                          backgroundColor: item.isActive ? "green" : "red",
+                        }}
                       >
                         {item.isActive ? "Active" : "Inactive"}
                       </span>
                     </td>
+
                     <td className="px-4 py-4 text-sm">
                       {item.imageUrl && (
-                        <img src={item.imageUrl} width={48} height={48} alt="emp" className="rounded" />
+                        <img
+                          src={item.imageUrl}
+                          width={48}
+                          height={48}
+                          alt="emp"
+                          className="rounded"
+                        />
                       )}
                     </td>
+
                     <td className="px-4 py-4 text-sm whitespace-nowrap">
-                      <button className="text-blue-600 hover:underline mr-3" onClick={() => openEdit(item)}>
+                      <button
+                        className="text-blue-600 hover:underline mr-3"
+                        onClick={() => openEdit(item)}
+                      >
                         Edit
                       </button>
+
                       {item.isActive ? (
                         <button
                           className="text-red-600 hover:underline"
-                          onClick={() => { setDelete(item); setForm((f) => ({ ...f, id: item.id })); setConfirmDeleteOpen(true); }}
+                          onClick={() => {
+                            setDelete(item);
+                            setForm((f) => ({ ...f, id: item.id }));
+                            setConfirmDeleteOpen(true);
+                          }}
                         >
                           Disable
                         </button>
                       ) : (
                         <button
                           className="text-green-700 hover:underline"
-                          onClick={() => { setDelete(item); setForm((f) => ({ ...f, id: item.id })); setConfirmDeleteOpen(true); }}
+                          onClick={() => {
+                            setDelete(item);
+                            setForm((f) => ({ ...f, id: item.id }));
+                            setConfirmDeleteOpen(true);
+                          }}
                         >
                           Enable
                         </button>
@@ -775,16 +1026,30 @@ export default function UniversityEmployeePage({ navbarHeight }) {
         )}
       </div>
 
-      {/* Pager */}
       <div className="flex justify-between items-center mt-4">
-        <p className="text-sm text-gray-600">Page {currentPage} of {totalPages}</p>
+        <p className="text-sm text-gray-600">
+          Page {currentPage} of {totalPages}
+        </p>
+
         <div className="space-x-2">
-          <button onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))} disabled={currentPage === 1} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Previous</button>
-          <button onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Next</button>
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Previous
+          </button>
+
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Next
+          </button>
         </div>
       </div>
 
-      {/* ── Add / Edit Modal ──────────────────────────────────────────────── */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -799,35 +1064,48 @@ export default function UniversityEmployeePage({ navbarHeight }) {
                 required
                 className="w-full border border-gray-300 p-2 rounded"
                 value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name: e.target.value }))
+                }
               />
+
               <input
                 type="email"
                 placeholder="Email *"
                 required
                 className="w-full border border-gray-300 p-2 rounded"
                 value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, email: e.target.value }))
+                }
                 disabled={!!editingData}
               />
+
               <input
                 type="text"
                 placeholder="Mobile No"
                 className="w-full border border-gray-300 p-2 rounded"
                 value={form.mobileNo}
-                onChange={(e) => setForm((f) => ({ ...f, mobileNo: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, mobileNo: e.target.value }))
+                }
               />
+
               <input
                 type="text"
                 placeholder="Address"
                 className="w-full border border-gray-300 p-2 rounded"
                 value={form.address}
-                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, address: e.target.value }))
+                }
               />
 
-              {/* University */}
               <div>
-                <label className="block text-sm font-semibold text-gray-600 mb-1">University *</label>
+                <label className="block text-sm font-semibold text-gray-600 mb-1">
+                  University *
+                </label>
+
                 <select
                   className="w-full border border-gray-300 p-2 rounded"
                   value={form.universityId}
@@ -835,33 +1113,40 @@ export default function UniversityEmployeePage({ navbarHeight }) {
                   required
                 >
                   <option value="">Select University</option>
+
                   {universityOptions.map((u) => (
-                    <option key={u.id} value={u.id}>{u.name}</option>
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
                   ))}
                 </select>
+
                 <p className="text-xs text-gray-400 mt-1">
-                  Selecting a university will show the permissions available for that university's active features.
+                  Selecting a university will show the permissions available for
+                  that university's active features.
                 </p>
               </div>
 
-              {/* ── Campus + Discipline (university module only) ──────────── */}
               {form.universityId && universityModuleEnabled && (
                 <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg space-y-3">
                   <p className="text-sm font-semibold text-purple-800">
                     University Module — assign admin to a campus &amp; discipline
                   </p>
+
                   <p className="text-xs text-purple-600">
-                    This admin will only see and post content for their assigned campus and discipline.
+                    This admin will only see and post content for their assigned
+                    campus and discipline.
                   </p>
 
-                  {/* Campus selector */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">
                       Campus *
                     </label>
+
                     {availableCampuses.length === 0 ? (
                       <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">
-                        No campuses configured for this university. Add campuses in University settings first.
+                        No campuses configured for this university. Add campuses
+                        in University settings first.
                       </p>
                     ) : (
                       <select
@@ -871,22 +1156,29 @@ export default function UniversityEmployeePage({ navbarHeight }) {
                         required={universityModuleEnabled}
                       >
                         <option value="">Select Campus</option>
+
                         {availableCampuses.map((c) => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
                         ))}
                       </select>
                     )}
                   </div>
 
-                  {/* Discipline selector — appears once campus is chosen */}
                   {form.campusId && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-1">
-                        Discipline {availableDisciplines.length > 0 ? "*" : "(none configured)"}
+                        Discipline{" "}
+                        {availableDisciplines.length > 0
+                          ? "*"
+                          : "(none configured)"}
                       </label>
+
                       {availableDisciplines.length === 0 ? (
                         <p className="text-xs text-gray-400 italic">
-                          No disciplines configured for this campus. The admin will have campus-level access only.
+                          No disciplines configured for this campus. The admin
+                          will have campus-level access only.
                         </p>
                       ) : (
                         <select
@@ -896,20 +1188,23 @@ export default function UniversityEmployeePage({ navbarHeight }) {
                           required={availableDisciplines.length > 0}
                         >
                           <option value="">Select Discipline</option>
+
                           {availableDisciplines.map((d) => (
-                            <option key={d.id} value={d.id}>{d.name}</option>
+                            <option key={d.id} value={d.id}>
+                              {d.name}
+                            </option>
                           ))}
                         </select>
                       )}
                     </div>
                   )}
 
-                  {/* Scope summary badge */}
                   {form.campusName && (
                     <div className="flex flex-wrap gap-2 pt-1">
                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                         🏛 {form.campusName}
                       </span>
+
                       {form.disciplineName && (
                         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
                           📚 {form.disciplineName}
@@ -920,7 +1215,6 @@ export default function UniversityEmployeePage({ navbarHeight }) {
                 </div>
               )}
 
-              {/* Image */}
               <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                 <label className="cursor-pointer">
                   <input
@@ -929,20 +1223,29 @@ export default function UniversityEmployeePage({ navbarHeight }) {
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
-                      setForm((prev) => ({ ...prev, image: f || null }));
+                      setForm((prev) => ({
+                        ...prev,
+                        image: f || null,
+                      }));
                       setFileName(f?.name || "No file chosen");
                     }}
                   />
                   📁 Choose File
                 </label>
-                <span className="text-sm text-gray-600 truncate max-w-[150px]">{fileName}</span>
+
+                <span className="text-sm text-gray-600 truncate max-w-[150px]">
+                  {fileName}
+                </span>
               </div>
 
-              {form.imageUrl && <img src={form.imageUrl} alt="" width={100} className="rounded" />}
+              {form.imageUrl && (
+                <img src={form.imageUrl} alt="" width={100} className="rounded" />
+              )}
 
-              {/* Permissions */}
               <div>
-                <label className="block text-sm font-semibold text-gray-600 mb-2">Permissions</label>
+                <label className="block text-sm font-semibold text-gray-600 mb-2">
+                  Permissions
+                </label>
 
                 {!form.universityId && !editingData ? (
                   <p className="text-xs text-gray-400 bg-gray-50 p-3 rounded border border-gray-200">
@@ -955,9 +1258,16 @@ export default function UniversityEmployeePage({ navbarHeight }) {
                         <input
                           type="checkbox"
                           checked={allPermissionsSelected}
-                          onChange={(e) => handleSelectAllPermissions(e.target.checked)}
+                          onChange={(e) =>
+                            handleSelectAllPermissions(e.target.checked)
+                          }
                         />
-                        <span>{allPermissionsSelected ? "Unselect all permissions" : "Select all permissions"}</span>
+
+                        <span>
+                          {allPermissionsSelected
+                            ? "Unselect all permissions"
+                            : "Select all permissions"}
+                        </span>
                       </label>
                     </div>
 
@@ -970,8 +1280,11 @@ export default function UniversityEmployeePage({ navbarHeight }) {
                           <input
                             type="checkbox"
                             checked={(form.permissions || []).includes(key)}
-                            onChange={(e) => handlePermissionToggle(key, e.target.checked)}
+                            onChange={(e) =>
+                              handlePermissionToggle(key, e.target.checked)
+                            }
                           />
+
                           {label}
                         </label>
                       ))}
@@ -980,28 +1293,47 @@ export default function UniversityEmployeePage({ navbarHeight }) {
                 )}
               </div>
 
-              {/* Status toggle */}
               <label className="flex items-center gap-3 cursor-pointer">
                 <span className="text-sm font-medium">Status</span>
+
                 <input
                   type="checkbox"
                   className="sr-only peer"
                   checked={!!form.isActive}
-                  onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      isActive: e.target.checked,
+                    }))
+                  }
                 />
+
                 <div className="w-11 h-6 rounded-full bg-gray-300 peer-checked:bg-green-500 transition-colors relative">
                   <span className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5" />
                 </div>
-                <span className={`text-sm font-semibold ${form.isActive ? "text-green-600" : "text-red-500"}`}>
+
+                <span
+                  className={`text-sm font-semibold ${
+                    form.isActive ? "text-green-600" : "text-red-500"
+                  }`}
+                >
                   {form.isActive ? "Active" : "Inactive"}
                 </span>
               </label>
 
               <div className="flex justify-end mt-6 space-x-3">
-                <button type="button" onClick={resetAndClose} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
+                <button
+                  type="button"
+                  onClick={resetAndClose}
+                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                >
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-green-800 text-white rounded hover:bg-green-900">
+
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-green-800 text-white rounded hover:bg-green-900"
+                >
                   Save
                 </button>
               </div>
@@ -1010,21 +1342,36 @@ export default function UniversityEmployeePage({ navbarHeight }) {
         </div>
       )}
 
-      {/* Enable / Disable confirm */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
             <h2 className="text-xl font-semibold mb-4">
               {deleteData?.isActive ? "Disable Account" : "Enable Account"}
             </h2>
+
             <p className="mb-4">
-              {deleteData?.isActive ? "Disable" : "Enable"} account for <strong>{deleteData?.name}</strong>?
+              {deleteData?.isActive ? "Disable" : "Enable"} account for{" "}
+              <strong>{deleteData?.name}</strong>?
             </p>
+
             <div className="flex justify-end space-x-3">
-              <button onClick={() => { setConfirmDeleteOpen(false); setDelete(null); }} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
+              <button
+                onClick={() => {
+                  setConfirmDeleteOpen(false);
+                  setDelete(null);
+                }}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+
               <button
                 onClick={deleteData?.isActive ? handleDisable : handleEnable}
-                className={`px-4 py-2 text-white rounded ${deleteData?.isActive ? "bg-red-600 hover:bg-red-700" : "bg-green-700 hover:bg-green-800"}`}
+                className={`px-4 py-2 text-white rounded ${
+                  deleteData?.isActive
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-green-700 hover:bg-green-800"
+                }`}
               >
                 {deleteData?.isActive ? "Disable" : "Enable"}
               </button>
