@@ -29,25 +29,19 @@ export default function UniversityEmployeeAdminPage(props) {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [rolelist, setRoletList] = useState([]);
-
   const [fileName, setFileName] = useState("No file chosen");
 
-  const uid = useSelector((state) => state.auth.user?.uid);
+  const currentUserUid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
 
-  const universityId = String(
-    emp?.universityid || emp?.universityId || ""
-  ).trim();
-
+  const universityId = String(emp?.universityid || emp?.universityId || "").trim();
   const universityName = emp?.university || emp?.universityName || "";
 
   const mountedRef = useRef(true);
@@ -73,6 +67,7 @@ export default function UniversityEmployeeAdminPage(props) {
     image: null,
     imageUrl: "",
     password: "",
+    empType: "universityemployee",
   };
 
   const [form, setForm] = useState(initialForm);
@@ -106,8 +101,57 @@ export default function UniversityEmployeeAdminPage(props) {
 
   const pageSize = 10;
 
+  const normalizePermissions = (raw) => {
+    if (Array.isArray(raw)) return raw.filter(Boolean);
+    if (!raw) return [];
+    if (typeof raw === "string") {
+      return raw.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    if (typeof raw === "object") {
+      return Object.entries(raw)
+        .filter(([, v]) => !!v)
+        .map(([k]) => k);
+    }
+    return [];
+  };
+
+  const normalizeEmpTypes = (val) =>
+    Array.isArray(val) ? val : val ? [val] : [];
+
+  const mergePermissions = (oldPerms = [], newPerms = []) => {
+    const a = normalizePermissions(oldPerms);
+    const b = normalizePermissions(newPerms);
+    return Array.from(new Set([...a, ...b]));
+  };
+
+  const isEmailValid = (email) => {
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return EMAIL_REGEX.test((email || "").trim());
+  };
+
+  const uploadImageIfNeeded = async (imageFile) => {
+    if (!(imageFile instanceof File)) return null;
+    const sref = ref(storage, `employee_image/${Date.now()}_${imageFile.name}`);
+    await uploadBytes(sref, imageFile);
+    return await getDownloadURL(sref);
+  };
+
+  const findEmployeeByEmail = async (emailLower) => {
+    const qy = query(
+      collection(db, "employees"),
+      where("email", "==", emailLower),
+      limit(1)
+    );
+    const snap = await getDocs(qy);
+    if (snap.empty) return null;
+
+    const d = snap.docs[0];
+    return { uid: d.id, data: d.data() || {} };
+  };
+
   const filteredData = useMemo(() => {
     const t = (searchTerm || "").toLowerCase();
+
     return (list || []).filter((item) => {
       const n = (item.name || "").toLowerCase();
       const e = (item.email || "").toLowerCase();
@@ -135,87 +179,46 @@ export default function UniversityEmployeeAdminPage(props) {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [totalPages, currentPage]);
 
-  const isEmailValid = (email) => {
-    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return EMAIL_REGEX.test((email || "").trim());
-  };
-
-  const normalizePermissions = (raw) => {
-    if (Array.isArray(raw)) return raw.filter(Boolean);
-
-    if (!raw) return [];
-
-    if (typeof raw === "string") {
-      return raw
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-
-    if (typeof raw === "object") {
-      return Object.entries(raw)
-        .filter(([, v]) => !!v)
-        .map(([k]) => k);
-    }
-
-    return [];
-  };
-
-  const mergePermissions = (oldPerms = [], newPerms = []) => {
-    const a = normalizePermissions(oldPerms);
-    const b = normalizePermissions(newPerms);
-    return Array.from(new Set([...a, ...b]));
-  };
-
-  const uploadImageIfNeeded = async (imageFile) => {
-    if (!(imageFile instanceof File)) return null;
-
-    const sref = ref(
-      storage,
-      `employee_image/${Date.now()}_${imageFile.name}`
-    );
-
-    await uploadBytes(sref, imageFile);
-    return await getDownloadURL(sref);
-  };
-
-  const findEmployeeByEmail = async (emailLower) => {
-    const qy = query(
-      collection(db, "employees"),
-      where("email", "==", emailLower),
-      limit(1)
-    );
-    const snap = await getDocs(qy);
-
-    if (snap.empty) return null;
-
-    const d = snap.docs[0];
-    return { uid: d.id, data: d.data() || {} };
-  };
-
   const getList = async () => {
     setIsLoading(true);
+
     try {
-      const q = query(
-        collection(db, "employees"),
-        where("empType", "==", "university"),
-        where("universityid", "==", universityId)
-      );
+      const [newSnap, legacySnap] = await Promise.all([
+        getDocs(
+          query(
+            collection(db, "employees"),
+            where("universityid", "==", universityId),
+            where("empTypes", "array-contains", "universityemployee")
+          )
+        ),
+        getDocs(
+          query(
+            collection(db, "employees"),
+            where("universityid", "==", universityId),
+            where("createdBy", "==", currentUserUid || ""),
+            where("empType", "==", "university")
+          )
+        ),
+      ]);
 
-      const querySnapshot = await getDocs(q);
+      const byId = new Map();
 
-      const documents = querySnapshot.docs.map((d) => ({
+      [...newSnap.docs, ...legacySnap.docs].forEach((d) => {
+        byId.set(d.id, d);
+      });
+
+      const documents = Array.from(byId.values()).map((d) => ({
         id: d.id,
         ...d.data(),
         permissions: normalizePermissions(d.data()?.permissions),
       }));
 
-      setList(documents);
+      if (mountedRef.current) setList(documents);
     } catch (e) {
       console.error("getList error:", e);
       toast.error("Failed to load employees");
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
   };
 
@@ -223,6 +226,7 @@ export default function UniversityEmployeeAdminPage(props) {
     if (!universityId) return;
 
     setIsLoading(true);
+
     try {
       const qy = query(collection(db, "university", universityId, "roles"));
       const snap = await getDocs(qy);
@@ -232,12 +236,12 @@ export default function UniversityEmployeeAdminPage(props) {
         ...docu.data(),
       }));
 
-      setRoletList(documents);
+      if (mountedRef.current) setRoletList(documents);
     } catch (e) {
       console.error("getRoleList error:", e);
       toast.error("Failed to load roles");
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
   };
 
@@ -264,12 +268,8 @@ export default function UniversityEmployeeAdminPage(props) {
   const handlePermissionToggle = (key, checked) => {
     setForm((prev) => {
       const current = new Set(normalizePermissions(prev.permissions));
-
-      if (checked) {
-        current.add(key);
-      } else {
-        current.delete(key);
-      }
+      if (checked) current.add(key);
+      else current.delete(key);
 
       return { ...prev, permissions: Array.from(current) };
     });
@@ -280,11 +280,8 @@ export default function UniversityEmployeeAdminPage(props) {
       const current = new Set(normalizePermissions(prev.permissions));
 
       MENU_OPTIONS.forEach(({ key }) => {
-        if (checked) {
-          current.add(key);
-        } else {
-          current.delete(key);
-        }
+        if (checked) current.add(key);
+        else current.delete(key);
       });
 
       return { ...prev, permissions: Array.from(current) };
@@ -332,15 +329,22 @@ export default function UniversityEmployeeAdminPage(props) {
         isActive: !!form.isActive,
         permissions: normalizePermissions(form.permissions),
         type: "admin",
-        empType: "university",
+
+        empType: "universityemployee",
+        empTypes: ["universityemployee"],
+
         universityid: universityId,
         universityId: universityId,
         university: universityName,
+
         campusId: "",
         campusName: "",
         disciplineId: "",
         disciplineName: "",
-        createdBy: uid || "",
+
+        createdBy: currentUserUid || "",
+        createdby: currentUserUid || "",
+
         ...(imageUrl ? { imageUrl } : {}),
         updatedAt: serverTimestamp(),
       };
@@ -355,16 +359,31 @@ export default function UniversityEmployeeAdminPage(props) {
         }
 
         const old = docSnap.data() || {};
+
         const mergedPerms = mergePermissions(
           old.permissions,
           baseData.permissions
         );
 
+        const mergedEmpTypes = Array.from(
+          new Set([
+            ...normalizeEmpTypes(old.empTypes || old.empType),
+            "universityemployee",
+          ])
+        );
+
         await updateDoc(docRef, {
           ...baseData,
+
+          uid: form.id,
+
+          createdBy: old.createdBy || currentUserUid || "",
+          createdby: old.createdby || currentUserUid || "",
+
+          empTypes: mergedEmpTypes,
           permissions: mergedPerms,
           password: old.password || "",
-          uid: old.uid || form.id,
+          updatedAt: serverTimestamp(),
         });
 
         toast.success("Employee updated successfully");
@@ -377,7 +396,7 @@ export default function UniversityEmployeeAdminPage(props) {
         collection(db, "employees"),
         where("email", "==", emailLower),
         where("universityid", "==", universityId),
-        where("empType", "==", "university"),
+        where("empTypes", "array-contains", "universityemployee"),
         limit(1)
       );
 
@@ -401,16 +420,29 @@ export default function UniversityEmployeeAdminPage(props) {
           baseData.permissions
         );
 
+        const mergedEmpTypes = Array.from(
+          new Set([
+            ...normalizeEmpTypes(oldEmp.empTypes || oldEmp.empType),
+            "universityemployee",
+          ])
+        );
+
         await setDoc(
           doc(db, "employees", existingUid),
           {
             ...oldEmp,
             ...baseData,
+
             uid: existingUid,
+
+            empTypes: mergedEmpTypes,
             permissions: mergedPerms,
             password: oldEmp.password || password,
-            createdby: oldEmp.createdby || uid,
+
+            createdBy: oldEmp.createdBy || currentUserUid || "",
+            createdby: oldEmp.createdby || currentUserUid || "",
             createddate: oldEmp.createddate || new Date(),
+
             updatedAt: serverTimestamp(),
           },
           { merge: true }
@@ -441,9 +473,14 @@ export default function UniversityEmployeeAdminPage(props) {
 
         await setDoc(doc(db, "employees", user.uid), {
           ...baseData,
+
           uid: user.uid,
+
+          empTypes: ["universityemployee"],
           password,
-          createdby: uid,
+
+          createdBy: currentUserUid || "",
+          createdby: currentUserUid || "",
           createddate: new Date(),
           createdAt: serverTimestamp(),
         });
@@ -462,14 +499,28 @@ export default function UniversityEmployeeAdminPage(props) {
               baseData.permissions
             );
 
+            const mergedEmpTypes = Array.from(
+              new Set([
+                ...normalizeEmpTypes(oldEmp.empTypes || oldEmp.empType),
+                "universityemployee",
+              ])
+            );
+
             await setDoc(
               doc(db, "employees", existingUid),
               {
                 ...oldEmp,
                 ...baseData,
+
                 uid: existingUid,
+
+                empTypes: mergedEmpTypes,
                 permissions: mergedPerms,
                 password: oldEmp.password || password,
+
+                createdBy: oldEmp.createdBy || currentUserUid || "",
+                createdby: oldEmp.createdby || currentUserUid || "",
+
                 updatedAt: serverTimestamp(),
               },
               { merge: true }
@@ -485,7 +536,7 @@ export default function UniversityEmployeeAdminPage(props) {
           }
 
           toast.warn(
-            "Auth email exists but employee record not found. Create employee doc manually or use Admin SDK to map email → uid."
+            "Auth email exists but employee record not found. Create employee doc manually or use Admin SDK to map email to UID."
           );
           return;
         }
@@ -562,6 +613,7 @@ export default function UniversityEmployeeAdminPage(props) {
     >
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">University Employee Admin</h1>
+
         <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
@@ -597,36 +649,25 @@ export default function UniversityEmployeeAdminPage(props) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Name
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Email
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Mobile No
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Designation
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Department
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Role
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Password
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Image
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Actions
-                </th>
+                {[
+                  "Name",
+                  "Email",
+                  "Mobile No",
+                  "Designation",
+                  "Department",
+                  "Role",
+                  "Password",
+                  "Status",
+                  "Image",
+                  "Actions",
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="px-6 py-3 text-left text-sm font-medium text-gray-500"
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
 
@@ -730,6 +771,7 @@ export default function UniversityEmployeeAdminPage(props) {
         <p className="text-sm text-gray-600">
           Page {currentPage} of {totalPages}
         </p>
+
         <div className="space-x-2">
           <button
             onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
@@ -738,10 +780,11 @@ export default function UniversityEmployeeAdminPage(props) {
           >
             Previous
           </button>
+
           <button
-            onClick={() => setCurrentPage((p) =>
-              Math.min(p + 1, totalPages)
-            )}
+            onClick={() =>
+              setCurrentPage((p) => Math.min(p + 1, totalPages))
+            }
             disabled={currentPage === totalPages}
             className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
           >
@@ -847,6 +890,7 @@ export default function UniversityEmployeeAdminPage(props) {
                   />
                   📁 Choose File
                 </label>
+
                 <span className="text-sm text-gray-600 truncate max-w-[150px]">
                   {fileName}
                 </span>
@@ -945,10 +989,12 @@ export default function UniversityEmployeeAdminPage(props) {
             <h2 className="text-xl font-semibold mb-4 text-red-600">
               Delete Employee
             </h2>
+
             <p className="mb-4">
               Are you sure you want to delete{" "}
               <strong>{deleteData?.name}</strong>?
             </p>
+
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
@@ -959,6 +1005,7 @@ export default function UniversityEmployeeAdminPage(props) {
               >
                 Cancel
               </button>
+
               <button
                 onClick={handleDelete}
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"

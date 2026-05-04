@@ -100,7 +100,6 @@ export default function UniclubEventBookingPage() {
         setBookings(docs);
       } catch (e) {
         console.error(e);
-        toast.error("Failed to load bookings");
       } finally {
         setIsLoading(false);
       }

@@ -30,22 +30,20 @@ export default function EmployeePage(props) {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-
   const [modalOpen, setModalOpen] = useState(false);
   const [editingData, setEditing] = useState(null);
   const [deleteData, setDelete] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-
   const [list, setList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [rolelist, setRoletList] = useState([]);
-
   const [fileName, setFileName] = useState("No file chosen");
 
-  const uid = useSelector((state) => state.auth.user?.uid);
+  const currentUserUid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
 
   const mountedRef = useRef(true);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -68,6 +66,7 @@ export default function EmployeePage(props) {
     image: null,
     imageUrl: "",
     password: "",
+    empType: "employee",
   };
 
   const [form, setForm] = useState(initialForm);
@@ -105,8 +104,74 @@ export default function EmployeePage(props) {
 
   const pageSize = 10;
 
+  const normalizePermissions = (raw) => {
+    if (Array.isArray(raw)) return raw.filter(Boolean);
+    if (!raw) return [];
+    if (typeof raw === "string") {
+      return raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    if (typeof raw === "object") {
+      return Object.entries(raw)
+        .filter(([, v]) => !!v)
+        .map(([k]) => k);
+    }
+    return [];
+  };
+
+  const normalizeEmpTypes = (val) =>
+    Array.isArray(val) ? val : val ? [val] : [];
+
+  const mergePermissions = (oldPerms = [], newPerms = []) => {
+    const a = normalizePermissions(oldPerms);
+    const b = normalizePermissions(newPerms);
+    return Array.from(new Set([...a, ...b]));
+  };
+
+  const isEmailValid = (email) => {
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return EMAIL_REGEX.test((email || "").trim());
+  };
+
+  const uploadImageIfNeeded = async (imageFile) => {
+    if (!(imageFile instanceof File)) return null;
+    const sref = ref(storage, `employee_image/${Date.now()}_${imageFile.name}`);
+    await uploadBytes(sref, imageFile);
+    return await getDownloadURL(sref);
+  };
+
+  const findEmployeeByEmail = async (emailLower) => {
+    const qy = query(
+      collection(db, "employees"),
+      where("email", "==", emailLower),
+      limit(1)
+    );
+    const snap = await getDocs(qy);
+
+    if (snap.empty) return null;
+
+    const d = snap.docs[0];
+    return {
+      uid: d.id,
+      data: d.data() || {},
+    };
+  };
+
+  const isRegularEmployee = (data = {}) => {
+    const empTypes = normalizeEmpTypes(data.empTypes || data.empType);
+
+    if (!data.empType && !data.empTypes) return true;
+    if (data.empType === "employee") return true;
+    if (empTypes.includes("employee")) return true;
+
+    return false;
+  };
+
   const filteredData = useMemo(() => {
     const t = (searchTerm || "").toLowerCase();
+
     return (list || []).filter((item) => {
       const n = (item.name || "").toLowerCase();
       const e = (item.email || "").toLowerCase();
@@ -115,6 +180,7 @@ export default function EmployeePage(props) {
   }, [list, searchTerm]);
 
   const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
+
   const paginatedData = useMemo(() => {
     return filteredData.slice(
       (currentPage - 1) * pageSize,
@@ -132,101 +198,80 @@ export default function EmployeePage(props) {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [totalPages, currentPage]);
 
-  /* -------------------- Helpers -------------------- */
-
-  const isEmailValid = (email) => {
-    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return EMAIL_REGEX.test((email || "").trim());
-  };
-
-  const normalizePermissions = (raw) => {
-    if (Array.isArray(raw)) return raw;
-    if (!raw) return [];
-    if (typeof raw === "string") {
-      return raw
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-    if (typeof raw === "object") {
-      return Object.entries(raw)
-        .filter(([, v]) => !!v)
-        .map(([k]) => k);
-    }
-    return [];
-  };
-
-  const mergePermissions = (oldPerms = [], newPerms = []) => {
-    const a = normalizePermissions(oldPerms);
-    const b = normalizePermissions(newPerms);
-    return Array.from(new Set([...a, ...b]));
-  };
-
-  const uploadImageIfNeeded = async (imageFile) => {
-    if (!(imageFile instanceof File)) return null;
-    const sref = ref(
-      storage,
-      `employee_image/${Date.now()}_${imageFile.name}`
-    );
-    await uploadBytes(sref, imageFile);
-    return await getDownloadURL(sref);
-  };
-
-  const findEmployeeByEmail = async (emailLower) => {
-    const qy = query(
-      collection(db, "employees"),
-      where("email", "==", emailLower),
-      limit(1)
-    );
-    const snap = await getDocs(qy);
-    if (snap.empty) return null;
-    const d = snap.docs[0];
-    return { uid: d.id, data: d.data() || {} };
-  };
-
-  /* -------------------- Data Fetch -------------------- */
-
   const getList = async () => {
     setIsLoading(true);
+
     try {
-      const q = query(collection(db, "employees"), where("uid", "==", uid));
-      const querySnapshot = await getDocs(q);
-      const documents = querySnapshot.docs.map((d) => ({
+      const [newSnap, legacySnap] = await Promise.all([
+        getDocs(
+          query(
+            collection(db, "employees"),
+            where("createdBy", "==", currentUserUid || "")
+          )
+        ),
+        getDocs(
+          query(
+            collection(db, "employees"),
+            where("uid", "==", currentUserUid || "")
+          )
+        ),
+      ]);
+
+      const byId = new Map();
+
+      [...newSnap.docs, ...legacySnap.docs].forEach((d) => {
+        const data = d.data() || {};
+        if (isRegularEmployee(data)) {
+          byId.set(d.id, d);
+        }
+      });
+
+      const documents = Array.from(byId.values()).map((d) => ({
         id: d.id,
         ...d.data(),
         permissions: normalizePermissions(d.data()?.permissions),
       }));
-      setList(documents);
+
+      if (mountedRef.current) setList(documents);
     } catch (e) {
       console.error("getList error:", e);
       toast.error("Failed to load employees");
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
   };
 
   const getRoleList = async () => {
     setIsLoading(true);
+
     try {
       const qy = query(
         collection(db, "role"),
         where("hostelid", "==", emp?.hostelid || "")
       );
+
       const snap = await getDocs(qy);
+
       const documents = snap.docs.map((docu) => ({
         id: docu.id,
         ...docu.data(),
       }));
-      setRoletList(documents);
+
+      if (mountedRef.current) setRoletList(documents);
     } catch (e) {
       console.error("getRoleList error:", e);
       toast.error("Failed to load roles");
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
   };
 
-  /* -------------------- Handlers -------------------- */
+  const resetAndClose = () => {
+    setModalOpen(false);
+    setEditing(null);
+    setForm(initialForm);
+    setFileName("No file chosen");
+  };
 
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
@@ -237,10 +282,12 @@ export default function EmployeePage(props) {
       setFileName(file ? file.name : "No file chosen");
       return;
     }
-    setForm((p) => ({ ...p, [name]: value }));
-  };
 
-  /* -------------------- ✅ UPDATED handleSubmit (same smart flow) -------------------- */
+    setForm((p) => ({
+      ...p,
+      [name]: value,
+    }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -261,12 +308,11 @@ export default function EmployeePage(props) {
         return;
       }
 
-      // ✅ upload image if new
       let imageUrl = form.imageUrl || "";
       const uploadedUrl = await uploadImageIfNeeded(form.image);
+
       if (uploadedUrl) imageUrl = uploadedUrl;
 
-      // ✅ base payload (hostel employee)
       const baseData = {
         name: (form.name || "").trim(),
         email: emailLower,
@@ -277,14 +323,19 @@ export default function EmployeePage(props) {
         role: form.role || "",
         isActive: !!form.isActive,
         permissions: normalizePermissions(form.permissions),
-        type: "admin", // panel access
+        type: "admin",
+        empType: "employee",
+        empTypes: ["employee"],
         hostelid: emp.hostelid,
-        uid, // creator uid (current logged in admin)
+
+        // logged-in admin UID
+        createdBy: currentUserUid,
+        createdby: currentUserUid,
+
         ...(imageUrl ? { imageUrl } : {}),
         updatedAt: serverTimestamp(),
       };
 
-      // ---------------- EDIT MODE ----------------
       if (editingData) {
         const docRef = doc(db, "employees", form.id);
         const docSnap = await getDoc(docRef);
@@ -297,56 +348,82 @@ export default function EmployeePage(props) {
         const old = docSnap.data() || {};
         const mergedPerms = mergePermissions(old.permissions, baseData.permissions);
 
-        // ✅ keep password as-is (do not overwrite)
+        const mergedEmpTypes = Array.from(
+          new Set([
+            ...normalizeEmpTypes(old.empTypes || old.empType),
+            "employee",
+          ])
+        );
+
         await updateDoc(docRef, {
           ...baseData,
+
+          // IMPORTANT: uid actual employee/user UID
+          uid: form.id,
+
+          createdBy: old.createdBy || currentUserUid,
+          createdby: old.createdby || currentUserUid,
+
+          empTypes: mergedEmpTypes,
           permissions: mergedPerms,
           password: old.password || "",
+          updatedAt: serverTimestamp(),
         });
 
         toast.success("Employee updated successfully");
-        await getList();
 
-        setModalOpen(false);
-        setEditing(null);
-        setForm(initialForm);
-        setFileName("No file chosen");
+        await getList();
+        resetAndClose();
         return;
       }
 
-      // ---------------- CREATE MODE ----------------
-
-      // ✅ Rule 1: block SAME email + SAME hostel (already assigned)
       const qSame = query(
         collection(db, "employees"),
         where("email", "==", emailLower),
         where("hostelid", "==", emp.hostelid),
         limit(1)
       );
+
       const sameSnap = await getDocs(qSame);
+
       if (!sameSnap.empty) {
         toast.warn("This email is already assigned to an employee in this hostel.");
         return;
       }
 
-      // ✅ Rule 2: if employee exists by email (any hostel) => reuse UID, merge permissions, update hostelid
       const existingEmp = await findEmployeeByEmail(emailLower);
+
       if (existingEmp?.uid) {
         const existingUid = existingEmp.uid;
         const oldEmp = existingEmp.data || {};
 
         const mergedPerms = mergePermissions(oldEmp.permissions, baseData.permissions);
 
+        const mergedEmpTypes = Array.from(
+          new Set([
+            ...normalizeEmpTypes(oldEmp.empTypes || oldEmp.empType),
+            "employee",
+          ])
+        );
+
         await setDoc(
           doc(db, "employees", existingUid),
           {
             ...oldEmp,
             ...baseData,
+
+            // IMPORTANT: uid actual employee/user UID
+            uid: existingUid,
+
             hostelid: emp.hostelid,
+            empTypes: mergedEmpTypes,
             permissions: mergedPerms,
             password: oldEmp.password || password,
-            createdby: oldEmp.createdby || uid,
+
+            createdBy: oldEmp.createdBy || currentUserUid,
+            createdby: oldEmp.createdby || currentUserUid,
             createddate: oldEmp.createddate || new Date(),
+
             updatedAt: serverTimestamp(),
           },
           { merge: true }
@@ -355,15 +432,11 @@ export default function EmployeePage(props) {
         toast.success("Existing email found — employee assigned/updated!");
 
         await getList();
-        setModalOpen(false);
-        setEditing(null);
-        setForm(initialForm);
-        setFileName("No file chosen");
+        resetAndClose();
         return;
       }
 
-      // ✅ Rule 3: create auth + employee doc
-      tempApp = initializeApp(firebaseConfig, "employeeCreator");
+      tempApp = initializeApp(firebaseConfig, `employeeCreator_${Date.now()}`);
       const tempAuth = getAuth(tempApp);
 
       try {
@@ -372,6 +445,7 @@ export default function EmployeePage(props) {
           emailLower,
           password
         );
+
         const user = userCredential.user;
 
         await updateProfile(user, {
@@ -381,31 +455,55 @@ export default function EmployeePage(props) {
 
         await setDoc(doc(db, "employees", user.uid), {
           ...baseData,
+
+          // IMPORTANT: uid actual employee/user UID
+          uid: user.uid,
+
+          empTypes: ["employee"],
           password,
-          createdby: uid,
+
+          createdBy: currentUserUid,
+          createdby: currentUserUid,
           createddate: new Date(),
           createdAt: serverTimestamp(),
         });
 
         toast.success("Employee created successfully");
       } catch (err) {
-        // ✅ IMPORTANT: if auth already exists, try to assign by employee doc
         if (err?.code === "auth/email-already-in-use") {
           const fallbackEmp = await findEmployeeByEmail(emailLower);
 
           if (fallbackEmp?.uid) {
             const existingUid = fallbackEmp.uid;
             const oldEmp = fallbackEmp.data || {};
-            const mergedPerms = mergePermissions(oldEmp.permissions, baseData.permissions);
+            const mergedPerms = mergePermissions(
+              oldEmp.permissions,
+              baseData.permissions
+            );
+
+            const mergedEmpTypes = Array.from(
+              new Set([
+                ...normalizeEmpTypes(oldEmp.empTypes || oldEmp.empType),
+                "employee",
+              ])
+            );
 
             await setDoc(
               doc(db, "employees", existingUid),
               {
                 ...oldEmp,
                 ...baseData,
+
+                // IMPORTANT: uid actual employee/user UID
+                uid: existingUid,
+
                 hostelid: emp.hostelid,
+                empTypes: mergedEmpTypes,
                 permissions: mergedPerms,
                 password: oldEmp.password || password,
+
+                createdBy: oldEmp.createdBy || currentUserUid,
+                createdby: oldEmp.createdby || currentUserUid,
                 updatedAt: serverTimestamp(),
               },
               { merge: true }
@@ -416,15 +514,12 @@ export default function EmployeePage(props) {
             );
 
             await getList();
-            setModalOpen(false);
-            setEditing(null);
-            setForm(initialForm);
-            setFileName("No file chosen");
+            resetAndClose();
             return;
           }
 
           toast.warn(
-            "Auth email exists but employee record not found. Create employee doc manually or use Admin SDK to map email → uid."
+            "Auth email exists but employee record not found. Create employee doc manually or use Admin SDK to map email to UID."
           );
           return;
         }
@@ -432,12 +527,8 @@ export default function EmployeePage(props) {
         throw err;
       }
 
-      // ✅ final reset
       await getList();
-      setModalOpen(false);
-      setEditing(null);
-      setForm(initialForm);
-      setFileName("No file chosen");
+      resetAndClose();
     } catch (error) {
       console.error("Error saving data:", error);
       toast.error("Failed to save employee.");
@@ -452,6 +543,7 @@ export default function EmployeePage(props) {
 
   const handleDelete = async () => {
     if (!deleteData) return;
+
     try {
       const targetUid = form.id;
 
@@ -463,7 +555,9 @@ export default function EmployeePage(props) {
           body: JSON.stringify({ uid: targetUid }),
         }
       );
+
       const data = await response.json();
+
       if (!response.ok) {
         throw new Error(data.error?.message || "Failed to delete user auth");
       }
@@ -489,6 +583,7 @@ export default function EmployeePage(props) {
     >
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-semibold">Employee</h1>
+
         <button
           className="px-4 py-2 bg-black text-white rounded hover:bg-black"
           onClick={() => {
@@ -524,46 +619,23 @@ export default function EmployeePage(props) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Name
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Email
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Mobile No
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Designation
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Department
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Role
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Password
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Image
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">
-                  Actions
-                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Name</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Email</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Mobile No</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Designation</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Department</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Role</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Password</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Image</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-200">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan="10"
-                    className="px-6 py-4 text-center text-gray-500"
-                  >
+                  <td colSpan="10" className="px-6 py-4 text-center text-gray-500">
                     No matching users found.
                   </td>
                 </tr>
@@ -573,24 +645,31 @@ export default function EmployeePage(props) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {item.name}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item.email}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item.mobileNo}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item.designation}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item.department}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item.role}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item.password}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <span
                         style={{
@@ -604,11 +683,18 @@ export default function EmployeePage(props) {
                         {item.isActive ? "Active" : "Inactive"}
                       </span>
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item?.imageUrl ? (
-                        <img src={item.imageUrl} width={80} height={80} alt="employee" />
+                        <img
+                          src={item.imageUrl}
+                          width={80}
+                          height={80}
+                          alt="employee"
+                        />
                       ) : null}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button
                         className="text-blue-600 hover:underline mr-3"
@@ -649,11 +735,11 @@ export default function EmployeePage(props) {
         )}
       </div>
 
-      {/* Pagination controls */}
       <div className="flex justify-between items-center mt-4">
         <p className="text-sm text-gray-600">
           Page {currentPage} of {totalPages}
         </p>
+
         <div className="space-x-2">
           <button
             onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
@@ -662,6 +748,7 @@ export default function EmployeePage(props) {
           >
             Previous
           </button>
+
           <button
             onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
             disabled={currentPage === totalPages}
@@ -672,7 +759,6 @@ export default function EmployeePage(props) {
         </div>
       </div>
 
-      {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-lg shadow-lg">
@@ -750,6 +836,7 @@ export default function EmployeePage(props) {
                 required
               >
                 <option value="">Select Role</option>
+
                 {rolelist.map((r) => (
                   <option key={r.id} value={r.name}>
                     {r.name}
@@ -757,7 +844,6 @@ export default function EmployeePage(props) {
                 ))}
               </select>
 
-              {/* File */}
               <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-xl">
                 <label className="cursor-pointer">
                   <input
@@ -769,6 +855,7 @@ export default function EmployeePage(props) {
                   />
                   📁 Choose File
                 </label>
+
                 <span className="text-sm text-gray-600 truncate max-w-[150px]">
                   {fileName}
                 </span>
@@ -778,14 +865,16 @@ export default function EmployeePage(props) {
                 <img src={form.imageUrl} alt="Image Preview" width="150" />
               ) : null}
 
-              {/* Permissions */}
               <Select
                 className="w-full border border-gray-300 p-2 rounded"
                 multiple
                 displayEmpty
                 value={form.permissions || []}
                 onChange={(e) =>
-                  setForm((p) => ({ ...p, permissions: e.target.value }))
+                  setForm((p) => ({
+                    ...p,
+                    permissions: e.target.value,
+                  }))
                 }
                 renderValue={(selected) =>
                   selected?.length
@@ -801,9 +890,9 @@ export default function EmployeePage(props) {
                 ))}
               </Select>
 
-              {/* Status */}
               <label className="flex items-center gap-3 cursor-pointer select-none">
                 <span className="text-sm font-medium">Status</span>
+
                 <input
                   id="isActive"
                   type="checkbox"
@@ -811,12 +900,17 @@ export default function EmployeePage(props) {
                   className="sr-only peer"
                   checked={!!form.isActive}
                   onChange={(e) =>
-                    setForm((p) => ({ ...p, isActive: e.target.checked }))
+                    setForm((p) => ({
+                      ...p,
+                      isActive: e.target.checked,
+                    }))
                   }
                 />
+
                 <div className="w-11 h-6 rounded-full bg-gray-300 peer-checked:bg-green-500 transition-colors relative">
                   <span className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5" />
                 </div>
+
                 <span
                   className={`text-sm font-semibold ${
                     form.isActive ? "text-green-600" : "text-red-500"
@@ -829,12 +923,7 @@ export default function EmployeePage(props) {
               <div className="flex justify-end mt-6 space-x-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    setModalOpen(false);
-                    setEditing(null);
-                    setForm(initialForm);
-                    setFileName("No file chosen");
-                  }}
+                  onClick={resetAndClose}
                   className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
                 >
                   Cancel
@@ -849,16 +938,17 @@ export default function EmployeePage(props) {
         </div>
       )}
 
-      {/* Delete confirm */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-80 shadow-lg">
             <h2 className="text-xl font-semibold mb-4 text-red-600">
               Delete Employee
             </h2>
+
             <p className="mb-4">
               Are you sure you want to delete <strong>{deleteData?.name}</strong>?
             </p>
+
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
@@ -869,6 +959,7 @@ export default function EmployeePage(props) {
               >
                 Cancel
               </button>
+
               <button
                 onClick={handleDelete}
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
