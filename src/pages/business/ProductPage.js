@@ -298,7 +298,12 @@ export default function ProductPage({ navbarHeight }) {
   const [categoryOption, setCategoryOption] = useState([]);
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
-  const restaurantId = emp?.restaurantid || null;
+  const businessId =
+    emp?.businessId ||
+    emp?.businessid ||
+    emp?.business_id ||
+    emp?.id ||
+    uid;
   const [open, setOpen] = useState({
     basic: true,
     pricing: true,
@@ -317,12 +322,20 @@ export default function ProductPage({ navbarHeight }) {
 
   /* ---------------- load firestore ---------------- */
   useEffect(() => {
-    if (!restaurantId) { setLoading(false); return; }
+    if (!businessId) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
     const qy = query(
       collection(db, "products"),
-      where("restaurantId", "==", restaurantId),
+      where("businessId", "==", businessId),
       orderBy("createdAt", "desc")
     );
+
     const unsub = onSnapshot(
       qy,
       (snap) => {
@@ -334,8 +347,9 @@ export default function ProductPage({ navbarHeight }) {
         setLoading(false);
       }
     );
+
     return () => unsub();
-  }, [restaurantId]);
+  }, [businessId]);
   useEffect(() => {
     getCategory();
   }, []);
@@ -452,7 +466,7 @@ export default function ProductPage({ navbarHeight }) {
       toast.info("Uploading images...");
       const uploaded = [];
       for (const file of files) {
-        const res = await uploadImage(file, "products/images");
+        const res = await uploadImage(file, `business/${businessId}/products/images`);
         uploaded.push(res);
       }
 
@@ -480,7 +494,10 @@ export default function ProductPage({ navbarHeight }) {
 
     try {
       toast.info("Uploading variant image...");
-      const uploaded = await uploadImage(file, "products/variants");
+      const uploaded = await uploadImage(
+        file,
+        `business/${businessId}/products/variants`
+      );
 
       setForm((p) => {
         const next = [...(p.variants || [])];
@@ -810,6 +827,7 @@ export default function ProductPage({ navbarHeight }) {
 
         buyNowEnabled: !!form.buyNowEnabled,
         addToCartEnabled: !!form.addToCartEnabled,
+        businessId,
         uid,
         updatedAt: serverTimestamp(),
       };
@@ -820,7 +838,6 @@ export default function ProductPage({ navbarHeight }) {
       } else {
         await addDoc(collection(db, "products"), {
           ...payload,
-          restaurantId,
           createdAt: serverTimestamp(),
         });
         toast.success("Product created ✅");

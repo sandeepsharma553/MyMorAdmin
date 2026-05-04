@@ -793,12 +793,11 @@ export default function RestaurantOrdersPage({ navbarHeight }) {
       }
 
       setRestaurant({ id: restaurantSnap.id, ...restaurantSnap.data() });
-
+    
       let snap;
       try {
         const q = query(
           restaurantCol(restaurantId, "orders"),
-          orderBy("createdAt", "desc")
         );
         snap = await getDocs(q);
       } catch (error) {

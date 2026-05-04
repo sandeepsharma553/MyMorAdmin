@@ -14,7 +14,7 @@ export const universityCol = (universityId, name) => {
 
 export const restaurantCol = (restaurantId, name) => {
   if (!restaurantId) throw new Error(`restaurantCol: missing restaurantId for collection "${name}"`);
-  return collection(db, 'restaurant', String(restaurantId), name);
+  return collection(db, 'restaurants', String(restaurantId), name);
 };
 
 // products/{productId}/{name}  — e.g. productCol(productId, 'productOrders')

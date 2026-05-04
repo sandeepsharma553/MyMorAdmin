@@ -12,10 +12,10 @@ import {
 } from "firebase/firestore";
 import { useSelector } from "react-redux";
 import { db } from "../../firebase";
-import { productCol } from "../../utils/firestorePaths";
 import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { productCol } from "../../utils/firestorePaths";
 
 const ORDER_STATUS = [
     "placed",
@@ -133,7 +133,6 @@ async function restockOrderItems(order) {
 export default function ProductOrderPage({ navbarHeight }) {
     const uid = useSelector((state) => state.auth.user?.uid);
     const emp = useSelector((state) => state.auth.employee);
-    const restaurantId = emp?.restaurantid || null;
 
     const [loading, setLoading] = useState(true);
     const [rows, setRows] = useState([]);
@@ -150,11 +149,9 @@ export default function ProductOrderPage({ navbarHeight }) {
     const [nextPaymentStatus, setNextPaymentStatus] = useState("");
 
     useEffect(() => {
-        if (!restaurantId) return;
 
         const qy = query(
-            collectionGroup(db, "productOrders"),
-            where("restaurantId", "==", restaurantId)
+            collectionGroup(db, "productOrders")
         );
 
         const unsub = onSnapshot(
@@ -171,7 +168,7 @@ export default function ProductOrderPage({ navbarHeight }) {
         );
 
         return () => unsub();
-    }, [restaurantId]);
+    }, []);
 
     useEffect(() => {
         if (!selectedOrder) return;
@@ -223,7 +220,8 @@ export default function ProductOrderPage({ navbarHeight }) {
     const handleOpen = (order) => {
         setSelectedOrder(order);
     };
-
+console.log(selectedOrder
+)
     const handleUpdateOrder = async () => {
         if (!selectedOrder?.id) return;
 
@@ -272,7 +270,7 @@ export default function ProductOrderPage({ navbarHeight }) {
                 payload.returnedBy = "admin";
             }
 
-            await updateDoc(doc(productCol(selectedOrder.productId, "productOrders"), selectedOrder.id), payload);
+            await updateDoc(doc(productCol(selectedOrder.productid, "productOrders"), selectedOrder.id), payload);
             toast.success("Order updated successfully ✅");
             setSelectedOrder((prev) => (prev ? { ...prev, ...payload } : prev));
         } catch (err) {
