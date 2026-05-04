@@ -102,7 +102,6 @@ export default function AdminEmployeePage({ navbarHeight }) {
     { key: "resources", label: "Resources" },
     { key: "event", label: "Event" },
     { key: "eventbooking", label: "Event Booking" },
-    { key: "deal", label: "Deals" },
     { key: "faq", label: "FAQs" },
     { key: "checklist", label: "Checklists" },
     { key: "roominfo", label: "Room Info" },
@@ -117,14 +116,12 @@ export default function AdminEmployeePage({ navbarHeight }) {
     { key: "lostandfound", label: "Lost & Found" },
     { key: "setting", label: "Setting" },
     { key: "employee", label: "Employee" },
-    { key: "uniclub", label: "UniClub" },
     { key: "contact", label: "Contact" },
   ];
 
   const FEATURE_TO_MENU_KEY = {
     events: "event",
     eventbooking: "eventbooking",
-    deals: "deal",
     announcement: "announcement",
     hostelevent: "event",
     diningmenu: "diningmenu",
@@ -140,7 +137,6 @@ export default function AdminEmployeePage({ navbarHeight }) {
     resource: "resources",
     employee: "employee",
     student: "student",
-    uniclub: "uniclub",
     checklist: "checklist",
     roominfo: "roominfo",
     parcels: "parcels",
@@ -150,7 +146,6 @@ export default function AdminEmployeePage({ navbarHeight }) {
     orientation: "orientation",
     guestlog: "guestlog",
     inspection: "inspection",
-    wellbeing: "wellbeing",
     lostandfound: "lostandfound",
   };
 
