@@ -157,6 +157,10 @@ export default function UniclubEmployeePage(props) {
     return Array.from(new Set([...a, ...b]));
   };
 
+  // Normalize empTypes: old string → single-element array, array → as-is, null → []
+  const normalizeEmpTypes = (val) =>
+    Array.isArray(val) ? val : val ? [val] : [];
+
   const uploadImageIfNeeded = async (imageFile) => {
     if (!(imageFile instanceof File)) return null;
     const sref = ref(storage, `employee_image/${Date.now()}_${imageFile.name}`);
@@ -280,14 +284,14 @@ export default function UniclubEmployeePage(props) {
   const getList = async () => {
     setIsLoading(true);
     try {
-      const qEmp = query(
-        collection(db, "employees"),
-        where("type", "==", "admin"),
-        where("uid", "==", uid),
-        where("empType", "==", "uniclub")
-      );
-      const empSnap = await getDocs(qEmp);
-      const superAdmins = empSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // Dual query: new array field (empTypes) + legacy string field (empType)
+      const [snap1, snap2] = await Promise.all([
+        getDocs(query(collection(db, "employees"), where("type", "==", "admin"), where("uid", "==", uid), where("empTypes", "array-contains", "uniclub"))),
+        getDocs(query(collection(db, "employees"), where("type", "==", "admin"), where("uid", "==", uid), where("empType", "==", "uniclub"))),
+      ]);
+      const byId = new Map();
+      [...snap1.docs, ...snap2.docs].forEach((d) => { if (!byId.has(d.id)) byId.set(d.id, d); });
+      const superAdmins = Array.from(byId.values()).map((d) => ({ id: d.id, ...d.data() }));
       setList(superAdmins);
 
       const [, hostelSnap] = await Promise.all([
@@ -454,6 +458,7 @@ export default function UniclubEmployeePage(props) {
         domain: form.domain || "",
         permissions: normalizePermissions(form.permissions),
         empType: "uniclub",
+        empTypes: ["uniclub"],
 
         countryCode: form.countryCode || "",
         countryName: form.countryName || "",
@@ -482,6 +487,7 @@ export default function UniclubEmployeePage(props) {
 
         const oldEmp = empSnap.data() || {};
         const mergedPerms = mergePermissions(oldEmp.permissions, baseData.permissions);
+        const mergedEmpTypesEdit = Array.from(new Set([...normalizeEmpTypes(oldEmp.empTypes || oldEmp.empType), "uniclub"]));
 
         const newEmail = baseData.email;
         const oldEmail = (form.originalEmail || editingData.email || "").toLowerCase().trim();
@@ -515,6 +521,7 @@ export default function UniclubEmployeePage(props) {
 
         await updateDoc(empRef, {
           ...baseData,
+          empTypes: mergedEmpTypesEdit,
           permissions: mergedPerms,
           password: oldEmp.password || "", // keep old password
           updateddate: new Date(),
@@ -572,17 +579,20 @@ export default function UniclubEmployeePage(props) {
 
         let existingEmpPerms = [];
         let existingEmpPassword = u.password || password;
+        let existingEmpData = {};
 
         try {
           const empSnap = await getDoc(doc(db, "employees", existingUid));
           if (empSnap.exists()) {
             const ed = empSnap.data() || {};
+            existingEmpData = ed;
             existingEmpPerms = normalizePermissions(ed.permissions);
             existingEmpPassword = ed.password || existingEmpPassword;
           }
         } catch {}
 
         const mergedPerms = mergePermissions(existingEmpPerms, baseData.permissions);
+        const mergedEmpTypes = Array.from(new Set([...normalizeEmpTypes(existingEmpData.empTypes || existingEmpData.empType), "uniclub"]));
 
         // users upsert
         await setDoc(
@@ -610,6 +620,7 @@ export default function UniclubEmployeePage(props) {
           doc(db, "employees", existingUid),
           {
             ...baseData,
+            empTypes: mergedEmpTypes,
             permissions: mergedPerms,
             password: existingEmpPassword,
             createdby: uid,
@@ -649,6 +660,7 @@ export default function UniclubEmployeePage(props) {
         // employees
         await setDoc(doc(db, "employees", createdUser.uid), {
           ...baseData,
+          empTypes: ["uniclub"],
           password,
           createddate: new Date(),
         });
@@ -681,12 +693,14 @@ export default function UniclubEmployeePage(props) {
             const existingUid = empByEmail.uid;
             const oldEmp = empByEmail.data || {};
             const mergedPerms = mergePermissions(oldEmp.permissions, baseData.permissions);
+            const mergedEmpTypesFallback = Array.from(new Set([...normalizeEmpTypes(oldEmp.empTypes || oldEmp.empType), "uniclub"]));
 
             await setDoc(
               doc(db, "employees", existingUid),
               {
                 ...oldEmp,
                 ...baseData,
+                empTypes: mergedEmpTypesFallback,
                 permissions: mergedPerms,
                 password: oldEmp.password || password,
                 updateddate: new Date(),

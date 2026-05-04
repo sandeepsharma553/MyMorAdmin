@@ -72,6 +72,10 @@ const uniquePermissions = (arr = []) => Array.from(new Set(normalizePermissions(
 const mergePermissions = (a = [], b = []) =>
   Array.from(new Set([...normalizePermissions(a), ...normalizePermissions(b)]));
 
+// Normalize empTypes: old string → single-element array, array → as-is, null → []
+const normalizeEmpTypes = (val) =>
+  Array.isArray(val) ? val : val ? [val] : [];
+
 const isEmailValid = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || "").trim());
 
 const initialForm = {
@@ -201,12 +205,16 @@ export default function UniversityEmployeePage({ navbarHeight }) {
   const getList = async () => {
     setIsLoading(true);
     try {
-      const empSnap = await getDocs(
-        query(collection(db, "employees"), where("type", "==", "admin"), where("empType", "==", "university"))
-      );
+      // Dual query: new array field (empTypes) + legacy string field (empType)
+      const [snap1, snap2] = await Promise.all([
+        getDocs(query(collection(db, "employees"), where("type", "==", "admin"), where("empTypes", "array-contains", "university"))),
+        getDocs(query(collection(db, "employees"), where("type", "==", "admin"), where("empType", "==", "university"))),
+      ]);
+      const byId = new Map();
+      [...snap1.docs, ...snap2.docs].forEach((d) => { if (!byId.has(d.id)) byId.set(d.id, d); });
 
       setList(
-        empSnap.docs.map((d) => ({
+        Array.from(byId.values()).map((d) => ({
           id: d.id,
           ...d.data(),
           permissions: normalizePermissions(d.data().permissions),
@@ -300,6 +308,7 @@ export default function UniversityEmployeePage({ navbarHeight }) {
     const empSnap = await getDoc(empRef);
     const existing = empSnap.exists() ? empSnap.data() : {};
     const mergedPerms = mergePermissions(existing.permissions, baseData.permissions);
+    const mergedEmpTypes = Array.from(new Set([...normalizeEmpTypes(existing.empTypes || existing.empType), "university"]));
 
     await setDoc(
       empRef,
@@ -312,6 +321,7 @@ export default function UniversityEmployeePage({ navbarHeight }) {
         type: "admin",
         role: "admin",
         empType: "university",
+        empTypes: mergedEmpTypes,
         isActive: true,
         permissions: mergedPerms,
         password: existing.password || passwordFallback || "",
@@ -387,6 +397,7 @@ export default function UniversityEmployeePage({ navbarHeight }) {
         role: "admin",
         type: "admin",
         empType: "university",
+        empTypes: ["university"],
         isActive: !!form.isActive,
         permissions: cleanPermissions,
         ...(imageUrl ? { imageUrl } : {}),
@@ -399,10 +410,12 @@ export default function UniversityEmployeePage({ navbarHeight }) {
         if (!docSnap.exists()) { toast.warn("Employee not found"); return; }
 
         const old = docSnap.data() || {};
+        const mergedEmpTypes = Array.from(new Set([...normalizeEmpTypes(old.empTypes || old.empType), "university"]));
         await updateDoc(docRef, {
           ...baseData,
           uid: old.uid || form.id,
           createdBy: old.createdBy || currentUserUid,
+          empTypes: mergedEmpTypes,
           permissions: cleanPermissions,
           updatedAt: serverTimestamp(),
         });
@@ -477,6 +490,7 @@ export default function UniversityEmployeePage({ navbarHeight }) {
         await setDoc(doc(db, "employees", newUid), {
           ...baseData,
           uid: newUid,
+          empTypes: ["university"],
           createdBy: currentUserUid,
           password,
           createdAt: serverTimestamp(),

@@ -156,6 +156,10 @@ export default function AdminEmployeePage({ navbarHeight }) {
 
   /* -------------------- Helpers -------------------- */
 
+  // Normalize empTypes: old string → single-element array, array → as-is, null → []
+  const normalizeEmpTypes = (val) =>
+    Array.isArray(val) ? val : val ? [val] : [];
+
   // Normalize old permissions formats (array/string/object/null) → clean array
   const normalizePermissions = (raw) => {
     if (Array.isArray(raw)) return raw;
@@ -222,6 +226,7 @@ export default function AdminEmployeePage({ navbarHeight }) {
     const existingEmp = empSnap.exists() ? empSnap.data() || {} : {};
 
     const mergedPerms = mergePermissions(existingEmp.permissions, baseData.permissions);
+    const mergedEmpTypes = Array.from(new Set([...normalizeEmpTypes(existingEmp.empTypes || existingEmp.empType), "hostel"]));
 
     // Keep existing data (esp. uniclub admin fields) and just overlay hostel admin fields
     await setDoc(
@@ -235,6 +240,7 @@ export default function AdminEmployeePage({ navbarHeight }) {
         type: "admin",
         role: "admin",
         empType: "hostel",
+        empTypes: mergedEmpTypes,
         isActive: true,
         permissions: mergedPerms,
 
@@ -372,15 +378,16 @@ export default function AdminEmployeePage({ navbarHeight }) {
   const getList = async () => {
     setIsLoading(true);
     try {
-      const qEmp = query(
-        collection(db, "employees"),
-        where("type", "==", "admin"),
-        where("uid", "==", uid),
-        where("empType", "==", "hostel")
-      );
-      const empSnap = await getDocs(qEmp);
+      // Dual query: new array field (empTypes) + legacy string field (empType)
+      // so docs created before the multi-role fix still appear
+      const [snap1, snap2] = await Promise.all([
+        getDocs(query(collection(db, "employees"), where("type", "==", "admin"), where("uid", "==", uid), where("empTypes", "array-contains", "hostel"))),
+        getDocs(query(collection(db, "employees"), where("type", "==", "admin"), where("uid", "==", uid), where("empType", "==", "hostel"))),
+      ]);
+      const byId = new Map();
+      [...snap1.docs, ...snap2.docs].forEach((d) => { if (!byId.has(d.id)) byId.set(d.id, d); });
 
-      const superAdmins = empSnap.docs.map((d) => {
+      const superAdmins = Array.from(byId.values()).map((d) => {
         const data = d.data();
         return {
           id: d.id,
@@ -558,6 +565,7 @@ export default function AdminEmployeePage({ navbarHeight }) {
         domain: form.domain || "",
         permissions: Array.isArray(form.permissions) ? form.permissions : [],
         empType: "hostel",
+        empTypes: ["hostel"],
         countryCode: form.countryCode || "",
         countryName: form.countryName || "",
         stateCode: form.stateCode || "",
@@ -580,8 +588,10 @@ export default function AdminEmployeePage({ navbarHeight }) {
         }
 
         const oldData = docSnap.data() || {};
+        const mergedEmpTypes = Array.from(new Set([...normalizeEmpTypes(oldData.empTypes || oldData.empType), "hostel"]));
         await updateDoc(docRef, {
           ...baseData,
+          empTypes: mergedEmpTypes,
           permissions: mergePermissions(oldData.permissions, form.permissions),
           updatedAt: serverTimestamp(),
         });
@@ -705,6 +715,7 @@ export default function AdminEmployeePage({ navbarHeight }) {
         // employees
         await setDoc(doc(db, "employees", user.uid), {
           ...baseData,
+          empTypes: ["hostel"],
           password, // ⚠️ ideally remove storing password; kept to match your current DB usage
           createdAt: serverTimestamp(),
           hostelRoles: {
