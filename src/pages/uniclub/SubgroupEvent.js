@@ -215,8 +215,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
     (async () => {
       try {
         const qB = query(
-          collection(db, "subgroupeventbookings"),
-          where("groupid", "==", groupId)
+          collection(db, "uniclubsubgroup", groupId, "eventbookings")
         );
         const snap = await getDocs(qB);
 
@@ -238,19 +237,11 @@ export default function SubgroupEventPage({ navbarHeight }) {
   const getList = async () => {
     setIsLoading(true);
     try {
-      // ✅ New: events where this club is a host
+      // ✅ Events stored in subcollection
       const qHost = query(
-        collection(db, "subgroupevents"),
-        where("hostClubIds", "array-contains", emp?.uniclubid)
+        collection(db, "uniclubsubgroup", groupId, "events")
       );
 
-      // ✅ Old fallback: (purane events jisme hostClubIds nahi tha)
-      const qOld = query(
-        collection(db, "subgroupevents"),
-        where("groupid", "==", groupId)
-      );
-
-      // const [snapHost, snapOld] = await Promise.all([getDocs(qHost), getDocs(qOld)]);
       const [snapHost] = await Promise.all([getDocs(qHost)]);
 
       // ✅ Merge unique by id
@@ -278,8 +269,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
     setIsLoading(true);
     try {
       const qEvents = query(
-        collection(db, "subgroupevents"),
-        where("groupid", "==", groupId)
+        collection(db, "uniclubsubgroup", groupId, "events")
       );
       const snap = await getDocs(qEvents);
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -507,13 +497,13 @@ export default function SubgroupEventPage({ navbarHeight }) {
       delete eventData.posterFiles;
 
       if (editingData) {
-        const ref = doc(db, "subgroupevents", editingData.id);
+        const ref = doc(db, "uniclubsubgroup", groupId, "events", editingData.id);
         const snap = await getDoc(ref);
         if (!snap.exists()) return toast.warning("Event does not exist! Cannot update.");
         await updateDoc(ref, eventData);
         toast.success("Event updated successfully");
       } else {
-        await addDoc(collection(db, "subgroupevents"), eventData);
+        await addDoc(collection(db, "uniclubsubgroup", groupId, "events"), eventData);
         toast.success("Event created successfully");
       }
       await getList();
@@ -593,7 +583,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
     pinned.forEach((ev, i) => {
       const order = i + 1;
       if (ev.pinnedOrder !== order)
-        batch.update(doc(db, "subgroupevents", ev.id), { pinnedOrder: order });
+        batch.update(doc(db, "uniclubsubgroup", groupId, "events", ev.id), { pinnedOrder: order });
     });
     await batch.commit();
     await getList();
@@ -607,8 +597,8 @@ export default function SubgroupEventPage({ navbarHeight }) {
     const a = pinned[idx];
     const b = pinned[swapIdx];
     const batch = writeBatch(db);
-    batch.update(doc(db, "subgroupevents", a.id), { pinnedOrder: b.pinnedOrder });
-    batch.update(doc(db, "subgroupevents", b.id), { pinnedOrder: a.pinnedOrder });
+    batch.update(doc(db, "uniclubsubgroup", groupId, "events", a.id), { pinnedOrder: b.pinnedOrder });
+    batch.update(doc(db, "uniclubsubgroup", groupId, "events", b.id), { pinnedOrder: a.pinnedOrder });
     await batch.commit();
     await getList();
   };
@@ -622,7 +612,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
     sequence.splice(newOrder - 1, 0, { ...item });
     const batch = writeBatch(db);
     sequence.forEach((ev, i) =>
-      batch.update(doc(db, "subgroupevents", ev.id), { pinnedOrder: i + 1 })
+      batch.update(doc(db, "uniclubsubgroup", groupId, "events", ev.id), { pinnedOrder: i + 1 })
     );
     await batch.commit();
     await getList();
@@ -630,7 +620,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
 
   const togglePin = async (item, makePinned) => {
     try {
-      const ref = doc(db, "subgroupevents", item.id);
+      const ref = doc(db, "uniclubsubgroup", groupId, "events", item.id);
       if (makePinned) {
         const currentPinned = getPinnedSorted();
         const nextOrder = (currentPinned[currentPinned.length - 1]?.pinnedOrder || 0) + 1;
@@ -823,7 +813,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "subgroupevents", deleteData.id));
+      await deleteDoc(doc(db, "uniclubsubgroup", groupId, "events", deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (e) {
@@ -852,7 +842,7 @@ export default function SubgroupEventPage({ navbarHeight }) {
         return;
       }
 
-      const bRef = doc(db, "subgroupeventbookings", bookingId);
+      const bRef = doc(db, "uniclubsubgroup", groupId, "eventbookings", bookingId);
       const bSnap = await getDoc(bRef);
 
       if (!bSnap.exists()) {

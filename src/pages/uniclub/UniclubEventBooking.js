@@ -7,7 +7,6 @@ import {
   collection,
   getDocs,
   query,
-  where,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useLocation, useSearchParams, Link } from "react-router-dom";
@@ -94,8 +93,7 @@ export default function UniclubEventBookingPage() {
       setIsLoading(true);
       try {
         const qEvents = query(
-          collection(db, "discovereventbookings"),
-          where("groupid", "==", groupId),
+          collection(db, "uniclubs", groupId, "eventbookings")
         );
         const snap = await getDocs(qEvents);
         const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));

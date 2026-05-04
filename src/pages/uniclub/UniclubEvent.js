@@ -192,8 +192,7 @@ export default function UniclubEventPage({ navbarHeight }) {
     (async () => {
       try {
         const qB = query(
-          collection(db, "discovereventbookings"),
-          where("groupid", "==", groupId)
+          collection(db, "uniclubs", groupId, "eventbookings")
         );
         const snap = await getDocs(qB);
 
@@ -215,19 +214,11 @@ export default function UniclubEventPage({ navbarHeight }) {
   const getList = async () => {
     setIsLoading(true);
     try {
-      // ✅ New: events where this club is a host
+      // ✅ Events stored in subcollection
       const qHost = query(
-        collection(db, "discoverevents"),
-        where("hostClubIds", "array-contains", emp?.uniclubid)
+        collection(db, "uniclubs", groupId, "events")
       );
 
-      // ✅ Old fallback: (purane events jisme hostClubIds nahi tha)
-      const qOld = query(
-        collection(db, "discoverevents"),
-        where("groupid", "==", groupId)
-      );
-
-      // const [snapHost, snapOld] = await Promise.all([getDocs(qHost), getDocs(qOld)]);
       const [snapHost] = await Promise.all([getDocs(qHost)]);
 
       // ✅ Merge unique by id
@@ -255,8 +246,7 @@ export default function UniclubEventPage({ navbarHeight }) {
     setIsLoading(true);
     try {
       const qEvents = query(
-        collection(db, "discoverevents"),
-        where("groupid", "==", groupId)
+        collection(db, "uniclubs", groupId, "events")
       );
       const snap = await getDocs(qEvents);
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -506,13 +496,13 @@ export default function UniclubEventPage({ navbarHeight }) {
       delete eventData.posterFiles;
 
       if (editingData) {
-        const ref = doc(db, "discoverevents", editingData.id);
+        const ref = doc(db, "uniclubs", groupId, "events", editingData.id);
         const snap = await getDoc(ref);
         if (!snap.exists()) return toast.warning("Event does not exist! Cannot update.");
         await updateDoc(ref, eventData);
         toast.success("Event updated successfully");
       } else {
-        await addDoc(collection(db, "discoverevents"), eventData);
+        await addDoc(collection(db, "uniclubs", groupId, "events"), eventData);
         toast.success("Event created successfully");
       }
       await getList();
@@ -592,7 +582,7 @@ export default function UniclubEventPage({ navbarHeight }) {
     pinned.forEach((ev, i) => {
       const order = i + 1;
       if (ev.pinnedOrder !== order)
-        batch.update(doc(db, "discoverevents", ev.id), { pinnedOrder: order });
+        batch.update(doc(db, "uniclubs", groupId, "events", ev.id), { pinnedOrder: order });
     });
     await batch.commit();
     await getList();
@@ -606,8 +596,8 @@ export default function UniclubEventPage({ navbarHeight }) {
     const a = pinned[idx];
     const b = pinned[swapIdx];
     const batch = writeBatch(db);
-    batch.update(doc(db, "discoverevents", a.id), { pinnedOrder: b.pinnedOrder });
-    batch.update(doc(db, "discoverevents", b.id), { pinnedOrder: a.pinnedOrder });
+    batch.update(doc(db, "uniclubs", groupId, "events", a.id), { pinnedOrder: b.pinnedOrder });
+    batch.update(doc(db, "uniclubs", groupId, "events", b.id), { pinnedOrder: a.pinnedOrder });
     await batch.commit();
     await getList();
   };
@@ -621,7 +611,7 @@ export default function UniclubEventPage({ navbarHeight }) {
     sequence.splice(newOrder - 1, 0, { ...item });
     const batch = writeBatch(db);
     sequence.forEach((ev, i) =>
-      batch.update(doc(db, "discoverevents", ev.id), { pinnedOrder: i + 1 })
+      batch.update(doc(db, "uniclubs", groupId, "events", ev.id), { pinnedOrder: i + 1 })
     );
     await batch.commit();
     await getList();
@@ -629,7 +619,7 @@ export default function UniclubEventPage({ navbarHeight }) {
 
   const togglePin = async (item, makePinned) => {
     try {
-      const ref = doc(db, "discoverevents", item.id);
+      const ref = doc(db, "uniclubs", groupId, "events", item.id);
       if (makePinned) {
         const currentPinned = getPinnedSorted();
         const nextOrder = (currentPinned[currentPinned.length - 1]?.pinnedOrder || 0) + 1;
@@ -822,7 +812,7 @@ export default function UniclubEventPage({ navbarHeight }) {
   const handleDelete = async () => {
     if (!deleteData?.id) return;
     try {
-      await deleteDoc(doc(db, "discoverevents", deleteData.id));
+      await deleteDoc(doc(db, "uniclubs", groupId, "events", deleteData.id));
       toast.success("Successfully deleted!");
       getList();
     } catch (e) {
@@ -851,7 +841,7 @@ export default function UniclubEventPage({ navbarHeight }) {
         return;
       }
 
-      const bRef = doc(db, "discovereventbookings", bookingId);
+      const bRef = doc(db, "uniclubs", groupId, "eventbookings", bookingId);
       const bSnap = await getDoc(bRef);
 
       if (!bSnap.exists()) {

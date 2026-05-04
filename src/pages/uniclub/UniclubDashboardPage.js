@@ -93,18 +93,13 @@ export default function UniclubDashboardPage(props) {
           });
         }
 
-        // ---- Events from Firestore: discoverevents ----
-        const eventsRef = collection(db, "discoverevents");
-        let eventsQ30;
+        // ---- Events from Firestore: uniclubs/{clubId}/events subcollection ----
+        const eventsRef = emp?.uniclubid
+          ? collection(db, "uniclubs", emp.uniclubid, "events")
+          : null;
+        let eventsQ30 = eventsRef ? query(eventsRef) : null;
 
-        if (emp?.uniclubid) {
-          eventsQ30 = query(
-            eventsRef,
-            where("groupid", "==", emp.uniclubid)
-          );
-        }
-
-        const eventsSnap30 = await getDocs(eventsQ30);
+        const eventsSnap30 = eventsQ30 ? await getDocs(eventsQ30) : { size: 0, forEach: () => {} };
         const totalEvents30d = eventsSnap30.size;
 
         // Events this week (last 7 days)

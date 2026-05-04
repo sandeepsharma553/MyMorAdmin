@@ -9,7 +9,6 @@ import {
   doc,
   getDocs,
   query,
-  where,
   onSnapshot,
   setDoc,
   updateDoc,
@@ -126,8 +125,7 @@ export default function UniclubAnnouncementPage(props) {
 
     setIsLoading(true);
     const q = query(
-      collection(db, 'discoverannouncements'),
-      where('groupid', '==', groupId),
+      collection(db, 'uniclubs', groupId, 'announcements'),
       orderBy('createdAt', 'desc')
     );
     const unsub = onSnapshot(q, (snapshot) => {
@@ -317,7 +315,7 @@ export default function UniclubAnnouncementPage(props) {
         pinnedAt: makePinned ? Date.now() : null,
         pinnedOrder: makePinned ? maxPinnedOrder() + 1 : 0,
       };
-      await updateDoc(doc(db, 'discoverannouncements', item.id), patch);
+      await updateDoc(doc(db, 'uniclubs', groupId, 'announcements', item.id), patch);
       toast.success(makePinned ? 'Pinned' : 'Unpinned');
     } catch (e) {
       console.error(e);
@@ -329,7 +327,7 @@ export default function UniclubAnnouncementPage(props) {
     const n = Number(value);
     if (!Number.isFinite(n) || n < 0) return;
     try {
-      await updateDoc(doc(db, 'discoverannouncements', item.id), {
+      await updateDoc(doc(db, 'uniclubs', groupId, 'announcements', item.id), {
         isPinned: true,
         pinnedOrder: n,
       });
@@ -384,7 +382,7 @@ export default function UniclubAnnouncementPage(props) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      if (!'discoverannouncements') {
+      if (!groupId) {
         toast.error("Missing groupId — open this page from a Uniclub row.");
         return;
       }
@@ -450,7 +448,7 @@ export default function UniclubAnnouncementPage(props) {
 
       if (editingData) {
         // EDIT (preserve votes)
-        const docRef = doc(db, 'discoverannouncements', form.id);
+        const docRef = doc(db, 'uniclubs', groupId, 'announcements', form.id);
         const snapshot = await getDoc(docRef);
         if (!snapshot.exists()) {
           toast.warning('Announcement does not exist! Cannot update.');
@@ -469,7 +467,7 @@ export default function UniclubAnnouncementPage(props) {
         toast.success('Announcement updated successfully');
       } else {
         // CREATE
-        const newRef = doc(collection(db, 'discoverannouncements'));
+        const newRef = doc(collection(db, 'uniclubs', groupId, 'announcements'));
         const { postersFiles, id: _id2, ...toPersist } = payload;
         if (!toPersist.pollData) delete toPersist.pollData;
         await setDoc(newRef, { id: newRef.id, ...toPersist });
@@ -491,7 +489,7 @@ export default function UniclubAnnouncementPage(props) {
   const handleDelete = async () => {
     if (!deleteData) return;
     try {
-      await deleteDoc(doc(db, 'discoverannouncements', deleteData.id));
+      await deleteDoc(doc(db, 'uniclubs', groupId, 'announcements', deleteData.id));
       toast.success('Successfully deleted!');
     } catch (error) {
       console.error('Error deleting document: ', error);
@@ -619,7 +617,7 @@ export default function UniclubAnnouncementPage(props) {
               if (!window.confirm(`Delete ${selectedIds.size} announcement(s)?`)) return;
               try {
                 setIsLoading(true);
-                await Promise.all([...selectedIds].map((id) => deleteDoc(doc(db, 'discoverannouncements', id))));
+                await Promise.all([...selectedIds].map((id) => deleteDoc(doc(db, 'uniclubs', groupId, 'announcements', id))));
                 toast.success('Selected announcements deleted');
                 setSelectedIds(new Set());
               } catch (err) {

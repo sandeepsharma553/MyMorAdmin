@@ -10,7 +10,6 @@ import {
   doc,
   getDocs,
   query,
-  where,
   onSnapshot,
   setDoc,
   updateDoc,
@@ -116,8 +115,7 @@ export default function UniclubCommunity(props) {
 
     setIsLoading(true);
     const q = query(
-      collection(db, "community"),
-      where("groupId", "==", groupId),
+      collection(db, "uniclubs", groupId, "community"),
       orderBy("createdAt", "desc")
     );
 
@@ -231,7 +229,7 @@ export default function UniclubCommunity(props) {
       const userName = await fetchEmployeeUsername(uid);
 
       if (editingData) {
-        await updateDoc(doc(db, "community", form.id), {
+        await updateDoc(doc(db, "uniclubs", groupId, "community", form.id), {
           senderId: user?.uid || uid || null,
           sender: userName || user?.displayName || emp?.name || "Member",
           content: cleanContent,
@@ -244,7 +242,7 @@ export default function UniclubCommunity(props) {
         });
         toast.success("Community updated successfully");
       } else {
-        const postRef = doc(collection(db, "community"));
+        const postRef = doc(collection(db, "uniclubs", groupId, "community"));
         const id = postRef.id;
         await setDoc(postRef, {
           senderId: user?.uid || uid || null,
@@ -281,7 +279,7 @@ export default function UniclubCommunity(props) {
 
     try {
       setIsLoading(true);
-      await deleteDoc(doc(db, "community", deleteData.id));
+      await deleteDoc(doc(db, "uniclubs", groupId, "community", deleteData.id));
       toast.success("Successfully deleted!");
     } catch (err) {
       console.error(err);
@@ -299,7 +297,7 @@ export default function UniclubCommunity(props) {
 
     try {
       setIsLoading(true);
-      await Promise.all([...selectedIds].map((id) => deleteDoc(doc(db, "community", id))));
+      await Promise.all([...selectedIds].map((id) => deleteDoc(doc(db, "uniclubs", groupId, "community", id))));
       toast.success("Selected posts deleted");
       setSelectedIds(new Set());
     } catch (err) {
