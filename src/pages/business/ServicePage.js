@@ -470,9 +470,8 @@ function Section({ title, open, onToggle, children, badge }) {
       >
         <div className="flex items-center gap-3">
           <div
-            className={`h-5 w-5 rounded-full border ${
-              open ? "border-black bg-black" : "border-gray-300 bg-white"
-            }`}
+            className={`h-5 w-5 rounded-full border ${open ? "border-black bg-black" : "border-gray-300 bg-white"
+              }`}
           />
           <div>
             <div className="text-base font-semibold text-gray-900">{title}</div>
@@ -592,7 +591,7 @@ export default function ServicePage({ navbarHeight }) {
   const [subCategoryOption, setSubCategoryOption] = useState([]);
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
-  const restaurantId = emp?.restaurantid || null;
+
   const [open, setOpen] = useState({
     basic: true,
     pricing: true,
@@ -607,10 +606,8 @@ export default function ServicePage({ navbarHeight }) {
   });
 
   useEffect(() => {
-    if (!restaurantId) return;
     const qy = query(
       collection(db, "services"),
-      where("restaurantId", "==", restaurantId)
     );
     const unsub = onSnapshot(
       qy,
@@ -624,7 +621,7 @@ export default function ServicePage({ navbarHeight }) {
       }
     );
     return () => unsub();
-  }, [restaurantId]);
+  }, []);
 
   useEffect(() => {
     getCategory();
@@ -958,8 +955,8 @@ export default function ServicePage({ navbarHeight }) {
         key === "salon"
           ? "appointment"
           : key === "repair" || key === "cleaning"
-          ? "appointment"
-          : p.bookingType,
+            ? "appointment"
+            : p.bookingType,
     }));
   };
 
@@ -1120,7 +1117,6 @@ export default function ServicePage({ navbarHeight }) {
       } else {
         await addDoc(collection(db, "services"), {
           ...payload,
-          restaurantId,
           createdAt: serverTimestamp(),
         });
         toast.success("Service created ✅");
@@ -1230,8 +1226,8 @@ export default function ServicePage({ navbarHeight }) {
                       {item.salePrice != null
                         ? `₹${item.salePrice}`
                         : item.price != null
-                        ? `₹${item.price}`
-                        : "—"}
+                          ? `₹${item.price}`
+                          : "—"}
                     </div>
                   </td>
 
@@ -1239,11 +1235,10 @@ export default function ServicePage({ navbarHeight }) {
 
                   <td className="p-3">
                     <span
-                      className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                        item.active
+                      className={`rounded-full px-2 py-1 text-xs font-semibold ${item.active
                           ? "bg-green-50 text-green-700"
                           : "bg-gray-100 text-gray-600"
-                      }`}
+                        }`}
                     >
                       {item.active ? "Active" : "Inactive"}
                     </span>
@@ -1539,16 +1534,16 @@ export default function ServicePage({ navbarHeight }) {
 
                       {(showField("inspectionFee") ||
                         form.pricingModel === "inspection_fee") && (
-                        <div>
-                          <Input
-                            type="number"
-                            label="Inspection Fee"
-                            value={form.inspectionFee}
-                            onChange={set("inspectionFee")}
-                            placeholder="299"
-                          />
-                        </div>
-                      )}
+                          <div>
+                            <Input
+                              type="number"
+                              label="Inspection Fee"
+                              value={form.inspectionFee}
+                              onChange={set("inspectionFee")}
+                              placeholder="299"
+                            />
+                          </div>
+                        )}
 
                       {showField("travelFee") && (
                         <div>

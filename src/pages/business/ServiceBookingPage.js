@@ -64,8 +64,7 @@ function Label({ children }) {
 export default function ServiceBookingPage({ navbarHeight }) {
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
-  const restaurantId = emp?.restaurantid || null;
-
+ 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -85,11 +84,10 @@ export default function ServiceBookingPage({ navbarHeight }) {
   });
 
   useEffect(() => {
-    if (!restaurantId) return;
+   
 
     const qy = query(
       collectionGroup(db, "servicebookings"),
-      where("restaurantId", "==", restaurantId)
     );
 
     const unsub = onSnapshot(
@@ -106,7 +104,7 @@ export default function ServiceBookingPage({ navbarHeight }) {
     );
 
     return () => unsub();
-  }, [restaurantId]);
+  }, []);
 
   const stats = useMemo(() => {
     return {
