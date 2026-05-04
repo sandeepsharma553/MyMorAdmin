@@ -591,7 +591,12 @@ export default function ServicePage({ navbarHeight }) {
   const [subCategoryOption, setSubCategoryOption] = useState([]);
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
-
+  const businessId =
+    emp?.businessId ||
+    emp?.businessid ||
+    emp?.business_id ||
+    emp?.id ||
+    uid;
   const [open, setOpen] = useState({
     basic: true,
     pricing: true,
@@ -606,22 +611,39 @@ export default function ServicePage({ navbarHeight }) {
   });
 
   useEffect(() => {
+    if (!businessId) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
     const qy = query(
       collection(db, "services"),
+      where("businessId", "==", businessId)
     );
+
     const unsub = onSnapshot(
       qy,
       (snap) => {
-        setRows(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setRows(
+          snap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }))
+        );
         setLoading(false);
       },
       (err) => {
         console.error(err);
+        toast.error("Failed to load services");
         setLoading(false);
       }
     );
+
     return () => unsub();
-  }, []);
+  }, [businessId]);
 
   useEffect(() => {
     getCategory();
@@ -829,7 +851,10 @@ export default function ServicePage({ navbarHeight }) {
     if (!file) return;
     try {
       toast.info("Uploading cover image...");
-      const res = await uploadImage(file, "services/images");
+      const res = await uploadImage(
+        file,
+        `business/${businessId}/services/images`
+      );
       setForm((p) => ({
         ...p,
         imageUrl: res.url,
@@ -850,7 +875,10 @@ export default function ServicePage({ navbarHeight }) {
       toast.info("Uploading gallery images...");
       const uploaded = [];
       for (const file of files) {
-        const res = await uploadImage(file, "services/gallery");
+        const res = await uploadImage(
+          file,
+          `business/${businessId}/services/gallery`
+        );
         uploaded.push(res.url);
       }
       setForm((p) => ({
@@ -1107,6 +1135,7 @@ export default function ServicePage({ navbarHeight }) {
         checklist: (form.checklist || [])
           .map((x) => ({ label: (x?.label || "").trim() }))
           .filter((x) => x.label),
+        businessId,
         uid,
         updatedAt: serverTimestamp(),
       };
@@ -1134,6 +1163,11 @@ export default function ServicePage({ navbarHeight }) {
 
   const confirmDelete = async () => {
     if (!deleteId) return;
+
+    if (!businessId) {
+      return toast.error("Business ID missing");
+    }
+
     try {
       await deleteDoc(doc(db, "services", deleteId));
       toast.success("Service deleted ✅");
@@ -1236,8 +1270,8 @@ export default function ServicePage({ navbarHeight }) {
                   <td className="p-3">
                     <span
                       className={`rounded-full px-2 py-1 text-xs font-semibold ${item.active
-                          ? "bg-green-50 text-green-700"
-                          : "bg-gray-100 text-gray-600"
+                        ? "bg-green-50 text-green-700"
+                        : "bg-gray-100 text-gray-600"
                         }`}
                     >
                       {item.active ? "Active" : "Inactive"}

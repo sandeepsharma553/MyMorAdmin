@@ -46,7 +46,12 @@ export default function BusinessEmployeePage(props) {
 
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
-
+  const businessId =
+  emp?.businessId ||
+  emp?.businessid ||
+  emp?.business_id ||
+  emp?.id ||
+  uid;
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -195,7 +200,7 @@ export default function BusinessEmployeePage(props) {
     try {
       const qy = query(collection(db, "restaurants"), where("createdBy", "==", uid));
       const snap = await getDocs(qy);
-
+  
       const docs = snap.docs.map((d) => {
         const data = d.data() || {};
         return {
@@ -209,7 +214,7 @@ export default function BusinessEmployeePage(props) {
           ...data,
         };
       });
-
+  
       setRestaurantOptions(docs);
       return docs;
     } catch (e) {
@@ -221,7 +226,6 @@ export default function BusinessEmployeePage(props) {
       setRestaurantsLoading(false);
     }
   };
-
   const getEmployeesByRestaurantIds = async (restaurantIds = []) => {
     if (!restaurantIds.length) return [];
 
@@ -432,6 +436,7 @@ export default function BusinessEmployeePage(props) {
         isActive: !!form.isActive,
         permissions: normalizePermissions(form.permissions),
         type: "admin",
+        businessId,
         uid,
         ...(imageUrl ? { imageUrl } : {}),
         updatedAt: serverTimestamp(),
@@ -576,7 +581,10 @@ export default function BusinessEmployeePage(props) {
 
   const handleDelete = async () => {
     if (!deleteData) return;
-
+    if (!businessId) {
+      toast.error("Business ID missing");
+      return;
+    }
     try {
       const targetUid = deleteData.id;
 
