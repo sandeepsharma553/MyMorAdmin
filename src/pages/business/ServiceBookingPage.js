@@ -48,9 +48,8 @@ function Badge({ value, type = "status" }) {
 
   return (
     <span
-      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
-        map[value] || "bg-gray-50 text-gray-700 border-gray-200"
-      }`}
+      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${map[value] || "bg-gray-50 text-gray-700 border-gray-200"
+        }`}
     >
       {String(value || (type === "status" ? "pending" : "pending")).replaceAll("_", " ")}
     </span>
@@ -64,7 +63,12 @@ function Label({ children }) {
 export default function ServiceBookingPage({ navbarHeight }) {
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
- 
+  const businessId =
+    emp?.businessId ||
+    emp?.businessid ||
+    emp?.business_id ||
+    emp?.id ||
+    uid;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -84,28 +88,40 @@ export default function ServiceBookingPage({ navbarHeight }) {
   });
 
   useEffect(() => {
-   
+    if (!businessId) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
 
     const qy = query(
       collectionGroup(db, "servicebookings"),
+      where("businessId", "==", businessId)
     );
 
     const unsub = onSnapshot(
       qy,
       (snap) => {
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data = snap.docs.map((d) => ({
+          id: d.id,
+          refPath: d.ref.path,
+          ...d.data(),
+        }));
+
         setRows(data);
         setLoading(false);
       },
       (err) => {
         console.error(err);
+
         setLoading(false);
       }
     );
 
     return () => unsub();
-  }, []);
-
+  }, [businessId]);
   const stats = useMemo(() => {
     return {
       total: rows.length,
@@ -202,13 +218,13 @@ export default function ServiceBookingPage({ navbarHeight }) {
       setSelectedBooking((prev) =>
         prev
           ? {
-              ...prev,
-              bookingStatus: editForm.bookingStatus,
-              paymentStatus: editForm.paymentStatus,
-              adminNote: editForm.adminNote.trim(),
-              internalNote: editForm.internalNote.trim(),
-              assignedStaffName: editForm.assignedStaffName.trim(),
-            }
+            ...prev,
+            bookingStatus: editForm.bookingStatus,
+            paymentStatus: editForm.paymentStatus,
+            adminNote: editForm.adminNote.trim(),
+            internalNote: editForm.internalNote.trim(),
+            assignedStaffName: editForm.assignedStaffName.trim(),
+          }
           : prev
       );
     } catch (e) {

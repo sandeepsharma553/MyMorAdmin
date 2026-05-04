@@ -133,7 +133,12 @@ async function restockOrderItems(order) {
 export default function ProductOrderPage({ navbarHeight }) {
     const uid = useSelector((state) => state.auth.user?.uid);
     const emp = useSelector((state) => state.auth.employee);
-
+    const businessId =
+    emp?.businessId ||
+    emp?.businessid ||
+    emp?.business_id ||
+    emp?.id ||
+    uid;
     const [loading, setLoading] = useState(true);
     const [rows, setRows] = useState([]);
     const [search, setSearch] = useState("");
@@ -149,26 +154,40 @@ export default function ProductOrderPage({ navbarHeight }) {
     const [nextPaymentStatus, setNextPaymentStatus] = useState("");
 
     useEffect(() => {
-
+        if (!businessId) {
+          setRows([]);
+          setLoading(false);
+          return;
+        }
+      
+        setLoading(true);
+      
         const qy = query(
-            collectionGroup(db, "productOrders")
+          collectionGroup(db, "productOrders"),
+          where("businessId", "==", businessId)
         );
-
+      
         const unsub = onSnapshot(
-            qy,
-            (snap) => {
-                const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-                setRows(list);
-                setLoading(false);
-            },
-            (err) => {
-                console.error(err);
-                setLoading(false);
-            }
+          qy,
+          (snap) => {
+            const list = snap.docs.map((d) => ({
+              id: d.id,
+              refPath: d.ref.path,
+              ...d.data(),
+            }));
+      
+            setRows(list);
+            setLoading(false);
+          },
+          (err) => {
+            console.error(err);
+        
+            setLoading(false);
+          }
         );
-
+      
         return () => unsub();
-    }, []);
+      }, [businessId]);
 
     useEffect(() => {
         if (!selectedOrder) return;
