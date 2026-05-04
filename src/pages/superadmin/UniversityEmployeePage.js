@@ -51,6 +51,11 @@ const ALL_MENU_OPTIONS = [
   { key: "universitywellnessprompts", label: "Wellness Prompts", featureFlag: "wellnessprompts" },
   { key: "universitymessages", label: "Messages", featureFlag: "messages" },
   { key: "universitysetting", label: "Setting", featureFlag: "setting" },
+  { key: "universityfirstweekjourney", label: "First Week Journey", featureFlag: 'firstweekjourney' },
+  { key: "universityorientation", label: "Orientation", featureFlag: 'orientation' },
+  { key: "universitywellbeing", label: "Wellbeing", featureFlag: 'wellbeing' },
+  { key: "universitylostandfound", label: "Lost & Found", featureFlag: 'lostandfound' },
+
 ];
 
 const ALWAYS_ALLOWED = [
@@ -530,7 +535,7 @@ export default function UniversityEmployeePage({ navbarHeight }) {
       console.error(err);
       toast.error("Failed to save employee.");
     } finally {
-      if (tempApp) { try { await deleteApp(tempApp); } catch {} }
+      if (tempApp) { try { await deleteApp(tempApp); } catch { } }
     }
   };
 

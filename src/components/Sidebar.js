@@ -107,8 +107,13 @@ const SECTIONS = [
   { key: "universityparcels", label: "Parcels", Icon: Package },
   { key: "universitywellnessprompts", label: "Wellness Prompts", Icon: HeartPulse },
   { key: "universitymessages", label: "Messages", Icon: MessageSquare },
+  { key: "universityfirstweekjourney", label: "First Week Journey", Icon: Compass },
+  { key: "universityorientation", label: "Orientation", Icon: GraduationCap },
+  { key: "universityguestlog", label: "Guest Log", Icon: UserCheck },
+  { key: "universityinspection", label: "Inspection", Icon: FileCheck },
+  { key: "universitywellbeing", label: "Wellbeing", Icon: Heart },
+  { key: "universitylostandfound", label: "Lost & Found", Icon: Archive },
   { key: "universitysetting", label: "Setting", Icon: SettingsIcon },
-
   { key: "uniclubdashboard", label: "Dashboard", Icon: LayoutDashboard },
   { key: "uniclub", label: "Uniclub", Icon: Handshake },
   { key: "uniclubemp", label: "Uni Club Employee", Icon: UserPlus },
@@ -464,6 +469,12 @@ export default function Sidebar({ onSectionClick, isLoading }) {
       "universitywellnessprompts",
       "universitymessages",
       "universitysetting",
+      "universityfirstweekjourney",
+      "universityorientation",
+      "universityguestlog",
+      "universityinspection",
+      "universitywellbeing",
+      "universitylostandfound",
       "contact",
     ]);
 

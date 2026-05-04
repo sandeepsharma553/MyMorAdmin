@@ -80,6 +80,12 @@ import ParcelPage from "../pages/admin/ParcelPage";
 import WellnessPromptsPage from "../pages/admin/WellnessPromptsPage";
 import MessagesPage from "../pages/admin/MessagesPage";
 import UniversitySettingPage from "../pages/university/UniversitySettingPage";
+import UniversityFirstWeekJourneyPage from "../pages/university/UniversityFirstWeekJourneyPage";
+import UniversityGuestLogPage from "../pages/university/UniversityGuestLogPage";
+import UniversityInspectionPage from "../pages/university/UniversityInspectionPage";
+import UniversityWellbeingPage from "../pages/university/UniversityWellbeingPage";
+import UniversityLostAndFoundPage from "../pages/university/UniversityLostAndFoundPage";
+import UniversityOrientationPage from "../pages/university/UniversityOrientationPage";
 import FirstWeekJourneyPage from "../pages/admin/FirstWeekJourneyPage";
 import OrientationPage from "../pages/admin/OrientationPage";
 import GuestLogPage from "../pages/admin/GuestLogPage";
@@ -171,6 +177,12 @@ export default function AdminRoutes({ route }) {
       <Route path="/universitywellnessprompts" element={<UniversityWellnessPromptsPage />} />
       <Route path="/universitymessages" element={<UniversityMessagesPage />} />
       <Route path="/universitysetting" element={<UniversitySettingPage />} />
+      <Route path="/universityfirstweekjourney" element={<UniversityFirstWeekJourneyPage />} />
+      <Route path="/universityguestlog" element={<UniversityGuestLogPage />} />
+      <Route path="/universityinspection" element={<UniversityInspectionPage />} />
+      <Route path="/universitywellbeing" element={<UniversityWellbeingPage />} />
+      <Route path="/universitylostandfound" element={<UniversityLostAndFoundPage />} />
+      <Route path="/universityorientation" element={<UniversityOrientationPage />} />
 
       {/* ── Phase 1 new routes ── */}
       <Route path="/checklist" element={<ChecklistPage />} />
