@@ -34,8 +34,6 @@ const ALL_MENU_OPTIONS = [
   { key: "universityevent", label: "Events", featureFlag: "events" },
   { key: "universityresources", label: "Resources", featureFlag: "resource" },
   { key: "universityroombooking", label: "Room Bookings", featureFlag: "bookingroom" },
-  { key: "universitydiningmenu", label: "Dining Menu", featureFlag: "diningmenu" },
-  { key: "universitycleaningschedule", label: "Cleaning Schedule", featureFlag: "cleaningschedule" },
   { key: "universitytutorialschedule", label: "Tutorial Schedule", featureFlag: "tutorialschedule" },
   { key: "universityassessments", label: "Assessment Schedule", featureFlag: "assessment" },
   { key: "universitymaintenance", label: "Maintenance", featureFlag: "maintenance" },
@@ -47,13 +45,14 @@ const ALL_MENU_OPTIONS = [
   { key: "universitychecklist", label: "Checklists", featureFlag: "checklist" },
   { key: "universityroominfo", label: "Room Info", featureFlag: "roominfo" },
   { key: "universityparcels", label: "Parcels", featureFlag: "parcels" },
-  { key: "universitywellnessprompts", label: "Wellness Prompts", featureFlag: "wellnessprompts" },
+  // { key: "universitywellnessprompts", label: "Wellness Prompts", featureFlag: "wellnessprompts" },
   { key: "universitymessages", label: "Messages", featureFlag: "messages" },
-  { key: "universitysetting", label: "Setting", featureFlag: "setting" },
   { key: "universityfirstweekjourney", label: "First Week Journey", featureFlag: "firstweekjourney" },
   { key: "universityorientation", label: "Orientation", featureFlag: "orientation" },
   { key: "universitywellbeing", label: "Wellbeing", featureFlag: "wellbeing" },
   { key: "universitylostandfound", label: "Lost & Found", featureFlag: "lostandfound" },
+  { key: "universitysetting", label: "Setting", featureFlag: "setting" },
+  
 ];
 
 const ALWAYS_ALLOWED = [

@@ -58,6 +58,7 @@ const DEFAULT_FEATURES = {
   guestlog:false,
   inspection:false,
   lostandfound:false,
+  parcels:false,
 };
 
 const pageSize = 10;
