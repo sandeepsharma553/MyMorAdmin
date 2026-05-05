@@ -60,7 +60,22 @@ export default function UniversityTutorialSchedulePage({ navbarHeight }) {
   const unitRef = (id) => doc(db, "university", universityId, "units", id);
   const tutsCol = (unitId) => collection(db, "university", universityId, "units", unitId, "tutorials");
   const tutRef = (unitId, tutId) => doc(db, "university", universityId, "units", unitId, "tutorials", tutId);
+  const getDisciplineId = (d) =>
+    String(d?.id || d?.disciplineId || d?.value || d?.name || d || "");
 
+  const getDisciplineName = (d) =>
+    String(d?.name || d?.label || d?.title || d || "");
+
+  const findDiscipline = (value) => {
+    const v = String(value || "").trim();
+
+    return disciplines.find((d) => {
+      const id = getDisciplineId(d);
+      const name = getDisciplineName(d);
+
+      return id === v || name === v;
+    });
+  };
   const loadDisciplines = async () => {
     try {
       const snap = await getDoc(doc(db, "university", universityId));
@@ -73,6 +88,7 @@ export default function UniversityTutorialSchedulePage({ navbarHeight }) {
         campuses.forEach((c) => discs.push(...(c.disciplines || [])));
       }
       setDisciplines(discs);
+      console.log("Loaded disciplines:", discs);
     } catch (e) {
       console.error(e);
     }
@@ -93,6 +109,7 @@ export default function UniversityTutorialSchedulePage({ navbarHeight }) {
 
   const loadTutorials = async (unitId) => {
     try {
+      alert(unitId);
       const snap = await getDocs(tutsCol(unitId));
       setTutorialsMap((p) => ({
         ...p,
@@ -131,17 +148,18 @@ export default function UniversityTutorialSchedulePage({ navbarHeight }) {
       return;
     }
     try {
-      const disc = disciplines.find((d) => d.id === unitForm.disciplineId);
+      console.log("Saving unit with form data:", unitForm);
+      const disc = findDiscipline(unitForm.disciplineId);
       const unitCode = unitForm.unitCode.toUpperCase().trim();
       const payload = {
+        ...scopePayload,
         unitCode,
         unitName: unitForm.unitName.trim(),
-        disciplineId: unitForm.disciplineId || "",
-        disciplineName: disc?.name || "",
+        disciplineId: disc ? getDisciplineId(disc) : unitForm.disciplineId || "",
+        disciplineName: disc ? getDisciplineName(disc) : "",
         startDate: unitForm.startDate,
         endDate: unitForm.endDate,
         universityId,
-        ...scopePayload,
         updatedBy: uid,
         updatedDate: new Date(),
       };
@@ -212,14 +230,16 @@ export default function UniversityTutorialSchedulePage({ navbarHeight }) {
     try {
       const unit = units.find((u) => u.id === activeTutUnitId);
       const payload = {
+        ...scopePayload,
         tutorName: tutForm.tutorName.trim(),
         day: tutForm.day,
         time: tutForm.time.trim(),
         room: tutForm.room.trim(),
         unitId: activeTutUnitId,
         unitCode: unit?.unitCode || "",
+        disciplineId: unit?.disciplineId || "",
+        disciplineName: unit?.disciplineName || "",
         universityId,
-        ...scopePayload,
         updatedBy: uid,
         updatedDate: new Date(),
       };
@@ -336,11 +356,12 @@ export default function UniversityTutorialSchedulePage({ navbarHeight }) {
                     <button
                       className="text-blue-600 hover:underline text-sm"
                       onClick={() => {
+                        console.log("Editing unit:", unit);
                         setEditingUnit(unit);
                         setUnitForm({
-                          unitCode: unit.unitCode,
-                          unitName: unit.unitName,
-                          disciplineId: unit.disciplineId || "",
+                          unitCode: unit.unitCode || "",
+                          unitName: unit.unitName || "",
+                          disciplineId: unit.disciplineId,
                           startDate: unit.startDate || "",
                           endDate: unit.endDate || "",
                         });
@@ -483,11 +504,16 @@ export default function UniversityTutorialSchedulePage({ navbarHeight }) {
                     }
                   >
                     <option value="">— Select discipline —</option>
-                    {disciplines.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
+                    {disciplines.map((d, idx) => {
+                      const id = getDisciplineId(d);
+                      const name = getDisciplineName(d);
+
+                      return (
+                        <option key={id || idx} value={id}>
+                          {name}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
                 <div className="sm:col-span-1" />
