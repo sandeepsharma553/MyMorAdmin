@@ -50,7 +50,6 @@ const DEFAULT_FEATURES = {
   shop: false,
   assessment: false,
   checklist:false,
-  wellnessprompts:false,
   messages:false,
   firstweekjourney:false,
   orientation:false,
