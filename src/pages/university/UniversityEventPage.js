@@ -1044,8 +1044,8 @@ export default function UniversityEventPage({ navbarHeight }) {
               key={k}
               onClick={() => setTimeFilter(k)}
               className={`px-3 py-1.5 rounded-full text-sm border ${active
-                  ? "bg-black text-white border-black"
-                  : "bg-white text-gray-700 border-gray-300"
+                ? "bg-black text-white border-black"
+                : "bg-white text-gray-700 border-gray-300"
                 }`}
             >
               {k[0].toUpperCase() + k.slice(1)}
@@ -1697,8 +1697,6 @@ export default function UniversityEventPage({ navbarHeight }) {
                     <option value="">Select Payment Type</option>
                     <option value="Free">Free</option>
                     <option value="Paid">Paid (Ticket Types)</option>
-                    <option value="MultiPrice">Multi Price</option>
-                    <option value="MultiPriceTimer">Multi Price Timer</option>
                   </select>
 
                   <label className="text-sm">
@@ -2523,8 +2521,8 @@ export default function UniversityEventPage({ navbarHeight }) {
                     <div className="flex items-center gap-2">
                       <button
                         className={`px-3 py-1 rounded border ${canPrev
-                            ? "bg-white hover:bg-gray-50"
-                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          ? "bg-white hover:bg-gray-50"
+                          : "bg-gray-100 text-gray-400 cursor-not-allowed"
                           }`}
                         onClick={() =>
                           canPrev && setBookingModal((p) => ({ ...p, page: p.page - 1 }))
@@ -2535,8 +2533,8 @@ export default function UniversityEventPage({ navbarHeight }) {
                       </button>
                       <button
                         className={`px-3 py-1 rounded border ${canNext
-                            ? "bg-white hover:bg-gray-50"
-                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          ? "bg-white hover:bg-gray-50"
+                          : "bg-gray-100 text-gray-400 cursor-not-allowed"
                           }`}
                         onClick={() =>
                           canNext && setBookingModal((p) => ({ ...p, page: p.page + 1 }))

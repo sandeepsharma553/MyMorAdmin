@@ -1602,8 +1602,6 @@ const [qrReady, setQrReady] = useState(false);
                     <option value="">Select Payment Type</option>
                     <option value="Free">Free</option>
                     <option value="Paid">Paid (Ticket Types)</option>
-                    <option value="MultiPrice">Multi Price</option>
-                    <option value="MultiPriceTimer">Multi Price Timer</option>
                   </select>
 
                   {/* QR check-in */}
