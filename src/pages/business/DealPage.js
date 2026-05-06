@@ -183,6 +183,7 @@ export default function DealPage({ navbarHeight }) {
   const [deleteId, setDeleteId] = useState(null);
   const uid = useSelector((s) => s.auth.user?.uid);
   const emp = useSelector((s) => s.auth.employee);
+  
   const businessId =
     emp?.businessId ||
     emp?.businessid ||
@@ -198,11 +199,10 @@ export default function DealPage({ navbarHeight }) {
     emp?.businessName ||
     emp?.name ||
     "";
-
   useEffect(() => {
-    if (!businessId) return;
-    // Only load this business's own deals (filter by businessId)
-    const qy = query(collection(db, "deals"), where("businessId", "==", businessId));
+    if (!uid) return;
+    // Load deals where businessId == employee UID (each deal is tagged to the admin employee's UID)
+    const qy = query(collection(db, "deals"), where("businessId", "==", uid));
     const unsub = onSnapshot(
       qy,
       (snap) => {
@@ -216,7 +216,7 @@ export default function DealPage({ navbarHeight }) {
       }
     );
     return () => unsub();
-  }, []);
+  }, [uid]);
 
   const filtered = useMemo(() => {
     const t = qText.trim().toLowerCase();
@@ -283,7 +283,7 @@ export default function DealPage({ navbarHeight }) {
         values,
         editing,
         { posterUrl, posterPath, catalogUrl, catalogPath },
-        { businessId, businessType, businessName }
+        { businessId: uid, businessType, businessName }
       );
 
       if (editing?.id) {
@@ -292,7 +292,6 @@ export default function DealPage({ navbarHeight }) {
       } else {
         const ref = await addDoc(collection(db, "deals"), { ...payload, createdAt: serverTimestamp() });
         toast.success("Deal created ✅");
-        // ✅ keep editing in modal so OfferBlocksEditor can work
         setEditing({ id: ref.id, ...payload });
       }
     } catch (e) {
