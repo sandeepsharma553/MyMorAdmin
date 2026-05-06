@@ -9,6 +9,7 @@ import {
   updateDoc,
   serverTimestamp,
   addDoc,
+  where
 } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase";
@@ -79,7 +80,7 @@ const dealToFormValues = (r) => {
 };
 
 /** ---------------- helpers: form values -> Firestore payload (your schema) ---------------- */
-const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUrl, catalogPath }) => {
+const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUrl, catalogPath,uid }) => {
   // timeWindow
   const timeWindow =
     values.timeWindowStart && values.timeWindowEnd
@@ -163,6 +164,7 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
     },
 
     daysLeft,
+    uid:uid,
     updatedAt: serverTimestamp(),
   };
 };
@@ -178,11 +180,12 @@ export default function DealPage({ navbarHeight }) {
   const [deleteId, setDeleteId] = useState(null);
   const uid = useSelector((s) => s.auth.user?.uid);
   useEffect(() => {
-    const qy = query(collection(db, "deals"), orderBy("createdAt", "desc"));
+    const qy = query(collection(db, "deals"), where("uid", "==", uid), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(
       qy,
       (snap) => {
         setRows(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        console.log("Loaded deals:", snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setIsLoading(false);
       },
       (err) => {
@@ -256,7 +259,7 @@ export default function DealPage({ navbarHeight }) {
         catalogPath = up2.path;
       }
 
-      const payload = formValuesToPayload(values, editing, { posterUrl, posterPath, catalogUrl, catalogPath });
+      const payload = formValuesToPayload(values, editing, { posterUrl, posterPath, catalogUrl, catalogPath, uid });
 
       if (editing?.id) {
         await updateDoc(doc(db, "deals", editing.id), payload);
@@ -267,6 +270,7 @@ export default function DealPage({ navbarHeight }) {
         // ✅ keep editing in modal so OfferBlocksEditor can work
         setEditing({ id: ref.id, ...payload });
       }
+      setOpenModal(false);
     } catch (e) {
       console.error(e);
       toast.error(e?.message || "Save failed");

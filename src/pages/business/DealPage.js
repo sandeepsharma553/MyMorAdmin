@@ -294,6 +294,7 @@ export default function DealPage({ navbarHeight }) {
         toast.success("Deal created ✅");
         setEditing({ id: ref.id, ...payload });
       }
+      setOpenModal(false);
     } catch (e) {
       console.error(e);
       toast.error(e?.message || "Save failed");
