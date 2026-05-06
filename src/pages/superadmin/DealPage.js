@@ -4,11 +4,11 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
+  orderBy,
   query,
   updateDoc,
   serverTimestamp,
   addDoc,
-  where,
 } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase";
@@ -79,7 +79,7 @@ const dealToFormValues = (r) => {
 };
 
 /** ---------------- helpers: form values -> Firestore payload (your schema) ---------------- */
-const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUrl, catalogPath }, bizMeta = {}) => {
+const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUrl, catalogPath }) => {
   // timeWindow
   const timeWindow =
     values.timeWindowStart && values.timeWindowEnd
@@ -164,11 +164,6 @@ const formValuesToPayload = (values, editing, { posterUrl, posterPath, catalogUr
 
     daysLeft,
     updatedAt: serverTimestamp(),
-
-    // Business link — set once on create, preserved on edit
-    businessId: bizMeta.businessId || editing?.businessId || "",
-    businessType: bizMeta.businessType || editing?.businessType || "",
-    businessName: bizMeta.businessName || editing?.businessName || "",
   };
 };
 
@@ -182,27 +177,8 @@ export default function DealPage({ navbarHeight }) {
   const [editing, setEditing] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const uid = useSelector((s) => s.auth.user?.uid);
-  const emp = useSelector((s) => s.auth.employee);
-  const businessId =
-    emp?.businessId ||
-    emp?.businessid ||
-    emp?.business_id ||
-    emp?.id ||
-    uid;
-  const businessType =
-    emp?.businesstype ||
-    emp?.businessType ||
-    emp?.type ||
-    "";
-  const businessName =
-    emp?.businessName ||
-    emp?.name ||
-    "";
-
   useEffect(() => {
-    if (!businessId) return;
-    // Only load this business's own deals (filter by businessId)
-    const qy = query(collection(db, "deals"), where("businessId", "==", businessId));
+    const qy = query(collection(db, "deals"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(
       qy,
       (snap) => {
@@ -220,21 +196,22 @@ export default function DealPage({ navbarHeight }) {
 
   const filtered = useMemo(() => {
     const t = qText.trim().toLowerCase();
-    const list = t
-      ? rows.filter((r) =>
-          [r.header, r.category, r.slot, r.campaignType, r.mode, r.status, r.venue?.name]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase()
-            .includes(t)
-        )
-      : rows;
-    // sort by createdAt desc (client-side, since query has no orderBy)
-    return [...list].sort((a, b) => {
-      const at = a?.createdAt?.seconds ?? 0;
-      const bt = b?.createdAt?.seconds ?? 0;
-      return bt - at;
-    });
+    if (!t) return rows;
+    return rows.filter((r) =>
+      [
+        r.header,
+        r.category,
+        r.slot,
+        r.campaignType,
+        r.mode,
+        r.status,
+        r.venue?.name,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(t)
+    );
   }, [rows, qText]);
 
   const toggle = async (id, key, val) => {
@@ -279,12 +256,7 @@ export default function DealPage({ navbarHeight }) {
         catalogPath = up2.path;
       }
 
-      const payload = formValuesToPayload(
-        values,
-        editing,
-        { posterUrl, posterPath, catalogUrl, catalogPath },
-        { businessId, businessType, businessName }
-      );
+      const payload = formValuesToPayload(values, editing, { posterUrl, posterPath, catalogUrl, catalogPath });
 
       if (editing?.id) {
         await updateDoc(doc(db, "deals", editing.id), payload);
