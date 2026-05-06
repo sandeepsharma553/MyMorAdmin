@@ -10,7 +10,6 @@ import AnnouncementPage from "../pages/admin/AnnouncementPage";
 import ReportIncidentPage from "../pages/admin/ReportIncidentPage";
 import EventPage from "../pages/admin/EventPage";
 import EventBookingPage from "../pages/admin/EventBookingPage";
-import DealPage from "../pages/admin/DealPage";
 import AccountDeletionPage from "../pages/admin/AccountDeletionPage";
 import EmployeePage from "../pages/admin/EmployeePage";
 import ChangePasswordPage from "../pages/admin/ChangePasswordPage";
@@ -48,6 +47,7 @@ import ManageRestaurantPage from '../pages/business/ManageRestaurantPage'
 import RestaurantQrTablesPage from "../pages/business/RestaurantQrTablesPage";
 import RestaurantMenuPage from "../pages/business/RestaurantMenuPage";
 import RestaurantDealsPage from "../pages/business/RestaurantDealsPage";
+import DealPage from "../pages/business/DealPage";
 import BusinessEmployeePage from "../pages/business/BusinessEmployeePage";
 import ProductOrderPage from "../pages/business/ProductOrderPage";
 import ServiceBookingPage from "../pages/business/ServiceBookingPage";
@@ -112,7 +112,6 @@ export default function AdminRoutes({ route }) {
       <Route path="/reportincident" element={<ReportIncidentPage />} />
       <Route path="/event" element={<EventPage />} />
       <Route path="/eventbooking" element={<EventBookingPage />} />
-      <Route path="/deal" element={<DealPage />} />
       <Route path="/requestdelete" element={<AccountDeletionPage />} />
       <Route path="/employee" element={<EmployeePage />} />
       <Route path="/changepassword" element={<ChangePasswordPage />} />
@@ -147,7 +146,7 @@ export default function AdminRoutes({ route }) {
       <Route path="/managerestaurant" element={<ManageRestaurantPage />} />
       <Route path="/qr" element={<RestaurantQrTablesPage />} />
       <Route path="/menu" element={<RestaurantMenuPage />} />
-      <Route path="/deals" element={<RestaurantDealsPage />} />
+      <Route path="/deals" element={<DealPage />} />
       <Route path="/businessemp" element={<BusinessEmployeePage />} />
       <Route path="/productorder" element={<ProductOrderPage />} />
       <Route path="/servicebooking" element={<ServiceBookingPage />} />

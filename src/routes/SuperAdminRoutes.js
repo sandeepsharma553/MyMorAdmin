@@ -13,7 +13,7 @@ import UniclubPage from "../pages/superadmin/UniclubPage";
 import PoiPage from "../pages/superadmin/PoiPage";
 import ContactPage from "../pages/ContactPage";
 import BusinessesPage from "../pages/superadmin/BusinessesPage";
-import DealPage from "../pages/business/DealPage";
+import DealPage from "../pages/superadmin/DealPage";
 import RestaurantPage from "../pages/business/RestaurantPage";
 import RestaurantOrdersPage from "../pages/business/RestaurantOrdersPage";
 import RestaurantReservationsPage from "../pages/business/RestaurantReservationsPage";
