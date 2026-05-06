@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs, query } from "firebase/firestore";
 import { db } from "../firebase";
 
 const mapDocs = (snap) => snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
 
-export default function useDealSettings(uid) {
+// uid param kept for API compatibility but settings are now platform-global
+export default function useDealSettings(_uid) {
   const [loading, setLoading] = useState(true);
 
   const [categories, setCategories] = useState([]);
@@ -17,11 +18,9 @@ export default function useDealSettings(uid) {
   const [offerTypes, setOfferTypes] = useState([]);
 
   const fetchAll = async () => {
-    if (!uid) return;
     setLoading(true);
     try {
-      const w = [where("uid", "==", uid)];
-
+      // No uid filter — deal settings are global platform config managed by superadmin
       const [
         cSnap,
         mSnap,
@@ -32,14 +31,14 @@ export default function useDealSettings(uid) {
         feedSnap,
         offertypeSnap,
       ] = await Promise.all([
-        getDocs(query(collection(db, "dealcategory"), ...w)),
-        getDocs(query(collection(db, "dealmode"), ...w)),
-        getDocs(query(collection(db, "dealstatus"), ...w)),
-        getDocs(query(collection(db, "dealslot"), ...w)),
-        getDocs(query(collection(db, "dealredemptionmethod"), ...w)),
-        getDocs(query(collection(db, "dealdiscoverytag"), ...w)),
-        getDocs(query(collection(db, "dealmfeedsection"), ...w)),
-        getDocs(query(collection(db, "dealoffertype"), ...w)),
+        getDocs(query(collection(db, "dealcategory"))),
+        getDocs(query(collection(db, "dealmode"))),
+        getDocs(query(collection(db, "dealstatus"))),
+        getDocs(query(collection(db, "dealslot"))),
+        getDocs(query(collection(db, "dealredemptionmethod"))),
+        getDocs(query(collection(db, "dealdiscoverytag"))),
+        getDocs(query(collection(db, "dealmfeedsection"))),
+        getDocs(query(collection(db, "dealoffertype"))),
       ]);
 
       setCategories(mapDocs(cSnap));
@@ -58,7 +57,7 @@ export default function useDealSettings(uid) {
   useEffect(() => {
     fetchAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uid]);
+  }, []);
 
   const slotsByCategoryId = useMemo(() => {
     const map = {};

@@ -10,8 +10,6 @@ import {
   doc,
   serverTimestamp,
   where,
-  arrayUnion,
-  increment,
   getDocs,
   getDoc,
   setDoc,
@@ -35,7 +33,6 @@ import { FadeLoader } from "react-spinners";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-import DealForm from "../business/DealForm";
 import LocationPicker from "./LocationPicker";
 import MapLocationInput from "../../components/MapLocationInput";
 
@@ -45,7 +42,7 @@ import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import Button from "@mui/material/Button";
-
+import { useSelector } from "react-redux";
 /** ---------------- Helpers ---------------- */
 const DAYS = [
   "sunday",
@@ -60,7 +57,6 @@ const DAYS = [
 const BUSINESS_PERMISSION_OPTIONS = [
   { key: "businessdashboard", label: "Dashboard" },
   { key: "businessemp", label: "Employee" },
-  { key: "deal", label: "Deal" },
   { key: "restaurant", label: "Restaurant" },
   { key: "product", label: "Product" },
   { key: "service", label: "Service" },
@@ -256,20 +252,13 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
 
   const [showMapModal, setShowMapModal] = useState(false);
   const [form, setForm] = useState(initialForm);
-
+  const uid = useSelector((s) => s.auth.user.uid);
   const [open, setOpen] = useState({
     details: true,
     hours: false,
     billing: false,
     media: false,
-    deals: true,
   });
-
-  const [bizDeals, setBizDeals] = useState([]);
-  const [dealModalOpen, setDealModalOpen] = useState(false);
-  const [dealEditing, setDealEditing] = useState(null);
-  const [dealSaving, setDealSaving] = useState(false);
-  const [dealDeleteId, setDealDeleteId] = useState(null);
 
   /** ---------------- Permission helpers ---------------- */
   const allPermissionsSelected = useMemo(() => {
@@ -438,197 +427,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     );
   }, [rows, qText]);
 
-  /** ---------------- Firestore: Deals by business ---------------- */
-  useEffect(() => {
-    if (!modalOpen) return;
-    if (!editingBiz?.id) {
-      setBizDeals([]);
-      return;
-    }
-
-    const qy = query(
-      collection(db, "deals"),
-      where("businessId", "==", editingBiz.id),
-      orderBy("createdAt", "desc")
-    );
-
-    const unsub = onSnapshot(
-      qy,
-      (snap) => setBizDeals(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      (err) => console.error(err)
-    );
-
-    return () => unsub();
-  }, [modalOpen, editingBiz?.id]);
-
-  /** ---------------- Deals mapping ---------------- */
-  const dealToFormValues = (d) => {
-    if (!d) return {};
-    return {
-      header: d.header || "",
-      category: d.category || "",
-      slotId: d.slotId || "",
-      modeid: d.modeid || "",
-      slot: d.slot || "",
-      mode: d.mode || "",
-      statusid: d.statusid || "",
-      status: d.status || "draft",
-      active: !!d.active,
-      featured: !!d.featured,
-
-      discoveryTags: d?.discovery?.tags || [],
-      feedSections: d?.discovery?.sections || [],
-
-      imageUrl: d.posterUrl || "",
-      imageFile: null,
-
-      venueName: d?.venue?.name || d?.businessName || "",
-      venueLocationLabel: d?.venue?.locationLabel || d?.businessAddress || "",
-      lat: d?.venue?.lat == null ? "" : String(d.venue.lat),
-      lng: d?.venue?.lng == null ? "" : String(d.venue.lng),
-
-      descriptionHtml: d.descriptionHtml || "",
-
-      validFrom: d?.schedule?.validFrom || "",
-      validTo: d?.schedule?.validTo || "",
-      daysActive:
-        d?.schedule?.activeDays || ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-      timeWindowStart: d?.schedule?.timeWindow?.start || "",
-      timeWindowEnd: d?.schedule?.timeWindow?.end || "",
-
-      redemptionMethodId: d?.redemption?.methodId || "",
-      redemptionMethod: d?.redemption?.method || "",
-      requiresStudentId: d?.redemption?.requiresStudentId ?? true,
-      oneClaimPerStudent: d?.redemption?.oneClaimPerStudent ?? true,
-      claimLimit:
-        d?.redemption?.claimLimit == null ? "" : String(d.redemption.claimLimit),
-      promoCode: d?.redemption?.promoCode || "",
-      instructions: d?.redemption?.instructions || "",
-
-      bookingEnabled: d?.booking?.enabled ?? false,
-      bookingLink: d?.booking?.bookingLink || "",
-      sessionLabel: d?.booking?.sessionLabel || "",
-
-      saleType: d?.retail?.saleType || "",
-      discountRangeLabel: d?.retail?.discountRangeLabel || "",
-      catalogUrl: d?.retail?.catalogUrl || "",
-      catalogFile: null,
-      retailHighlights: d?.retail?.highlights || [],
-    };
-  };
-
-  const formToDealPayload = ({
-    values,
-    editingBiz,
-    form,
-    dealEditing,
-    posterUrl,
-    posterPath,
-    catalogUrl,
-    catalogPath,
-  }) => {
-    const timeWindow =
-      values.timeWindowStart && values.timeWindowEnd
-        ? { start: values.timeWindowStart, end: values.timeWindowEnd }
-        : null;
-
-    const isPromo = String(values.redemptionMethod || "")
-      .toLowerCase()
-      .includes("promo");
-    const isCatalog = String(values.mode || "")
-      .toLowerCase()
-      .includes("catalog");
-
-    return {
-      businessId: editingBiz.id,
-      businessName: form.name || "",
-      businessAddress: [
-        form.address?.line1,
-        form.address?.city,
-        form.address?.state,
-        form.address?.postcode,
-      ]
-        .filter(Boolean)
-        .join(", "),
-      businessLat: form.address?.lat ?? null,
-      businessLng: form.address?.lng ?? null,
-
-      header: (values.header || "").trim(),
-      campaignType: values.campaignType || "single_offer",
-      category: values.category || "",
-      slot: values.slot || "",
-      mode: values.mode || "",
-
-      status: values.status || "",
-      active: !!values.active,
-      featured: !!values.featured,
-
-      discovery: {
-        tags: values.discoveryTags || [],
-        sections: values.feedSections || [],
-      },
-
-      partner: {
-        partnerId: "",
-        merchantId: editingBiz.id,
-      },
-
-      venue: {
-        id: editingBiz.id,
-        name: (values.venueName || form.name || "").trim(),
-        locationLabel: (
-          values.venueLocationLabel ||
-          [form.address?.city, form.address?.state].filter(Boolean).join(", ")
-        ).trim(),
-        lat: values.lat === "" ? form.address?.lat ?? null : Number(values.lat),
-        lng: values.lng === "" ? form.address?.lng ?? null : Number(values.lng),
-      },
-
-      descriptionHtml: values.descriptionHtml || "",
-
-      schedule: {
-        activeDays: values.daysActive || [],
-        validFrom: values.validFrom || "",
-        validTo: values.validTo || "",
-        timeWindow,
-      },
-
-      redemption: {
-        methodId: values.redemptionMethodId || "",
-        method: values.redemptionMethod || "",
-        requiresStudentId: !!values.requiresStudentId,
-        oneClaimPerStudent: !!values.oneClaimPerStudent,
-        claimLimit: values.claimLimit === "" ? null : Number(values.claimLimit),
-        promoCode: isPromo ? (values.promoCode || "").trim() : "",
-        instructions: (values.instructions || "").trim(),
-      },
-
-      booking: {
-        enabled: !!values.bookingEnabled,
-        bookingLink: values.bookingEnabled ? (values.bookingLink || "").trim() : "",
-        sessionLabel: (values.sessionLabel || "").trim(),
-      },
-
-      retail: isCatalog
-        ? {
-            saleType: values.saleType || "storewide",
-            discountRangeLabel: (values.discountRangeLabel || "").trim(),
-            catalogUrl: catalogUrl || values.catalogUrl || "",
-            catalogPath: catalogPath || dealEditing?.retail?.catalogPath || "",
-            highlights: (values.retailHighlights || []).slice(0, 8).map((x) => ({
-              title: (x.title || "").trim(),
-              priceLabel: (x.priceLabel || "").trim(),
-              imageUrl: (x.imageUrl || "").trim(),
-            })),
-          }
-        : null,
-
-      posterUrl: posterUrl || values.imageUrl || dealEditing?.posterUrl || "",
-      posterPath: posterPath || dealEditing?.posterPath || "",
-      daysLeft: typeof values.daysLeft === "number" ? values.daysLeft : null,
-      updatedAt: serverTimestamp(),
-    };
-  };
 
   /** ---------------- Business modal open/close ---------------- */
   const resetBusinessForm = () => {
@@ -639,9 +437,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       hours: false,
       billing: false,
       media: false,
-      deals: true,
     });
-    setBizDeals([]);
   };
 
   const openCreate = () => {
@@ -694,7 +490,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
       hours: false,
       billing: false,
       media: false,
-      deals: true,
     });
     setModalOpen(true);
   };
@@ -1030,7 +825,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
               "",
           },
         },
-
+        adminUID: uid,
         updatedAt: serverTimestamp(),
       };
 
@@ -1055,6 +850,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
               permissions: payload.permissions || [],
               isActive: payload.isActive ?? true,
               password,
+              adminUID: uid,
               updatedAt: serverTimestamp(),
             },
             { merge: true }
@@ -1077,6 +873,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
               },
               permissions: payload.permissions || [],
               password,
+              adminUID: uid,
               updateddate: new Date(),
             },
             { merge: true }
@@ -1134,7 +931,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           id: businessId,
           ...payload,
           uid: existingUser.uid,
-          adminUID: existingUser.uid,
+          adminUID: uid
         });
         return;
       }
@@ -1153,7 +950,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           id: businessId,
           ...payload,
           uid: existingEmp.uid,
-          adminUID: existingEmp.uid,
+          adminUID: uid
         });
         return;
       }
@@ -1190,6 +987,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           password,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
+          adminUID: uid,
         });
 
         await setDoc(doc(db, "users", user.uid), {
@@ -1208,6 +1006,7 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
           },
           permissions: payload.permissions || [],
           password,
+          adminUID: uid,
         });
 
         await updateDoc(doc(db, "businesses", businessId), {
@@ -1261,99 +1060,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
     }
   };
 
-  /** ---------------- Deals: upload helper ---------------- */
-  const uploadIfFile = async (file, folder) => {
-    const path = `${folder}/${editingBiz.id}/${Date.now()}_${file.name}`;
-    const r = storageRef(storage, path);
-    await uploadBytes(r, file);
-    const url = await getDownloadURL(r);
-    return { url, path };
-  };
-
-  /** ---------------- Save deal ---------------- */
-  const saveDealForBusiness = async (values) => {
-    if (!editingBiz?.id) return toast.error("Create business first, then add deals.");
-
-    setDealSaving(true);
-    try {
-      let posterUrl = values.imageUrl || dealEditing?.posterUrl || "";
-      let posterPath = dealEditing?.posterPath || "";
-
-      if (values.imageFile) {
-        const up = await uploadIfFile(values.imageFile, "deals/posters");
-        posterUrl = up.url;
-        posterPath = up.path;
-      }
-
-      let catalogUrl = values.catalogUrl || dealEditing?.retail?.catalogUrl || "";
-      let catalogPath = dealEditing?.retail?.catalogPath || "";
-      const isCatalog = String(values.mode || "").toLowerCase().includes("catalog");
-
-      if (isCatalog && values.catalogFile) {
-        const up2 = await uploadIfFile(values.catalogFile, "deals/catalogs");
-        catalogUrl = up2.url;
-        catalogPath = up2.path;
-      }
-
-      const dealPayload = formToDealPayload({
-        values,
-        editingBiz,
-        form,
-        dealEditing,
-        posterUrl,
-        posterPath,
-        catalogUrl,
-        catalogPath,
-      });
-
-      if (dealEditing?.id) {
-        await updateDoc(doc(db, "deals", dealEditing.id), dealPayload);
-        toast.success("Deal updated ✅");
-      } else {
-        const dealRef = await addDoc(collection(db, "deals"), {
-          ...dealPayload,
-          createdAt: serverTimestamp(),
-          metrics: {
-            views: 0,
-            opens: 0,
-            saves: 0,
-            claims: 0,
-            redemptions: 0,
-            bookingClicks: 0,
-          },
-        });
-
-        await updateDoc(doc(db, "businesses", editingBiz.id), {
-          dealIds: arrayUnion(dealRef.id),
-          dealsCount: increment(1),
-          lastDealAt: serverTimestamp(),
-        });
-
-        toast.success("Deal created ✅");
-      }
-
-      setDealModalOpen(false);
-      setDealEditing(null);
-    } catch (e) {
-      console.error(e);
-      toast.error(e?.message || "Save deal failed");
-    } finally {
-      setDealSaving(false);
-    }
-  };
-
-  /** ---------------- Delete deal ---------------- */
-  const confirmDeleteDeal = async () => {
-    if (!dealDeleteId) return;
-    try {
-      await deleteDoc(doc(db, "deals", dealDeleteId));
-      toast.success("Deal deleted ✅");
-      setDealDeleteId(null);
-    } catch (e) {
-      console.error(e);
-      toast.error("Delete deal failed");
-    }
-  };
 
   /** ---------------- UI ---------------- */
   return (
@@ -1510,8 +1216,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                   onClick={() => {
                     if (!saving) {
                       setModalOpen(false);
-                      setDealModalOpen(false);
-                      setDealEditing(null);
                     }
                   }}
                   className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
@@ -2241,62 +1945,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
         </div>
       )}
 
-      {/* ===================== DEAL MODAL ===================== */}
-      {dealModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-4xl rounded-2xl bg-white shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between border-b border-gray-100 p-5">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  {dealEditing?.id ? "Edit Deal" : "Add Deal"}
-                </h2>
-                <p className="text-xs text-gray-500">
-                  Linked to: {form.name || "Business"}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="submit"
-                  form="deal-form"
-                  disabled={dealSaving}
-                  className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
-                >
-                  {dealSaving
-                    ? "Saving..."
-                    : dealEditing
-                    ? "Save Changes"
-                    : "Create Deal"}
-                </button>
-                <button
-                  onClick={() => {
-                    if (!dealSaving) {
-                      setDealModalOpen(false);
-                      setDealEditing(null);
-                    }
-                  }}
-                  className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
-                  disabled={dealSaving}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-
-            <div className="p-5 max-h-[75vh] overflow-auto">
-              <DealForm
-                initialValues={dealToFormValues(dealEditing)}
-                onSubmit={saveDealForBusiness}
-                loading={dealSaving}
-                submitText={dealEditing?.id ? "Update Deal" : "Create Deal"}
-                formId="deal-form"
-                hideSubmit={true}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ===================== CONFIRM DELETE BUSINESS ===================== */}
       {deleteBizId && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
@@ -2318,37 +1966,6 @@ export default function BusinessesAndDealsPage({ navbarHeight }) {
                 </button>
                 <button
                   onClick={confirmDeleteBusiness}
-                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===================== CONFIRM DELETE DEAL ===================== */}
-      {dealDeleteId && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl">
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Delete Deal?
-              </h3>
-              <p className="mt-2 text-sm text-gray-500">
-                This action cannot be undone.
-              </p>
-
-              <div className="mt-6 flex justify-end gap-3">
-                <button
-                  onClick={() => setDealDeleteId(null)}
-                  className="rounded-xl border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteDeal}
                   className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
                 >
                   Delete

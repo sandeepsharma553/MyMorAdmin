@@ -26,7 +26,7 @@ const DAYS = [
 export default function DealForm({ initialValues, onSubmit, loading, submitText = "Save Deal", formId = "deal-form",
   hideSubmit = false, }) {
   const uid = useSelector((s) => s.auth.user?.uid);
-
+  const user = useSelector((s) => s.auth.employee);
   const {
     loading: settingsLoading,
     categories,

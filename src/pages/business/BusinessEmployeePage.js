@@ -14,6 +14,7 @@ import {
   limit,
   serverTimestamp,
   documentId,
+  writeBatch,
 } from "firebase/firestore";
 import { db, storage, firebaseConfig } from "../../firebase";
 import { initializeApp, deleteApp } from "firebase/app";
@@ -46,6 +47,7 @@ export default function BusinessEmployeePage(props) {
 
   const uid = useSelector((state) => state.auth.user?.uid);
   const emp = useSelector((state) => state.auth.employee);
+  console.log("Current Employee from Redux:", emp);
   const businessId =
   emp?.businessId ||
   emp?.businessid ||
@@ -387,6 +389,40 @@ export default function BusinessEmployeePage(props) {
     setFileName("No file chosen");
   };
 
+  /**
+   * After creating/updating an admin employee, stamp their UID on:
+   *  • the business document (adminUID)
+   *  • every restaurant, product, service, and employee doc linked to the business
+   */
+  const propagateAdminUid = async (empUid, bizId) => {
+    if (!empUid || !bizId) return;
+    try {
+      // 1. Business document
+      await updateDoc(doc(db, "businesses", bizId), {
+        adminUID: empUid,
+        updatedAt: serverTimestamp(),
+      });
+
+      // 2. Linked collections — query by businessId field
+      const linkedCollections = ["restaurants", "products", "services", "employees"];
+      for (const col of linkedCollections) {
+        const snap = await getDocs(
+          query(collection(db, col), where("businessId", "==", bizId))
+        );
+        if (snap.empty) continue;
+
+        const batch = writeBatch(db);
+        snap.docs.forEach((d) => {
+          batch.update(d.ref, { adminUID: empUid, updatedAt: serverTimestamp() });
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.error("propagateAdminUid error:", e);
+      // non-fatal — don't block the main save
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -463,6 +499,11 @@ export default function BusinessEmployeePage(props) {
           password: old.password || "",
         });
 
+        // Propagate adminUID to business + linked entities when saving an admin employee
+        if (baseData.type === "admin" || baseData.role === "admin") {
+          await propagateAdminUid(form.id, businessId);
+        }
+
         toast.success("Employee updated successfully");
         await loadInitialData();
         resetFormAndClose();
@@ -491,6 +532,10 @@ export default function BusinessEmployeePage(props) {
           },
           { merge: true }
         );
+
+        if (baseData.type === "admin" || baseData.role === "admin") {
+          await propagateAdminUid(existingUid, businessId);
+        }
 
         toast.success("Existing email found — employee assigned/updated!");
         await loadInitialData();
@@ -522,6 +567,11 @@ export default function BusinessEmployeePage(props) {
           createdAt: serverTimestamp(),
         });
 
+        // Propagate adminUID when creating a new admin employee
+        if (baseData.type === "admin" || baseData.role === "admin") {
+          await propagateAdminUid(user.uid, businessId);
+        }
+
         toast.success("Employee created successfully");
       } catch (err) {
         if (err?.code === "auth/email-already-in-use") {
@@ -546,6 +596,10 @@ export default function BusinessEmployeePage(props) {
               },
               { merge: true }
             );
+
+            if (baseData.type === "admin" || baseData.role === "admin") {
+              await propagateAdminUid(existingUid, businessId);
+            }
 
             toast.success(
               "Email already exists — assigned successfully (no new auth created)."
