@@ -1,232 +1,339 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
-import { useUniversityScope } from "../../hooks/useUniversityScope";
-import UniversityScopeBanner from "../../components/UniversityScopeBanner";
-import { toast, ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import { db } from "../../firebase";
 import {
   collection,
-  getDocs,
+  query,
+  where,
+  onSnapshot,
+  orderBy,
+  addDoc,
   updateDoc,
   doc,
-  query,
-  orderBy,
+  serverTimestamp,
 } from "firebase/firestore";
-import { db } from "../../firebase";
-import { Search } from "lucide-react";
+import {
+  MessageSquare,
+  Send,
+  CheckCircle,
+  XCircle,
+  Search,
+} from "lucide-react";
 import { FadeLoader } from "react-spinners";
+import { useUniversityScope } from "../../hooks/useUniversityScope";
+import UniversityScopeBanner from "../../components/UniversityScopeBanner";
 
-const toTime = (ts) => {
-  if (!ts) return "—";
-  const ms = ts?.seconds ? ts.seconds * 1000 : Date.parse(ts);
-  return ms
-    ? new Date(ms).toLocaleDateString("en-GB", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      })
-    : "—";
+const CATEGORY_LABELS = {
+  wellness:    "Wellness",
+  support:     "General Support",
+  maintenance: "Maintenance",
+  general:     "Other",
+};
+
+const STATUS_CONFIG = {
+  open:     { label: "Open",     bg: "bg-blue-100",  text: "text-blue-700"  },
+  resolved: { label: "Resolved", bg: "bg-green-100", text: "text-green-700" },
 };
 
 export default function UniversityMessagesPage({ navbarHeight }) {
-  const emp = useSelector((s) => s.auth.employee);
-  const { universityId, filterByScope } = useUniversityScope();
+  const user      = useSelector((s) => s.auth.user);
+  const { universityId } = useUniversityScope();
 
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("all");
-  const [search, setSearch] = useState("");
+  const [conversations, setConversations] = useState([]);
+  const [selected,      setSelected]      = useState(null);
+  const [messages,      setMessages]      = useState([]);
+  const [text,          setText]          = useState("");
+  const [loading,       setLoading]       = useState(true);
+  const [search,        setSearch]        = useState("");
+  const [statusFilter,  setStatusFilter]  = useState("open");
+  const [sending,       setSending]       = useState(false);
 
+  const bottomRef   = useRef();
+  const msgUnsubRef = useRef();
+
+  // ── Conversation list ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (universityId) load();
+    if (!universityId) return;
+    const q = query(
+      collection(db, "dms_conversations"),
+      where("universityId", "==", universityId),
+      where("scope", "==", "university"),
+      orderBy("lastMessageAt", "desc")
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setConversations(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setLoading(false);
+    });
+    return () => unsub();
   }, [universityId]);
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const snap = await getDocs(
-        query(
-          collection(db, "university", universityId, "messages"),
-          orderBy("createdAt", "desc")
-        )
-      );
-      setItems(filterByScope(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
-    } catch {
-      toast.error("Failed to load messages");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ── Message thread ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (msgUnsubRef.current) msgUnsubRef.current();
+    if (!selected?.id) { setMessages([]); return; }
 
-  const markRead = async (id) => {
-    try {
-      await updateDoc(doc(db, "university", universityId, "messages", id), {
-        isRead: true,
-      });
-      setItems((prev) =>
-        prev.map((i) => (i.id === id ? { ...i, isRead: true } : i))
-      );
-    } catch {
-      toast.error("Update failed");
-    }
-  };
-
-  const filtered = useMemo(() => {
-    const term = search.toLowerCase();
-    return items.filter((i) => {
-      const matchTab = tab === "all" || (tab === "unread" && !i.isRead);
-      const matchSearch =
-        !term ||
-        i.senderName?.toLowerCase().includes(term) ||
-        i.senderEmail?.toLowerCase().includes(term) ||
-        i.subject?.toLowerCase().includes(term);
-      return matchTab && matchSearch;
+    const q = query(
+      collection(db, "dms_conversations", selected.id, "messages"),
+      orderBy("timestamp", "asc")
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     });
-  }, [items, tab, search]);
+    msgUnsubRef.current = unsub;
+    return () => unsub();
+  }, [selected?.id]);
 
-  const unreadCount = useMemo(
-    () => items.filter((i) => !i.isRead).length,
-    [items]
-  );
+  // ── Send reply ─────────────────────────────────────────────────────────────
+  const send = async () => {
+    const trimmed = text.trim();
+    if (!trimmed || sending || !selected?.id) return;
+    setSending(true);
+    try {
+      await addDoc(collection(db, "dms_conversations", selected.id, "messages"), {
+        senderId:   user.uid,
+        senderName: user.displayName || "Support",
+        senderRole: "admin",
+        text:       trimmed,
+        timestamp:  serverTimestamp(),
+      });
+      await updateDoc(doc(db, "dms_conversations", selected.id), {
+        lastMessage:     trimmed,
+        lastMessageAt:   serverTimestamp(),
+        assignedAdminId: user.uid,
+      });
+      setText("");
+    } catch (e) {
+      console.warn("Send error:", e);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // ── Resolve / reopen ───────────────────────────────────────────────────────
+  const setStatus = async (id, status) => {
+    try {
+      await updateDoc(doc(db, "dms_conversations", id), { status });
+      if (selected?.id === id) setSelected((prev) => ({ ...prev, status }));
+
+      if (status === "resolved") {
+        await addDoc(collection(db, "dms_conversations", id, "messages"), {
+          senderId:   "system",
+          senderName: "System",
+          senderRole: "system",
+          text:       "This conversation has been resolved by the support team. The chat is now closed.",
+          timestamp:  serverTimestamp(),
+        });
+        await updateDoc(doc(db, "dms_conversations", id), {
+          lastMessage:   "Conversation resolved.",
+          lastMessageAt: serverTimestamp(),
+        });
+      }
+    } catch {}
+  };
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const toTime = (ts) => {
+    const ms = ts?.toMillis?.() ?? (typeof ts === "number" ? ts : null);
+    if (!ms) return "";
+    return new Date(ms).toLocaleString("en-GB", {
+      day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+    });
+  };
+
+  const filtered = conversations.filter((c) => {
+    const matchSearch =
+      !search ||
+      [c.studentName, c.studentEmail, c.subject].some((v) =>
+        v?.toLowerCase().includes(search.toLowerCase())
+      );
+    const matchStatus = statusFilter === "all" || c.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
 
   if (!universityId) {
     return (
-      <main
-        className="flex-1 p-6 bg-gray-100 overflow-auto"
-        style={{ paddingTop: navbarHeight || 0 }}
-      >
+      <main className="flex-1 p-6 bg-gray-100 overflow-auto" style={{ paddingTop: navbarHeight || 0 }}>
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-10 text-center text-gray-500">
           No university assigned.
         </div>
-        <ToastContainer />
       </main>
     );
   }
 
   return (
-    <main
-      className="flex-1 p-6 bg-gray-100 overflow-auto"
-      style={{ paddingTop: navbarHeight || 0 }}
-    >
+    <main className="flex-1 bg-gray-100 overflow-hidden" style={{ paddingTop: navbarHeight || 0 }}>
       <UniversityScopeBanner />
-      <ToastContainer />
 
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">University Messages</h1>
-        {unreadCount > 0 && (
-          <span className="bg-red-100 text-red-700 font-semibold text-sm px-3 py-1 rounded-full">
-            {unreadCount} unread
-          </span>
-        )}
-      </div>
+      <div className="flex h-[calc(100vh-80px)] overflow-hidden">
+        {/* ── Conversation list ── */}
+        <div className="w-80 border-r border-gray-200 bg-white flex flex-col flex-shrink-0">
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-800 mb-3">Student Messages</h2>
 
-      <div className="flex gap-3 mb-4">
-        <div className="relative flex-1">
-          <Search
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-          <input
-            className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded text-sm bg-white focus:outline-none"
-            placeholder="Search by sender or subject..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+            <div className="relative mb-2">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded text-sm focus:outline-none"
+                placeholder="Search..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
 
-        <div className="flex gap-2">
-          {["all", "unread"].map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded text-sm font-medium capitalize ${
-                tab === t
-                  ? "bg-black text-white"
-                  : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="overflow-x-auto bg-white rounded shadow">
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <FadeLoader color="#36d7b7" loading={loading} />
+            <div className="flex gap-2">
+              {["open", "resolved", "all"].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`flex-1 px-3 py-2 rounded text-xs font-medium capitalize ${
+                    statusFilter === s
+                      ? "bg-black text-white"
+                      : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="px-6 py-16 text-center text-gray-500">
-            No messages found.
-          </div>
-        ) : (
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                {["Sender", "Subject", "Message", "Date", "Status", "Actions"].map(
-                  (h) => (
-                    <th
-                      key={h}
-                      className="px-6 py-3 text-left text-sm font-medium text-gray-500"
-                    >
-                      {h}
-                    </th>
-                  )
-                )}
-              </tr>
-            </thead>
 
-            <tbody className="divide-y divide-gray-200">
-              {filtered.map((item) => (
-                <tr key={item.id} className={!item.isRead ? "bg-blue-50/30" : ""}>
-                  <td className="px-6 py-4 text-sm">
-                    <div className="font-medium text-gray-700">
-                      {item.senderName || "—"}
-                    </div>
-                    <div className="text-xs text-gray-400">
-                      {item.senderEmail || "—"}
-                    </div>
-                  </td>
-
-                  <td className="px-6 py-4 text-sm text-gray-700 font-medium">
-                    {item.subject || "—"}
-                  </td>
-
-                  <td className="px-6 py-4 text-sm text-gray-600 max-w-xs">
-                    <div className="truncate">{item.message || "—"}</div>
-                  </td>
-
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    {toTime(item.createdAt)}
-                  </td>
-
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        item.isRead
-                          ? "bg-green-100 text-green-700"
-                          : "bg-yellow-100 text-yellow-700"
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <FadeLoader color="#36d7b7" height={10} />
+            </div>
+          ) : (
+            <div className="overflow-y-auto flex-1">
+              {filtered.length === 0 ? (
+                <div className="text-center py-10 text-gray-400 text-sm">No conversations</div>
+              ) : (
+                filtered.map((c) => {
+                  const sc = STATUS_CONFIG[c.status] || STATUS_CONFIG.open;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => setSelected(c)}
+                      className={`w-full text-left p-4 border-b border-gray-100 hover:bg-gray-50 ${
+                        selected?.id === c.id ? "bg-gray-50" : ""
                       }`}
                     >
-                      {item.isRead ? "Read" : "Unread"}
-                    </span>
-                  </td>
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <p className="font-medium text-gray-800 text-sm truncate">
+                          {c.studentName || "Student"}
+                        </p>
+                        <span className={`text-xs px-2 py-1 rounded-full font-semibold ${sc.bg} ${sc.text}`}>
+                          {sc.label}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 truncate mb-0.5">{c.subject}</p>
+                      <p className="text-xs text-gray-400 truncate">{c.lastMessage}</p>
+                      <p className="text-xs text-gray-300 mt-1">{toTime(c.lastMessageAt)}</p>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
 
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    {!item.isRead && (
-                      <button
-                        onClick={() => markRead(item.id)}
-                        className="text-blue-600 hover:underline"
-                      >
-                        Mark Read
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* ── Chat panel ── */}
+        {!selected ? (
+          <div className="flex-1 flex items-center justify-center text-gray-400 bg-white">
+            <div className="text-center">
+              <MessageSquare size={48} className="mx-auto mb-3 text-gray-200" />
+              <p className="text-lg font-semibold">Select a conversation</p>
+              <p className="text-sm">Choose a message from the left to reply</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col min-h-0 bg-white">
+            {/* Header */}
+            <div className="border-b border-gray-200 px-6 py-4 flex items-center gap-4">
+              <div className="flex-1">
+                <p className="font-semibold text-gray-800">{selected.studentName}</p>
+                <p className="text-sm text-gray-500">
+                  {selected.subject} · {CATEGORY_LABELS[selected.category] || selected.category}
+                </p>
+                <p className="text-xs text-gray-400">{selected.studentEmail}</p>
+              </div>
+              <div className="flex gap-2">
+                {selected.status === "open" ? (
+                  <button
+                    onClick={() => setStatus(selected.id, "resolved")}
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm inline-flex items-center gap-2"
+                  >
+                    <CheckCircle size={14} /> Resolve
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setStatus(selected.id, "open")}
+                    className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50 text-sm inline-flex items-center gap-2"
+                  >
+                    <XCircle size={14} /> Reopen
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
+              {messages.map((msg) => {
+                if (msg.senderRole === "system") {
+                  return (
+                    <div key={msg.id} className="flex justify-center">
+                      <div className="bg-green-50 border border-green-200 text-green-700 text-xs px-4 py-2 rounded-full flex items-center gap-1">
+                        <CheckCircle size={12} />
+                        {msg.text}
+                      </div>
+                    </div>
+                  );
+                }
+                const isAdmin = msg.senderRole === "admin";
+                return (
+                  <div key={msg.id} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`max-w-md rounded-2xl px-4 py-3 ${
+                        isAdmin ? "bg-blue-600 text-white" : "bg-white border border-gray-200"
+                      }`}
+                    >
+                      {!isAdmin && (
+                        <p className="text-xs font-semibold text-gray-500 mb-1">{msg.senderName}</p>
+                      )}
+                      <p className={`text-sm ${isAdmin ? "text-white" : "text-gray-800"}`}>{msg.text}</p>
+                      <p className={`text-xs mt-1 text-right ${isAdmin ? "text-blue-100" : "text-gray-400"}`}>
+                        {toTime(msg.timestamp)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </div>
+
+            {/* Input / resolved footer */}
+            {selected.status === "open" ? (
+              <div className="border-t border-gray-200 p-4 flex gap-3 bg-white">
+                <input
+                  className="flex-1 border border-gray-300 rounded px-4 py-3 text-sm focus:outline-none"
+                  placeholder="Type a reply..."
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                />
+                <button
+                  onClick={send}
+                  disabled={!text.trim() || sending}
+                  className="bg-blue-600 text-white px-5 py-3 rounded hover:bg-blue-700 disabled:opacity-40 flex items-center gap-2"
+                >
+                  <Send size={16} />
+                </button>
+              </div>
+            ) : (
+              <div className="bg-green-50 border-t border-green-200 p-4 text-center text-sm text-green-700 font-medium">
+                This conversation is resolved. Reopen to reply.
+              </div>
+            )}
+          </div>
         )}
       </div>
     </main>

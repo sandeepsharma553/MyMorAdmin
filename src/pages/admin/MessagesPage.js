@@ -51,7 +51,12 @@ export default function MessagesPage({ navbarHeight }) {
 
   useEffect(() => {
     if (!hostelId) return;
-    const q = query(collection(db, 'dms_conversations'), where('hostelId', '==', hostelId), orderBy('lastMessageAt', 'desc'));
+    const q = query(
+      collection(db, 'dms_conversations'),
+      where('hostelId', '==', hostelId),
+      where('scope', '==', 'hostel'),
+      orderBy('lastMessageAt', 'desc')
+    );
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setConversations(list);
@@ -107,6 +112,21 @@ export default function MessagesPage({ navbarHeight }) {
     try {
       await updateDoc(doc(db, 'dms_conversations', id), { status });
       if (selected?.id === id) setSelected((prev) => ({ ...prev, status }));
+
+      // Add system message when resolving so student sees it in their chat thread
+      if (status === 'resolved') {
+        await addDoc(collection(db, 'dms_conversations', id, 'messages'), {
+          senderId: 'system',
+          senderName: 'System',
+          senderRole: 'system',
+          text: 'This conversation has been resolved by the support team. The chat is now closed.',
+          timestamp: serverTimestamp(),
+        });
+        await updateDoc(doc(db, 'dms_conversations', id), {
+          lastMessage: 'Conversation resolved.',
+          lastMessageAt: serverTimestamp(),
+        });
+      }
     } catch {}
   };
 
