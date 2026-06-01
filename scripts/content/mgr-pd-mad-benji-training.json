@@ -1,0 +1,76 @@
+{
+  "sourceTitle": "Mad Benji Store Manager Position Description.docx",
+  "venues": [
+    "mad-benji"
+  ],
+  "modules": [
+    {
+      "key": "mgr-store-manager-pd",
+      "title": "Store Manager — Position Description",
+      "cat": "Management",
+      "duration": "45 min",
+      "icon": "👑",
+      "color": "#fce7f3",
+      "mandatory": true,
+      "desc": "Current manager: Ryan. The Store Manager is fully responsible for the overall operation, performance, and profitability of the restaurant. This role ensures efficient daily operations, high food quality standards, excellent customer service, effective team management, and strict cost control while maintaining full compliance with food safety and local regulations.",
+      "steps": [
+        {
+          "heading": "Operation Management",
+          "items": [
+            "Oversee the day-to-day operations of the restaurant to ensure smooth and efficient service.",
+            "Ensure food quality, presentation, and hygiene standards are consistently maintained.",
+            "Monitor service speed and customer experience. (music playlist, volumn, heating, cooling)",
+            "Handle customer complaints and resolve operational issues promptly.",
+            "Ensure compliance with local food safety regulations and health standards."
+          ]
+        },
+        {
+          "heading": "Staff Management",
+          "items": [
+            "Recruit, train, and supervise restaurant staff. (all stations SOPs)",
+            "Prepare staff rosters and manage attendance.",
+            "Conduct performance evaluations.",
+            "Maintain team discipline and uphold service standards.",
+            "Foster a positive, motivated, and high-performing team environment."
+          ]
+        },
+        {
+          "heading": "Inventory & Cost Control",
+          "items": [
+            "Manage stock ordering, receiving, and supplier coordination.",
+            "Conduct regular stocktakes and control food waste.",
+            "Monitor food costs, labor costs, and overall operating expenses.",
+            "Reduce unnecessary losses."
+          ]
+        },
+        {
+          "heading": "Sales & Business Performance",
+          "items": [
+            "Achieve sales targets.",
+            "Analyse daily, weekly, and monthly sales reports.",
+            "Monitor key performance indicators (KPIs) including revenue, food cost percentage, and labour cost percentage (20-25%)",
+            "Develop and implement promotional activities to drive sales and customer retention."
+          ]
+        },
+        {
+          "heading": "Customer Experience & Brand Management",
+          "items": [
+            "Maintain store cleanliness and brand image standards.",
+            "Ensure excellent customer service at all times.",
+            "Monitor and respond to online reviews and delivery platform performance.",
+            "Build strong customer relationships to increase repeat business."
+          ]
+        },
+        {
+          "heading": "Administration & Compliance",
+          "items": [
+            "Manage daily cash handling, coins & notes exhange",
+            "Ensure compliance with company policies and legal requirements.",
+            "Coordinate with relevant authorities during inspections when required.",
+            "Food safety supervisor certificate"
+          ]
+        }
+      ]
+    }
+  ]
+}

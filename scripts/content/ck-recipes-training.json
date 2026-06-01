@@ -1,0 +1,69 @@
+{
+  "sourceTitle": "Central Kitchen Weekly Schedule (Week A notebook)",
+  "venues": ["main-kitchen"],
+  "modules": [
+    {
+      "key": "ck-prep-recipes",
+      "title": "Central Kitchen — Prep & Recipes",
+      "cat": "BOH",
+      "duration": "45 min",
+      "icon": "🏭",
+      "color": "#e0f2fe",
+      "mandatory": true,
+      "desc": "The Central Kitchen weekly production cadence and the core recipes/methods used to prep for Mad Benji, Hey Sister and Mad Hot Pot.",
+      "steps": [
+        {
+          "heading": "Weekly Cadence (Week A)",
+          "items": [
+            "Monday: Off",
+            "Tuesday (8am CK / 5–9pm MHP prep): bake pumpkins, drain chickpeas, collect dumplings, pumpkin patty mix, pumpkin hummus, pickled onion",
+            "Wednesday (9am van run from Bibi's): logistics — pick up beef/stocks/containers across MB, CK, HS, MHP; make pumpkin patty; marinate pull beef",
+            "Thursday (9am CK / 4pm Benji): bake pull beef, dough, pork-prawn dumplings, bacon jam, charge chargers",
+            "Friday (7.30 CK / 6pm MHP): drain beef + mix bacon jam, deliver to Hampton Park",
+            "Standing task: Ranch hand delivery to MB — put it away"
+          ]
+        },
+        {
+          "heading": "Pull Beef",
+          "items": [
+            "Bake pull beef FIRST: 160°C, 20% steam, flip",
+            "If still not ready by 3.30pm: set oven 90°C, 20% steam, bake for 5 hours",
+            "Drain beef, then mix with all bacon jam evenly"
+          ]
+        },
+        {
+          "heading": "Bacon Jam",
+          "items": [
+            "Dice onion at the bottom, then bacon, then the rest of the condiments in it",
+            "Cook till done, then blend with hand-stick",
+            "High heat first, then medium-to-low heat to simmer"
+          ]
+        },
+        {
+          "heading": "Pumpkin Patty",
+          "items": [
+            "Bake 30kg pumpkins: 160°C, 10 mins × 4 times",
+            "Drain 40 tins chickpeas for patty",
+            "Make pumpkin patty mix; press & disc",
+            "Marinate"
+          ]
+        },
+        {
+          "heading": "Pumpkin Hummus",
+          "items": [
+            "Drain 13 tins chickpeas (bake a tray of pumpkin too)",
+            "Pumpkin hummus × 2 recipe"
+          ]
+        },
+        {
+          "heading": "Pork-Prawn Dumplings",
+          "items": [
+            "Defrost prawns (add cracked pepper & salt)",
+            "Pork prawn dumplings — 20kg",
+            "Collect dumplings"
+          ]
+        }
+      ]
+    }
+  ]
+}

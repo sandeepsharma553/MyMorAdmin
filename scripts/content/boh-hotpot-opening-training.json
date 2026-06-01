@@ -1,0 +1,91 @@
+{
+  "sourceTitle": "Opening shop 1.docx",
+  "venues": [
+    "mad-hotpot"
+  ],
+  "modules": [
+    {
+      "key": "boh-hotpot-opening",
+      "title": "Hot Pot Opening & Soups",
+      "cat": "BOH",
+      "duration": "30 min",
+      "icon": "🍳",
+      "color": "#fde68a",
+      "mandatory": true,
+      "desc": "Log in",
+      "steps": [
+        {
+          "heading": "Procedure",
+          "items": [
+            "Log in",
+            "Turn on the lights and the fan",
+            "Press ON dish washing machine",
+            "Turn ON the boiler and electric pan",
+            "Put all rubbish bin in place",
+            "put all dry clean containers away",
+            "1 container with water and detergent for dirty cutlery",
+            "switch on deep fry and rice cooker",
+            "add water and switch on miso soup pot",
+            "Press \"on\" dumpling machine",
+            "Cook rice into rice cooker"
+          ]
+        },
+        {
+          "heading": "Signature",
+          "items": [
+            "bone soup 26 cm, turn on fire",
+            "take the master bowl, add bone soup (took before) into the bowl and 1 bag signature seasoning. Then mix together and put back to the signature pot",
+            "add 2 container signature base into basket, add some soup from signature pot, then mix it and put into the signature pot",
+            "stir the soup after 15 minutes during 1 hour"
+          ]
+        },
+        {
+          "heading": "Laksa soup",
+          "items": [
+            "3kg coconut cream",
+            "2 container Laksa paste",
+            "1 bag laksa seasoning",
+            "Add water to 23cm"
+          ]
+        },
+        {
+          "heading": "COLLAGEN soup",
+          "items": [
+            "5kg bone soup",
+            "100 Pantai",
+            "300 tonkasu",
+            "3tsp salt",
+            "2tsp sugar",
+            "3tsp msg",
+            "3tsp chicken powder",
+            "The soup left over in the cool room need to check before serve (use it first)"
+          ]
+        },
+        {
+          "heading": "Tomato soup",
+          "items": [
+            "1kg tomato paste",
+            "4 kg water",
+            "4 tsp sugar",
+            "1 tsp salt",
+            "1 tsp mushroom powder"
+          ]
+        },
+        {
+          "heading": "Imperial soup",
+          "items": [
+            "3000ml cold water",
+            "1kg vegetable stock Campbell",
+            "180g vegan stock",
+            "2 tbsp Mushroom powder",
+            "2 tbsp salt",
+            "1/2 tbsp msg",
+            "Then Do the fried rice",
+            "All of things should be completed at 3:30 pm (Mon, Tuesday) or 11am (Wednesday to Sunday)",
+            "Start to top up the ingredients ready to open"
+          ]
+        }
+      ]
+    }
+  ]
+}

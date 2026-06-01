@@ -1,0 +1,68 @@
+{
+  "sourceTitle": "Closing SOP.docx",
+  "venues": [
+    "hey-sister",
+    "mad-hotpot"
+  ],
+  "modules": [
+    {
+      "key": "foh-closing-sop",
+      "title": "FOH Closing SOP",
+      "cat": "FOH",
+      "duration": "30 min",
+      "icon": "🌙",
+      "color": "#ede9fe",
+      "mandatory": true,
+      "desc": "Full FOH closing procedure — 8pm tasks, bar area and floor area.",
+      "steps": [
+        {
+          "heading": "To be done by 8pm",
+          "items": [
+            "ENSURE everything*** is topped up (refer to checklist)",
+            "Fruit preparation",
+            "CLEAN toilet (refer to toilet checklist)",
+            "Outdoor area: PUT umbrellas down, WIPE DOWN all tables, CLEAN gap between decking & windows",
+            "MOVE flowers & napkin dispenser to middle island.",
+            "WIPE DOWN all tables(1st), chairs(2nd) and seat benches (last).",
+            "PUT AWAY all coffee and milkshake milks back into fridges.",
+            "PUT pastries and banana bread away.",
+            "CLEAN benches (sponge & soap, spray & dry with paper towel): Counter bench: Third party tablets area & pastries area: Tap water area: 2x fridges doors & tea's bench area.",
+            "SWEEP floor including underneath fridges & under sink area."
+          ]
+        },
+        {
+          "heading": "Bar Area",
+          "items": [
+            "Water bottles: WASH & RINSE.",
+            "CLEAN Coffee station, froth machine & behind coffee machine. (sponge & soap, spray & dry with paper towel).",
+            "Coffee fibre clothes: WASH old coffee fibre cloths & DRY them above coffee machine and SOAK TODAY'S ones with bleach.",
+            "CLEAN and EMPTY Coffee knocking tube.",
+            "Freezer area: CLEAN milkshake toppings shelf, syrup shelf and top fridge three sliding door (sponge & soap, spray & dry with paper towel).",
+            "CLEAN Milkshake station & juicer station: (sponge & soap, spray & dry with paper towel).",
+            "9PM or 10 PM WASH juicer, clean milk shaker & blender (sponge & soap, spray & dry with paper towel).",
+            "Sink area: REMOVE all dirty dishes tubs to kitchen & clean sink area sponge & soap, spray & dry with paper towel).",
+            "Bins: EMPTY both bins and RINSE them at mop sink"
+          ]
+        },
+        {
+          "heading": "Floor Area",
+          "items": [
+            "Dirty tables: WIPE DOWN any USED tables, chairs and seating benches.",
+            "Chairs: FLIP up all chairs 15mins before closing time 8:45pm/9:45pm.",
+            "SWEEP whole restaurant & bar (including underneath fridges & under sink area).",
+            "MOP whole restaurant & bar.",
+            "Outdoor furniture: BRING in A-frame boards, outdoor long bench, stool, FRONT RIGHT table & chairs.",
+            "Overhead menu boards: PUSH BACK.",
+            "CHARGE coffee scale!!!!!",
+            "CHARGE ALL tablets!!!!",
+            "CHECK any unpaid & deliveries.",
+            "CHECK all coffee and milkshake milks are in fridge.",
+            "TURN OFF grinders, music, light, DISPLAY cabinet light.",
+            "TURN OFF both heaters OR coolers: behind counter & floor!!!!",
+            "LOCK DOOR!!!!"
+          ]
+        }
+      ]
+    }
+  ]
+}

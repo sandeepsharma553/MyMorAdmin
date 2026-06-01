@@ -1,0 +1,128 @@
+{
+  "sourceTitle": "Mad Hot Pot Store Manager Position Description.docx",
+  "venues": [
+    "mad-hotpot"
+  ],
+  "modules": [
+    {
+      "key": "mgr-store-manager-pd",
+      "title": "Store Manager — Position Description",
+      "cat": "Management",
+      "duration": "45 min",
+      "icon": "👑",
+      "color": "#fce7f3",
+      "mandatory": true,
+      "desc": "Current manager: Jason. The Store Manager is fully responsible for the overall operation, performance, and profitability of the restaurant. This role ensures efficient daily operations, high food quality standards, excellent customer service, effective team management, and strict cost control, while maintaining full compliance with food safety and local regulations.",
+      "steps": [
+        {
+          "heading": "Operation Management",
+          "items": [
+            "Oversee the day-to-day operations of the restaurant to ensure smooth and efficient service.",
+            "Ensure food quality, presentation, and hygiene standards are consistently maintained.",
+            "Monitor service speed and customer experience. (music playlist, volumn, heating, cooling)",
+            "Handle customer complaints and resolve operational issues promptly.",
+            "Ensure compliance with local food safety regulations and health standards."
+          ]
+        },
+        {
+          "heading": "Staff Management",
+          "items": [
+            "Recruit, train, and supervise restaurant staff. (all stations SOPs)",
+            "Prepare staff rosters and manage attendance.",
+            "Conduct performance evaluations",
+            "Maintain team discipline and uphold service standards.",
+            "Foster a positive, motivated, and high-performing team environment."
+          ]
+        },
+        {
+          "heading": "Inventory & Cost Control",
+          "items": [
+            "Manage stock ordering, receiving, and supplier coordination.",
+            "Conduct regular stocktakes and control food waste.",
+            "Monitor food cost, labour cost, and overall operating expenses.",
+            "Reduce unnecessary losses."
+          ]
+        },
+        {
+          "heading": "Sales & Business Performance",
+          "items": [
+            "Achieve sales targets.",
+            "Analyse daily, weekly, and monthly sales reports.",
+            "Monitor key performance indicators (KPIs) including revenue, food cost percentage, and labour cost percentage (20-25%)",
+            "Develop and implement promotional activities to drive sales and customer retention."
+          ]
+        },
+        {
+          "heading": "Customer Experience & Brand Management",
+          "items": [
+            "Maintain store cleanliness and brand image standards.",
+            "Ensure excellent customer service at all times.",
+            "Monitor and respond to online reviews and delivery platform performance.",
+            "Build strong customer relationships to increase repeat business."
+          ]
+        },
+        {
+          "heading": "Administration & Compliance",
+          "items": [
+            "Manage daily cash handling and reconciliation.",
+            "Ensure compliance with company policies and legal requirements.",
+            "Coordinate with relevant authorities during inspections when required.",
+            "Food safety supervisor certificate"
+          ]
+        },
+        {
+          "heading": "🇨🇳 门店运营管理 Store Operation",
+          "items": [
+            "负责门店日常运营管理，确保营业流程顺畅 （写所有岗位流程， SOP）",
+            "监督出品质量、食品安全与卫生标准",
+            "控制出餐速度与顾客体验 ( (music playlist, volumn, heating, cooling)",
+            "确保门店符合当地食品安全法规"
+          ]
+        },
+        {
+          "heading": "🇨🇳 人员管理 Staff Management",
+          "items": [
+            "招聘， 培训及排班安排",
+            "监督员工出勤与工作表现",
+            "建立团队纪律与服务标准",
+            "组织定期员工会议与绩效评估",
+            "提升团队凝聚力与执行力"
+          ]
+        },
+        {
+          "heading": "🇨🇳 成本控制 Cost Control",
+          "items": [
+            "控制食材损耗与库存管理， 更换季节食材",
+            "监督每日进货，Big Watermelon进货， 验货与供应商对接",
+            "定期盘点库存，减少浪费",
+            "控制人工成本（20-25%），人工调整与营业成本"
+          ]
+        },
+        {
+          "heading": "🇨🇳 销售与业绩管理 Sales& Performance",
+          "items": [
+            "分析营业数据 （营业额， 单客价， 毛利率）",
+            "每周营业额汇报"
+          ]
+        },
+        {
+          "heading": "🇨🇳 品牌与服务管理 Brand & Customer Experience",
+          "items": [
+            "维护品牌形象与门店环境",
+            "提高顾客满意度与回头率",
+            "处理线上平台 （回复Google Review， social media, 所有Third Party set up, refund 等等）"
+          ]
+        },
+        {
+          "heading": "🇨🇳 行政与合规 Administration & Complaince",
+          "items": [
+            "负责现金管理与对账",
+            "负责工资(检查打卡员工打卡时间）与付账单",
+            "处理政府检查（Health DepartmentAnnual Check）与合规事项",
+            "确保员工遵守公司政策与法律规则"
+          ]
+        }
+      ]
+    }
+  ]
+}

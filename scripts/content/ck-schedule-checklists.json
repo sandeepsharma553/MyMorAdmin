@@ -1,0 +1,70 @@
+{
+  "sourceTitle": "Central Kitchen Weekly Schedule (Week A notebook)",
+  "venues": ["main-kitchen"],
+  "checklists": [
+    {
+      "key": "ck-tue-prep",
+      "title": "Tuesday — CK Prep",
+      "type": "Prep",
+      "sub": "Week A · 8am CK / 5–9pm MHP prep",
+      "days": ["tue"],
+      "items": [
+        "Defrost prawns for dumplings (add cracked pepper & salt)",
+        "Bake 30kg pumpkins — 160°C, 10 mins × 4 times",
+        "Drain 40 tins chickpeas for patty (bake the other tray for pumpkin hummus as well)",
+        "Drain 13 tins chickpeas for hummus",
+        "Collect dumplings",
+        "Pumpkin patty mix",
+        "Pumpkin hummus × 2 recipe",
+        "Pickled onion — all peeled red onion; steal pickled cabbage juice",
+        "Ranch hand delivery to MB — put it away"
+      ]
+    },
+    {
+      "key": "ck-wed-run",
+      "title": "Wednesday — Logistics & Van Run",
+      "type": "Prep",
+      "sub": "Week A · 9am at Bibi's place",
+      "days": ["wed"],
+      "items": [
+        "9am — Pick up van (Bibi's place)",
+        "MB: Pick up beef, all containers (also MHP containers), 40 shots coffee, coriander roots (ask May)",
+        "CK: Pick up all stocks and dirty towels",
+        "HS: Delivery, pick up all containers, cleaned towels",
+        "CK: Unload all containers, load MHP stocks & rubbish, pumpkin patty mix, press & disc",
+        "MHP: Unload, run rubbish",
+        "Bibi's: Return van",
+        "MB: Make pumpkin patty",
+        "CK: Bring all pumpkin patty back to CK, marinate pull beef; coriander roots under shelf in GN tray"
+      ]
+    },
+    {
+      "key": "ck-thu-prep",
+      "title": "Thursday — CK Prep",
+      "type": "Prep",
+      "sub": "Week A · 9am CK / 4pm–close Benji",
+      "days": ["thu"],
+      "items": [
+        "Bake pull beef FIRST — 160°C, 20% steam, flip (if not ready by 3.30pm: 90°C, 20% steam, bake 5 hours)",
+        "Defrost dough; make dough if needed (check every 1.5 hours)",
+        "Pork prawn dumplings — 20kg",
+        "Bacon jam — cook (see recipe in training)",
+        "Charge all chargers"
+      ]
+    },
+    {
+      "key": "ck-fri-delivery",
+      "title": "Friday — Delivery (Hampton Park)",
+      "type": "Prep",
+      "sub": "Week A · 7.30 CK / 6pm–close MHP",
+      "days": ["fri"],
+      "items": [
+        "7.30am — Drain beef; mix with all bacon jam evenly",
+        "8.30am — Deliver to Hampton Park: pull beef, containers & lids, 2 small scales, 80g pull beef juice (charge big scales)",
+        "Drain chickpea",
+        "Pumpkin hummus",
+        "Japanese dressing — 7 bottles only"
+      ]
+    }
+  ]
+}

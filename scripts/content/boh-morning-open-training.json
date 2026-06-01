@@ -1,0 +1,131 @@
+{
+  "sourceTitle": "morning open boh.xlsx",
+  "venues": [
+    "hey-sister",
+    "mad-hotpot"
+  ],
+  "modules": [
+    {
+      "key": "boh-morning-open",
+      "title": "BOH Morning Open",
+      "cat": "BOH",
+      "duration": "30 min",
+      "icon": "🍳",
+      "color": "#fde68a",
+      "mandatory": true,
+      "desc": "Move ALL delivered buns to prep bench",
+      "steps": [
+        {
+          "heading": "Setup & Equipment",
+          "items": [
+            "Move ALL delivered buns to prep bench",
+            "Turn ON:",
+            "Exhaust fan",
+            "Lights",
+            "Dishwasher"
+          ]
+        },
+        {
+          "heading": "Grill & Cooking Station",
+          "items": [
+            "Turn grill to high heat",
+            "Lightly oil/glaze the grill",
+            "Prepare:",
+            "1 container with tongs + water (for cluck)",
+            "Turn on:",
+            "2 stoves for pan",
+            "Poached egg pot with vinegar (¾ full small metal container)",
+            "Turn on fryers:",
+            "Fryer 1 → 150°C",
+            "Fryer 2 → 170°C",
+            "Prepare:",
+            "1 container with long tongs & net"
+          ]
+        },
+        {
+          "heading": "Cooking Utensils (Grill & Stove)",
+          "items": [
+            "Prepare and place:",
+            "1 × spatula",
+            "2 × slotted chef spoons",
+            "1 × poached egg tray",
+            "1 × tray of eggs (breakfast)",
+            "Egg mix (as needed)",
+            "Mushroom & spinach (as needed)"
+          ]
+        },
+        {
+          "heading": "Dressing Bench Prep",
+          "items": [
+            "Set up:",
+            "All sauces on speed rack:",
+            "Wing Chun",
+            "Mustard",
+            "HLD",
+            "Cheese sauce",
+            "Prepare:",
+            "Poke bowl ingredients",
+            "Butter + mini spatula",
+            "Cream cheese + mini spatula",
+            "Spring onion, chilli, roasted tomato",
+            "(Close lids after use)",
+            "Stock:",
+            "Sauce with speed rack",
+            "Tendril",
+            "Pickle",
+            "Jalapeno",
+            "Avocado",
+            "Red onion",
+            "Tomato Relish",
+            "Caramalised Onion",
+            "Tomato",
+            "Sweet Mayo",
+            "Lettuce",
+            "Sourdough Bread",
+            "Burger cheese",
+            "In Fridge:",
+            "Coleslaw",
+            "Pineaple"
+          ]
+        },
+        {
+          "heading": "Pastries",
+          "items": [
+            "Check old pastries first",
+            "Display fresh pastries at the back and old one in front",
+            "Bake muffins"
+          ]
+        },
+        {
+          "heading": "Packaging Station",
+          "items": [
+            "Top up:",
+            "Chip cups",
+            "Bikini trays",
+            "Small square boxes",
+            "Square proof paper",
+            "Bags:",
+            "Uber bags",
+            "Big / Regular / Small bags",
+            "Garnishes & extras:",
+            "Icing sugar, sesame, sprinkles, nori",
+            "Flower, raspberry powder, orange, shallot",
+            "Crumbs, chilli threads, capers, dukkha, salt",
+            "Wrapping paper",
+            "Other:",
+            "Poke bowls + lids",
+            "Dipping sauces",
+            "Napkins"
+          ]
+        },
+        {
+          "heading": "Final Task",
+          "items": [
+            "Complete ordering before 3 PM",
+            "Turn off the third grill"
+          ]
+        }
+      ]
+    }
+  ]
+}

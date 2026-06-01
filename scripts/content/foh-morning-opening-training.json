@@ -1,0 +1,44 @@
+{
+  "sourceTitle": "Morning CHECKLIST.docx",
+  "venues": [
+    "hey-sister",
+    "mad-hotpot"
+  ],
+  "modules": [
+    {
+      "key": "foh-morning-opening",
+      "title": "FOH Morning Opening (7:15am)",
+      "cat": "FOH",
+      "duration": "20 min",
+      "icon": "🌅",
+      "color": "#fef3c7",
+      "mandatory": true,
+      "desc": "The 7:15am FOH opening procedure — what to set up before service opens. Use the matching 'Opening — FOH' checklist as your daily reference.",
+      "steps": [
+        {
+          "heading": "7:15am Opening Procedure",
+          "items": [
+            "FIRST THING! Wait sign and overhead menu board ‘Please wait to be seated’ sign needs.",
+            "SECOND! Turn on heater or cooler (depending on weather).",
+            "CHECK Money and music (volume 40-44)- DO THEM TOGETHER.",
+            "Ensure ALL TABLETS ARE ON AND ACTIVE AND CHARGING.",
+            "PUT two umbrellas up.",
+            "Ensure ALL blinds are up.",
+            "Wipe down ALL tables, and benches INDOOR AND OUTDOOR (ENSURE TABLES ARE AT THE RIGHT LOCATION).",
+            "Check floor:  Sweep floor if it isn’t swept properly from the night before, including the ledge between decking & the glass wall.",
+            "PUT salt & pepper grinder, sugar, flowers on the table accordingly.",
+            "TAKE banana bread out WHEN taking milk out (tell chef to cut banana bread if need to cut new one).",
+            "FOUR TUBS for dirty dishes & cutleries: 1x ice cream (fill up with water and soap), 1x grey long tub (fill up with water and soap), 1x big white tub, 1x white tray.",
+            "Check booking.",
+            "TURN ON display cabinet light.",
+            "PUT old RED and GREEN table wipes away and replace with new ones. GREEN TEA TOWEL: check the ‘cleaned towel container’ before putting it away, if there is just a few left, keep it! If there are still heaps, then replace with a new one.",
+            "FILL up water bottles.",
+            "ASK Chef's muffin’s flavour, and put the sign up.",
+            "POLISH cutlery if there is any needed to be polished.",
+            "Ensure display bench is presentable: menus (in front of computer, outside), cookies, banana bread, coffee loyalty card"
+          ]
+        }
+      ]
+    }
+  ]
+}

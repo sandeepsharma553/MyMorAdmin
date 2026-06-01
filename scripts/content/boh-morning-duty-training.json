@@ -1,0 +1,139 @@
+{
+  "sourceTitle": "morning DUty.xlsx",
+  "venues": [
+    "hey-sister",
+    "mad-hotpot"
+  ],
+  "modules": [
+    {
+      "key": "boh-morning-duty",
+      "title": "BOH Morning Duty",
+      "cat": "BOH",
+      "duration": "30 min",
+      "icon": "🍳",
+      "color": "#fde68a",
+      "mandatory": true,
+      "desc": "Ensure everything is fully stocked and ready:",
+      "steps": [
+        {
+          "heading": "Preparation (Before Service & after rush)",
+          "items": [
+            "Ensure everything is fully stocked and ready:",
+            "Poke bowl ingredients",
+            "Butter and cream cheese",
+            "Tendrils (garnish)",
+            "Sourdough (for toast)",
+            "Chilli & spring onion (keep in fridge, take out when needed)",
+            "Roasted tomato",
+            "Spinach",
+            "Mushrooms",
+            "Eggs (for breakfast & burgers)",
+            "Egg mix",
+            "Corn",
+            "Radish",
+            "Station Setup",
+            "Grill → clean, preheated to correct temp",
+            "Stove → clean, pots and pans ready",
+            "Fryer → on and at correct temperature ( 150°C & 170°C)",
+            "Utensils → tongs, spatulas, ladles ready"
+          ]
+        },
+        {
+          "heading": "During Service",
+          "items": [
+            "Grill Person Responsibilities",
+            "Always maintain proper grill temperature",
+            "Ensure all equipment is ready and functioning",
+            "Communication",
+            "Listen carefully to the pass person",
+            "Repeat orders if unclear",
+            "Notify pass person when items are ready to send. ONLY PASS PERSON IS ALOWWED TO SEND FOOD"
+          ]
+        },
+        {
+          "heading": "Support Pass When Busy",
+          "items": [
+            "Toast buns and bread",
+            "Prepare dressings",
+            "Prepare plate",
+            "Communicate and collect ingredients quickly",
+            "Assist fryer station",
+            "Help finish poke bowls",
+            "Quickly restock missing/ running out items",
+            "Prepare dip sauces ( For poke powl , Maple syrupt )"
+          ]
+        },
+        {
+          "heading": "Priority Tasks",
+          "items": [
+            "GRILL STATION:",
+            "Fire up grill immediately when a new order comes in",
+            "Start cooking as soon as the pass calls the order",
+            "Items to cook:"
+          ]
+        },
+        {
+          "heading": "Pancakes (cook on low heat)",
+          "items": [
+            "Stove Station"
+          ]
+        },
+        {
+          "heading": "Poached Eggs",
+          "items": [
+            "Boil water to 100°C",
+            "Reduce heat before adding eggs",
+            "Set timer for 3 minutes",
+            "Check eggs before removing",
+            "Remove tail before sending"
+          ]
+        },
+        {
+          "heading": "Sauté Items (Mushroom, Spinach, etc.)",
+          "items": [
+            "Heat pan with oil",
+            "Once hot, add ingredients and season with salt"
+          ]
+        },
+        {
+          "heading": "Other Tasks",
+          "items": [
+            "Cook soups and curry",
+            "Prepare egg mix last or when notified by pass person",
+            "EXPEDITE STATION:",
+            "Station Setup & Cleanliness",
+            "Keep station clean and tidy at all times",
+            "Ensure everything is topped up and properly set up",
+            "Order Management",
+            "Organize dockets:",
+            "DI",
+            "TA",
+            "PU",
+            "Uber",
+            "Pre-Service Prep",
+            "Check in with grill person and communicate needs",
+            "Turn on toaster and prepare all toasts and buns",
+            "Prepare plates and dress them up",
+            "Ingredients Preparation",
+            "Gather ingredients for each order:",
+            "Freezer items",
+            "Fryer items",
+            "Fruits",
+            "Cooking Tasks",
+            "Drop fryer items and set timer",
+            "Turn on heat lamp when food is plated",
+            "Team Communication",
+            "Assist grill person when needed:",
+            "Check toaster and prepare breads & buns",
+            "Grab ingredients",
+            "Drop fryer items",
+            "Prepare poke bowls",
+            "Serving Orders",
+            "Send food out in order sequence",
+            "Keep dockets for any incomplete orders"
+          ]
+        }
+      ]
+    }
+  ]
+}

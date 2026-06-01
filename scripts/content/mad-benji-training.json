@@ -1,0 +1,575 @@
+{
+  "venue": "Mad Benji",
+  "sourceTitle": "Training Manual",
+  "sourceSubtitle": "Hey Sister",
+  "modules": [
+    {
+      "key": "mb-all-staff",
+      "title": "All Staff",
+      "cat": "All",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🛡️",
+      "color": "#cffafe",
+      "mandatory": false,
+      "desc": "Introduce new employee to crew members and environment.",
+      "steps": [
+        {
+          "heading": "Procedure",
+          "items": [
+            "Introduce new employee to crew members and environment.",
+            "Explain the operations, culture, morals, ethics and standards of company. (more – s)",
+            "— What do we do?",
+            "— How do we do it?",
+            "— How do we serve?",
+            "— Our Values",
+            "Create clocking ID",
+            "Go through job responsibilities.",
+            "How and when to do things",
+            "Go through systems and SOPs",
+            "Uniform policies"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-boh-washing",
+      "title": "BOH – Washing",
+      "cat": "BOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🍳",
+      "color": "#fde68a",
+      "mandatory": false,
+      "desc": "Show and explain basic kitchen set up (Grill, Dressing, Fries, Washing)",
+      "steps": [
+        {
+          "heading": "Washing",
+          "items": [
+            "Show and explain basic kitchen set up (Grill, Dressing, Fries, Washing)",
+            "Explain to keep area tidy – everything has a home.",
+            "Explain how to do washing",
+            "Hot water and soap – pay attention to details – explain hygiene is very important.",
+            "How to use dish washer",
+            "Where dishes go after wash/dried",
+            "Show where to get soap",
+            "Show how and where rubbish goes. Which days to be pushed out for collection.",
+            "Transit to training on fryers",
+            "Things to take note on",
+            "Need to explain it is important to make sure things are washed properly",
+            "The order of washing things to aid closing to be more efficient; trying to wash all containers early so that it can be put back to place (instead of leaving it on bench to dry overnight) – and also how to stack them to help dry faster – air flow",
+            "Benches (All) needs to be cleared every night – scrubbed with hot water and soap + sprayed with sanitizer then wiped down with clean cloth."
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-boh-fryer",
+      "title": "BOH - Fryer",
+      "cat": "BOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🍳",
+      "color": "#fde68a",
+      "mandatory": false,
+      "desc": "Show the setup of fryers – meat, fries/vegies",
+      "steps": [
+        {
+          "heading": "Fryer",
+          "items": [
+            "Show the setup of fryers – meat, fries/vegies",
+            "Show how to read dockets – what fries person needs to drop + panko, spud etc",
+            "Explain the scoop sizes, and maximum number of scoops and wings in each basket",
+            "Explain times takes to cook. The importance of full loaded basket and normal load basket. Full loaded basket generally takes longer time to cook.",
+            "Show what is the standard serving color, portion and salt amount",
+            "How scoop fries into containers, bites containers setup with paper, loaded fries paper setup.",
+            "How to move fries to window area and where to position it for foh",
+            "Explain how to efficiently do fries – timing and order of procedure – further details*",
+            "Explain how if you’re waiting for fries to cook, do not just stand there to wait – either look at dockets and plan your next set of movements or continue back to washing"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-boh-cleaning",
+      "title": "BOH – Cleaning",
+      "cat": "BOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🍳",
+      "color": "#fde68a",
+      "mandatory": false,
+      "desc": "Explain the setup of cleaning – what needs to be done",
+      "steps": [
+        {
+          "heading": "Cleaning",
+          "items": [
+            "Explain the setup of cleaning – what needs to be done",
+            "Show checklists – explain how it works – explain the objective of the list",
+            "Explain order of procedure – how to be most efficient with time",
+            "Explain it is very important to clean and wash well",
+            "Show how containers, utensils etc should be placed",
+            "Sweep the floor",
+            "Show how to turn off fryers",
+            "Show how to filter oil – and how to use time effectively while filtering oil – washing*",
+            "Show how to set up oil machine – how to install filter paper – which dryer to filter first",
+            "How to use the oil machine – how to clean the scraps around– using the filter net",
+            "Explain while waiting oil to get filled up – continue washing",
+            "Show how to mop the floor – what chemicals to use – hot water – wet mop then dry mop",
+            "Rubbish – where the bin is",
+            "Show pictures on how closing should look like at the end"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-back-of-house-opening",
+      "title": "Back Of House – Opening",
+      "cat": "BOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🍳",
+      "color": "#fde68a",
+      "mandatory": true,
+      "desc": "How to unlock doors",
+      "steps": [
+        {
+          "heading": "Opening",
+          "items": [
+            "How to unlock doors",
+            "Where to get keys or if the key will be passed on to them – and if it is passed down, explain responsibility of it – sensibility etc. – what time we need to be here",
+            "Where to turn on lights and exhausts – exhausts must be turned on",
+            "How to turn grill on – 开锅,",
+            "Wipe down with water, turn grill on, leave it on for a bit then oil evenly.",
+            "How to turn fryer on",
+            "Explain why we turn these two on first – longer time to heat up",
+            "Check if we need to top up oil – within the two lines",
+            "How to open dressing bench condiments area – were to put the lids etc",
+            "How to set up stations",
+            "Utensils on grill section – 2x Spades, thongs, egg rings, bacon press",
+            "Utensils on fryer section – thongs, timers, baskets",
+            "Utensils on dressing bench – chopping boards, spoons, thongs and wet cloth",
+            "Help front of house open front – if necessary",
+            "Put money back in till box",
+            "Organize tasks and to do list for the day",
+            "See what prep/back ups needs to be done",
+            "Check cleaning schedule",
+            "Check what deliveries will be coming today and if space needs to be organised",
+            "Organize the day and set the pace"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-back-of-house-closing",
+      "title": "Back Of House – Closing",
+      "cat": "BOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🍳",
+      "color": "#fde68a",
+      "mandatory": true,
+      "desc": "Explain what time we close instore customers and uber tablets etcfc.",
+      "steps": [
+        {
+          "heading": "General Keepings",
+          "items": [
+            "Explain what time we close instore customers and uber tablets etcfc.",
+            "Explain what time we can begin to prepare to close – start as soon as its not busy – washing, prepping back ups, rubbish runs etc.",
+            "Divide to sections – washer and grill/dressing area etc.",
+            "Show how to use tablets and enter orders – refer to Front Of House Entering Order",
+            "Mopping – Wet mop then dry mop",
+            "End of day balance – how to count and where to put cash drop",
+            "Closing standards – cleanliness of things etc."
+          ]
+        },
+        {
+          "heading": "Dressing Bench",
+          "items": [
+            "Explain how we can generally start cleaning this section at an earlier time",
+            "What needs to be wiped down and how to wipe it down – edges, rims etc",
+            "Check backups – ensure back ups are down to aid tomorrow’s service",
+            "Write down anything that is not done",
+            "After closing time – then we can begin closing it",
+            "What to do with spoons and condiments – if they need to be put away and where to",
+            "How to glad wrap section and put lids back on",
+            "How to wipe down stainless steel surfaces with hot water, soap and scrub",
+            "Unsure area is clean and spotless"
+          ]
+        },
+        {
+          "heading": "Grill Section",
+          "items": [
+            "Explain how grill can only be turned off after closing time – not a minute earlier",
+            "But some utensils can be washed early",
+            "Explain how to turn off grill",
+            "Grill shoud’ve been on low if there wasn’t any orders to allow faster cooldown",
+            "Cold water to cool the grill down",
+            "How to clean it",
+            "What chemicals we use and where to get it – Detergent and Washing Soda",
+            "Remembering to wear gloves as the grill and steam is hot",
+            "How to scrub it and making sure all black spots are cleaned",
+            "Rinse it down with water and making sure that all chemicals are washed off",
+            "Making sure all around the grill is cleaned to – including bottom",
+            "Wiped everything with clean cloth again to ensure no stain, grease or chemical residuals",
+            "Ensuring the rest of the grill section and surroundings are cleaned",
+            "Grease tray under grill area must be washed every night",
+            "— One person pretty much focuses on these two area"
+          ]
+        },
+        {
+          "heading": "Fryer",
+          "items": [
+            "Explain how the fryer can only be turned off after closing time",
+            "Unless there were two fryers on and then we can turn one off first if its not busy to speed up closing process",
+            "Explain how to turn fryers off",
+            "How to check oil usability – visibility etc",
+            "How to use filter machine",
+            "Where to find it",
+            "How to change oil paper – making sure all edges are covered",
+            "How to position the net – ensuring the right side is hooked on to avoid hazard",
+            "How to filter the oil",
+            "How to connect pipe",
+            "Need to bring middle net up to aid cleaning -网",
+            "How to connect power and turn on machine",
+            "Ensuring all areas are washed and cleaned – no crumbs left – including sides and edges – be careful around the temperature wiring area",
+            "How long oil should be filtered for depending on usability",
+            "How to close pipes and disconnect it – let oil residuals drip out and use cloth to help disconnect it as it is hot",
+            "Where to throw oil and how to do it",
+            "Ensuring all fryers are turned off properly",
+            "Ensuring all surfaces are wiped and cleaned",
+            "— How to alternate between fryers if not both are turned on all the time"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-front-of-house-entering-order",
+      "title": "Front of House – Entering Order",
+      "cat": "FOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🤝",
+      "color": "#dcfce7",
+      "mandatory": false,
+      "desc": "Show and explain computer set up",
+      "steps": [
+        {
+          "heading": "Entering Order",
+          "items": [
+            "Show and explain computer set up",
+            "How to open up Vectron",
+            "What the home page is eg. Orders, clockings etc",
+            "How to clock on and log in to order page",
+            "Show how to take inhouse orders",
+            "Show what the categories are",
+            "Sub categories",
+            "Add ons, takes off,",
+            "Any other modifications; vegan, gluten-free, halah,",
+            "Requests – ta cup, cut in half – expand for Benji coffee/breakfast etc.",
+            "How to enter it as a shop order, phone order and delivery order",
+            "Shop order – how to pay eg. Cash or eftpos",
+            "Phone pick up order – how to enter phone number and save order",
+            "Phone delivery order – how to enter address and pay over phone/save order (cash)",
+            "Show and explain all the tablets eg. Uber, Doordash, Menulog etc.",
+            "Show which tablet is which",
+            "How it works",
+            "What sound it makes and how to accept/confirm orders",
+            "Show how we need to use “Uber” page to enter items due to price difference",
+            "Explain how add ons, takes off, mods etc. are the same as normal order",
+            "Show how to put payment through under different buttons; uber, doordash etc.",
+            "Show how/ when to click ready button",
+            "Explain importance of communication",
+            "Need to let kitchen know theres new orders, especially when its quiet – order up",
+            "What to do with drink dockets",
+            "Always need to maintain open communication with team members",
+            "Let trainee familiarize with system",
+            "Transit to drink station"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-front-of-house-customer-service",
+      "title": "Front of House – Customer Service",
+      "cat": "FOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🤝",
+      "color": "#dcfce7",
+      "mandatory": false,
+      "desc": "Show ways we would greet customers to make them feel welcome",
+      "steps": [
+        {
+          "heading": "Part 1",
+          "items": [
+            "Show ways we would greet customers to make them feel welcome",
+            "Ensure we are not too 僵硬, need to be more friendly, more casual and down to earth",
+            "Guys/tradies – hey mate hows it going",
+            "Girls etc – hey ladies hows it going",
+            "Heyyy sis/ heyy bro",
+            "Don’t be robotic, be casual, be cool",
+            "When taking ordes always maintain eye contacts – don’t just stare at screen",
+            "Be confidant and comfortable",
+            "Repeat order back to customers to ensure the order is right",
+            "After finalizing order, ask if they want to dine in or take away",
+            "If dine in – DI/HH – with table number",
+            "If take away – TA – with name",
+            "Ask if they want to pay by cash or card?",
+            "Show how to put payment through",
+            "cash and card button – and show where to tap – tap’s just on the left",
+            "After payment, ask if they want a copy of the receipt",
+            "Show how to print receipts",
+            "Explain the difference between save and no save button difference",
+            "Save – prints to docket/kitchen",
+            "No save – does not print",
+            "How to reprint orders",
+            "Finalise transaction and let customer know how long for wait time"
+          ]
+        },
+        {
+          "heading": "Part dua",
+          "items": [
+            "1. Always offer meals or upsell drinks",
+            "Eg. When customers order fries and burgers – would you like to make it in a meal for $1 only",
+            "When they’ve asked for a meal – did you want to upgrade it to a milkshake or smoothie",
+            "Did you want a LARGE or reg meal – emphasis or large",
+            "Marketing/ upselling tectics",
+            "Emphasis on what you want to sell with tone of voice and hand gestures",
+            "Eg. LARGE meal",
+            "Don’t ask open questions where they can have time to think. – give them the choice you choose",
+            "Eg. Instead of asking them did you want sides with that? – ask; did you want a large or regular side with that?",
+            "Body language",
+            "Open op shoulders and chest – seem confidant and welcoming",
+            "When pointing, do not use index finger as it may appear as rude/demanding. Use pinky or 4 fingers instead",
+            "Guide the customers, lead the pace"
+          ]
+        },
+        {
+          "heading": "Part tiga",
+          "items": [
+            "How to contact uber, doordash, menulog etc.",
+            "Explainwhen you will need to contact them",
+            "Delayed drivers",
+            "Need to contact customers",
+            "Make sure we get reimbursements for orders that needs to be remade",
+            "How to contact drivers/customers",
+            "Explain the different circumstances that you will need to contact driver/customers",
+            "Forgot item",
+            "Out of item",
+            "How to remove items from tablets",
+            "Long wait etc.",
+            "How to deal with complaints",
+            "Show complaint chart.",
+            "Improvise",
+            "Take the blame if we know it’s our fault",
+            "If fault is uncertain, do not apologies",
+            "Try handle it before passing it to someone else",
+            "Store credits",
+            "Explain situations that are appropriate for store credit",
+            "Show how to enter store credit on system",
+            "Show how to mark as redeemed after customer has used it",
+            "Explain appropriate credit amount"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-front-of-house-drinks-station",
+      "title": "Front of House – Drinks Station",
+      "cat": "FOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🤝",
+      "color": "#dcfce7",
+      "mandatory": false,
+      "desc": "Show and introduce drink station",
+      "steps": [
+        {
+          "heading": "Drinks Station",
+          "items": [
+            "Show and introduce drink station",
+            "Show where things are",
+            "Eg. Icecream, fruits and veggies, milk, washing area, back ups etc",
+            "Explain the different types of drinks and what to machine to make them with",
+            "Eg. Juices, milkshakes and blenders ad frappes",
+            "Explain how to read dockets",
+            "What to do with dockets after it prinks from machies – explain how communication is important – pass to person on drinks",
+            "Show what to do with docket after finish making drink",
+            "Show drink’s recipe chart",
+            "Explain and differentiate the ingredients – eg. What type of icecream this is, yogurt, neutral etc.",
+            "Make sure theres not too much wasteage",
+            "Follow recipe and measure – exact weigh measurements",
+            "Pass on tips",
+            "Tilt and hold on to milk shake cup at the start to avoid spilling",
+            "Stop and shake blender thing if its not mixing",
+            "If customer asks for thick – more icecream, less milk",
+            "Juice apple last in drinks to cleanse out",
+            "Make sure to decorate drinks",
+            "Syrups on side, sprinkles on top etc.",
+            "Make sure milkshakes are not too runny",
+            "Show where to put drinks and dockets after finish making"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-front-of-house-prep",
+      "title": "Front of House – Prep",
+      "cat": "FOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🤝",
+      "color": "#dcfce7",
+      "mandatory": false,
+      "desc": "Show prep list and explain order to do it – most efficient order to do things",
+      "steps": [
+        {
+          "heading": "Prep",
+          "items": [
+            "Show prep list and explain order to do it – most efficient order to do things",
+            "Buns should be cut early during the day to avoid cluster of space",
+            "FIFO – softdrinks, fruits etc.",
+            "Labeling of dates",
+            "Where to find stuff and where to do it",
+            "What happen when things run out/ nearly run out – let kitchen know",
+            "Everything has a home, things should be put back to their respective places",
+            "Always clean up after tasks",
+            "Hand basin is for hand washing only*"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-front-of-house-alcohol",
+      "title": "Front of House – Alcohol",
+      "cat": "FOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🤝",
+      "color": "#dcfce7",
+      "mandatory": false,
+      "desc": "Only over 18s who have RSA can sell and serve alcohol",
+      "steps": [
+        {
+          "heading": "Alcohol",
+          "items": [
+            "Only over 18s who have RSA can sell and serve alcohol",
+            "Explain the consequences and fines if it is done illegally",
+            "What to do if you’re under 18 – ask someone else who has their RSA to help",
+            "How to enter beer order",
+            "How to use the beer tap"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-front-of-house-expediting-orders",
+      "title": "Front of House – Expediting Orders",
+      "cat": "FOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🤝",
+      "color": "#dcfce7",
+      "mandatory": false,
+      "desc": "Show and introduce expediting section",
+      "steps": [
+        {
+          "heading": "Expediting Orders",
+          "items": [
+            "Show and introduce expediting section",
+            "Window area",
+            "Heat lamp area – how to turn on and off",
+            "How to read docket",
+            "How to differentiate shop orders, ha and ta, ubers etc.",
+            "What bags we use – utalise bag space",
+            "How to plate dine ins",
+            "Ensuring all items are in bags – and tissues/cutleries",
+            "Ensuring drinks are handed out with drinks",
+            "Calling out orders",
+            "Call out by names – if customer’s not here, put under heat lamp – keep checking if customer is back to avoid order sitting there when customer is back without notice",
+            "Uber, menulog, doordash orders – call out for drivers – check how long driver is taking to arrive"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-front-of-house-opening",
+      "title": "Front Of House – Opening",
+      "cat": "FOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🤝",
+      "color": "#dcfce7",
+      "mandatory": true,
+      "desc": "Explain opening time and responsibilities – everything needs to be ready by 11; tables, chairs, lights, till etc.",
+      "steps": [
+        {
+          "heading": "Opening",
+          "items": [
+            "Explain opening time and responsibilities – everything needs to be ready by 11; tables, chairs, lights, till etc.",
+            "Wipe down all tables and chairs to ensure missed crumbs – floor too etc.",
+            "Check if there’s any urgent prep/backups that needs to be done",
+            "Make a list/mental note of the thing that needs to be done or stations that need to be cleaned – eg. Urgent preps to be done first, cut buns first etc.",
+            "Fill up drink bottles",
+            "Polish cutleries",
+            "Put away dishes",
+            "Fill up station preps",
+            "Preps –",
+            "Bacon, cheese, fruits, icecream, sotdrink etc.",
+            "Cleaning – follow cleaning schedule"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mb-front-of-house-closing",
+      "title": "Front Of House – Closing",
+      "cat": "FOH",
+      "venue": "Mad Benji",
+      "duration": "30 min",
+      "icon": "🤝",
+      "color": "#dcfce7",
+      "mandatory": true,
+      "desc": "Explain what time we close instore customers and uber tablets etcfc.",
+      "steps": [
+        {
+          "heading": "General Keepings",
+          "items": [
+            "Explain what time we close instore customers and uber tablets etcfc.",
+            "Explain what time we can begin to prepare to close – As soon as it’s not busy",
+            "Start washing dishes and drink bottles early through the night",
+            "Start giving empty tables and chairs a wipe down and making a mental note of which tables are wiped to avoid doing it twice – with sanitizer and hot cloth",
+            "Can begin sweeping floor if there’s no customers – cannot sweep if there’s customers in shop",
+            "Making sure all prep and back ups are done to aid tomorrow’s operation",
+            "Explain all stations must be cleaned",
+            "Drinks station",
+            "Milkshake machine must be wiped down every night – especially top and metal edge/rim parts to avoid milk solids build up",
+            "Blenders and the machine – machine must be wiped down too",
+            "Juicer – how to disassemble and wash – juice 网plate to be washed in kitchen, all parts must be scrubbed clean with hot water and metal scourer to avoid fruit solids to build up",
+            "Ice-cream fridge to be wiped down – hot to remove top glass to clean properly",
+            "Beer tap area – need to see how to wash first***",
+            "Expediting area and window",
+            "Making sure all areas are cleaned and wiped down – no food crumbs",
+            "Counter area",
+            "All tablets are charged",
+            "Area is tidy and organized",
+            "All stainless steel area to be wiped down with hot water and soap sponge",
+            "All other surface area are wiped down with hot cloth and sanitizer",
+            "Everything has a home – put things back to its respective places – don’t leave it around – be initiative and responsible",
+            "Dining area",
+            "Make sure all tables, chairs and bench area wiped and cleaned",
+            "Stack chairs up on table to aid sweeping and mopping",
+            "Chairs cannot be up before closing time – not a minute earlier",
+            "Floor is sweeped before mopping – clean floor makes it easier to mop – make sure all edges and corners are sweeeped",
+            "Mopping the floor – wet mop then dry mop – ensure to get all crumbs off the floor – becareful while mopping, it gets slippery",
+            "Ask kitchen boys to mix mop water for you – use FOH mop",
+            "Need to buy 2 mops***",
+            "Explain that closing should be done within reasonable timeframe",
+            "Emergenct – light box – fire – emergency light box(90)"
+          ]
+        }
+      ]
+    }
+  ]
+}

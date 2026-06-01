@@ -1,0 +1,235 @@
+{
+  "sourceTitle": "FOH Work Duties and During Service.xlsx",
+  "venues": [
+    "hey-sister",
+    "mad-hotpot"
+  ],
+  "modules": [
+    {
+      "key": "foh-bar-duties",
+      "title": "FOH — Bar",
+      "cat": "FOH",
+      "duration": "30 min",
+      "icon": "🍹",
+      "color": "#dcfce7",
+      "mandatory": true,
+      "desc": "Bar (counter & help floor) duties and during-service responsibilities.",
+      "steps": [
+        {
+          "heading": "Work Duties",
+          "items": [
+            "Freezer and bench has to be tidy and clean",
+            "Wash all dirty dishes (scrub with SPONGE AND SOAP and put through dishwasher)",
+            "Polish and put away clean dishes",
+            "Empty bin and milk crates whenever needed full",
+            "Refill take-away cups, straws, lids and coffee beans",
+            "Refill pastry bags and coffee bean retail bags",
+            "Refill freezer (ice cream, fruit and clean ice)",
+            "Change over ice cream scoop water"
+          ]
+        },
+        {
+          "heading": "During Service",
+          "items": [
+            "Greet all customers walking through the door and ask dine in or take-away",
+            "Pay attention to customers at the counter and serve before you continue with other tasks",
+            "Make cold drinks",
+            "Help barista with coffee shots",
+            "Wash dishes",
+            "Run food if floor person is busy",
+            "Take orders on counter and floor",
+            "Answer the phone whenever you can",
+            "Seat customers at appropriate tables and let floor person know",
+            "Bag up customer's pastries before serving the next one",
+            "Send pastries to kitchen and and notify chef",
+            "Organise dockets by stacking them neatly or leave in the printer when busy",
+            "Always get a name with the order and write \"with food\" if appropriate",
+            "Notify customer of wait-time while busy",
+            "Ask customer how their experience was when they come up to pay",
+            "Say \"thank you\" to customers leaving the store",
+            "Have a good attitude while serving customers (smile, ask how they are, etc)",
+            "Communicate with your teammates (ask for help, tell them important information)",
+            "Always help floor person clean tables, seat people, take orders or run food if they are busy"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "foh-floor-duties",
+      "title": "FOH — Floor",
+      "cat": "FOH",
+      "duration": "30 min",
+      "icon": "🍽️",
+      "color": "#dcfce7",
+      "mandatory": true,
+      "desc": "Floor service duties and during-service responsibilities.",
+      "steps": [
+        {
+          "heading": "Work Duties",
+          "items": [
+            "Make sure shop presenation is good (clean and tidy)",
+            "Wipe and organise Frank Green shelf",
+            "Wipe and organise middle island cabinet",
+            "Clean and dry the menus"
+          ]
+        },
+        {
+          "heading": "During Service",
+          "items": [
+            "Sanitise water bottles while topping up",
+            "Eyes up and pay attention to customers when they need something",
+            "Make sure all tables have water, even if they ordered at the counter",
+            "Exchange empty water bottles with full ones if needed",
+            "Give appropriate cutlery after taking customer's order if you have time",
+            "ALWAYS repeat the order to customer and proofread before you send",
+            "Notify bar and kitchen staff if customer has a strict dietary requirement",
+            "Acknowledge customers - smile/make eye contact, don’t ignore when you walk past",
+            "Be aware of bookings and reserve appropriately",
+            "Top up napkins and salt and pepper and polish cutlery",
+            "Check flowers on every single table and throw away when they go brown"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "foh-barista-duties",
+      "title": "FOH — Barista",
+      "cat": "FOH",
+      "duration": "30 min",
+      "icon": "☕",
+      "color": "#dcfce7",
+      "mandatory": true,
+      "desc": "Barista station duties and during-service responsibilities.",
+      "steps": [
+        {
+          "heading": "Work Duties",
+          "items": [
+            "Bench and speedrack has to be clean and tidy",
+            "Wash all dirty dishes (scrub with SPONGE AND SOAP and put through dishwasher)",
+            "Polish and put away clean dishes",
+            "Empty bin and milk crates whenever needed full",
+            "Refill take-away cups, straws, lids and coffee beans",
+            "Refill pastry bags and coffee bean retail bags",
+            "Empty knock tube",
+            "Refill sugar, chocolate, chai powder and chai leaves",
+            "Refill and clean coffee syrup pumps",
+            "Change over thermometer water"
+          ]
+        },
+        {
+          "heading": "During Service",
+          "items": [
+            "Greet all customers walking through the door and ask dine in or take-away",
+            "Serve customers at counter if no one else available",
+            "Make coffee",
+            "Make cold drinks if no one available",
+            "Wash dishes",
+            "Run food if floor person is busy",
+            "Take take-away orders",
+            "Answer the phone whenever you can",
+            "Seat customers at appropriate tables and let floor person know",
+            "Bag up customer's pastries before serving the next one",
+            "Send pastries to kitchen and and notify chef",
+            "Organise dockets by stacking them neatly or leave in the printer when busy",
+            "Always get a name with the order and write \"with food\" if appropriate",
+            "Notify customer of wait-time while busy",
+            "Ask customer how their experience was when they come up to pay",
+            "Say \"thank you\" to customers leaving the store",
+            "Have a good attitude while serving customers (smile, ask how they are, etc)",
+            "Communicate with your teammates (ask for help, tell them important information)"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "foh-night-bar-duties",
+      "title": "FOH — Night Bar",
+      "cat": "FOH",
+      "duration": "30 min",
+      "icon": "🌙",
+      "color": "#dcfce7",
+      "mandatory": true,
+      "desc": "Night-time bar (cold drinks & counter service) duties.",
+      "steps": [
+        {
+          "heading": "Work Duties",
+          "items": [
+            "Freezer and bench has to be tidy and clean",
+            "Wash all dirty dishes (scrub with SPONGE AND SOAP and put through dishwasher)",
+            "Polish and put away clean dishes",
+            "Empty bin and milk crates whenever needed full",
+            "Refill take-away cups, straws, lids and coffee beans",
+            "Refill pastry bags and coffee bean retail bags",
+            "Refill freezer (ice cream, fruit and clean ice)",
+            "Change over ice cream scoop water"
+          ]
+        },
+        {
+          "heading": "During Service",
+          "items": [
+            "Greet all customers walking through the door and ask dine in or take-away",
+            "Pay attention to customers at the counter and serve before you continue with other tasks",
+            "Make cold drinks",
+            "Make coffee",
+            "Wash dishes",
+            "Run food if floor person is busy",
+            "Take take-away orders",
+            "Answer the phone whenever you can",
+            "Seat customers at appropriate tables and let floor person know",
+            "Bag up customer's pastries before serving the next one",
+            "Send pastries to kitchen and and notify chef",
+            "Organise dockets by stacking them neatly or leave in the printer when busy",
+            "Always get a name with the order and write \"with food\" if appropriate",
+            "Notify customer of wait-time while busy",
+            "Ask customer how their experience was when they come up to pay",
+            "Say \"thank you\" to customers leaving the store",
+            "Have a good attitude while serving customers (smile, ask how they are, etc)",
+            "Communicate with your teammates (ask for help, tell them important information)",
+            "Always help floor person clean tables, seat people, take orders or run food if they are busy",
+            "Help with prep when not busy",
+            "Help with closing duties after 7pm"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "foh-night-floor-duties",
+      "title": "FOH — Night Floor",
+      "cat": "FOH",
+      "duration": "30 min",
+      "icon": "🌙",
+      "color": "#dcfce7",
+      "mandatory": true,
+      "desc": "Night-time floor (floor & prep) duties.",
+      "steps": [
+        {
+          "heading": "Work Duties",
+          "items": [
+            "Make sure shop presenation is good (clean and tidy)",
+            "Wipe and organise Frank Green shelf",
+            "Wipe and organise middle island cabinet",
+            "Clean and dry the menus"
+          ]
+        },
+        {
+          "heading": "During Service",
+          "items": [
+            "Sanitise water bottles while topping up",
+            "Eyes up and pay attention to customers when they need something",
+            "Make sure all tables have water, even if they ordered at the counter",
+            "Exchange empty water bottles with full ones if needed",
+            "Give appropriate cutlery after taking customer's order if you have time",
+            "ALWAYS repeat the order to customer and proofread before you send",
+            "Notify bar and kitchen staff if customer has a strict dietary requirement",
+            "Acknowledge customers - smile/make eye contact, don’t ignore when you walk past",
+            "Be aware of bookings and reserve appropriately",
+            "Top up napkins and salt and pepper and polish cutlery",
+            "Check flowers on every single table and throw away when they go brown",
+            "Do prep when floor is 100% sorted",
+            "Help with closing duties after 7pm"
+          ]
+        }
+      ]
+    }
+  ]
+}
