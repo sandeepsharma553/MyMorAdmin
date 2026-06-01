@@ -21,3 +21,8 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Firebase admin keys & local import tooling
+secrets/
+.venv-import/
+scripts/importer/node_modules/

@@ -54,7 +54,7 @@ const LoginPage = () => {
       </div>
 
       <div className="w-1/2 bg-white flex flex-col items-center justify-center px-8">
-        <img src={logoImage} alt="Logo" className="w-16 h-16 mb-4" />
+        <img src={logoImage} alt="Logo" className="w-16 h-20 mb-4" />
         <h2 className="text-2xl font-bold text-blue-600 mb-6">Welcome</h2>
 
         <Formik
