@@ -13,6 +13,7 @@ import UniclubPage from "../pages/superadmin/UniclubPage";
 import PoiPage from "../pages/superadmin/PoiPage";
 import ContactPage from "../pages/ContactPage";
 import BusinessesPage from "../pages/superadmin/BusinessesPage";
+import RestaurantGroupsPage from "../pages/superadmin/RestaurantGroupsPage";
 import DealPage from "../pages/superadmin/DealPage";
 import RestaurantPage from "../pages/business/RestaurantPage";
 import RestaurantOrdersPage from "../pages/business/RestaurantOrdersPage";
@@ -35,6 +36,7 @@ export default function SuperAdminRoutes() {
       <Route path="/eventbooking" element={<EventBookingPage />} />
       <Route path="/deal" element={<DealPage />} />
       <Route path="/business" element={<BusinessesPage />} />
+      <Route path="/restaurantgroups" element={<RestaurantGroupsPage />} />
       <Route path="/setting" element={<SettingPage />} />
       <Route path="/uniclub" element={<UniclubPage />} />
       <Route path="/poi" element={<PoiPage />} />

@@ -12,6 +12,8 @@ import Layout from "./components/Layout";
 import SuperAdminLayout from "./components/SuperAdminLayout";
 import SuperAdminRoutes from "./routes/SuperAdminRoutes";
 import AdminRoutes from "./routes/AdminRoutes";
+import RestaurantGroupLayout from "./components/RestaurantGroupLayout";
+import RestaurantGroupRoutes from "./routes/RestaurantGroupRoutes";
 
 import ChooseContextPage from "./pages/admin/ChooseContextPage";
 
@@ -40,7 +42,8 @@ function AppWrapper() {
   const hasHostel = isValidId(employee?.hostelid);
   const hasUniclub = isValidId(employee?.uniclubid);
   const hasUniversity = isValidId(employee?.universityid);
-  const hasBusiness = !hasHostel && !hasUniclub && !hasUniversity;
+  const hasGroup = isValidId(employee?.groupId || employee?.groupid);
+  const hasBusiness = !hasHostel && !hasUniclub && !hasUniversity && !hasGroup;
   let adminDefaultPath = "/dashboard";
   if (isLoggedIn && type === "admin") {
     if (hasHostel && hasUniclub && hasUniversity) {
@@ -57,7 +60,9 @@ function AppWrapper() {
         adminDefaultPath = "/choose";
       }
     }
-    else if (hasUniclub) {
+    else if (hasGroup) {
+      adminDefaultPath = "/rg/staff";
+    } else if (hasUniclub) {
       adminDefaultPath = "/uniclubdashboard";
     } else if (hasHostel) {
       adminDefaultPath = "/dashboard";
@@ -92,7 +97,21 @@ function AppWrapper() {
         </>
       )}
 
-      {isLoggedIn && type === "admin" && (
+      {isLoggedIn && type === "admin" && hasGroup && (
+        <>
+          <Route path="/" element={<Navigate to="/rg/staff" replace />} />
+          <Route
+            path="/*"
+            element={
+              <RestaurantGroupLayout>
+                <RestaurantGroupRoutes />
+              </RestaurantGroupLayout>
+            }
+          />
+        </>
+      )}
+
+      {isLoggedIn && type === "admin" && !hasGroup && (
         <>
           <Route path="/" element={<Navigate to={adminDefaultPath} replace />} />
           <Route path="/choose" element={<ChooseContextPage />} />

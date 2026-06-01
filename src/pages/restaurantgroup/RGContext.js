@@ -1,0 +1,136 @@
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { onSnapshot } from "firebase/firestore";
+import { useSelector } from "react-redux";
+import {
+  groupDoc, venuesCol, venueCol, PER_VENUE_COLLECTIONS,
+} from "../../utils/restaurantGroupPaths";
+import { defaultPermsForRole, hasLevel } from "./rgConfig";
+
+const RGContext = createContext(null);
+export const useRG = () => useContext(RGContext);
+
+// Fetch the whole collection and sort client-side. We deliberately avoid
+// Firestore orderBy() here: orderBy silently drops any doc missing the sort
+// field, which would make venues/kpis vanish if a doc was added without one.
+const subColl = (col, setter, sortKey) => onSnapshot(
+  col,
+  (snap) => {
+    let rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    if (sortKey) {
+      rows = rows.slice().sort((a, b) => {
+        const av = a[sortKey] ?? Number.MAX_SAFE_INTEGER;
+        const bv = b[sortKey] ?? Number.MAX_SAFE_INTEGER;
+        return av > bv ? 1 : av < bv ? -1 : 0;
+      });
+    }
+    setter(rows);
+  },
+  () => setter([])
+);
+
+export function RGProvider({ children }) {
+  const employee = useSelector((s) => s.auth.employee);
+  const groupId = employee?.groupId || employee?.groupid || null;
+  const groupRole = employee?.groupRole || "owner";
+  // current user's effective permission map (explicit overrides, else role defaults)
+  const myPerms = useMemo(
+    () => ({ ...defaultPermsForRole(groupRole), ...(employee?.permissions && !Array.isArray(employee.permissions) ? employee.permissions : {}) }),
+    [groupRole, employee?.permissions]
+  );
+  // user's venue scope ("all" or a venueId)
+  const myVenueId = employee?.venueId || "all";
+
+  const [group, setGroup] = useState(null);
+  const [venues, setVenues] = useState([]);
+  // pv[collection][venueId] = rows[]  — all operational data, stored per-venue
+  const [pv, setPv] = useState({});
+  const [selectedVenue, setSelectedVenue] = useState("all"); // "all" | venueId
+  const [loading, setLoading] = useState(true);
+
+  // group doc + venues are group-level
+  useEffect(() => {
+    if (!groupId) { setLoading(false); return; }
+    setLoading(true);
+    const unsubs = [
+      onSnapshot(groupDoc(groupId), (d) => setGroup(d.exists() ? { id: d.id, ...d.data() } : null)),
+      subColl(venuesCol(groupId), setVenues, "order"),
+    ];
+    const t = setTimeout(() => setLoading(false), 600);
+    return () => { clearTimeout(t); unsubs.forEach((u) => u && u()); };
+  }, [groupId]);
+
+  // Everything else lives INSIDE each venue. Subscribe to every per-venue
+  // collection for every venue, merge, and stamp venueId/venue on each row.
+  const venueIdsKey = venues.map((v) => v.id).join(",");
+  useEffect(() => {
+    if (!groupId || !venues.length) { setPv({}); return; }
+    const unsubs = [];
+    venues.forEach((v) => {
+      PER_VENUE_COLLECTIONS.forEach((coll) => {
+        unsubs.push(onSnapshot(
+          venueCol(groupId, v.id, coll),
+          (snap) => setPv((prev) => ({
+            ...prev,
+            [coll]: { ...(prev[coll] || {}), [v.id]: snap.docs.map((d) => ({ id: d.id, venueId: v.id, venue: v.name, ...d.data() })) },
+          })),
+          () => setPv((prev) => ({ ...prev, [coll]: { ...(prev[coll] || {}), [v.id]: [] } }))
+        ));
+      });
+    });
+    return () => unsubs.forEach((u) => u && u());
+  }, [groupId, venueIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const flat = (coll, sortKey) => {
+    let rows = Object.values(pv[coll] || {}).flat();
+    if (sortKey) rows = rows.slice().sort((a, b) => ((a[sortKey] ?? 1e15) > (b[sortKey] ?? 1e15) ? 1 : (a[sortKey] ?? 1e15) < (b[sortKey] ?? 1e15) ? -1 : 0));
+    return rows;
+  };
+  const staff = useMemo(() => flat("staff"), [pv.staff]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shifts = useMemo(() => flat("shifts"), [pv.shifts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const leave = useMemo(() => flat("leaveRequests"), [pv.leaveRequests]); // eslint-disable-line react-hooks/exhaustive-deps
+  const checklists = useMemo(() => flat("checklists"), [pv.checklists]); // eslint-disable-line react-hooks/exhaustive-deps
+  const perfNotes = useMemo(() => flat("performanceNotes"), [pv.performanceNotes]); // eslint-disable-line react-hooks/exhaustive-deps
+  const assignments = useMemo(() => flat("trainingAssignments"), [pv.trainingAssignments]); // eslint-disable-line react-hooks/exhaustive-deps
+  const kpis = useMemo(() => flat("kpis", "order"), [pv.kpis]); // eslint-disable-line react-hooks/exhaustive-deps
+  const modules = useMemo(() => flat("trainingModules"), [pv.trainingModules]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Toast ─────────────────────────────────────────────
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+  const showToast = useCallback((msg) => {
+    setToast(msg);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2400);
+  }, []);
+
+  const venueName = useCallback(
+    (id) => venues.find((v) => v.id === id)?.name || "",
+    [venues]
+  );
+  const selectedVenueName = selectedVenue === "all" ? "All venues" : venueName(selectedVenue);
+
+  // helper: does a record match the current venue filter
+  const matchVenue = useCallback(
+    (rec) => selectedVenue === "all" || rec?.venueId === selectedVenue || rec?.venue === selectedVenueName,
+    [selectedVenue, selectedVenueName]
+  );
+
+  // permission helpers
+  const can = useCallback((moduleKey, level = "view") => hasLevel(myPerms, moduleKey, level), [myPerms]);
+  const me = useMemo(() => ({ ...(employee || {}), groupRole, venueId: myVenueId, perms: myPerms }), [employee, groupRole, myVenueId, myPerms]);
+
+  const value = useMemo(() => ({
+    groupId, group, venues, staff, shifts, leave, modules, assignments, checklists, perfNotes, kpis,
+    selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
+    me, groupRole, myPerms, can,
+    loading, showToast,
+  }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklists, perfNotes, kpis,
+      selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, loading, showToast]);
+
+  return (
+    <RGContext.Provider value={value}>
+      {children}
+      {toast && <div className="rg-toast show">{toast}</div>}
+    </RGContext.Provider>
+  );
+}

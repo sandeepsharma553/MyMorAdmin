@@ -1,0 +1,284 @@
+/* ============================================================
+   Restaurant Group module design system.
+   Ported verbatim from the approved staff-module prototype and
+   scoped under .rg-scope so it never collides with the existing
+   Tailwind admin styles. All component class names match the
+   prototype 1:1 (e.g. .card, .btn, .metric, .pill).
+   ============================================================ */
+
+.rg-scope {
+  --red: #C0392B;
+  --red2: #a93226;
+  --red-light: #fdf2f2;
+  --red-mid: #f5c6c6;
+  --black: #111111;
+  --dark: #1a1a1a;
+  --ink: #1f1f1f;
+  --gray: #6b7280;
+  --gray-light: #f4f4f5;
+  --border: #e5e7eb;
+  --white: #ffffff;
+  --cream: #fafafa;
+  --green: #16a34a;
+  --green-light: #f0fdf4;
+  --amber: #d97706;
+  --amber-light: #fffbeb;
+  --blue: #2563eb;
+  --blue-light: #eff6ff;
+  --purple: #7c3aed;
+  --purple-light: #f5f3ff;
+
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--cream);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.rg-scope *, .rg-scope *::before, .rg-scope *::after { box-sizing: border-box; }
+.rg-scope h1, .rg-scope h2, .rg-scope h3, .rg-scope p { margin: 0; }
+
+/* ── LAYOUT ── */
+.rg-scope.app, .rg-scope .app { display:flex; height:100vh; overflow:hidden; }
+.rg-scope .sidebar {
+  width: 220px; min-width:220px; background:var(--black);
+  display:flex; flex-direction:column; overflow-y:auto;
+  border-right: 0.5px solid rgba(255,255,255,0.06); flex-shrink:0;
+}
+.rg-scope .main { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+.rg-scope .content { flex:1; overflow-y:auto; padding:24px; background:var(--cream); }
+
+/* ── SIDEBAR ── */
+.rg-scope .sb-logo {
+  padding:18px 16px 14px;
+  border-bottom:0.5px solid rgba(255,255,255,0.07);
+  display:flex; align-items:center; gap:10px;
+}
+.rg-scope .sb-logo-icon {
+  width:32px; height:32px; background:var(--red); border-radius:8px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:700; color:#fff; letter-spacing:-0.5px; flex-shrink:0;
+}
+.rg-scope .sb-logo-text { font-size:12px; font-weight:600; color:#fff; line-height:1.3; }
+.rg-scope .sb-logo-sub { font-size:10px; color:rgba(255,255,255,0.4); }
+
+.rg-scope .nav-section { padding: 18px 12px 6px; }
+.rg-scope .nav-label { font-size:9px; font-weight:700; color:rgba(255,255,255,0.3); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px; padding-left:6px; }
+.rg-scope .nav-item {
+  display:flex; align-items:center; gap:9px; padding:7px 8px;
+  border-radius:7px; cursor:pointer; transition:all 0.15s;
+  margin-bottom:1px; color:rgba(255,255,255,0.55); font-size:12px; font-weight:400;
+  border:none; background:none; width:100%; text-align:left; font-family:inherit;
+}
+.rg-scope .nav-item:hover { background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.85); }
+.rg-scope .nav-item.active { background:var(--red); color:#fff; font-weight:500; }
+.rg-scope .nav-icon { width:16px; height:16px; flex-shrink:0; opacity:0.7; }
+.rg-scope .nav-item.active .nav-icon { opacity:1; }
+.rg-scope .nav-badge {
+  margin-left:auto; background:var(--red); color:#fff; border-radius:10px;
+  padding:0 5px; font-size:9px; font-weight:600; line-height:16px;
+}
+.rg-scope .nav-item.active .nav-badge { background:rgba(255,255,255,0.25); }
+.rg-scope .nav-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; display:inline-block; }
+
+/* ── TOPBAR ── */
+.rg-scope .topbar {
+  height:52px; background:var(--white); border-bottom:0.5px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between; padding:0 24px;
+  flex-shrink:0;
+}
+.rg-scope .tb-title { font-size:16px; font-weight:600; }
+.rg-scope .tb-sub { font-size:12px; color:var(--gray); margin-left:10px; }
+.rg-scope .tb-right { display:flex; align-items:center; gap:8px; }
+
+/* ── TABS ── */
+.rg-scope .tabs {
+  display:inline-flex; background:var(--gray-light); border-radius:9px; padding:3px;
+  gap:2px; flex-wrap:wrap;
+}
+.rg-scope .tab {
+  padding:5px 14px; border-radius:6px; font-size:12px; font-weight:500;
+  cursor:pointer; color:var(--gray); transition:all 0.15s; white-space:nowrap;
+  border:none; background:none; font-family:inherit;
+}
+.rg-scope .tab.active { background:var(--white); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+.rg-scope .tab-badge {
+  display:inline-block; background:var(--red); color:#fff; border-radius:8px;
+  padding:0 5px; font-size:9px; margin-left:4px; line-height:15px;
+}
+
+/* ── CARDS & GRID ── */
+.rg-scope .card {
+  background:var(--white); border-radius:12px; border:0.5px solid var(--border);
+  padding:16px 18px; margin-bottom:14px;
+}
+.rg-scope .card-head {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:14px; flex-wrap:wrap; gap:8px;
+}
+.rg-scope .card-title { font-size:13px; font-weight:600; }
+.rg-scope .card-sub { font-size:11px; color:var(--gray); margin-left:8px; }
+.rg-scope .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.rg-scope .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; }
+.rg-scope .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+
+/* ── METRICS ── */
+.rg-scope .metric {
+  background:var(--white); border-radius:12px; border:0.5px solid var(--border);
+  padding:14px 16px; position:relative; overflow:hidden;
+}
+.rg-scope .metric-label { font-size:11px; color:var(--gray); margin-bottom:4px; }
+.rg-scope .metric-value { font-size:24px; font-weight:700; line-height:1.2; }
+.rg-scope .metric-change { font-size:11px; margin-top:3px; }
+.rg-scope .metric-change.up { color:var(--green); }
+.rg-scope .metric-change.down { color:var(--red); }
+.rg-scope .metric-bar { position:absolute; bottom:0; left:0; right:0; height:3px; }
+
+/* ── PILLS & BADGES ── */
+.rg-scope .pill {
+  display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px;
+  font-size:10px; font-weight:500; white-space:nowrap;
+}
+.rg-scope .pill-green { background:var(--green-light); color:var(--green); }
+.rg-scope .pill-red { background:var(--red-light); color:var(--red); }
+.rg-scope .pill-amber { background:var(--amber-light); color:var(--amber); }
+.rg-scope .pill-blue { background:var(--blue-light); color:var(--blue); }
+.rg-scope .pill-gray { background:var(--gray-light); color:var(--gray); }
+.rg-scope .pill-purple { background:var(--purple-light); color:var(--purple); }
+
+/* ── BUTTONS ── */
+.rg-scope .btn {
+  padding:7px 14px; border-radius:8px; font-size:12px; font-weight:500;
+  cursor:pointer; border:0.5px solid var(--border); background:var(--white);
+  color:var(--ink); transition:all 0.15s; display:inline-flex; align-items:center; gap:5px;
+  font-family:inherit;
+}
+.rg-scope .btn:hover { background:var(--gray-light); }
+.rg-scope .btn-primary { background:var(--red); color:#fff; border-color:var(--red); }
+.rg-scope .btn-primary:hover { background:var(--red2); }
+.rg-scope .btn-sm { padding:4px 10px; font-size:11px; border-radius:6px; }
+.rg-scope .btn-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+.rg-scope .btn-danger { color:var(--red); border-color:var(--red); }
+
+/* ── FORMS ── */
+.rg-scope .form-group { margin-bottom:12px; }
+.rg-scope .form-label { font-size:11px; font-weight:500; color:var(--gray); display:block; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.04em; }
+.rg-scope .form-input {
+  width:100%; padding:8px 11px; border:0.5px solid var(--border); border-radius:8px;
+  font-size:12px; background:var(--white); color:var(--ink);
+  transition:border-color 0.15s; outline:none; font-family:inherit;
+}
+.rg-scope .form-input:focus { border-color:var(--red); }
+.rg-scope textarea.form-input { resize:vertical; min-height:80px; }
+.rg-scope select.form-input { cursor:pointer; }
+
+/* ── TABLE ── */
+.rg-scope .data-table { width:100%; border-collapse:collapse; font-size:12px; }
+.rg-scope .data-table th { padding:8px 12px; text-align:left; font-size:10px; font-weight:600; color:var(--gray); text-transform:uppercase; letter-spacing:0.06em; border-bottom:0.5px solid var(--border); white-space:nowrap; }
+.rg-scope .data-table td { padding:10px 12px; border-bottom:0.5px solid var(--gray-light); vertical-align:middle; }
+.rg-scope .data-table tr:last-child td { border-bottom:none; }
+.rg-scope .data-table tr:hover td { background:var(--cream); }
+
+/* ── STAFF CARDS ── */
+.rg-scope .staff-card {
+  background:var(--white); border-radius:12px; border:0.5px solid var(--border);
+  padding:16px; transition:all 0.15s; cursor:pointer;
+}
+.rg-scope .staff-card:hover { border-color:var(--red); box-shadow:0 2px 8px rgba(192,57,43,0.08); }
+.rg-scope .staff-avatar {
+  width:44px; height:44px; border-radius:50%; display:flex; align-items:center;
+  justify-content:center; font-size:15px; font-weight:700; color:#fff; flex-shrink:0;
+  margin-bottom:10px;
+}
+.rg-scope .staff-name { font-size:13px; font-weight:600; margin-bottom:2px; }
+.rg-scope .staff-role { font-size:11px; color:var(--gray); margin-bottom:8px; }
+.rg-scope .staff-meta { display:flex; flex-direction:column; gap:3px; }
+.rg-scope .staff-meta-row { display:flex; align-items:center; gap:5px; font-size:10px; color:var(--gray); }
+
+/* ── CHECKLIST ── */
+.rg-scope .checklist-item {
+  display:flex; align-items:flex-start; gap:10px; padding:8px 0;
+  border-bottom:0.5px solid var(--gray-light);
+}
+.rg-scope .checklist-item:last-child { border-bottom:none; }
+.rg-scope .check-box {
+  width:18px; height:18px; border-radius:5px; border:1.5px solid var(--border);
+  flex-shrink:0; margin-top:1px; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; transition:all 0.15s;
+}
+.rg-scope .check-box.checked { background:var(--green); border-color:var(--green); }
+.rg-scope .check-box.checked::after { content:'✓'; color:#fff; font-size:10px; font-weight:700; }
+.rg-scope .check-text { font-size:12px; flex:1; }
+.rg-scope .check-text.done { text-decoration:line-through; color:var(--gray); }
+
+/* ── PROGRESS BAR ── */
+.rg-scope .progress-wrap { background:var(--gray-light); border-radius:10px; height:6px; overflow:hidden; }
+.rg-scope .progress-bar { height:100%; border-radius:10px; transition:width 0.3s; }
+
+/* ── SHIFT PLANNER ── */
+.rg-scope .shift-cell {
+  padding:6px 8px; border-radius:6px; font-size:10px; min-height:36px;
+  border:0.5px solid transparent;
+}
+.rg-scope .shift-assigned { background:var(--red-light); border-color:var(--red-mid); color:var(--red2); cursor:pointer; }
+.rg-scope .shift-assigned:hover { background:#fde8e8; }
+.rg-scope .shift-off { background:var(--gray-light); color:var(--gray); }
+.rg-scope .shift-open { background:var(--amber-light); border-color:#fcd34d; color:var(--amber); cursor:pointer; }
+.rg-scope .shift-morning { background:#e0f2fe; border-color:#bae6fd; color:#0369a1; cursor:pointer; }
+.rg-scope .shift-evening { background:#f3e8ff; border-color:#e9d5ff; color:#6d28d9; cursor:pointer; }
+
+/* ── TRAINING ── */
+.rg-scope .training-module {
+  border:0.5px solid var(--border); border-radius:10px; padding:14px;
+  transition:all 0.15s; cursor:pointer; background:var(--white);
+}
+.rg-scope .training-module:hover { border-color:var(--red); }
+.rg-scope .module-icon { width:36px; height:36px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:18px; margin-bottom:10px; }
+.rg-scope .module-title { font-size:12px; font-weight:600; margin-bottom:4px; }
+.rg-scope .module-meta { font-size:11px; color:var(--gray); margin-bottom:8px; }
+
+/* ── LEAVE ── */
+.rg-scope .leave-card {
+  display:flex; align-items:center; gap:12px; padding:12px 14px;
+  border:0.5px solid var(--border); border-radius:10px; margin-bottom:8px;
+  transition:all 0.15s;
+}
+.rg-scope .leave-card:hover { background:var(--cream); }
+.rg-scope .leave-avatar { width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;flex-shrink:0; }
+
+/* ── TOAST ── */
+.rg-scope .toast, .rg-toast {
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(100px);
+  background:#1a1a1a; color:#fff; padding:10px 18px; border-radius:10px;
+  font-size:12px; z-index:9999; transition:transform 0.3s; pointer-events:none; white-space:nowrap;
+  font-family:'Segoe UI', -apple-system, sans-serif;
+}
+.rg-toast.show { transform:translateX(-50%) translateY(0); }
+
+/* ── MODAL ── */
+.rg-modal-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1000;
+  display:flex; align-items:center; justify-content:center; padding:20px;
+}
+.rg-modal {
+  background:#fff; border-radius:16px; width:100%; max-width:520px;
+  max-height:90vh; overflow-y:auto; padding:24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  font-family:'Segoe UI', -apple-system, sans-serif; color:#1f1f1f; font-size:14px;
+}
+.rg-modal .modal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+.rg-modal .modal-title { font-size:16px; font-weight:600; }
+.rg-modal .modal-close { cursor:pointer; font-size:20px; color:#6b7280; line-height:1; background:none; border:none; }
+
+/* ── PERF BARS ── */
+.rg-scope .perf-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.rg-scope .perf-name { font-size:11px; font-weight:500; width:110px; flex-shrink:0; }
+.rg-scope .perf-bar-wrap { flex:1; background:var(--gray-light); border-radius:10px; height:6px; overflow:hidden; }
+.rg-scope .perf-bar { height:6px; border-radius:10px; }
+.rg-scope .perf-val { font-size:11px; font-weight:600; width:36px; text-align:right; flex-shrink:0; }
+
+@media (max-width:900px) {
+  .rg-scope .grid-4 { grid-template-columns:1fr 1fr; }
+  .rg-scope .grid-3 { grid-template-columns:1fr; }
+  .rg-scope .grid-2 { grid-template-columns:1fr; }
+}

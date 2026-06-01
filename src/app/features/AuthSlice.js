@@ -53,12 +53,16 @@ const pickDefaultActiveOrg = (employee) => {
   const hasHostel = isValidId(employee?.hostelid);
   const hasUniclub = isValidId(employee?.uniclubid);
   const hasUniversity = isValidId(employee?.universityid || employee?.universityId);
+  const hasGroup = isValidId(employee?.groupId || employee?.groupid);
 
+  if (hasGroup) return "restaurantGroup";
   if (hasUniclub) return "uniclub";
   if (hasHostel) return "hostel";
   if (hasUniversity) return "university";
   return "business";
 };
+
+const VALID_ORGS = ["hostel", "uniclub", "business", "university", "restaurantGroup"];
 
 /* ---------------- thunks ---------------- */
 export const getEmployeeByUid = createAsyncThunk(
@@ -154,13 +158,9 @@ const initialState = {
     }
   })(),
   type: localStorage.getItem("type") || null,
-  activeOrg:
-    localStorage.getItem("activeOrg") === "hostel" ||
-    localStorage.getItem("activeOrg") === "uniclub" ||
-    localStorage.getItem("activeOrg") === "business" ||
-    localStorage.getItem("activeOrg") === "university"
-      ? localStorage.getItem("activeOrg")
-      : null,
+  activeOrg: VALID_ORGS.includes(localStorage.getItem("activeOrg"))
+    ? localStorage.getItem("activeOrg")
+    : null,
 };
 
 /* ---------------- slice ---------------- */
@@ -170,14 +170,7 @@ const AuthSlice = createSlice({
   reducers: {
     setActiveOrg: (state, action) => {
       const v = action.payload;
-      if (
-        v !== "hostel" &&
-        v !== "uniclub" &&
-        v !== "business" &&
-        v !== "university" &&
-        v !== null
-      )
-        return;
+      if (v !== null && !VALID_ORGS.includes(v)) return;
 
       state.activeOrg = v;
       try {
@@ -188,8 +181,7 @@ const AuthSlice = createSlice({
     hydrateActiveOrg: (state) => {
       try {
         const v = localStorage.getItem("activeOrg");
-        state.activeOrg =
-          v === "hostel" || v === "uniclub" || v === "business" || v === "university" ? v : null;
+        state.activeOrg = VALID_ORGS.includes(v) ? v : null;
       } catch {
         state.activeOrg = null;
       }
@@ -225,12 +217,14 @@ const AuthSlice = createSlice({
         const hasHostel = isValidId(employee?.hostelid);
         const hasUniclub = isValidId(employee?.uniclubid);
         const hasUniversity = isValidId(employee?.universityid || employee?.universityId);
-        const hasBusiness = !hasHostel && !hasUniclub && !hasUniversity;
+        const hasGroup = isValidId(employee?.groupId || employee?.groupid);
+        const hasBusiness = !hasHostel && !hasUniclub && !hasUniversity && !hasGroup;
 
         const storedValid =
           (stored === "hostel" && hasHostel) ||
           (stored === "uniclub" && hasUniclub) ||
           (stored === "university" && hasUniversity) ||
+          (stored === "restaurantGroup" && hasGroup) ||
           (stored === "business" && hasBusiness);
 
         state.activeOrg = storedValid ? stored : computed;
