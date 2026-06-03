@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueCol } from "../../utils/restaurantGroupPaths";
+import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, progressColor, noteTypePill, noteTypeLabel } from "./rgUtils";
 
 const KPI_COLORS = [
@@ -13,7 +13,7 @@ const NOTE_TYPES = ["Recognition", "Coaching", "Warning", "Note"];
 const monthLabel = () => { const d = new Date(); return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
 
 export default function PerformancePage() {
-  const { groupId, staff, perfNotes, kpis, selectedVenue, matchVenue, showToast, can } = useRG();
+  const { groupId, staff, venues, perfNotes, kpis, selectedVenue, matchVenue, showToast, can } = useRG();
   const canEdit = can("performance", "edit");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ staffId: "", type: "Recognition", note: "" });
@@ -51,7 +51,7 @@ export default function PerformancePage() {
   };
 
   const scopedStaff = useMemo(
-    () => staff.filter((s) => selectedVenue === "all" || s.venueId === selectedVenue),
+    () => staff.filter((s) => staffInVenue(s, selectedVenue)),
     [staff, selectedVenue]
   );
   const notes = useMemo(() => perfNotes.filter(matchVenue), [perfNotes, matchVenue]);
@@ -60,11 +60,12 @@ export default function PerformancePage() {
     if (!form.staffId) return showToast("Select a staff member");
     if (!form.note.trim()) return showToast("Write a note");
     const st = staff.find((s) => s.id === form.staffId);
-    if (!st?.venueId) return showToast("Staff has no venue");
+    const vid = selectedVenue !== "all" ? selectedVenue : st?.venueIds?.[0] || st?.venueId;
+    if (!vid) return showToast("Select a venue for this note");
     const d = new Date();
     try {
-      await addDoc(venueCol(groupId, st.venueId, "performanceNotes"), {
-        staffId: form.staffId, staffName: fullName(st), venue: st?.venue || "", venueId: st?.venueId || "",
+      await addDoc(venueCol(groupId, vid, "performanceNotes"), {
+        staffId: form.staffId, staffName: fullName(st), venue: venues.find((v) => v.id === vid)?.name || "", venueId: vid,
         type: form.type, note: form.note.trim(), date: `${d.getDate()} ${MONTHS[d.getMonth()]}`, by: "Manager",
         createdAt: serverTimestamp(),
       });

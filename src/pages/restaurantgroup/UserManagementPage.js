@@ -1,100 +1,38 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { initializeApp, deleteApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { db, firebaseConfig } from "../../firebase";
+import React, { useMemo, useState } from "react";
+import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "../../firebase";
 import { useRG } from "./RGContext";
-import { RG_MODULES, RG_ROLES, DEFAULT_PERMISSIONS, defaultPermsForRole, roleMeta, levelMeta } from "./rgConfig";
+import { staffCol } from "../../utils/restaurantGroupPaths";
+import { RG_MODULES, RG_ROLES, DEFAULT_PERMISSIONS, defaultPermsForStaffRole, roleToGroupRole, roleMeta, levelMeta } from "./rgConfig";
 import { initials } from "./rgUtils";
 
-const isEmailValid = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e || "").trim());
 const LEVEL_OPTS = [["none", "✕ None"], ["view", "👁 View"], ["edit", "✏ Edit"]];
 
 export default function UserManagementPage() {
-  const { groupId, group, venues, can, showToast } = useRG();
+  const { groupId, group, staff, venues, can, showToast } = useRG();
   const editable = can("usermgmt", "edit");
+  const venueLabel = (s) => (s.venueNames || []).join(", ") || "—";
 
-  const [users, setUsers] = useState([]);
-  useEffect(() => {
-    if (!groupId) return;
-    const qy = query(collection(db, "employees"), where("groupId", "==", groupId));
-    return onSnapshot(qy, (snap) => setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), () => setUsers([]));
-  }, [groupId]);
+  const sorted = useMemo(() => {
+    const rank = { storeAdmin: 0, manager: 1, staff: 2 };
+    return [...staff].sort((a, b) => (rank[a.groupRole || roleToGroupRole(a.role)] ?? 3) - (rank[b.groupRole || roleToGroupRole(b.role)] ?? 3) || (a.displayName || "").localeCompare(b.displayName || ""));
+  }, [staff]);
 
-  const venueLabel = (vId) => vId === "all" ? "All venues" : (venues.find((v) => v.id === vId)?.name || "—");
-
-  // ── Add user ──
-  const blank = () => ({ name: "", email: "", password: "", role: "staff", venueId: venues[0]?.id || "all" });
-  const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState(blank());
-  const [saving, setSaving] = useState(false);
-  const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
-
-  const addUser = async () => {
-    if (!form.name.trim()) return showToast("Name required");
-    const email = form.email.toLowerCase().trim();
-    if (!isEmailValid(email)) return showToast("Valid email required");
-    const password = form.password.trim() || `${email.split("@")[0]}654321`;
-    setSaving(true);
-    let tempApp = null;
-    try {
-      tempApp = initializeApp(firebaseConfig, `userCreator_${Date.now()}`);
-      const cred = await createUserWithEmailAndPassword(getAuth(tempApp), email, password);
-      const uid = cred.user.uid;
-      await updateProfile(cred.user, { displayName: form.name.trim() });
-      const venueId = form.role === "owner" ? "all" : form.venueId;
-      await setDoc(doc(db, "employees", uid), {
-        uid, name: form.name.trim(), email, type: "admin",
-        role: form.role === "owner" ? "groupOwner" : "groupStaff", groupRole: form.role,
-        empType: "restaurantGroup", groupId, groupName: group?.name || "",
-        venueId, permissions: defaultPermsForRole(form.role),
-        isActive: true, status: "Active", password, createdAt: serverTimestamp(),
-      });
-      await setDoc(doc(db, "users", uid), {
-        uid, firstname: form.name.trim(), email, groupId, groupRole: form.role,
-        roles: { groupStaff: true }, password, createddate: new Date(),
-      });
-      showToast(`${form.name} added — they can now log in with their own email`);
-      setAddOpen(false); setForm(blank());
-    } catch (e) {
-      showToast(e?.code === "auth/email-already-in-use" ? "That email already has an account" : "Could not create user");
-    } finally {
-      setSaving(false);
-      if (tempApp) { try { await deleteApp(tempApp); } catch {} }
-    }
-  };
-
-  // ── Permissions editor ──
   const [permUser, setPermUser] = useState(null);
   const [permDraft, setPermDraft] = useState({});
-  const [permRole, setPermRole] = useState("staff");
-  const [permVenue, setPermVenue] = useState("all");
-  const openPerms = (u) => {
-    setPermUser(u);
-    setPermRole(u.groupRole || "staff");
-    setPermVenue(u.venueId || "all");
-    setPermDraft({ ...defaultPermsForRole(u.groupRole), ...(u.permissions && !Array.isArray(u.permissions) ? u.permissions : {}) });
+  const openPerms = (s) => {
+    setPermUser(s);
+    setPermDraft({ ...defaultPermsForStaffRole(s.role), ...(s.permissions && !Array.isArray(s.permissions) ? s.permissions : {}) });
   };
-  const applyRoleDefaults = (role) => { setPermRole(role); setPermDraft(defaultPermsForRole(role)); };
+  const applyRoleDefaults = () => setPermDraft(defaultPermsForStaffRole(permUser.role));
   const savePerms = async () => {
     try {
-      await updateDoc(doc(db, "employees", permUser.id), {
-        groupRole: permRole, venueId: permRole === "owner" ? "all" : permVenue,
-        permissions: permDraft, updatedAt: serverTimestamp(),
-      });
-      showToast("Permissions updated");
+      await updateDoc(doc(staffCol(groupId), permUser.id), { permissions: permDraft, updatedAt: serverTimestamp() });
+      if (permUser.adminUid) await updateDoc(doc(db, "employees", permUser.adminUid), { permissions: permDraft }); // sync the login
+      showToast(permUser.hasAdminLogin ? "Permissions saved & applied to their login" : "Permissions saved (applies when they get a login)");
       setPermUser(null);
     } catch { showToast("Could not save permissions"); }
   };
-  const toggleStatus = async (u) => {
-    try { await updateDoc(doc(db, "employees", u.id), { isActive: !(u.isActive ?? true), status: (u.isActive ?? true) ? "Suspended" : "Active" }); }
-    catch { showToast("Could not update status"); }
-  };
-
-  const sorted = useMemo(() => {
-    const rank = { owner: 0, storeAdmin: 1, manager: 2, staff: 3 };
-    return [...users].sort((a, b) => (rank[a.groupRole] ?? 4) - (rank[b.groupRole] ?? 4));
-  }, [users]);
 
   return (
     <>
@@ -112,44 +50,46 @@ export default function UserManagementPage() {
       </div>
 
       <div className="grid-2">
-        {/* Users list */}
+        {/* Users & roles (all staff) */}
         <div className="card">
           <div className="card-head">
-            <span className="card-title">Users & roles</span>
-            {editable && <button className="btn btn-sm btn-primary" onClick={() => { setForm(blank()); setAddOpen(true); }}>+ Add user</button>}
+            <span className="card-title">Users & permissions</span>
+            <span className="card-sub">Add people in Staff Directory</span>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
-              <thead><tr><th>User</th><th>Role</th><th>Venue</th><th>Status</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
+              <thead><tr><th>User</th><th>Role</th><th>Venues</th><th>Access</th><th style={{ textAlign: "right" }}>Permissions</th></tr></thead>
               <tbody>
-                {sorted.map((u) => {
-                  const rm = roleMeta(u.groupRole);
-                  const active = u.isActive ?? true;
+                {/* Super Admin / owner */}
+                <tr>
+                  <td><div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <div className="staff-avatar" style={{ width: 26, height: 26, fontSize: 10, marginBottom: 0, background: "var(--black)" }}>{initials({ name: group?.ownerName || "Owner" })}</div>
+                    <div><div style={{ fontSize: 12, fontWeight: 500 }}>{group?.ownerName || "Super Admin"}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{group?.ownerEmail}</div></div>
+                  </div></td>
+                  <td><span className="pill" style={{ background: "var(--black)", color: "#fff" }}>Super Admin</span></td>
+                  <td style={{ fontSize: 11, color: "var(--gray)" }}>All venues</td>
+                  <td><span className="pill pill-green">Website login</span></td>
+                  <td style={{ textAlign: "right", fontSize: 11, color: "var(--gray)" }}>Full access</td>
+                </tr>
+                {sorted.map((s) => {
+                  const rm = roleMeta(s.groupRole || roleToGroupRole(s.role));
+                  const active = s.status !== "Inactive";
                   return (
-                    <tr key={u.id}>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                          <div className="staff-avatar" style={{ width: 26, height: 26, fontSize: 10, marginBottom: 0, background: "var(--gray)" }}>{initials({ name: u.name })}</div>
-                          <div><div style={{ fontSize: 12, fontWeight: 500 }}>{u.name}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{u.email}</div></div>
-                        </div>
-                      </td>
+                    <tr key={s.id}>
+                      <td><div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                        <div className="staff-avatar" style={{ width: 26, height: 26, fontSize: 10, marginBottom: 0, background: "var(--gray)" }}>{initials(s)}</div>
+                        <div><div style={{ fontSize: 12, fontWeight: 500 }}>{s.displayName || s.name}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{s.role}{s.pin ? ` · PIN ${s.pin}` : ""}</div></div>
+                      </div></td>
                       <td><span className="pill" style={{ background: rm.pill, color: rm.text }}>{rm.label}</span></td>
-                      <td style={{ fontSize: 11, color: "var(--gray)" }}>{venueLabel(u.venueId)}</td>
-                      <td><span className={`pill ${active ? "pill-green" : "pill-gray"}`}>{active ? "Active" : "Suspended"}</span></td>
+                      <td style={{ fontSize: 11, color: "var(--gray)" }}>{venueLabel(s)}</td>
+                      <td>{s.hasAdminLogin ? <span className="pill pill-green" title={s.email}>Website login</span> : <span className="pill pill-gray">PIN only</span>}</td>
                       <td style={{ textAlign: "right" }}>
-                        {u.groupRole === "owner" ? (
-                          <span style={{ fontSize: 11, color: "var(--gray)" }}>Super Admin</span>
-                        ) : editable ? (
-                          <div style={{ display: "inline-flex", gap: 6 }}>
-                            <button className="btn btn-sm" onClick={() => openPerms(u)}>Permissions</button>
-                            <button className="btn btn-sm" onClick={() => toggleStatus(u)}>{active ? "Suspend" : "Activate"}</button>
-                          </div>
-                        ) : <span style={{ fontSize: 11, color: "var(--gray)" }}>—</span>}
+                        {editable ? <button className="btn btn-sm" onClick={() => openPerms(s)}>Permissions</button> : <span style={{ fontSize: 11, color: "var(--gray)" }}>—</span>}
                       </td>
                     </tr>
                   );
                 })}
-                {sorted.length === 0 && <tr><td colSpan={5} style={{ color: "var(--gray)" }}>No users yet.</td></tr>}
+                {sorted.length === 0 && <tr><td colSpan={5} style={{ color: "var(--gray)" }}>No staff yet — add them in Staff Directory.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -182,53 +122,15 @@ export default function UserManagementPage() {
         </div>
       </div>
 
-      {/* Add user modal */}
-      {addOpen && (
-        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setAddOpen(false)}>
-          <div className="rg-modal">
-            <div className="modal-head"><span className="modal-title">Add user</span><button className="modal-close" onClick={() => setAddOpen(false)}>✕</button></div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div className="form-group"><label className="form-label">Full name *</label><input className="form-input" value={form.name} onChange={setF("name")} /></div>
-              <div className="form-group"><label className="form-label">Email *</label><input className="form-input" value={form.email} onChange={setF("email")} placeholder="name@venue.com.au" /></div>
-              <div className="form-group"><label className="form-label">Password</label><input className="form-input" value={form.password} onChange={setF("password")} placeholder="auto-generated if blank" /></div>
-              <div className="form-group"><label className="form-label">Role</label>
-                <select className="form-input" value={form.role} onChange={setF("role")}>{RG_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select>
-              </div>
-              {form.role !== "owner" && (
-                <div className="form-group"><label className="form-label">Venue</label>
-                  <select className="form-input" value={form.venueId} onChange={setF("venueId")}>
-                    <option value="all">All venues</option>
-                    {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                  </select>
-                </div>
-              )}
-            </div>
-            <div style={{ fontSize: 11, color: "var(--gray)" }}>{roleMeta(form.role).desc} Permissions can be fine-tuned after creating.</div>
-            <div className="btn-row">
-              <button className="btn btn-primary" onClick={addUser} disabled={saving}>{saving ? "Creating..." : "Create user"}</button>
-              <button className="btn" onClick={() => setAddOpen(false)}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Permissions modal */}
       {permUser && (
         <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setPermUser(null)}>
-          <div className="rg-modal" style={{ maxWidth: 560 }}>
-            <div className="modal-head"><span className="modal-title">Permissions — {permUser.name}</span><button className="modal-close" onClick={() => setPermUser(null)}>✕</button></div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div className="form-group"><label className="form-label">Role preset</label>
-                <select className="form-input" value={permRole} onChange={(e) => applyRoleDefaults(e.target.value)}>{RG_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select>
-              </div>
-              <div className="form-group"><label className="form-label">Venue scope</label>
-                <select className="form-input" value={permVenue} onChange={(e) => setPermVenue(e.target.value)} disabled={permRole === "owner"}>
-                  <option value="all">All venues</option>
-                  {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
-              </div>
+          <div className="rg-modal" style={{ maxWidth: 540 }}>
+            <div className="modal-head"><span className="modal-title">Permissions — {permUser.displayName || permUser.name}</span><button className="modal-close" onClick={() => setPermUser(null)}>✕</button></div>
+            <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>{permUser.role} · {venueLabel(permUser)} · {permUser.hasAdminLogin ? "has website login" : "PIN only (applies when they log in)"}</span>
+              <button className="btn btn-sm" onClick={applyRoleDefaults}>Reset to role default</button>
             </div>
-            <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>Per-page access — override the role defaults as needed.</div>
             {RG_MODULES.map((m) => (
               <div key={m.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                 <span style={{ fontSize: 12, fontWeight: 500 }}>{m.label}</span>

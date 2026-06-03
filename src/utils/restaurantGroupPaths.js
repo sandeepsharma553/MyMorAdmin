@@ -36,11 +36,20 @@ export const venueCol = (groupId, venueId, name) => {
 };
 export const venueTrainingCol = (groupId, venueId) => venueCol(groupId, venueId, "trainingModules");
 
-// Collections that are stored per-venue (used by the context to subscribe & merge).
+// Collections stored per-venue (subscribed & merged by the context).
+// NB: `staff` is GROUP-LEVEL (a staff member can belong to multiple venues via
+// venueIds), so it is NOT in this list — see staffCol() below.
 export const PER_VENUE_COLLECTIONS = [
-  "staff", "shifts", "leaveRequests", "checklists",
-  "performanceNotes", "trainingModules", "trainingAssignments", "kpis",
+  "shifts", "leaveRequests", "checklists",
+  "performanceNotes", "trainingModules", "trainingAssignments", "checklistAssignments", "kpis",
 ];
+
+// A staff member belongs to one venue or many: matches when venueIds includes
+// the target, or (legacy) a single venueId field equals it.
+export const staffInVenue = (s, venueId) =>
+  venueId === "all" ||
+  (Array.isArray(s?.venueIds) ? s.venueIds.includes(venueId) : false) ||
+  s?.venueId === venueId;
 export const staffCol = (groupId) => groupCol(groupId, "staff");
 export const shiftsCol = (groupId) => groupCol(groupId, "shifts");
 export const leaveCol = (groupId) => groupCol(groupId, "leaveRequests");

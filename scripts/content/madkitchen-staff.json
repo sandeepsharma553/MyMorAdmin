@@ -1,0 +1,381 @@
+{
+  "venueNames": {
+    "Mad Benji": "mad-benji",
+    "Mad Hotpot Berwick": "mad-hotpot",
+    "Mad Hotpot": "mad-hotpot",
+    "Hey Sister": "hey-sister",
+    "Main Kitchen": "main-kitchen"
+  },
+  "staff": [
+    {
+      "name": "Ryan",
+      "role": "Manager",
+      "area": "Mgmt",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": true,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Cassie",
+      "role": "FOH Supervisor",
+      "area": "FOH",
+      "inCharge": true,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": true,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Chloe",
+      "role": "FOH In Charge",
+      "area": "FOH",
+      "inCharge": true,
+      "venueIds": [
+        "mad-benji",
+        "mad-hotpot"
+      ],
+      "adminAccess": true,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Van",
+      "role": "BOH In Charge",
+      "area": "BOH",
+      "inCharge": true,
+      "venueIds": [
+        "mad-hotpot"
+      ],
+      "adminAccess": true,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Jason",
+      "role": "BOH / Manager",
+      "area": "BOH",
+      "inCharge": true,
+      "venueIds": [
+        "mad-hotpot"
+      ],
+      "adminAccess": true,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Jade",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji",
+        "mad-hotpot"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Lina",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji",
+        "mad-hotpot"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Bowser",
+      "role": "BOH",
+      "area": "BOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji",
+        "mad-hotpot"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Kav",
+      "role": "BOH",
+      "area": "BOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji",
+        "mad-hotpot"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Jackson",
+      "role": "BOH",
+      "area": "BOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji",
+        "mad-hotpot"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Elyssa",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Rachele",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Jolene",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Bridie",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Maddie",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Libby",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Jess",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Zoe",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Angelina",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Imogen",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Kulith",
+      "role": "Chef",
+      "area": "BOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Hudson",
+      "role": "BOH",
+      "area": "BOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Jordan",
+      "role": "BOH",
+      "area": "BOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-benji"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Jiny",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-hotpot"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Kelly",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-hotpot"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Jessica",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-hotpot"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "Jayley",
+      "role": "FOH",
+      "area": "FOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-hotpot"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    },
+    {
+      "name": "David",
+      "role": "BOH",
+      "area": "BOH",
+      "inCharge": false,
+      "venueIds": [
+        "mad-hotpot"
+      ],
+      "adminAccess": false,
+      "email": "",
+      "pin": "auto",
+      "type": "Casual"
+    }
+  ]
+}

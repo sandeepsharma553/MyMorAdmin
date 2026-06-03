@@ -1,11 +1,16 @@
 import React, { useMemo, useState } from "react";
 import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueTrainingCol, venueCol } from "../../utils/restaurantGroupPaths";
-import { fullName, trainingStatusPill, trainingBarColor, progressColor } from "./rgUtils";
+import { venueTrainingCol, venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
+import { fullName, trainingStatusPill, trainingBarColor, progressColor, trainingPct, moduleForStaff, snapshotForAssign } from "./rgUtils";
 import { RefImageViewer, RefImageEditor } from "./RefImages";
+import { RichItemList, RichText } from "./RichItems";
+import AssignmentDetail from "./AssignmentDetail";
+
+const hasText = (h) => (h || "").replace(/<[^>]*>/g, "").trim().length > 0;
 
 const TABS = [
+  { id: "mine", label: "My Training" },
   { id: "overview", label: "Overview" },
   { id: "modules", label: "Modules" },
   { id: "assigned", label: "Assigned" },
@@ -15,22 +20,28 @@ const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent"
 const CATS = ["FOH", "BOH", "All", "Management"];
 const ICONS = ["🌅", "🌙", "⭐", "🤝", "🍔", "🥗", "🍳", "🔥", "🛡️", "☕", "🏭", "👑", "📋", "🧂"];
 const MOD_COLORS = [["Amber", "#fef3c7"], ["Purple", "#ede9fe"], ["Yellow", "#fef9c3"], ["Green", "#dcfce7"], ["Red", "#fee2e2"], ["Blue", "#e0f2fe"], ["Cyan", "#cffafe"], ["Pink", "#fce7f3"]];
-const blankModule = () => ({ id: null, venueId: "", title: "", cat: "FOH", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", mandatory: false, steps: [{ heading: "Procedure", itemsText: "" }], images: [] });
-const stepsToEditor = (steps) => (Array.isArray(steps) && steps.length ? steps.map((s) => ({ heading: s.heading || "", itemsText: (s.items || []).join("\n") })) : [{ heading: "Procedure", itemsText: "" }]);
+const blankModule = () => ({ id: null, venueId: "", title: "", cat: "FOH", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", mandatory: false, steps: [{ heading: "Procedure", items: [] }], images: [] });
+const stepsToEditor = (steps) => (Array.isArray(steps) && steps.length ? steps.map((s) => ({ heading: s.heading || "", items: s.items || [] })) : [{ heading: "Procedure", items: [] }]);
 const editorToSteps = (steps) => (steps || [])
-  .map((s) => ({ heading: (s.heading || "").trim(), items: s.itemsText.split("\n").map((x) => x.trim()).filter(Boolean) }))
+  .map((s) => ({ heading: (s.heading || "").trim(), items: (s.items || []).filter(hasText) }))
   .filter((s) => s.heading || s.items.length);
 
 export default function TrainingPage() {
-  const { groupId, staff, venues, modules, assignments, selectedVenue, matchVenue, showToast, can } = useRG();
+  const { groupId, staff, venues, modules, assignments, selectedVenue, matchVenue, showToast, can, me } = useRG();
   const canEdit = can("training", "edit");
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("mine");
+  const [openAssign, setOpenAssign] = useState(null); // assignment id
+
+  const myStaff = useMemo(() => staff.find((s) => s.adminUid && s.adminUid === me?.uid), [staff, me]);
+  const myAssignments = useMemo(() => myStaff ? assignments.filter((a) => a.staffId === myStaff.id) : [], [myStaff, assignments]);
+  const openAssignment = useMemo(() => assignments.find((a) => a.id === openAssign) || null, [assignments, openAssign]);
+  const [areaTab, setAreaTab] = useState("all"); // all | foh | boh
   const [detail, setDetail] = useState(null);
   const [form, setForm] = useState({ staffId: "", moduleId: "", due: "", priority: "normal", notes: "" });
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
   const scopedStaff = useMemo(
-    () => staff.filter((s) => selectedVenue === "all" || s.venueId === selectedVenue),
+    () => staff.filter((s) => staffInVenue(s, selectedVenue)),
     [staff, selectedVenue]
   );
   const scopedAssign = useMemo(() => assignments.filter(matchVenue), [assignments, matchVenue]);
@@ -39,28 +50,45 @@ export default function TrainingPage() {
     () => modules.filter((m) => selectedVenue === "all" || m.venueId === selectedVenue),
     [modules, selectedVenue]
   );
+  // FOH / BOH relevance filter — universal ("All") modules show under both
+  const areaMatch = (m) => areaTab === "all"
+    || (areaTab === "foh" ? (m.cat === "FOH" || m.cat === "All")
+      : (m.cat === "BOH" || m.cat === "All"));
+  const areaModules = useMemo(() => venueModules.filter(areaMatch), [venueModules, areaTab]); // eslint-disable-line
 
   const avgCompletion = scopedStaff.length
-    ? Math.round(scopedStaff.reduce((a, s) => a + (s.training || 0), 0) / scopedStaff.length)
+    ? Math.round(scopedStaff.reduce((a, s) => a + trainingPct(s.id, assignments), 0) / scopedStaff.length)
     : 0;
-  const trained = scopedStaff.filter((s) => (s.training || 0) >= 90).length;
+  const trained = scopedStaff.filter((s) => trainingPct(s.id, assignments) >= 90).length;
   const completionsWeek = scopedAssign.filter((a) => a.status === "Complete").length;
+
+  // modules eligible for the staff selected in the assign form (area-aware)
+  const assignStaff = staff.find((s) => s.id === form.staffId);
+  const assignableModules = useMemo(
+    () => assignStaff ? modules.filter((m) => moduleForStaff(m, assignStaff)) : venueModules,
+    [assignStaff, modules, venueModules]
+  );
 
   const markDone = async (a) => {
     try { await updateDoc(doc(venueCol(groupId, a.venueId, "trainingAssignments"), a.id), { status: "Complete", progress: 100 }); showToast(`Marked complete for ${a.staffName}`); }
     catch { showToast("Could not update"); }
   };
+  const removeAssign = async (a) => {
+    try { await deleteDoc(doc(venueCol(groupId, a.venueId, "trainingAssignments"), a.id)); showToast("Assignment removed"); }
+    catch { showToast("Could not remove"); }
+  };
 
   const assign = async () => {
     if (!form.staffId || !form.moduleId) return showToast("Pick a staff member and module");
     const st = staff.find((s) => s.id === form.staffId);
-    if (!st?.venueId) return showToast("Staff has no venue");
     const mod = modules.find((m) => m.id === form.moduleId);
+    if (!mod?.venueId) return showToast("Module has no venue");
     try {
-      await addDoc(venueCol(groupId, st.venueId, "trainingAssignments"), {
-        staffId: form.staffId, staffName: fullName(st), venue: st?.venue || "", venueId: st?.venueId || "",
+      // assignment lives under the module's venue (training is per-venue)
+      await addDoc(venueCol(groupId, mod.venueId, "trainingAssignments"), {
+        staffId: form.staffId, staffName: fullName(st), venue: mod.venue || "", venueId: mod.venueId,
         moduleId: form.moduleId, moduleTitle: mod?.title || "", due: form.due, priority: form.priority,
-        notes: form.notes.trim(), status: "Not started", progress: 0, createdAt: serverTimestamp(),
+        notes: form.notes.trim(), ...snapshotForAssign(mod), status: "Not started", progress: 0, createdAt: serverTimestamp(),
       });
       showToast("Training module assigned — staff notified");
       setForm({ staffId: "", moduleId: "", due: "", priority: "normal", notes: "" });
@@ -74,7 +102,8 @@ export default function TrainingPage() {
   const openEditModule = (m) => { setDetail(null); setModEditor({ id: m.id, venueId: m.venueId || "", title: m.title, cat: m.cat, duration: m.duration, icon: m.icon, color: m.color, desc: m.desc || "", mandatory: !!m.mandatory, steps: stepsToEditor(m.steps), images: m.images || [] }); };
   // step-section editing
   const setStep = (i, k) => (e) => setModEditor((p) => ({ ...p, steps: p.steps.map((s, idx) => idx === i ? { ...s, [k]: e.target.value } : s) }));
-  const addStep = () => setModEditor((p) => ({ ...p, steps: [...p.steps, { heading: "", itemsText: "" }] }));
+  const setStepItems = (i) => (items) => setModEditor((p) => ({ ...p, steps: p.steps.map((s, idx) => idx === i ? { ...s, items } : s) }));
+  const addStep = () => setModEditor((p) => ({ ...p, steps: [...p.steps, { heading: "", items: [] }] }));
   const removeStep = (i) => setModEditor((p) => ({ ...p, steps: p.steps.filter((_, idx) => idx !== i) }));
   const saveModule = async () => {
     if (!modEditor.title.trim()) return showToast("Module title required");
@@ -115,6 +144,30 @@ export default function TrainingPage() {
         {canEdit && <button className="btn btn-sm btn-primary" onClick={openNewModule}>+ New module</button>}
       </div>
 
+      {/* My Training — the logged-in user ticks off their own assigned steps */}
+      {tab === "mine" && (
+        <div>
+          {!myStaff && <div className="card"><div style={{ fontSize: 13, color: "var(--gray)" }}>No staff profile is linked to your login yet. Training assigned to you will appear here once it is.</div></div>}
+          {myStaff && myAssignments.length === 0 && <div className="card"><div style={{ fontSize: 13, color: "var(--gray)" }}>No training assigned to you yet 🎉</div></div>}
+          {myStaff && myAssignments.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
+              {myAssignments.map((a) => (
+                <div key={a.id} className="training-module" onClick={() => setOpenAssign(a.id)}>
+                  <div className="module-title">{a.moduleTitle}</div>
+                  <div className="module-meta">{a.venue}{a.due ? ` · due ${a.due}` : ""}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4 }}>
+                    <span className={`pill ${trainingStatusPill(a.status)}`}>{a.status}</span>
+                    <span>{(a.checks || []).filter(Boolean).length}/{a.itemsTotal || (a.checks || []).length}</span>
+                  </div>
+                  <div className="progress-wrap"><div className="progress-bar" style={{ width: `${a.progress || 0}%`, background: trainingBarColor(a.status) }} /></div>
+                  <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>Click to open & tick off each step</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Overview */}
       {tab === "overview" && (
         <>
@@ -125,22 +178,32 @@ export default function TrainingPage() {
             <div className="metric"><div className="metric-label">Avg. completion</div><div className="metric-value">{avgCompletion}%</div><div className="metric-change down">Target 90%</div><div className="metric-bar" style={{ background: "var(--red)" }} /></div>
           </div>
           <div className="card">
-            <div className="card-head"><span className="card-title">Staff training progress</span><span className="card-sub">{selectedVenue === "all" ? "All venues" : scopedStaff[0]?.venue}</span></div>
-            {scopedStaff.map((s) => (
+            <div className="card-head"><span className="card-title">Staff training progress</span><span className="card-sub">{selectedVenue === "all" ? "All venues" : scopedStaff[0]?.venueNames?.[0]}</span></div>
+            {scopedStaff.map((s) => { const tp = trainingPct(s.id, assignments); return (
               <div key={s.id} className="perf-row">
-                <span className="perf-name">{fullName(s)}</span>
-                <div className="perf-bar-wrap"><div className="perf-bar" style={{ width: `${s.training || 0}%`, background: progressColor(s.training || 0) }} /></div>
-                <span className="perf-val">{s.training || 0}%</span>
+                <span className="perf-name">{s.displayName || fullName(s)}</span>
+                <div className="perf-bar-wrap"><div className="perf-bar" style={{ width: `${tp}%`, background: progressColor(tp) }} /></div>
+                <span className="perf-val">{tp}%</span>
               </div>
-            ))}
+            ); })}
           </div>
         </>
+      )}
+
+      {/* FOH / BOH relevance filter (Modules + Progress) */}
+      {(tab === "modules" || tab === "progress") && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          {[["all", "All"], ["foh", "FOH"], ["boh", "BOH"]].map(([id, l]) => (
+            <button key={id} className="btn btn-sm" onClick={() => setAreaTab(id)}
+              style={areaTab === id ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
+          ))}
+        </div>
       )}
 
       {/* Modules */}
       {tab === "modules" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 12 }}>
-          {venueModules.map((m) => (
+          {areaModules.map((m) => (
             <div key={`${m.venueId}-${m.id}`} className="training-module" onClick={() => setDetail(m)}>
               <div className="module-icon" style={{ background: m.color }}>{m.icon}</div>
               <div className="module-title">{m.title}</div>
@@ -151,7 +214,7 @@ export default function TrainingPage() {
               </div>
             </div>
           ))}
-          {venueModules.length === 0 && <div style={{ color: "var(--gray)", fontSize: 13 }}>No training modules for this venue yet.</div>}
+          {areaModules.length === 0 && <div style={{ color: "var(--gray)", fontSize: 13 }}>No training modules for this venue / area yet.</div>}
         </div>
       )}
 
@@ -170,8 +233,8 @@ export default function TrainingPage() {
               </div>
               <div className="form-group"><label className="form-label">Module</label>
                 <select className="form-input" value={form.moduleId} onChange={setF("moduleId")}>
-                  <option value="">Select module...</option>
-                  {venueModules.map((m) => <option key={`${m.venueId}-${m.id}`} value={m.id}>{m.title} — {m.venue}</option>)}
+                  <option value="">{assignStaff ? `Select module (${assignStaff.area} + universal)...` : "Select staff first..."}</option>
+                  {assignableModules.map((m) => <option key={`${m.venueId}-${m.id}`} value={m.id}>{m.title} — {m.venue} [{m.cat}]</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Due date</label><input type="date" className="form-input" value={form.due} onChange={setF("due")} /></div>
@@ -196,13 +259,10 @@ export default function TrainingPage() {
                       <td><span className={`pill ${trainingStatusPill(a.status)}`}>{a.status}</span></td>
                       <td><div className="progress-wrap" style={{ width: 80 }}><div className="progress-bar" style={{ width: `${a.progress || 0}%`, background: trainingBarColor(a.status) }} /></div></td>
                       <td>
-                        {a.status === "Complete"
-                          ? <button className="btn btn-sm" onClick={() => showToast("Certificate downloaded")}>Certificate</button>
-                          : !canEdit
-                            ? <span className="pill pill-gray">View only</span>
-                            : a.status === "Overdue"
-                              ? <button className="btn btn-sm btn-primary" onClick={() => showToast(`Escalated — ${a.staffName}`)}>Escalate</button>
-                              : <button className="btn btn-sm" onClick={() => markDone(a)}>Mark done</button>}
+                        <div style={{ display: "inline-flex", gap: 6 }}>
+                          <button className="btn btn-sm" onClick={() => setOpenAssign(a.id)}>Open</button>
+                          {canEdit && <button className="btn btn-sm btn-danger" title="Remove assignment" onClick={() => removeAssign(a)}>✕</button>}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -218,7 +278,7 @@ export default function TrainingPage() {
       {tab === "progress" && (
         <div className="card">
           <div className="card-head"><span className="card-title">Completion by module</span></div>
-          {venueModules.map((m) => {
+          {areaModules.map((m) => {
             const p = moduleProgress(m.id);
             return (
               <div key={`${m.venueId}-${m.id}`} className="perf-row">
@@ -245,7 +305,7 @@ export default function TrainingPage() {
               <div key={i} style={{ marginBottom: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{step.heading}</div>
                 {step.items.map((it, j) => (
-                  <div key={j} className="checklist-item"><span className="nav-dot" style={{ background: "var(--red)", marginTop: 6 }} /><span className="check-text">{it}</span></div>
+                  <div key={j} className="checklist-item"><span className="nav-dot" style={{ background: "var(--red)", marginTop: 6 }} /><RichText html={it} className="check-text" /></div>
                 ))}
               </div>
             ))}
@@ -305,7 +365,7 @@ export default function TrainingPage() {
                       <input className="form-input" style={{ flex: 1 }} value={s.heading} onChange={setStep(i, "heading")} placeholder="Section heading (e.g. Before you do anything else)" />
                       {modEditor.steps.length > 1 && <button type="button" className="btn btn-sm btn-danger" onClick={() => removeStep(i)}>✕</button>}
                     </div>
-                    <textarea className="form-input" rows={4} value={s.itemsText} onChange={setStep(i, "itemsText")} placeholder={"One step per line:\nPut up the 'Please wait to be seated' sign\nTurn on heater or cooler\nCheck till float is correct"} />
+                    <RichItemList value={s.items} onChange={setStepItems(i)} />
                   </div>
                 ))}
               </div>
@@ -321,6 +381,16 @@ export default function TrainingPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {openAssignment && (
+        <AssignmentDetail
+          assignment={openAssignment}
+          groupId={groupId}
+          canTick={canEdit || openAssignment.staffId === myStaff?.id}
+          showToast={showToast}
+          onClose={() => setOpenAssign(null)}
+        />
       )}
     </>
   );

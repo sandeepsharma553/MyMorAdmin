@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueCol } from "../../utils/restaurantGroupPaths";
+import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { db } from "../../firebase";
 import { fullName } from "./rgUtils";
 
@@ -50,7 +50,7 @@ export default function ShiftPlannerPage() {
   const weekLabel = `Week of ${fmt(monday)} – ${fmt(sunday)} ${sunday.getFullYear()}`;
 
   const rows = useMemo(
-    () => staff.filter((s) => selectedVenue === "all" || s.venueId === selectedVenue),
+    () => staff.filter((s) => staffInVenue(s, selectedVenue)),
     [staff, selectedVenue]
   );
 
@@ -83,7 +83,7 @@ export default function ShiftPlannerPage() {
   const saveShift = async () => {
     if (!form.staffId) return showToast("Select a staff member");
     const st = staff.find((s) => s.id === form.staffId);
-    const venue = venues.find((v) => v.id === form.venueId) || venues.find((v) => v.id === st?.venueId);
+    const venue = venues.find((v) => v.id === form.venueId) || venues.find((v) => v.id === (st?.venueIds?.[0] || st?.venueId));
     if (!venue) return showToast("Select a venue");
     const dayIdx = FULL_DAYS.indexOf(form.day);
     const type = parseTime(form.start) >= 15 ? "evening" : "morning";

@@ -41,11 +41,12 @@ export default function LeaveRequestsPage() {
     if (!form.staffId) return showToast("Select a staff member");
     if (!form.start) return showToast("Choose a start date");
     const st = staff.find((s) => s.id === form.staffId);
-    if (!st?.venueId) return showToast("Staff has no venue");
+    const vid = selectedVenue !== "all" ? selectedVenue : st?.venueIds?.[0] || st?.venueId;
+    if (!vid) return showToast("Select a venue for this request");
     try {
-      await addDoc(venueCol(groupId, st.venueId, "leaveRequests"), {
-        staffId: form.staffId, staffName: fullName(st),
-        venue: st?.venue || "", venueId: st?.venueId || "", area: (st?.role || "").split(" — ")[0] || "",
+      await addDoc(venueCol(groupId, vid, "leaveRequests"), {
+        staffId: form.staffId, staffName: st?.displayName || fullName(st),
+        venue: st?.venueNames?.[0] || "", venueId: vid, area: st?.area || (st?.role || "").split(" — ")[0] || "",
         type: form.type, dates: fmtRange(form.start, form.end), days: daysBetween(form.start, form.end),
         startDate: form.start, endDate: form.end || form.start, reason: form.reason.trim(),
         status: "Pending", approvedBy: "", createdAt: serverTimestamp(),

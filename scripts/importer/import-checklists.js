@@ -36,7 +36,7 @@ const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").r
       if (!venueName) { console.log(`  ! venue ${vid} not found, skipping`); continue; }
       await db.collection("restaurantGroups").doc(groupId).collection("venues").doc(vid).collection("checklists").doc(key).set({
         title: c.title, sub: `${venueName} · ${c.sub || "Daily"}`, type: c.type || "Opening",
-        venueId: vid, venue: venueName, items, checked: items.map(() => false), days: c.days || [],
+        area: c.area || "All", venueId: vid, venue: venueName, items, checked: items.map(() => false), days: c.days || [],
         source: c.source || raw.sourceTitle || "import", importedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
       console.log(`  ✓ venues/${vid}/checklists/${key}  (${items.length} items, days=${(c.days || []).join("/") || "daily"})`);

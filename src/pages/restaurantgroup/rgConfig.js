@@ -40,6 +40,15 @@ export const DEFAULT_PERMISSIONS = {
 
 export const defaultPermsForRole = (role) => ({ ...(DEFAULT_PERMISSIONS[role] || DEFAULT_PERMISSIONS.staff) });
 
+// Map a staff job role (Manager / FOH Supervisor / FOH / BOH / Chef …) to a permission groupRole.
+export const roleToGroupRole = (role) =>
+  /manager/i.test(role || "") ? "storeAdmin"
+    : /supervisor|in charge/i.test(role || "") ? "manager"
+      : "staff";
+
+// Default permission map for a staff job role.
+export const defaultPermsForStaffRole = (role) => defaultPermsForRole(roleToGroupRole(role));
+
 export const roleMeta = (role) => RG_ROLES.find((r) => r.key === role) || RG_ROLES[3];
 
 // Does a permission map satisfy a required level for a module?

@@ -211,6 +211,15 @@
 .rg-scope .check-text { font-size:12px; flex:1; }
 .rg-scope .check-text.done { text-decoration:line-through; color:var(--gray); }
 
+/* ── RICH ITEM EDITOR ── */
+.rg-scope .rich-item {
+  min-height: 34px; padding: 7px 10px; border: 0.5px solid var(--border); border-radius: 8px;
+  background: var(--white); font-size: 12px; line-height: 1.5; outline: none;
+}
+.rg-scope .rich-item:focus { border-color: var(--red); }
+.rg-modal .rich-item { min-height: 34px; padding: 7px 10px; border: 0.5px solid #e5e7eb; border-radius: 8px; background: #fff; font-size: 12px; line-height: 1.5; outline: none; }
+.rg-modal .rich-item:focus { border-color: #C0392B; }
+
 /* ── PROGRESS BAR ── */
 .rg-scope .progress-wrap { background:var(--gray-light); border-radius:10px; height:6px; overflow:hidden; }
 .rg-scope .progress-bar { height:100%; border-radius:10px; transition:width 0.3s; }

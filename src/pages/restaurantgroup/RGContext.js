@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState, useCall
 import { onSnapshot } from "firebase/firestore";
 import { useSelector } from "react-redux";
 import {
-  groupDoc, venuesCol, venueCol, PER_VENUE_COLLECTIONS,
+  groupDoc, venuesCol, venueCol, staffCol, PER_VENUE_COLLECTIONS,
 } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForRole, hasLevel } from "./rgConfig";
 
@@ -42,18 +42,20 @@ export function RGProvider({ children }) {
 
   const [group, setGroup] = useState(null);
   const [venues, setVenues] = useState([]);
-  // pv[collection][venueId] = rows[]  — all operational data, stored per-venue
+  const [staff, setStaff] = useState([]); // GROUP-LEVEL (multi-venue via venueIds)
+  // pv[collection][venueId] = rows[]  — the rest is per-venue
   const [pv, setPv] = useState({});
   const [selectedVenue, setSelectedVenue] = useState("all"); // "all" | venueId
   const [loading, setLoading] = useState(true);
 
-  // group doc + venues are group-level
+  // group doc + venues + staff are group-level
   useEffect(() => {
     if (!groupId) { setLoading(false); return; }
     setLoading(true);
     const unsubs = [
       onSnapshot(groupDoc(groupId), (d) => setGroup(d.exists() ? { id: d.id, ...d.data() } : null)),
       subColl(venuesCol(groupId), setVenues, "order"),
+      subColl(staffCol(groupId), setStaff),
     ];
     const t = setTimeout(() => setLoading(false), 600);
     return () => { clearTimeout(t); unsubs.forEach((u) => u && u()); };
@@ -85,12 +87,12 @@ export function RGProvider({ children }) {
     if (sortKey) rows = rows.slice().sort((a, b) => ((a[sortKey] ?? 1e15) > (b[sortKey] ?? 1e15) ? 1 : (a[sortKey] ?? 1e15) < (b[sortKey] ?? 1e15) ? -1 : 0));
     return rows;
   };
-  const staff = useMemo(() => flat("staff"), [pv.staff]); // eslint-disable-line react-hooks/exhaustive-deps
   const shifts = useMemo(() => flat("shifts"), [pv.shifts]); // eslint-disable-line react-hooks/exhaustive-deps
   const leave = useMemo(() => flat("leaveRequests"), [pv.leaveRequests]); // eslint-disable-line react-hooks/exhaustive-deps
   const checklists = useMemo(() => flat("checklists"), [pv.checklists]); // eslint-disable-line react-hooks/exhaustive-deps
   const perfNotes = useMemo(() => flat("performanceNotes"), [pv.performanceNotes]); // eslint-disable-line react-hooks/exhaustive-deps
   const assignments = useMemo(() => flat("trainingAssignments"), [pv.trainingAssignments]); // eslint-disable-line react-hooks/exhaustive-deps
+  const checklistAssignments = useMemo(() => flat("checklistAssignments"), [pv.checklistAssignments]); // eslint-disable-line react-hooks/exhaustive-deps
   const kpis = useMemo(() => flat("kpis", "order"), [pv.kpis]); // eslint-disable-line react-hooks/exhaustive-deps
   const modules = useMemo(() => flat("trainingModules"), [pv.trainingModules]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -120,11 +122,11 @@ export function RGProvider({ children }) {
   const me = useMemo(() => ({ ...(employee || {}), groupRole, venueId: myVenueId, perms: myPerms }), [employee, groupRole, myVenueId, myPerms]);
 
   const value = useMemo(() => ({
-    groupId, group, venues, staff, shifts, leave, modules, assignments, checklists, perfNotes, kpis,
+    groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can,
     loading, showToast,
-  }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklists, perfNotes, kpis,
+  }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis,
       selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, loading, showToast]);
 
   return (

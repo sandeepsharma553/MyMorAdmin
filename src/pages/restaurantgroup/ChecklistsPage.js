@@ -3,6 +3,9 @@ import { updateDoc, addDoc, deleteDoc, doc, serverTimestamp } from "firebase/fir
 import { useRG } from "./RGContext";
 import { venueCol } from "../../utils/restaurantGroupPaths";
 import { RefImageViewer, RefImageEditor } from "./RefImages";
+import { RichItemList, RichText } from "./RichItems";
+
+const hasText = (h) => (h || "").replace(/<[^>]*>/g, "").trim().length > 0;
 
 const TYPES = ["All checklists", "Opening", "Closing", "Cleaning", "Prep"];
 const EDIT_TYPES = ["Opening", "Closing", "Cleaning", "Prep"];
@@ -13,7 +16,9 @@ const dayLabel = (days) => {
   const ordered = WEEKDAYS.filter(([k]) => days.includes(k)).map(([, l]) => l);
   return ordered.join(", ");
 };
-const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "Opening", itemsText: "", days: [], images: [] });
+const AREAS = ["FOH", "BOH", "All"];
+const areaOf = (c) => c.area || (/\bboh\b|kitchen|grill|fry|wash|prep|cook|dressing/i.test(c.title || "") ? "BOH" : /\bfoh\b|floor|barista|bar|counter|service|opening|closing/i.test(c.title || "") ? "FOH" : "All");
+const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "Opening", area: "FOH", items: [], days: [], images: [] });
 
 export default function ChecklistsPage() {
   const { groupId, venues, checklists, selectedVenue, showToast, can } = useRG();
@@ -21,6 +26,7 @@ export default function ChecklistsPage() {
   const [venueTab, setVenueTab] = useState(selectedVenue === "all" ? (venues[0]?.id || "") : selectedVenue);
   const [typeFilter, setTypeFilter] = useState("All checklists");
   const [dayFilter, setDayFilter] = useState("all"); // "all" | "today" | weekday key
+  const [areaFilter, setAreaFilter] = useState("all"); // all | foh | boh
 
   useEffect(() => {
     if (selectedVenue !== "all") setVenueTab(selectedVenue);
@@ -34,9 +40,15 @@ export default function ChecklistsPage() {
     return ds === null || ds.includes(target);
   };
 
+  const areaMatch = (c) => {
+    if (areaFilter === "all") return true;
+    const a = areaOf(c);
+    return areaFilter === "foh" ? (a === "FOH" || a === "All") : (a === "BOH" || a === "All");
+  };
+
   const shown = useMemo(() => checklists.filter(
-    (c) => c.venueId === venueTab && (typeFilter === "All checklists" || c.type === typeFilter) && dayMatch(c)
-  ), [checklists, venueTab, typeFilter, dayFilter]); // eslint-disable-line
+    (c) => c.venueId === venueTab && (typeFilter === "All checklists" || c.type === typeFilter) && dayMatch(c) && areaMatch(c)
+  ), [checklists, venueTab, typeFilter, dayFilter, areaFilter]); // eslint-disable-line
 
   const toggle = async (c, idx) => {
     if (!canEdit) return;
@@ -57,16 +69,16 @@ export default function ChecklistsPage() {
   const [editor, setEditor] = useState(null);
   const setEd = (k) => (e) => setEditor((p) => ({ ...p, [k]: e.target.value }));
   const openNew = () => setEditor(blankForm(venueTab));
-  const openEdit = (c) => setEditor({ id: c.id, title: c.title, sub: c.sub || "", venueId: c.venueId, type: c.type, itemsText: (c.items || []).join("\n"), days: c.days || [], images: c.images || [] });
+  const openEdit = (c) => setEditor({ id: c.id, title: c.title, sub: c.sub || "", venueId: c.venueId, type: c.type, area: areaOf(c), items: c.items || [], days: c.days || [], images: c.images || [] });
   const toggleDay = (d) => setEditor((p) => ({ ...p, days: p.days.includes(d) ? p.days.filter((x) => x !== d) : [...p.days, d] }));
 
   const saveChecklist = async () => {
     if (!editor.title.trim()) return showToast("Title required");
-    const items = editor.itemsText.split("\n").map((l) => l.trim()).filter(Boolean);
+    const items = (editor.items || []).filter(hasText);
     if (!items.length) return showToast("Add at least one item");
     const venue = venues.find((v) => v.id === editor.venueId);
     if (!venue) return showToast("Pick a venue");
-    const payload = { title: editor.title.trim(), sub: editor.sub.trim(), venueId: venue.id, venue: venue.name, type: editor.type, items, days: editor.days || [], images: editor.images || [] };
+    const payload = { title: editor.title.trim(), sub: editor.sub.trim(), venueId: venue.id, venue: venue.name, type: editor.type, area: editor.area || "All", items, days: editor.days || [], images: editor.images || [] };
     try {
       if (editor.id) {
         const existing = checklists.find((c) => c.id === editor.id);
@@ -96,7 +108,11 @@ export default function ChecklistsPage() {
             </button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {[["all", "All"], ["foh", "FOH"], ["boh", "BOH"]].map(([id, l]) => (
+            <button key={id} className="btn btn-sm" onClick={() => setAreaFilter(id)}
+              style={areaFilter === id ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
+          ))}
           <select className="form-input" style={{ width: 130 }} value={dayFilter} onChange={(e) => setDayFilter(e.target.value)}>
             <option value="all">All days</option>
             <option value="today">Today ({dayLabel([todayKey()])})</option>
@@ -119,7 +135,8 @@ export default function ChecklistsPage() {
               <div className="card-head">
                 <div>
                   <span className="card-title">{c.title}</span><span className="card-sub">{c.sub}</span>
-                  <span className={`pill ${dayLabel(c.days) === "Daily" ? "pill-gray" : "pill-blue"}`} style={{ marginLeft: 8 }}>{dayLabel(c.days)}</span>
+                  <span className="pill pill-gray" style={{ marginLeft: 8 }}>{areaOf(c)}</span>
+                  <span className={`pill ${dayLabel(c.days) === "Daily" ? "pill-gray" : "pill-blue"}`} style={{ marginLeft: 4 }}>{dayLabel(c.days)}</span>
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <span className={`pill ${pillCls}`}>{done}/{total} done</span>
@@ -133,7 +150,7 @@ export default function ChecklistsPage() {
                   return (
                     <div key={idx} className="checklist-item">
                       <div className={`check-box ${checked ? "checked" : ""}`} onClick={() => toggle(c, idx)} />
-                      <span className={`check-text ${checked ? "done" : ""}`}>{item}</span>
+                      <RichText html={item} className={`check-text ${checked ? "done" : ""}`} />
                     </div>
                   );
                 })}
@@ -158,6 +175,9 @@ export default function ChecklistsPage() {
               <div className="form-group"><label className="form-label">Type</label>
                 <select className="form-input" value={editor.type} onChange={setEd("type")}>{EDIT_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
               </div>
+              <div className="form-group"><label className="form-label">Area (FOH / BOH / All)</label>
+                <select className="form-input" value={editor.area} onChange={setEd("area")}>{AREAS.map((a) => <option key={a}>{a}</option>)}</select>
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Runs on (leave all off = every day)</label>
@@ -168,8 +188,8 @@ export default function ChecklistsPage() {
                 ))}
               </div>
             </div>
-            <div className="form-group"><label className="form-label">Items (one per line)</label>
-              <textarea className="form-input" rows={8} value={editor.itemsText} onChange={setEd("itemsText")} placeholder={"Put up sign\nTurn on heater\nCheck till float..."} />
+            <div className="form-group"><label className="form-label">Items — add each separately, format with the toolbar</label>
+              <RichItemList value={editor.items} onChange={(items) => setEditor((p) => ({ ...p, items }))} />
             </div>
             <RefImageEditor value={editor.images} onChange={(imgs) => setEditor((p) => ({ ...p, images: imgs }))} folder={`restaurantGroups/${groupId}/refimages/checklists`} showToast={showToast} />
             <div className="btn-row">
