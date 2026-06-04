@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import {
-  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck,
+  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle,
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
 import VenueManager from "../pages/restaurantgroup/VenueManager";
@@ -16,7 +16,9 @@ const NAV = [
   { key: "training", path: "/rg/training", label: "Training", Icon: GraduationCap, title: "Training & Development" },
   { key: "checklists", path: "/rg/checklists", label: "SOPs & Checklists", Icon: CheckSquare, title: "SOPs & Checklists" },
   { key: "performance", path: "/rg/performance", label: "Performance", Icon: BarChart3, title: "Performance" },
+  { key: "messages", path: "/rg/messages", label: "Messages", Icon: MessageCircle, title: "Messages" },
   { key: "usermgmt", path: "/rg/users", label: "User Management", Icon: ShieldCheck, title: "User Management" },
+  { key: "settings", path: "/rg/settings", label: "Settings", Icon: SlidersHorizontal, title: "Settings" },
 ];
 
 function Shell({ children }) {
@@ -24,7 +26,7 @@ function Shell({ children }) {
   const location = useLocation();
   const dispatch = useDispatch();
   const {
-    group, venues, staff, leave, assignments,
+    group, venues, staff, leave, assignments, unreadMessages,
     selectedVenue, setSelectedVenue, selectedVenueName, can, me,
   } = useRG();
 
@@ -64,7 +66,7 @@ function Shell({ children }) {
         <div className="nav-section">
           <div className="nav-label">Operations</div>
           {visibleNav.map(({ key, path, label, Icon }) => {
-            const badge = key === "leave" ? pendingLeave : key === "training" ? openTraining : 0;
+            const badge = key === "leave" ? pendingLeave : key === "training" ? openTraining : key === "messages" ? unreadMessages : 0;
             return (
               <button
                 key={key}
