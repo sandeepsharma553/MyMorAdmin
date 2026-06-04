@@ -4,6 +4,7 @@ import { useRG } from "./RGContext";
 import { venueCol } from "../../utils/restaurantGroupPaths";
 import { RefImageViewer, RefImageEditor } from "./RefImages";
 import { RichItemList, RichText } from "./RichItems";
+import PrepListPanel from "./PrepListPanel";
 
 const hasText = (h) => (h || "").replace(/<[^>]*>/g, "").trim().length > 0;
 
@@ -17,11 +18,19 @@ const dayLabel = (days) => {
   return ordered.join(", ");
 };
 const AREAS = ["FOH", "BOH", "All"];
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const pushHist = (c) => {
+  const done = (c.checked || []).filter(Boolean).length;
+  if (!done) return c.history || [];
+  return [...(c.history || []), { date: c.checkedDate || todayStr(), done, total: (c.items || []).length }].slice(-60);
+};
 const areaOf = (c) => c.area || (/\bboh\b|kitchen|grill|fry|wash|prep|cook|dressing/i.test(c.title || "") ? "BOH" : /\bfoh\b|floor|barista|bar|counter|service|opening|closing/i.test(c.title || "") ? "FOH" : "All");
-const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "Opening", area: "FOH", items: [], days: [], images: [] });
+const nowHHMM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const fmt12 = (t) => { if (!t) return ""; const [h, m] = t.split(":").map(Number); const ap = h >= 12 ? "pm" : "am"; const h12 = h % 12 || 12; return `${h12}:${String(m).padStart(2, "0")}${ap}`; };
+const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "Opening", area: "FOH", stationId: "", time: "", items: [], days: [], images: [] });
 
 export default function ChecklistsPage() {
-  const { groupId, venues, checklists, selectedVenue, showToast, can } = useRG();
+  const { groupId, venues, checklists, stations, selectedVenue, showToast, can } = useRG();
   const canEdit = can("checklists", "edit");
   const [venueTab, setVenueTab] = useState(selectedVenue === "all" ? (venues[0]?.id || "") : selectedVenue);
   const [typeFilter, setTypeFilter] = useState("All checklists");
@@ -48,28 +57,37 @@ export default function ChecklistsPage() {
 
   const shown = useMemo(() => checklists.filter(
     (c) => c.venueId === venueTab && (typeFilter === "All checklists" || c.type === typeFilter) && dayMatch(c) && areaMatch(c)
-  ), [checklists, venueTab, typeFilter, dayFilter, areaFilter]); // eslint-disable-line
+  ).sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99")), [checklists, venueTab, typeFilter, dayFilter, areaFilter]); // eslint-disable-line
+
+  // checks belong to a date — if it's a new day, they auto-reset (and the prior day is archived to history)
+  const effChecks = (c) => (c.checkedDate === todayStr() ? (c.checked || []) : []);
 
   const toggle = async (c, idx) => {
     if (!canEdit) return;
-    const checked = Array.isArray(c.checked) ? [...c.checked] : c.items.map(() => false);
-    checked[idx] = !checked[idx];
-    try { await updateDoc(doc(venueCol(groupId, c.venueId, "checklists"), c.id), { checked }); }
+    const today = todayStr();
+    const rolled = c.checkedDate && c.checkedDate !== today;
+    const base = rolled ? c.items.map(() => false) : (Array.isArray(c.checked) ? [...c.checked] : c.items.map(() => false));
+    base[idx] = !base[idx];
+    const patch = { checked: base, checkedDate: today };
+    if (rolled) patch.history = pushHist(c); // archive yesterday's result
+    try { await updateDoc(doc(venueCol(groupId, c.venueId, "checklists"), c.id), patch); }
     catch { showToast("Could not save"); }
   };
 
   const reset = async (c) => {
-    try { await updateDoc(doc(venueCol(groupId, c.venueId, "checklists"), c.id), { checked: c.items.map(() => false) }); showToast("Checklist reset"); }
+    try { await updateDoc(doc(venueCol(groupId, c.venueId, "checklists"), c.id), { checked: c.items.map(() => false), checkedDate: todayStr(), history: pushHist(c) }); showToast("Checklist reset & logged"); }
     catch { showToast("Could not reset"); }
   };
 
-  const doneCount = (c) => (c.checked || []).filter(Boolean).length;
+  const doneCount = (c) => effChecks(c).filter(Boolean).length;
+
+  const [histFor, setHistFor] = useState(null);
 
   // ── Create / edit / delete ──
   const [editor, setEditor] = useState(null);
   const setEd = (k) => (e) => setEditor((p) => ({ ...p, [k]: e.target.value }));
   const openNew = () => setEditor(blankForm(venueTab));
-  const openEdit = (c) => setEditor({ id: c.id, title: c.title, sub: c.sub || "", venueId: c.venueId, type: c.type, area: areaOf(c), items: c.items || [], days: c.days || [], images: c.images || [] });
+  const openEdit = (c) => setEditor({ id: c.id, title: c.title, sub: c.sub || "", venueId: c.venueId, type: c.type, area: areaOf(c), stationId: c.stationId || "", time: c.time || "", items: c.items || [], days: c.days || [], images: c.images || [] });
   const toggleDay = (d) => setEditor((p) => ({ ...p, days: p.days.includes(d) ? p.days.filter((x) => x !== d) : [...p.days, d] }));
 
   const saveChecklist = async () => {
@@ -78,7 +96,8 @@ export default function ChecklistsPage() {
     if (!items.length) return showToast("Add at least one item");
     const venue = venues.find((v) => v.id === editor.venueId);
     if (!venue) return showToast("Pick a venue");
-    const payload = { title: editor.title.trim(), sub: editor.sub.trim(), venueId: venue.id, venue: venue.name, type: editor.type, area: editor.area || "All", items, days: editor.days || [], images: editor.images || [] };
+    const stn = stations.find((s) => s.id === editor.stationId && s.venueId === venue.id);
+    const payload = { title: editor.title.trim(), sub: editor.sub.trim(), venueId: venue.id, venue: venue.name, type: editor.type, area: editor.area || "All", stationId: stn?.id || "", station: stn?.name || "", time: editor.time || "", items, days: editor.days || [], images: editor.images || [] };
     try {
       if (editor.id) {
         const existing = checklists.find((c) => c.id === editor.id);
@@ -125,28 +144,36 @@ export default function ChecklistsPage() {
         </div>
       </div>
 
+      <PrepListPanel groupId={groupId} venueId={venueTab} canEdit={canEdit} showToast={showToast} />
+
       <div className="grid-2">
         {shown.map((c) => {
-          const done = doneCount(c);
+          const eff = effChecks(c);
+          const done = eff.filter(Boolean).length;
           const total = c.items.length;
           const pillCls = done === total && total > 0 ? "pill-green" : "pill-amber";
+          const dueNow = c.time && nowHHMM() >= c.time && done < total;
           return (
-            <div key={c.id} className="card">
+            <div key={c.id} className="card" style={dueNow ? { borderColor: "var(--amber)", boxShadow: "0 0 0 1px var(--amber)" } : undefined}>
               <div className="card-head">
                 <div>
                   <span className="card-title">{c.title}</span><span className="card-sub">{c.sub}</span>
-                  <span className="pill pill-gray" style={{ marginLeft: 8 }}>{areaOf(c)}</span>
+                  {c.time && <span className="pill pill-blue" style={{ marginLeft: 8 }}>⏰ {fmt12(c.time)}</span>}
+                  <span className="pill pill-gray" style={{ marginLeft: 4 }}>{areaOf(c)}</span>
+                  {c.station && <span className="pill pill-blue" style={{ marginLeft: 4 }}>{c.station}</span>}
                   <span className={`pill ${dayLabel(c.days) === "Daily" ? "pill-gray" : "pill-blue"}`} style={{ marginLeft: 4 }}>{dayLabel(c.days)}</span>
+                  {dueNow && <span className="pill pill-amber" style={{ marginLeft: 4 }}>Due now</span>}
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <span className={`pill ${pillCls}`}>{done}/{total} done</span>
+                  <button className="btn btn-sm" onClick={() => setHistFor(c)}>History</button>
                   {canEdit && <button className="btn btn-sm" onClick={() => openEdit(c)}>Edit</button>}
                   {canEdit && <button className="btn btn-sm" onClick={() => reset(c)}>Reset</button>}
                 </div>
               </div>
               <div>
                 {c.items.map((item, idx) => {
-                  const checked = (c.checked || [])[idx];
+                  const checked = eff[idx];
                   return (
                     <div key={idx} className="checklist-item">
                       <div className={`check-box ${checked ? "checked" : ""}`} onClick={() => toggle(c, idx)} />
@@ -161,6 +188,25 @@ export default function ChecklistsPage() {
         })}
         {shown.length === 0 && <div style={{ color: "var(--gray)", fontSize: 13 }}>No checklists for this venue / filter.</div>}
       </div>
+
+      {histFor && (
+        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setHistFor(null)}>
+          <div className="rg-modal" style={{ maxWidth: 460 }}>
+            <div className="modal-head"><span className="modal-title">History — {histFor.title}</span><button className="modal-close" onClick={() => setHistFor(null)}>✕</button></div>
+            <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>Auto-resets daily; each day's result is logged here.</div>
+            <table className="data-table">
+              <thead><tr><th>Date</th><th>Completed</th></tr></thead>
+              <tbody>
+                {[...(histFor.history || [])].reverse().map((h, i) => (
+                  <tr key={i}><td>{h.date}</td><td>{h.done}/{h.total}{h.done >= h.total && h.total > 0 ? " ✓" : ""}</td></tr>
+                ))}
+                {(!histFor.history || !histFor.history.length) && <tr><td colSpan={2} style={{ color: "var(--gray)" }}>No history yet — logged when a new day starts or on reset.</td></tr>}
+              </tbody>
+            </table>
+            <div className="btn-row"><button className="btn" onClick={() => setHistFor(null)}>Close</button></div>
+          </div>
+        </div>
+      )}
 
       {editor && (
         <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setEditor(null)}>
@@ -177,6 +223,15 @@ export default function ChecklistsPage() {
               </div>
               <div className="form-group"><label className="form-label">Area (FOH / BOH / All)</label>
                 <select className="form-input" value={editor.area} onChange={setEd("area")}>{AREAS.map((a) => <option key={a}>{a}</option>)}</select>
+              </div>
+              <div className="form-group"><label className="form-label">Station (optional)</label>
+                <select className="form-input" value={editor.stationId} onChange={setEd("stationId")}>
+                  <option value="">— None —</option>
+                  {stations.filter((s) => s.venueId === editor.venueId).map((s) => <option key={s.id} value={s.id}>{s.name} · {s.area}</option>)}
+                </select>
+              </div>
+              <div className="form-group"><label className="form-label">Scheduled time (optional)</label>
+                <input type="time" className="form-input" value={editor.time} onChange={setEd("time")} />
               </div>
             </div>
             <div className="form-group">

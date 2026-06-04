@@ -124,20 +124,52 @@ export default function RestaurantGroupsPage({ navbarHeight }) {
   const [venueSaving, setVenueSaving] = useState(false);
   const [confirmDelVenue, setConfirmDelVenue] = useState(null);
 
+  // Activity / change log (per group) — managers' sensitive changes surface here
+  const [activityGroup, setActivityGroup] = useState(null);
+  const [activity, setActivity] = useState([]);
+  const [auditUnseen, setAuditUnseen] = useState({});
+
   useEffect(() => {
     const qy = query(collection(db, "restaurantGroups"), orderBy("name"));
     const unsub = onSnapshot(qy, (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setRows(list);
       setLoading(false);
-      list.forEach((g) =>
+      list.forEach((g) => {
         getDocs(collection(db, "restaurantGroups", g.id, "venues")).then((vs) =>
           setVenueCounts((p) => ({ ...p, [g.id]: vs.size }))
-        )
-      );
+        );
+        getDocs(collection(db, "restaurantGroups", g.id, "auditLog")).then((as) =>
+          setAuditUnseen((p) => ({ ...p, [g.id]: as.docs.filter((d) => !d.data().seenBySuper).length }))
+        ).catch(() => {});
+      });
     }, () => setLoading(false));
     return () => unsub();
   }, []);
+
+  // Live audit log for the group being viewed
+  useEffect(() => {
+    if (!activityGroup) { setActivity([]); return; }
+    const qy = collection(db, "restaurantGroups", activityGroup.id, "auditLog");
+    return onSnapshot(qy, (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (b.at?.seconds || 0) - (a.at?.seconds || 0));
+      setActivity(list);
+    }, () => setActivity([]));
+  }, [activityGroup]);
+
+  const openActivity = (g) => setActivityGroup(g);
+  const markAllRead = async () => {
+    const unseen = activity.filter((a) => !a.seenBySuper);
+    if (!unseen.length) return;
+    try {
+      const batch = writeBatch(db);
+      unseen.forEach((a) => batch.update(doc(db, "restaurantGroups", activityGroup.id, "auditLog", a.id), { seenBySuper: true }));
+      await batch.commit();
+      setAuditUnseen((p) => ({ ...p, [activityGroup.id]: 0 }));
+    } catch { toast.error("Could not update"); }
+  };
+  const fmtTs = (ts) => { if (!ts) return ""; try { const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleString(); } catch { return ""; } };
 
   // Live venues for the group being managed
   useEffect(() => {
@@ -308,6 +340,9 @@ export default function RestaurantGroupsPage({ navbarHeight }) {
                   <td className="p-3 text-gray-700">{g.ownerEmail || "—"}</td>
                   <td className="p-3 text-xs text-gray-500">{g.id}</td>
                   <td className="p-3 text-right">
+                    <button onClick={() => openActivity(g)} className="mr-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold hover:bg-gray-50">
+                      Activity{auditUnseen[g.id] ? <span className="ml-1 rounded-full bg-red-600 px-1.5 py-0.5 text-xs text-white">{auditUnseen[g.id]}</span> : ""}
+                    </button>
                     <button onClick={() => openManage(g)} className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold hover:bg-gray-50">Manage venues</button>
                   </td>
                 </tr>
@@ -441,6 +476,36 @@ export default function RestaurantGroupsPage({ navbarHeight }) {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Activity / change log modal */}
+      {activityGroup && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+          <div className="mt-10 w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <div className="text-lg font-semibold">{activityGroup.name} — Activity</div>
+                <div className="text-xs text-gray-500">Sensitive changes made by managers & admins</div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={markAllRead} className="rounded-xl border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50">Mark all read</button>
+                <button onClick={() => setActivityGroup(null)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50">Close</button>
+              </div>
+            </div>
+            <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+              {activity.map((a) => (
+                <div key={a.id} className={`rounded-xl border p-3 ${a.seenBySuper ? "border-gray-100" : "border-red-200 bg-red-50/40"}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-medium text-gray-900">{a.summary}</div>
+                    {!a.seenBySuper && <span className="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold text-white">NEW</span>}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-500">{a.by}{a.byRole ? ` · ${a.byRole}` : ""} · {fmtTs(a.at)}</div>
+                </div>
+              ))}
+              {activity.length === 0 && <div className="p-6 text-center text-sm text-gray-500">No activity logged yet.</div>}
             </div>
           </div>
         </div>

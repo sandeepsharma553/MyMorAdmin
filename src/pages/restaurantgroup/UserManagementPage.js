@@ -1,16 +1,18 @@
 import React, { useMemo, useState } from "react";
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { addDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol } from "../../utils/restaurantGroupPaths";
+import { staffCol, auditLogCol } from "../../utils/restaurantGroupPaths";
 import { RG_MODULES, RG_ROLES, DEFAULT_PERMISSIONS, defaultPermsForStaffRole, roleToGroupRole, roleMeta, levelMeta } from "./rgConfig";
 import { initials } from "./rgUtils";
 
 const LEVEL_OPTS = [["none", "✕ None"], ["view", "👁 View"], ["edit", "✏ Edit"]];
 
 export default function UserManagementPage() {
-  const { groupId, group, staff, venues, can, showToast } = useRG();
+  const { groupId, group, staff, venues, can, showToast, me } = useRG();
   const editable = can("usermgmt", "edit");
+  const actorName = me?.displayName || me?.name || me?.email || "Admin";
+  const [showCreds, setShowCreds] = useState(false);
   const venueLabel = (s) => (s.venueNames || []).join(", ") || "—";
 
   const sorted = useMemo(() => {
@@ -29,6 +31,14 @@ export default function UserManagementPage() {
     try {
       await updateDoc(doc(staffCol(groupId), permUser.id), { permissions: permDraft, updatedAt: serverTimestamp() });
       if (permUser.adminUid) await updateDoc(doc(db, "employees", permUser.adminUid), { permissions: permDraft }); // sync the login
+      const changed = RG_MODULES.filter((m) => (permUser.permissions?.[m.key] || defaultPermsForStaffRole(permUser.role)[m.key]) !== permDraft[m.key])
+        .map((m) => `${m.label}=${permDraft[m.key]}`);
+      try {
+        await addDoc(auditLogCol(groupId), {
+          action: "perms.update", summary: `Permissions changed for ${permUser.displayName || permUser.name}${changed.length ? `: ${changed.join(", ")}` : ""}`,
+          by: actorName, byRole: me?.groupRole || "", staffId: permUser.id, at: serverTimestamp(), notifySuperAdmin: true, seenBySuper: false,
+        });
+      } catch { /* non-blocking */ }
       showToast(permUser.hasAdminLogin ? "Permissions saved & applied to their login" : "Permissions saved (applies when they get a login)");
       setPermUser(null);
     } catch { showToast("Could not save permissions"); }
@@ -53,12 +63,12 @@ export default function UserManagementPage() {
         {/* Users & roles (all staff) */}
         <div className="card">
           <div className="card-head">
-            <span className="card-title">Users & permissions</span>
-            <span className="card-sub">Add people in Staff Directory</span>
+            <div><span className="card-title">Users & permissions</span><span className="card-sub">Add people in Staff Directory</span></div>
+            {editable && <button className="btn btn-sm" onClick={() => setShowCreds((s) => !s)}>{showCreds ? "🙈 Hide logins" : "🔑 Show logins"}</button>}
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
-              <thead><tr><th>User</th><th>Role</th><th>Venues</th><th>Access</th><th style={{ textAlign: "right" }}>Permissions</th></tr></thead>
+              <thead><tr><th>User</th><th>Role</th><th>Venues</th><th>Access</th>{showCreds && <><th>Email</th><th>Password</th><th>PIN</th></>}<th style={{ textAlign: "right" }}>Permissions</th></tr></thead>
               <tbody>
                 {/* Super Admin / owner */}
                 <tr>
@@ -69,6 +79,7 @@ export default function UserManagementPage() {
                   <td><span className="pill" style={{ background: "var(--black)", color: "#fff" }}>Super Admin</span></td>
                   <td style={{ fontSize: 11, color: "var(--gray)" }}>All venues</td>
                   <td><span className="pill pill-green">Website login</span></td>
+                  {showCreds && <><td style={{ fontSize: 11 }}>{group?.ownerEmail || "—"}</td><td style={{ fontSize: 11, color: "var(--gray)" }}>(set at creation)</td><td>—</td></>}
                   <td style={{ textAlign: "right", fontSize: 11, color: "var(--gray)" }}>Full access</td>
                 </tr>
                 {sorted.map((s) => {
@@ -83,13 +94,14 @@ export default function UserManagementPage() {
                       <td><span className="pill" style={{ background: rm.pill, color: rm.text }}>{rm.label}</span></td>
                       <td style={{ fontSize: 11, color: "var(--gray)" }}>{venueLabel(s)}</td>
                       <td>{s.hasAdminLogin ? <span className="pill pill-green" title={s.email}>Website login</span> : <span className="pill pill-gray">PIN only</span>}</td>
+                      {showCreds && <><td style={{ fontSize: 11 }}>{s.email || "—"}</td><td style={{ fontSize: 11, fontFamily: "monospace" }}>{s.password || "—"}</td><td style={{ fontSize: 11 }}>{s.pin || "—"}</td></>}
                       <td style={{ textAlign: "right" }}>
                         {editable ? <button className="btn btn-sm" onClick={() => openPerms(s)}>Permissions</button> : <span style={{ fontSize: 11, color: "var(--gray)" }}>—</span>}
                       </td>
                     </tr>
                   );
                 })}
-                {sorted.length === 0 && <tr><td colSpan={5} style={{ color: "var(--gray)" }}>No staff yet — add them in Staff Directory.</td></tr>}
+                {sorted.length === 0 && <tr><td colSpan={showCreds ? 8 : 5} style={{ color: "var(--gray)" }}>No staff yet — add them in Staff Directory.</td></tr>}
               </tbody>
             </table>
           </div>

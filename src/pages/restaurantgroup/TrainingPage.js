@@ -20,14 +20,14 @@ const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent"
 const CATS = ["FOH", "BOH", "All", "Management"];
 const ICONS = ["🌅", "🌙", "⭐", "🤝", "🍔", "🥗", "🍳", "🔥", "🛡️", "☕", "🏭", "👑", "📋", "🧂"];
 const MOD_COLORS = [["Amber", "#fef3c7"], ["Purple", "#ede9fe"], ["Yellow", "#fef9c3"], ["Green", "#dcfce7"], ["Red", "#fee2e2"], ["Blue", "#e0f2fe"], ["Cyan", "#cffafe"], ["Pink", "#fce7f3"]];
-const blankModule = () => ({ id: null, venueId: "", title: "", cat: "FOH", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", mandatory: false, steps: [{ heading: "Procedure", items: [] }], images: [] });
+const blankModule = () => ({ id: null, venueId: "", title: "", cat: "FOH", stationId: "", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", link: "", mandatory: false, steps: [{ heading: "Procedure", items: [] }], images: [] });
 const stepsToEditor = (steps) => (Array.isArray(steps) && steps.length ? steps.map((s) => ({ heading: s.heading || "", items: s.items || [] })) : [{ heading: "Procedure", items: [] }]);
 const editorToSteps = (steps) => (steps || [])
   .map((s) => ({ heading: (s.heading || "").trim(), items: (s.items || []).filter(hasText) }))
   .filter((s) => s.heading || s.items.length);
 
 export default function TrainingPage() {
-  const { groupId, staff, venues, modules, assignments, selectedVenue, matchVenue, showToast, can, me } = useRG();
+  const { groupId, staff, venues, modules, assignments, stations, selectedVenue, matchVenue, showToast, can, me } = useRG();
   const canEdit = can("training", "edit");
   const [tab, setTab] = useState("mine");
   const [openAssign, setOpenAssign] = useState(null); // assignment id
@@ -99,7 +99,7 @@ export default function TrainingPage() {
   const [modEditor, setModEditor] = useState(null);
   const setM = (k) => (e) => setModEditor((p) => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
   const openNewModule = () => setModEditor({ ...blankModule(), venueId: selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || "") });
-  const openEditModule = (m) => { setDetail(null); setModEditor({ id: m.id, venueId: m.venueId || "", title: m.title, cat: m.cat, duration: m.duration, icon: m.icon, color: m.color, desc: m.desc || "", mandatory: !!m.mandatory, steps: stepsToEditor(m.steps), images: m.images || [] }); };
+  const openEditModule = (m) => { setDetail(null); setModEditor({ id: m.id, venueId: m.venueId || "", title: m.title, cat: m.cat, stationId: m.stationId || "", duration: m.duration, icon: m.icon, color: m.color, desc: m.desc || "", link: m.link || "", mandatory: !!m.mandatory, steps: stepsToEditor(m.steps), images: m.images || [] }); };
   // step-section editing
   const setStep = (i, k) => (e) => setModEditor((p) => ({ ...p, steps: p.steps.map((s, idx) => idx === i ? { ...s, [k]: e.target.value } : s) }));
   const setStepItems = (i) => (items) => setModEditor((p) => ({ ...p, steps: p.steps.map((s, idx) => idx === i ? { ...s, items } : s) }));
@@ -111,7 +111,8 @@ export default function TrainingPage() {
     if (!vid) return showToast("Pick a venue for this module");
     const venueNameStr = venues.find((v) => v.id === vid)?.name || "";
     const steps = editorToSteps(modEditor.steps);
-    const payload = { title: modEditor.title.trim(), cat: modEditor.cat, venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), mandatory: modEditor.mandatory, steps, images: modEditor.images || [] };
+    const stn = stations.find((s) => s.id === modEditor.stationId && s.venueId === vid);
+    const payload = { title: modEditor.title.trim(), cat: modEditor.cat, stationId: stn?.id || "", station: stn?.name || "", venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), link: (modEditor.link || "").trim(), mandatory: modEditor.mandatory, steps, images: modEditor.images || [] };
     try {
       if (modEditor.id) { await updateDoc(doc(venueTrainingCol(groupId, vid), modEditor.id), payload); showToast("Module updated"); }
       else { await addDoc(venueTrainingCol(groupId, vid), payload); showToast("Module created"); }
@@ -208,9 +209,11 @@ export default function TrainingPage() {
               <div className="module-icon" style={{ background: m.color }}>{m.icon}</div>
               <div className="module-title">{m.title}</div>
               <div className="module-meta">{m.cat} · {m.venue} · {m.duration}</div>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {m.mandatory && <span className="pill pill-red">Mandatory</span>}
                 <span className="pill pill-gray">{m.cat}</span>
+                {m.station && <span className="pill pill-blue">{m.station}</span>}
+                {m.link && <span className="pill pill-blue">↗ External</span>}
               </div>
             </div>
           ))}
@@ -314,6 +317,7 @@ export default function TrainingPage() {
             )}
             <RefImageViewer images={detail.images} />
             <div className="btn-row">
+              {detail.link && <button className="btn btn-primary" onClick={() => window.open(detail.link, "_blank", "noopener")}>Open external training ↗</button>}
               {canEdit && <button className="btn btn-primary" onClick={() => { setForm((p) => ({ ...p, moduleId: detail.id })); setDetail(null); setTab("assigned"); }}>Assign this module</button>}
               {canEdit && <button className="btn" onClick={() => openEditModule(detail)}>Edit module</button>}
               <button className="btn" onClick={() => setDetail(null)}>Close</button>
@@ -338,6 +342,12 @@ export default function TrainingPage() {
                   {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
               </div>
+              <div className="form-group"><label className="form-label">Station (optional)</label>
+                <select className="form-input" value={modEditor.stationId} onChange={setM("stationId")}>
+                  <option value="">— None —</option>
+                  {stations.filter((s) => s.venueId === modEditor.venueId).map((s) => <option key={s.id} value={s.id}>{s.name} · {s.area}</option>)}
+                </select>
+              </div>
               <div className="form-group"><label className="form-label">Duration</label><input className="form-input" value={modEditor.duration} onChange={setM("duration")} placeholder="30 min" /></div>
               <div className="form-group"><label className="form-label">Icon</label>
                 <select className="form-input" value={modEditor.icon} onChange={setM("icon")}>{ICONS.map((ic) => <option key={ic}>{ic}</option>)}</select>
@@ -351,6 +361,7 @@ export default function TrainingPage() {
               </div>
             </div>
             <div className="form-group"><label className="form-label">Description</label><textarea className="form-input" rows={2} value={modEditor.desc} onChange={setM("desc")} /></div>
+            <div className="form-group"><label className="form-label">External training link (optional — redirect to another platform)</label><input className="form-input" value={modEditor.link} onChange={setM("link")} placeholder="https://... (course on another platform)" /></div>
 
             {/* Step sections — matches the module detail layout */}
             <div className="form-group">
@@ -388,6 +399,8 @@ export default function TrainingPage() {
           assignment={openAssignment}
           groupId={groupId}
           canTick={canEdit || openAssignment.staffId === myStaff?.id}
+          canVerify={canEdit}
+          actorName={me?.displayName || me?.name || me?.email || "Trainer"}
           showToast={showToast}
           onClose={() => setOpenAssign(null)}
         />

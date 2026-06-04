@@ -1,15 +1,18 @@
 import React, { useMemo, useState } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp, arrayUnion, arrayRemove } from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol, staffInVenue, venueCol, venueColor } from "../../utils/restaurantGroupPaths";
+import { staffCol, staffDoc, auditLogCol, staffInVenue, venueCol, venueColor } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, staffSeesAll, snapshotForAssign } from "./rgUtils";
 import AssignmentDetail from "./AssignmentDetail";
 
 const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent", "Urgent — today"]];
+const REC_TYPES = ["Coaching", "Mistake", "Commendation", "Incident"];
+const recPill = (t) => t === "Mistake" ? "pill-red" : t === "Incident" ? "pill-amber" : t === "Commendation" ? "pill-green" : "pill-blue";
+const fmtDate = (iso) => { try { const d = new Date(iso); return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); } catch { return iso; } };
 
 const ROLES = ["Manager", "FOH Supervisor", "FOH In Charge", "FOH", "BOH In Charge", "BOH", "Chef"];
 const AREAS = ["FOH", "BOH", "Mgmt"];
@@ -34,15 +37,40 @@ const uniqueDisplayName = (base, list, excludeId) => {
   return `${base} ${n}`;
 };
 
+// Payroll / personal onboarding fields (private — managers/admins only).
+const PAYROLL_FIELDS = [
+  { key: "legalName", label: "Full name (legal)", ph: "As on tax records" },
+  { key: "dob", label: "Date of birth", type: "date" },
+  { key: "contactEmail", label: "Email address", type: "email", ph: "name@email.com" },
+  { key: "address", label: "Home address", ph: "Street, suburb, state, postcode", full: true },
+  { key: "tfn", label: "Tax file number", ph: "9 digits", sensitive: true },
+  { key: "superAccount", label: "Super account number", sensitive: true },
+  { key: "superUsi", label: "Super fund USI number", ph: "Unique Super Identifier" },
+  { key: "bankBsb", label: "Bank BSB", ph: "xxx-xxx" },
+  { key: "bankAccount", label: "Bank account number", sensitive: true },
+];
+const payrollBlank = () => PAYROLL_FIELDS.reduce((o, f) => { o[f.key] = ""; return o; }, {});
+const payrollFrom = (s) => PAYROLL_FIELDS.reduce((o, f) => { o[f.key] = (s[f.key] || "").trim(); return o; }, {});
+const payrollFromProfile = (p) => PAYROLL_FIELDS.reduce((o, f) => { o[f.key] = p[f.key] || ""; return o; }, {});
+
 const blankForm = (defaultVenue) => ({
   name: "", role: "FOH", area: "FOH", venueIds: defaultVenue && defaultVenue !== "all" ? [defaultVenue] : [],
-  phone: "", start: "", type: "Casual", cert: "Not yet obtained", training: 0, hours: 0, status: "Active",
-  pin: "", hasAdminLogin: false, email: "", password: "",
+  phone: "", start: "", endDate: "", type: "Casual", cert: "Not yet obtained", hours: 0, status: "Active",
+  stationIds: [], pin: "", hasAdminLogin: false, email: "", password: "", ...payrollBlank(),
 });
 
 export default function StaffDirectoryPage() {
-  const { groupId, group, staff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, selectedVenue, showToast, can } = useRG();
+  const { groupId, group, staff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, stations, roles, selectedVenue, showToast, can, me } = useRG();
   const canEdit = can("staff", "edit");
+  const actorName = me?.displayName || me?.name || me?.email || "Admin";
+  const logChange = async (action, summary, extra = {}) => {
+    try {
+      await addDoc(auditLogCol(groupId), {
+        action, summary, by: actorName, byRole: me?.groupRole || "",
+        at: serverTimestamp(), notifySuperAdmin: true, seenBySuper: false, ...extra,
+      });
+    } catch { /* non-blocking */ }
+  };
   const [roleFilter, setRoleFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -51,9 +79,13 @@ export default function StaffDirectoryPage() {
   const [editing, setEditing] = useState(false);
   const [edit, setEdit] = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [confirmSave, setConfirmSave] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showPayroll, setShowPayroll] = useState(false);
+  const [recForm, setRecForm] = useState({ type: "Coaching", note: "" });
 
   const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
+  const stationName = (id) => stations.find((st) => st.id === id)?.name || "";
   const avatarColor = (s) => venueColor(s?.venueNames?.[0] || venueName(s?.venueIds?.[0]) || s?.venue);
 
   const venueScoped = useMemo(() => staff.filter((s) => staffInVenue(s, selectedVenue)), [staff, selectedVenue]);
@@ -73,6 +105,22 @@ export default function StaffDirectoryPage() {
   const trainingIncomplete = assignments.filter((a) => a.status !== "Complete").length;
 
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+
+  // Payroll & personal details block, shared by Add + Edit forms.
+  const renderPayroll = (state, handler) => (
+    <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
+      <label className="form-label" style={{ marginBottom: 8, display: "block" }}>Payroll &amp; personal details <span style={{ color: "var(--gray)", fontWeight: 400 }}>(private — managers/admins only)</span></label>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {PAYROLL_FIELDS.map((f) => (
+          <div key={f.key} className="form-group" style={{ margin: 0, gridColumn: f.full ? "1 / -1" : "auto" }}>
+            <label className="form-label">{f.label}</label>
+            <input className="form-input" type={f.type || "text"} value={state[f.key] || ""} onChange={handler(f.key)} placeholder={f.ph || ""} autoComplete="off" />
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>Sensitive data (TFN, super, bank). Used for payroll/onboarding only.</div>
+    </div>
+  );
   const toggleVenue = (vid, target, setter) => setter((p) => ({ ...p, venueIds: p.venueIds.includes(vid) ? p.venueIds.filter((x) => x !== vid) : [...p.venueIds, vid] }));
 
   // create the linked Firebase Auth (email+password) admin account + permissions
@@ -103,20 +151,23 @@ export default function StaffDirectoryPage() {
       const pin = (form.pin || "").trim() || genPin(staff);
       if (pin && staff.some((s) => s.pin === pin)) return showToast("PIN already in use — pick another");
       const permissions = defaultPermsForStaffRole(form.role);
+      const pwd = form.hasAdminLogin ? ((form.password || "").trim() || `${form.name.replace(/\s+/g, "")}654321`) : "";
       let adminUid = "";
       if (form.hasAdminLogin) {
-        adminUid = await createAdminLogin({ email: form.email.toLowerCase().trim(), password: (form.password || "").trim() || `${form.name.replace(/\s+/g, "")}654321`, name: displayName, role: form.role, venueIds: form.venueIds, permissions });
+        adminUid = await createAdminLogin({ email: form.email.toLowerCase().trim(), password: pwd, name: displayName, role: form.role, venueIds: form.venueIds, permissions });
       }
       await addDoc(staffCol(groupId), {
         name: form.name.trim(), displayName, role: form.role, area: form.area || areaOf(form.role),
         groupRole: roleToGroupRole(form.role), permissions,
         venueIds: form.venueIds, venueNames: form.venueIds.map(venueName),
-        phone: form.phone.trim(), start: form.start, type: form.type, cert: form.cert,
+        stationIds: form.stationIds || [], stationNames: (form.stationIds || []).map(stationName),
+        phone: form.phone.trim(), start: form.start, endDate: form.endDate || "", type: form.type, cert: form.cert,
         hours: Number(form.hours) || 0,
         status: form.status, pin, email: form.hasAdminLogin ? form.email.toLowerCase().trim() : "",
-        hasAdminLogin: !!form.hasAdminLogin, adminUid, createdAt: serverTimestamp(),
+        hasAdminLogin: !!form.hasAdminLogin, adminUid, password: pwd, ...payrollFrom(form), createdAt: serverTimestamp(),
       });
       showToast(`${displayName} added`);
+      logChange("staff.create", `Added staff member ${displayName} (${form.role})`, { venueIds: form.venueIds });
       setAddOpen(false); setForm(blankForm(selectedVenue));
     } catch (e) {
       showToast(e?.code === "auth/email-already-in-use" ? "That admin email already exists" : "Could not add staff");
@@ -129,43 +180,87 @@ export default function StaffDirectoryPage() {
     setEdit({
       name: profile.name || profile.displayName, role: profile.role, area: profile.area || areaOf(profile.role),
       venueIds: profile.venueIds || (profile.venueId ? [profile.venueId] : []),
-      phone: profile.phone || "", start: profile.start || "", type: profile.type || "Casual",
-      cert: profile.cert || "Not yet obtained", training: profile.training || 0, hours: profile.hours || 0,
+      phone: profile.phone || "", start: profile.start || "", endDate: profile.endDate || "", type: profile.type || "Casual",
+      cert: profile.cert || "Not yet obtained", hours: profile.hours || 0, stationIds: profile.stationIds || [],
       status: profile.status || "Active", pin: profile.pin || "",
       hasAdminLogin: !!profile.hasAdminLogin, email: profile.email || "", password: "",
+      ...payrollFromProfile(profile),
     });
+    setConfirmSave(false);
     setEditing(true);
   };
   const setE = (k) => (e) => setEdit((p) => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+  // Compute a human-readable diff between the saved profile and pending edits.
+  const diffStaff = () => {
+    const out = [];
+    const cmp = (label, a, b) => { if (String(a ?? "") !== String(b ?? "")) out.push(`${label}: ${a || "—"} → ${b || "—"}`); };
+    cmp("Role", profile.role, edit.role);
+    cmp("Area", profile.area, edit.area);
+    cmp("Status", profile.status || "Active", edit.status);
+    cmp("End date", profile.endDate, edit.endDate);
+    cmp("Venues", (profile.venueNames || []).join(", "), edit.venueIds.map(venueName).join(", "));
+    cmp("Stations", (profile.stationNames || []).join(", "), (edit.stationIds || []).map(stationName).join(", "));
+    return out;
+  };
   const saveEdit = async () => {
     if (!edit.venueIds.length) return showToast("Select at least one venue");
+    if (!confirmSave) { setConfirmSave(true); return; }
     setSaving(true);
     try {
       const displayName = uniqueDisplayName(edit.name, staff, profile.id);
       const pin = (edit.pin || "").trim();
       if (pin && staff.some((s) => s.id !== profile.id && s.pin === pin)) return showToast("PIN already in use");
       let adminUid = profile.adminUid || "";
+      let newPwd = profile.password || "";
       if (edit.hasAdminLogin && !adminUid) {
         if (!isEmail(edit.email)) return showToast("Admin access needs a valid email");
-        adminUid = await createAdminLogin({ email: edit.email.toLowerCase().trim(), password: (edit.password || "").trim() || `${edit.name.replace(/\s+/g, "")}654321`, name: displayName, role: edit.role, venueIds: edit.venueIds, permissions: profile.permissions });
+        newPwd = (edit.password || "").trim() || `${edit.name.replace(/\s+/g, "")}654321`;
+        adminUid = await createAdminLogin({ email: edit.email.toLowerCase().trim(), password: newPwd, name: displayName, role: edit.role, venueIds: edit.venueIds, permissions: profile.permissions });
       }
       const patch = {
         name: edit.name.trim(), displayName, role: edit.role, area: edit.area || areaOf(edit.role),
         venueIds: edit.venueIds, venueNames: edit.venueIds.map(venueName),
-        phone: edit.phone.trim(), start: edit.start, type: edit.type, cert: edit.cert,
-        training: Math.max(0, Math.min(100, Number(edit.training) || 0)), hours: Number(edit.hours) || 0,
-        status: edit.status, pin, hasAdminLogin: !!edit.hasAdminLogin, adminUid,
-        email: edit.hasAdminLogin ? edit.email.toLowerCase().trim() : (profile.email || ""), updatedAt: serverTimestamp(),
+        stationIds: edit.stationIds || [], stationNames: (edit.stationIds || []).map(stationName),
+        phone: edit.phone.trim(), start: edit.start, endDate: edit.endDate || "", type: edit.type, cert: edit.cert,
+        hours: Number(edit.hours) || 0,
+        status: edit.status, pin, hasAdminLogin: !!edit.hasAdminLogin, adminUid, password: newPwd,
+        email: edit.hasAdminLogin ? edit.email.toLowerCase().trim() : (profile.email || ""), ...payrollFrom(edit), updatedAt: serverTimestamp(),
       };
+      const changes = diffStaff();
+      const histEntry = changes.length ? { at: new Date().toISOString(), by: actorName, changes } : null;
+      if (histEntry) patch.history = arrayUnion(histEntry);
       await updateDoc(doc(staffCol(groupId), profile.id), patch);
+      if (changes.length) logChange("staff.update", `Updated ${displayName}: ${changes.join("; ")}`, { staffId: profile.id, venueIds: edit.venueIds });
       showToast("Staff profile updated");
-      setProfile((p) => ({ ...p, ...patch })); setEditing(false);
+      const histMerge = histEntry ? { history: [...(profile.history || []), histEntry] } : {};
+      setProfile((p) => ({ ...p, ...patch, ...histMerge })); setEditing(false); setConfirmSave(false);
     } catch (e) { showToast(e?.code === "auth/email-already-in-use" ? "Admin email already exists" : "Could not save"); }
     finally { setSaving(false); }
   };
   const removeStaff = async () => {
-    try { await deleteDoc(doc(staffCol(groupId), profile.id)); showToast(`${fullName(profile)} removed`); setProfile(null); }
-    catch { showToast("Could not remove"); }
+    try {
+      await deleteDoc(doc(staffCol(groupId), profile.id));
+      logChange("staff.remove", `Removed staff member ${fullName(profile)} (${profile.role})`, { venueIds: profile.venueIds || [] });
+      showToast(`${fullName(profile)} removed`); setProfile(null);
+    } catch { showToast("Could not remove"); }
+  };
+  // ── coaching / mistake records (group-level staff doc) ──
+  const addRecord = async () => {
+    if (!recForm.note.trim()) return showToast("Add a note");
+    const entry = { id: `r${Date.now()}`, type: recForm.type, note: recForm.note.trim(), at: new Date().toISOString(), by: actorName };
+    try {
+      await updateDoc(staffDoc(groupId, profile.id), { records: arrayUnion(entry) });
+      setProfile((p) => ({ ...p, records: [...(p.records || []), entry] }));
+      setRecForm({ type: "Coaching", note: "" });
+      logChange("staff.record", `${entry.type} logged for ${fullName(profile)}`, { staffId: profile.id });
+      showToast("Record added");
+    } catch { showToast("Could not add record"); }
+  };
+  const removeRecord = async (entry) => {
+    try {
+      await updateDoc(staffDoc(groupId, profile.id), { records: arrayRemove(entry) });
+      setProfile((p) => ({ ...p, records: (p.records || []).filter((r) => r.id !== entry.id) }));
+    } catch { showToast("Could not remove record"); }
   };
 
   // ── assign training / checklists (from the profile, multi-select, area-aware) ──
@@ -244,6 +339,20 @@ export default function StaffDirectoryPage() {
       ))}
     </div>
   );
+  const toggleStation = (sid, setter) => setter((p) => ({ ...p, stationIds: (p.stationIds || []).includes(sid) ? p.stationIds.filter((x) => x !== sid) : [...(p.stationIds || []), sid] }));
+  const StationPicker = ({ venueIds, value, setter }) => {
+    const opts = stations.filter((st) => (venueIds || []).includes(st.venueId));
+    if (!opts.length) return <div style={{ fontSize: 11, color: "var(--gray)" }}>No stations for the selected venue(s) — add them in Settings.</div>;
+    return (
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {opts.map((st) => {
+          const on = (value || []).includes(st.id);
+          return <button key={st.id} type="button" className="btn btn-sm" onClick={() => toggleStation(st.id, setter)}
+            style={on ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{st.name} <span style={{ color: on ? "#fff" : "var(--gray)" }}>· {st.area}</span></button>;
+        })}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -265,10 +374,13 @@ export default function StaffDirectoryPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 12 }}>
         {filtered.map((s) => (
-          <div key={s.id} className="staff-card" onClick={() => openProfile(s)}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div key={s.id} className="staff-card" onClick={() => openProfile(s)} style={s.status === "Left" ? { opacity: 0.55 } : undefined}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 4 }}>
               <div className="staff-avatar" style={{ background: avatarColor(s) }}>{initials(s)}</div>
-              {s.hasAdminLogin && <span className="pill pill-purple" title="Has admin website login">🔑 Admin</span>}
+              <span style={{ display: "inline-flex", gap: 4 }}>
+                {s.status === "Left" && <span className="pill pill-gray" title={s.endDate ? `Left ${s.endDate}` : "Left"}>Left</span>}
+                {s.hasAdminLogin && <span className="pill pill-purple" title="Has admin website login">🔑 Admin</span>}
+              </span>
             </div>
             <div className="staff-name">{s.displayName || s.name}</div>
             <div className="staff-role">{s.role}</div>
@@ -306,11 +418,12 @@ export default function StaffDirectoryPage() {
             <div className="modal-head"><span className="modal-title">Add staff member</span><button className="modal-close" onClick={() => setAddOpen(false)}>✕</button></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group"><label className="form-label">Name *</label><input className="form-input" value={form.name} onChange={setF("name")} placeholder="First name" /></div>
-              <div className="form-group"><label className="form-label">Role *</label><select className="form-input" value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value, area: areaOf(e.target.value) }))}>{ROLES.map((r) => <option key={r}>{r}</option>)}</select></div>
+              <div className="form-group"><label className="form-label">Role *</label><select className="form-input" value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value, area: areaOf(e.target.value) }))}>{roles.map((r) => <option key={r}>{r}</option>)}</select></div>
               <div className="form-group"><label className="form-label">Area</label><select className="form-input" value={form.area} onChange={setF("area")}>{AREAS.map((a) => <option key={a}>{a}</option>)}</select></div>
               <div className="form-group"><label className="form-label">Employment</label><select className="form-input" value={form.type} onChange={setF("type")}>{EMP_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
               <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={form.phone} onChange={setF("phone")} placeholder="04xx xxx xxx" /></div>
               <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={form.start} onChange={setF("start")} /></div>
+              <div className="form-group"><label className="form-label">End date (if leaving)</label><input type="date" className="form-input" value={form.endDate} onChange={setF("endDate")} /></div>
               <div className="form-group"><label className="form-label">Certificate</label><select className="form-input" value={form.cert} onChange={setF("cert")}>{CERTS.map((c) => <option key={c}>{c}</option>)}</select></div>
               <div className="form-group"><label className="form-label">POS PIN (4-digit, optional)</label>
                 <div style={{ display: "flex", gap: 6 }}>
@@ -320,6 +433,8 @@ export default function StaffDirectoryPage() {
               </div>
             </div>
             <div className="form-group"><label className="form-label">Venues * (works at)</label><VenuePicker value={form.venueIds} onToggle={(vid) => toggleVenue(vid, form, setForm)} /></div>
+            <div className="form-group"><label className="form-label">Stations</label><StationPicker venueIds={form.venueIds} value={form.stationIds} setter={setForm} /></div>
+            {renderPayroll(form, setF)}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
               <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <input type="checkbox" checked={form.hasAdminLogin} onChange={setF("hasAdminLogin")} /> Admin website access (email + password login)
@@ -357,11 +472,29 @@ export default function StaffDirectoryPage() {
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   {[["Employment", profile.type], ["Weekly hours", profile.hours ? `${profile.hours}h` : "—"], ["Start date", profile.start || "—"],
-                    ["Status", profile.status || "Active"], ["Phone", profile.phone || "—"], ["Certificate", profile.cert || "—"],
-                    ["POS PIN", profile.pin || "— (none)"], ["Admin login", profile.hasAdminLogin ? (profile.email || "yes") : "No"]].map(([k, v]) => (
+                    ["End date", profile.endDate || "—"], ["Status", profile.status || "Active"], ["Phone", profile.phone || "—"],
+                    ["Stations", (profile.stationNames || []).join(", ") || "—"],
+                    ["Certificate", profile.cert || "—"], ["POS PIN", profile.pin || "— (none)"], ["Admin login", profile.hasAdminLogin ? (profile.email || "yes") : "No"]].map(([k, v]) => (
                     <div key={k}><div className="form-label">{k}</div><div style={{ fontSize: 13 }}>{v}</div></div>
                   ))}
                 </div>
+
+                {canEdit && (
+                  <div style={{ marginTop: 16 }}>
+                    <div className="card-head" style={{ marginBottom: 8 }}>
+                      <span className="card-title">Payroll &amp; personal</span>
+                      <button className="btn btn-sm" onClick={() => setShowPayroll((s) => !s)}>{showPayroll ? "Hide" : "Show"} sensitive</button>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      {PAYROLL_FIELDS.map((f) => {
+                        const raw = profile[f.key];
+                        let v = raw || "—";
+                        if (raw && f.sensitive && !showPayroll) v = "•••• " + String(raw).slice(-3);
+                        return <div key={f.key} style={{ gridColumn: f.full ? "1 / -1" : "auto" }}><div className="form-label">{f.label}</div><div style={{ fontSize: 13, wordBreak: "break-word" }}>{v}</div></div>;
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div style={{ marginTop: 16 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
                     <span>Training completion {myTraining.length ? `(${myTraining.filter((a) => a.status === "Complete").length}/${myTraining.length})` : ""}</span>
@@ -382,6 +515,7 @@ export default function StaffDirectoryPage() {
                       <span style={{ fontSize: 12 }}>{a.moduleTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span></span>
                       <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                         <span style={{ fontSize: 11, color: "var(--gray)" }}>{(a.checks || []).filter(Boolean).length}/{a.itemsTotal || (a.checks || []).length}</span>
+                        {a.verified && <span className="pill pill-green" title={`Verified by ${a.verifiedBy || "trainer"}`}>✓ Verified</span>}
                         <span className={`pill ${trainingStatusPill(a.status)}`}>{a.status}</span>
                         <button className="btn btn-sm" onClick={() => setOpenAssignId(a.id)}>Open</button>
                         {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeAssignment(a, "training")}>✕</button>}
@@ -406,6 +540,37 @@ export default function StaffDirectoryPage() {
                   {myChecklists.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No checklists assigned.</div>}
                 </div>
 
+                {/* Coaching & mistake records */}
+                <div style={{ marginTop: 16 }}>
+                  <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">Coaching & mistake records</span></div>
+                  {(profile.records || []).slice().reverse().map((r) => (
+                    <div key={r.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                      <span style={{ fontSize: 12 }}><span className={`pill ${recPill(r.type)}`}>{r.type}</span> {r.note} <span style={{ color: "var(--gray)" }}>· {fmtDate(r.at)} · {r.by}</span></span>
+                      {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeRecord(r)}>✕</button>}
+                    </div>
+                  ))}
+                  {!(profile.records || []).length && <div style={{ fontSize: 12, color: "var(--gray)" }}>No records yet.</div>}
+                  {canEdit && (
+                    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                      <select className="form-input" style={{ width: 150 }} value={recForm.type} onChange={(e) => setRecForm((p) => ({ ...p, type: e.target.value }))}>{REC_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+                      <input className="form-input" value={recForm.note} onChange={(e) => setRecForm((p) => ({ ...p, note: e.target.value }))} placeholder="What happened / coaching given" onKeyDown={(e) => e.key === "Enter" && addRecord()} />
+                      <button className="btn btn-primary" onClick={addRecord}>Add</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Role & venue history */}
+                <div style={{ marginTop: 16 }}>
+                  <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">Role & venue history</span></div>
+                  {(profile.history || []).slice().reverse().map((h, i) => (
+                    <div key={i} style={{ padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                      <div style={{ fontSize: 11, color: "var(--gray)" }}>{fmtDate(h.at)} · {h.by}</div>
+                      {(h.changes || []).map((c, j) => <div key={j} style={{ fontSize: 12 }}>{c}</div>)}
+                    </div>
+                  ))}
+                  {!(profile.history || []).length && <div style={{ fontSize: 12, color: "var(--gray)" }}>No changes recorded yet.</div>}
+                </div>
+
                 {confirmDel ? (
                   <div className="btn-row" style={{ alignItems: "center" }}>
                     <span style={{ fontSize: 12, color: "var(--red)" }}>Remove this staff member?</span>
@@ -424,13 +589,14 @@ export default function StaffDirectoryPage() {
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={edit.name} onChange={setE("name")} /></div>
-                  <div className="form-group"><label className="form-label">Role</label><select className="form-input" value={edit.role} onChange={(e) => setEdit((p) => ({ ...p, role: e.target.value, area: areaOf(e.target.value) }))}>{ROLES.map((r) => <option key={r}>{r}</option>)}</select></div>
+                  <div className="form-group"><label className="form-label">Role</label><select className="form-input" value={edit.role} onChange={(e) => setEdit((p) => ({ ...p, role: e.target.value, area: areaOf(e.target.value) }))}>{roles.map((r) => <option key={r}>{r}</option>)}</select></div>
                   <div className="form-group"><label className="form-label">Area</label><select className="form-input" value={edit.area} onChange={setE("area")}>{AREAS.map((a) => <option key={a}>{a}</option>)}</select></div>
                   <div className="form-group"><label className="form-label">Employment</label><select className="form-input" value={edit.type} onChange={setE("type")}>{EMP_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
                   <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={edit.phone} onChange={setE("phone")} /></div>
                   <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={edit.start} onChange={setE("start")} /></div>
+                  <div className="form-group"><label className="form-label">End date (if leaving)</label><input type="date" className="form-input" value={edit.endDate} onChange={setE("endDate")} /></div>
                   <div className="form-group"><label className="form-label">Certificate</label><select className="form-input" value={edit.cert} onChange={setE("cert")}>{CERTS.map((c) => <option key={c}>{c}</option>)}</select></div>
-                  <div className="form-group"><label className="form-label">Status</label><select className="form-input" value={edit.status} onChange={setE("status")}><option>Active</option><option>Inactive</option><option>On leave</option></select></div>
+                  <div className="form-group"><label className="form-label">Status</label><select className="form-input" value={edit.status} onChange={setE("status")}><option>Active</option><option>Inactive</option><option>On leave</option><option>Left</option></select></div>
                   <div className="form-group"><label className="form-label">Weekly hours</label><input type="number" min="0" className="form-input" value={edit.hours} onChange={setE("hours")} /></div>
                   <div className="form-group"><label className="form-label">POS PIN</label>
                     <div style={{ display: "flex", gap: 6 }}>
@@ -440,6 +606,8 @@ export default function StaffDirectoryPage() {
                   </div>
                 </div>
                 <div className="form-group"><label className="form-label">Venues (works at)</label><VenuePicker value={edit.venueIds} onToggle={(vid) => toggleVenue(vid, edit, setEdit)} /></div>
+                <div className="form-group"><label className="form-label">Stations</label><StationPicker venueIds={edit.venueIds} value={edit.stationIds} setter={setEdit} /></div>
+                {renderPayroll(edit, setE)}
                 <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
                   <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <input type="checkbox" checked={edit.hasAdminLogin} onChange={setE("hasAdminLogin")} disabled={!!profile.adminUid} /> Admin website access
@@ -452,9 +620,10 @@ export default function StaffDirectoryPage() {
                   )}
                   {profile.adminUid && <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>Login exists ({profile.email}) — manage permissions in User Management.</div>}
                 </div>
+                {confirmSave && <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 8, padding: "8px 10px", background: "var(--gray-light)", borderRadius: 8 }}>⚠ These changes will be logged and the super admin notified. Click <strong>Confirm &amp; save</strong> to proceed.</div>}
                 <div className="btn-row">
-                  <button className="btn btn-primary" onClick={saveEdit} disabled={saving}>{saving ? "Saving..." : "Save changes"}</button>
-                  <button className="btn" onClick={() => setEditing(false)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={saveEdit} disabled={saving}>{saving ? "Saving..." : confirmSave ? "Confirm & save" : "Save changes"}</button>
+                  <button className="btn" onClick={() => { setEditing(false); setConfirmSave(false); }}>Cancel</button>
                 </div>
               </>
             )}
@@ -505,7 +674,7 @@ export default function StaffDirectoryPage() {
       )}
 
       {openAssignment && (
-        <AssignmentDetail assignment={openAssignment} groupId={groupId} canTick={canEdit} showToast={showToast} onClose={() => setOpenAssignId(null)} />
+        <AssignmentDetail assignment={openAssignment} groupId={groupId} canTick={canEdit} canVerify={can("training", "edit")} actorName={actorName} showToast={showToast} onClose={() => setOpenAssignId(null)} />
       )}
     </>
   );

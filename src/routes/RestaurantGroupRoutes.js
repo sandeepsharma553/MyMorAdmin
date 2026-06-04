@@ -6,6 +6,8 @@ import TrainingPage from "../pages/restaurantgroup/TrainingPage";
 import ChecklistsPage from "../pages/restaurantgroup/ChecklistsPage";
 import PerformancePage from "../pages/restaurantgroup/PerformancePage";
 import UserManagementPage from "../pages/restaurantgroup/UserManagementPage";
+import MessagingPage from "../pages/restaurantgroup/MessagingPage";
+import SettingsPage from "../pages/restaurantgroup/SettingsPage";
 
 export default function RestaurantGroupRoutes() {
   return (
@@ -16,7 +18,9 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/training" element={<TrainingPage />} />
       <Route path="/rg/checklists" element={<ChecklistsPage />} />
       <Route path="/rg/performance" element={<PerformancePage />} />
+      <Route path="/rg/messages" element={<MessagingPage />} />
       <Route path="/rg/users" element={<UserManagementPage />} />
+      <Route path="/rg/settings" element={<SettingsPage />} />
       <Route path="*" element={<Navigate to="/rg/staff" replace />} />
     </Routes>
   );

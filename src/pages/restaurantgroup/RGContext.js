@@ -2,9 +2,9 @@ import React, { createContext, useContext, useEffect, useMemo, useState, useCall
 import { onSnapshot } from "firebase/firestore";
 import { useSelector } from "react-redux";
 import {
-  groupDoc, venuesCol, venueCol, staffCol, PER_VENUE_COLLECTIONS,
+  groupDoc, venuesCol, venueCol, staffCol, announcementsCol, messagesCol, PER_VENUE_COLLECTIONS,
 } from "../../utils/restaurantGroupPaths";
-import { defaultPermsForRole, hasLevel } from "./rgConfig";
+import { defaultPermsForRole, hasLevel, DEFAULT_ROLES } from "./rgConfig";
 
 const RGContext = createContext(null);
 export const useRG = () => useContext(RGContext);
@@ -43,6 +43,8 @@ export function RGProvider({ children }) {
   const [group, setGroup] = useState(null);
   const [venues, setVenues] = useState([]);
   const [staff, setStaff] = useState([]); // GROUP-LEVEL (multi-venue via venueIds)
+  const [announcements, setAnnouncements] = useState([]);
+  const [messages, setMessages] = useState([]);
   // pv[collection][venueId] = rows[]  — the rest is per-venue
   const [pv, setPv] = useState({});
   const [selectedVenue, setSelectedVenue] = useState("all"); // "all" | venueId
@@ -56,6 +58,8 @@ export function RGProvider({ children }) {
       onSnapshot(groupDoc(groupId), (d) => setGroup(d.exists() ? { id: d.id, ...d.data() } : null)),
       subColl(venuesCol(groupId), setVenues, "order"),
       subColl(staffCol(groupId), setStaff),
+      subColl(announcementsCol(groupId), setAnnouncements),
+      subColl(messagesCol(groupId), setMessages),
     ];
     const t = setTimeout(() => setLoading(false), 600);
     return () => { clearTimeout(t); unsubs.forEach((u) => u && u()); };
@@ -95,6 +99,8 @@ export function RGProvider({ children }) {
   const checklistAssignments = useMemo(() => flat("checklistAssignments"), [pv.checklistAssignments]); // eslint-disable-line react-hooks/exhaustive-deps
   const kpis = useMemo(() => flat("kpis", "order"), [pv.kpis]); // eslint-disable-line react-hooks/exhaustive-deps
   const modules = useMemo(() => flat("trainingModules"), [pv.trainingModules]); // eslint-disable-line react-hooks/exhaustive-deps
+  const stations = useMemo(() => flat("stations", "order"), [pv.stations]); // eslint-disable-line react-hooks/exhaustive-deps
+  const roles = useMemo(() => (group?.roles?.length ? group.roles : DEFAULT_ROLES), [group]);
 
   // ── Toast ─────────────────────────────────────────────
   const [toast, setToast] = useState(null);
@@ -121,12 +127,26 @@ export function RGProvider({ children }) {
   const can = useCallback((moduleKey, level = "view") => hasLevel(myPerms, moduleKey, level), [myPerms]);
   const me = useMemo(() => ({ ...(employee || {}), groupRole, venueId: myVenueId, perms: myPerms }), [employee, groupRole, myVenueId, myPerms]);
 
+  // Unread messaging badge (direct messages addressed to me + un-acked announcements in my scope).
+  const unreadMessages = useMemo(() => {
+    const myUid = me?.uid || me?.id || null;
+    const myStaff = staff.find((s) => (s.adminUid && myUid && s.adminUid === myUid) || (s.email && me?.email && s.email.toLowerCase() === me.email.toLowerCase()));
+    const myId = myStaff?.id || myUid;
+    if (!myId) return 0;
+    const myVenueIds = myStaff?.venueIds || (myVenueId && myVenueId !== "all" ? [myVenueId] : venues.map((v) => v.id));
+    const dm = messages.filter((m) => m.toId === myId && !(m.readBy || []).includes(myId)).length;
+    const ann = announcements.filter((a) => (a.scope === "all" || myVenueIds.includes(a.scope)) && !(a.readBy || []).includes(myId)).length;
+    return dm + ann;
+  }, [messages, announcements, staff, me, myVenueId, venues]);
+
   const value = useMemo(() => ({
-    groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis,
+    groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, roles,
+    announcements, messages, unreadMessages,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can,
     loading, showToast,
-  }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis,
+  }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, roles,
+      announcements, messages, unreadMessages,
       selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, loading, showToast]);
 
   return (

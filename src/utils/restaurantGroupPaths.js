@@ -40,7 +40,7 @@ export const venueTrainingCol = (groupId, venueId) => venueCol(groupId, venueId,
 // NB: `staff` is GROUP-LEVEL (a staff member can belong to multiple venues via
 // venueIds), so it is NOT in this list — see staffCol() below.
 export const PER_VENUE_COLLECTIONS = [
-  "shifts", "leaveRequests", "checklists",
+  "shifts", "leaveRequests", "checklists", "stations",
   "performanceNotes", "trainingModules", "trainingAssignments", "checklistAssignments", "kpis",
 ];
 
@@ -51,6 +51,14 @@ export const staffInVenue = (s, venueId) =>
   (Array.isArray(s?.venueIds) ? s.venueIds.includes(venueId) : false) ||
   s?.venueId === venueId;
 export const staffCol = (groupId) => groupCol(groupId, "staff");
+export const staffDoc = (groupId, staffId) => doc(db, "restaurantGroups", String(groupId), "staff", String(staffId));
+// Group-level audit trail of sensitive changes — surfaced to the super admin.
+export const auditLogCol = (groupId) => groupCol(groupId, "auditLog");
+// Group-level messaging: announcements (broadcast) + direct message threads.
+export const announcementsCol = (groupId) => groupCol(groupId, "announcements");
+export const messagesCol = (groupId) => groupCol(groupId, "messages");
+// Deterministic conversation id for a pair of staff ids (order-independent).
+export const convId = (a, b) => [String(a), String(b)].sort().join("__");
 export const shiftsCol = (groupId) => groupCol(groupId, "shifts");
 export const leaveCol = (groupId) => groupCol(groupId, "leaveRequests");
 export const modulesCol = (groupId) => groupCol(groupId, "trainingModules");

@@ -86,7 +86,7 @@ export const checklistForStaff = (c, s) => {
 export const stepsItemCount = (steps) => (steps || []).reduce((a, s) => a + ((s.items || []).length), 0);
 export const snapshotForAssign = (m) => {
   const total = stepsItemCount(m?.steps);
-  return { sections: m?.steps || [], checks: Array(total).fill(false), itemsTotal: total };
+  return { sections: m?.steps || [], checks: Array(total).fill(false), itemsTotal: total, link: m?.link || "" };
 };
 
 // training % derived from a staff member's assignments (1 of 2 complete = 50%)
