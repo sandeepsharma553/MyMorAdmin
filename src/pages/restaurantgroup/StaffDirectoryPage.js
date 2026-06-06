@@ -63,6 +63,9 @@ const blankForm = (defaultVenue) => ({
 export default function StaffDirectoryPage() {
   const { groupId, group, staff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, stations, roles, selectedVenue, showToast, can, me } = useRG();
   const canEdit = can("staff", "edit");
+  // Sensitive payroll (TFN/bank/super) is restricted to owner/storeAdmin (and super),
+  // matching the Firestore rule on staff/{id}/private. Managers manage staff but not payroll.
+  const canPayroll = ["owner", "storeAdmin"].includes(me?.groupRole) || me?.type === "superadmin";
   const actorName = me?.displayName || me?.name || me?.email || "Admin";
   const logChange = async (action, summary, extra = {}) => {
     try {
@@ -168,8 +171,8 @@ export default function StaffDirectoryPage() {
         status: form.status, pin, email: form.hasAdminLogin ? form.email.toLowerCase().trim() : "",
         hasAdminLogin: !!form.hasAdminLogin, adminUid, password: pwd, createdAt: serverTimestamp(),
       });
-      // sensitive payroll data → private subcollection (admin-only in rules)
-      await setDoc(staffPrivateDoc(groupId, created.id), { ...payrollFrom(form), updatedAt: serverTimestamp() });
+      // sensitive payroll data → private subcollection (owner/storeAdmin only in rules)
+      if (canPayroll) await setDoc(staffPrivateDoc(groupId, created.id), { ...payrollFrom(form), updatedAt: serverTimestamp() });
       showToast(`${displayName} added`);
       logChange("staff.create", `Added staff member ${displayName} (${form.role})`, { venueIds: form.venueIds });
       setAddOpen(false); setForm(blankForm(selectedVenue));
@@ -234,9 +237,11 @@ export default function StaffDirectoryPage() {
       const histEntry = changes.length ? { at: new Date().toISOString(), by: actorName, changes } : null;
       if (histEntry) patch.history = arrayUnion(histEntry);
       await updateDoc(doc(staffCol(groupId), profile.id), patch);
-      // sensitive payroll data → private subcollection (admin-only in rules)
-      await setDoc(staffPrivateDoc(groupId, profile.id), { ...payrollFrom(edit), updatedAt: serverTimestamp() }, { merge: true });
-      setPayroll(payrollFrom(edit));
+      // sensitive payroll data → private subcollection (owner/storeAdmin only in rules)
+      if (canPayroll) {
+        await setDoc(staffPrivateDoc(groupId, profile.id), { ...payrollFrom(edit), updatedAt: serverTimestamp() }, { merge: true });
+        setPayroll(payrollFrom(edit));
+      }
       if (changes.length) logChange("staff.update", `Updated ${displayName}: ${changes.join("; ")}`, { staffId: profile.id, venueIds: edit.venueIds });
       showToast("Staff profile updated");
       const histMerge = histEntry ? { history: [...(profile.history || []), histEntry] } : {};
@@ -283,7 +288,7 @@ export default function StaffDirectoryPage() {
   // fetch the private payroll doc when a profile opens (only managers/admins can read it)
   useEffect(() => {
     setPayroll(null);
-    if (!profile || !groupId || !canEdit) return;
+    if (!profile || !groupId || !canPayroll) return;
     let alive = true;
     getDoc(staffPrivateDoc(groupId, profile.id))
       .then((d) => { if (alive) setPayroll(d.exists() ? d.data() : {}); })
@@ -455,7 +460,7 @@ export default function StaffDirectoryPage() {
             </div>
             <div className="form-group"><label className="form-label">Venues * (works at)</label><VenuePicker value={form.venueIds} onToggle={(vid) => toggleVenue(vid, form, setForm)} /></div>
             <div className="form-group"><label className="form-label">Stations</label><StationPicker venueIds={form.venueIds} value={form.stationIds} setter={setForm} /></div>
-            {renderPayroll(form, setF)}
+            {canPayroll && renderPayroll(form, setF)}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
               <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <input type="checkbox" checked={form.hasAdminLogin} onChange={setF("hasAdminLogin")} /> Admin website access (email + password login)
@@ -500,7 +505,7 @@ export default function StaffDirectoryPage() {
                   ))}
                 </div>
 
-                {canEdit && (
+                {canPayroll && (
                   <div style={{ marginTop: 16 }}>
                     <div className="card-head" style={{ marginBottom: 8 }}>
                       <span className="card-title">Payroll &amp; personal</span>
@@ -646,7 +651,7 @@ export default function StaffDirectoryPage() {
                 </div>
                 <div className="form-group"><label className="form-label">Venues (works at)</label><VenuePicker value={edit.venueIds} onToggle={(vid) => toggleVenue(vid, edit, setEdit)} /></div>
                 <div className="form-group"><label className="form-label">Stations</label><StationPicker venueIds={edit.venueIds} value={edit.stationIds} setter={setEdit} /></div>
-                {renderPayroll(edit, setE)}
+                {canPayroll && renderPayroll(edit, setE)}
                 <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
                   <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <input type="checkbox" checked={edit.hasAdminLogin} onChange={setE("hasAdminLogin")} disabled={!!profile.adminUid} /> Admin website access
