@@ -1,13 +1,14 @@
-import React, { useMemo, useState } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp, arrayUnion, arrayRemove } from "firebase/firestore";
+import React, { useEffect, useMemo, useState } from "react";
+import { addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, serverTimestamp, arrayUnion, arrayRemove } from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol, staffDoc, auditLogCol, staffInVenue, venueCol, venueColor } from "../../utils/restaurantGroupPaths";
+import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
-import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, staffSeesAll, snapshotForAssign } from "./rgUtils";
+import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist } from "./rgUtils";
 import AssignmentDetail from "./AssignmentDetail";
+import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
 
 const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent", "Urgent — today"]];
 const REC_TYPES = ["Coaching", "Mistake", "Commendation", "Incident"];
@@ -82,6 +83,7 @@ export default function StaffDirectoryPage() {
   const [confirmSave, setConfirmSave] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showPayroll, setShowPayroll] = useState(false);
+  const [payroll, setPayroll] = useState(null); // private payroll doc for the open profile
   const [recForm, setRecForm] = useState({ type: "Coaching", note: "" });
 
   const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
@@ -156,7 +158,7 @@ export default function StaffDirectoryPage() {
       if (form.hasAdminLogin) {
         adminUid = await createAdminLogin({ email: form.email.toLowerCase().trim(), password: pwd, name: displayName, role: form.role, venueIds: form.venueIds, permissions });
       }
-      await addDoc(staffCol(groupId), {
+      const created = await addDoc(staffCol(groupId), {
         name: form.name.trim(), displayName, role: form.role, area: form.area || areaOf(form.role),
         groupRole: roleToGroupRole(form.role), permissions,
         venueIds: form.venueIds, venueNames: form.venueIds.map(venueName),
@@ -164,8 +166,10 @@ export default function StaffDirectoryPage() {
         phone: form.phone.trim(), start: form.start, endDate: form.endDate || "", type: form.type, cert: form.cert,
         hours: Number(form.hours) || 0,
         status: form.status, pin, email: form.hasAdminLogin ? form.email.toLowerCase().trim() : "",
-        hasAdminLogin: !!form.hasAdminLogin, adminUid, password: pwd, ...payrollFrom(form), createdAt: serverTimestamp(),
+        hasAdminLogin: !!form.hasAdminLogin, adminUid, password: pwd, createdAt: serverTimestamp(),
       });
+      // sensitive payroll data → private subcollection (admin-only in rules)
+      await setDoc(staffPrivateDoc(groupId, created.id), { ...payrollFrom(form), updatedAt: serverTimestamp() });
       showToast(`${displayName} added`);
       logChange("staff.create", `Added staff member ${displayName} (${form.role})`, { venueIds: form.venueIds });
       setAddOpen(false); setForm(blankForm(selectedVenue));
@@ -184,7 +188,7 @@ export default function StaffDirectoryPage() {
       cert: profile.cert || "Not yet obtained", hours: profile.hours || 0, stationIds: profile.stationIds || [],
       status: profile.status || "Active", pin: profile.pin || "",
       hasAdminLogin: !!profile.hasAdminLogin, email: profile.email || "", password: "",
-      ...payrollFromProfile(profile),
+      ...payrollFromProfile(payroll || {}),
     });
     setConfirmSave(false);
     setEditing(true);
@@ -224,12 +228,15 @@ export default function StaffDirectoryPage() {
         phone: edit.phone.trim(), start: edit.start, endDate: edit.endDate || "", type: edit.type, cert: edit.cert,
         hours: Number(edit.hours) || 0,
         status: edit.status, pin, hasAdminLogin: !!edit.hasAdminLogin, adminUid, password: newPwd,
-        email: edit.hasAdminLogin ? edit.email.toLowerCase().trim() : (profile.email || ""), ...payrollFrom(edit), updatedAt: serverTimestamp(),
+        email: edit.hasAdminLogin ? edit.email.toLowerCase().trim() : (profile.email || ""), updatedAt: serverTimestamp(),
       };
       const changes = diffStaff();
       const histEntry = changes.length ? { at: new Date().toISOString(), by: actorName, changes } : null;
       if (histEntry) patch.history = arrayUnion(histEntry);
       await updateDoc(doc(staffCol(groupId), profile.id), patch);
+      // sensitive payroll data → private subcollection (admin-only in rules)
+      await setDoc(staffPrivateDoc(groupId, profile.id), { ...payrollFrom(edit), updatedAt: serverTimestamp() }, { merge: true });
+      setPayroll(payrollFrom(edit));
       if (changes.length) logChange("staff.update", `Updated ${displayName}: ${changes.join("; ")}`, { staffId: profile.id, venueIds: edit.venueIds });
       showToast("Staff profile updated");
       const histMerge = histEntry ? { history: [...(profile.history || []), histEntry] } : {};
@@ -270,6 +277,19 @@ export default function StaffDirectoryPage() {
   const [assignPriority, setAssignPriority] = useState("normal");
   const [openAssignId, setOpenAssignId] = useState(null);
   const openAssignment = useMemo(() => assignments.find((a) => a.id === openAssignId) || null, [assignments, openAssignId]);
+  const [openChecklistId, setOpenChecklistId] = useState(null);
+  const openChecklistAssignment = useMemo(() => checklistAssignments.find((a) => a.id === openChecklistId) || null, [checklistAssignments, openChecklistId]);
+
+  // fetch the private payroll doc when a profile opens (only managers/admins can read it)
+  useEffect(() => {
+    setPayroll(null);
+    if (!profile || !groupId || !canEdit) return;
+    let alive = true;
+    getDoc(staffPrivateDoc(groupId, profile.id))
+      .then((d) => { if (alive) setPayroll(d.exists() ? d.data() : {}); })
+      .catch(() => { if (alive) setPayroll({}); });
+    return () => { alive = false; };
+  }, [profile, groupId, canEdit]);
 
   const myTraining = useMemo(() => profile ? assignments.filter((a) => a.staffId === profile.id) : [], [profile, assignments]);
   const myChecklists = useMemo(() => profile ? checklistAssignments.filter((a) => a.staffId === profile.id) : [], [profile, checklistAssignments]);
@@ -306,7 +326,8 @@ export default function StaffDirectoryPage() {
           if (!c) continue;
           await addDoc(venueCol(groupId, c.venueId, "checklistAssignments"), {
             staffId: profile.id, staffName: profile.displayName || profile.name, venueId: c.venueId, venue: c.venue,
-            checklistId: c.id, checklistTitle: c.title, area: c.area || "All", createdAt: serverTimestamp(),
+            checklistId: c.id, checklistTitle: c.title, ...snapshotForChecklist(c),
+            status: "Not started", progress: 0, createdAt: serverTimestamp(),
           });
         }
         showToast(`Assigned ${picked.length} checklist(s)`);
@@ -485,14 +506,18 @@ export default function StaffDirectoryPage() {
                       <span className="card-title">Payroll &amp; personal</span>
                       <button className="btn btn-sm" onClick={() => setShowPayroll((s) => !s)}>{showPayroll ? "Hide" : "Show"} sensitive</button>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                      {PAYROLL_FIELDS.map((f) => {
-                        const raw = profile[f.key];
-                        let v = raw || "—";
-                        if (raw && f.sensitive && !showPayroll) v = "•••• " + String(raw).slice(-3);
-                        return <div key={f.key} style={{ gridColumn: f.full ? "1 / -1" : "auto" }}><div className="form-label">{f.label}</div><div style={{ fontSize: 13, wordBreak: "break-word" }}>{v}</div></div>;
-                      })}
-                    </div>
+                    {payroll === null ? (
+                      <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                        {PAYROLL_FIELDS.map((f) => {
+                          const raw = payroll[f.key];
+                          let v = raw || "—";
+                          if (raw && f.sensitive && !showPayroll) v = "•••• " + String(raw).slice(-3);
+                          return <div key={f.key} style={{ gridColumn: f.full ? "1 / -1" : "auto" }}><div className="form-label">{f.label}</div><div style={{ fontSize: 13, wordBreak: "break-word" }}>{v}</div></div>;
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div style={{ marginTop: 16 }}>
@@ -503,6 +528,15 @@ export default function StaffDirectoryPage() {
                   <div className="progress-wrap"><div className="progress-bar" style={{ width: `${trainingPct(profile.id, assignments)}%`, background: progressColor(trainingPct(profile.id, assignments)) }} /></div>
                   {staffSeesAll(profile) && <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>Manager/admin — can be assigned any module.</div>}
                 </div>
+                {myChecklists.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                      <span>Checklist completion ({myChecklists.filter((a) => a.status === "Complete").length}/{myChecklists.length})</span>
+                      <strong>{checklistPct(profile.id, checklistAssignments)}%</strong>
+                    </div>
+                    <div className="progress-wrap"><div className="progress-bar" style={{ width: `${checklistPct(profile.id, checklistAssignments)}%`, background: progressColor(checklistPct(profile.id, checklistAssignments)) }} /></div>
+                  </div>
+                )}
 
                 {/* Assigned training */}
                 <div style={{ marginTop: 16 }}>
@@ -534,7 +568,12 @@ export default function StaffDirectoryPage() {
                   {myChecklists.map((a) => (
                     <div key={a.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                       <span style={{ fontSize: 12 }}>{a.checklistTitle} <span className="pill pill-gray" style={{ marginLeft: 4 }}>{a.area}</span> <span style={{ color: "var(--gray)" }}>· {a.venue}</span></span>
-                      {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeAssignment(a, "checklist")}>✕</button>}
+                      <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                        <span style={{ fontSize: 11, color: "var(--gray)" }}>{(a.checks || []).filter(Boolean).length}/{a.itemsTotal || (a.checks || []).length}</span>
+                        <span className={`pill ${trainingStatusPill(a.status)}`}>{a.status || "Not started"}</span>
+                        <button className="btn btn-sm" onClick={() => setOpenChecklistId(a.id)}>Open</button>
+                        {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeAssignment(a, "checklist")}>✕</button>}
+                      </span>
                     </div>
                   ))}
                   {myChecklists.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No checklists assigned.</div>}
@@ -674,7 +713,10 @@ export default function StaffDirectoryPage() {
       )}
 
       {openAssignment && (
-        <AssignmentDetail assignment={openAssignment} groupId={groupId} canTick={canEdit} canVerify={can("training", "edit")} actorName={actorName} showToast={showToast} onClose={() => setOpenAssignId(null)} />
+        <AssignmentDetail assignment={openAssignment} liveModule={modules.find((m) => m.id === openAssignment.moduleId) || modules.find((m) => m.title === openAssignment.moduleTitle && m.venueId === openAssignment.venueId)} groupId={groupId} canTick={canEdit} canVerify={can("training", "edit")} actorName={actorName} showToast={showToast} onClose={() => setOpenAssignId(null)} />
+      )}
+      {openChecklistAssignment && (
+        <ChecklistAssignmentDetail assignment={openChecklistAssignment} liveChecklist={checklists.find((c) => c.id === openChecklistAssignment.checklistId) || checklists.find((c) => c.title === openChecklistAssignment.checklistTitle && c.venueId === openChecklistAssignment.venueId)} groupId={groupId} canTick={canEdit} showToast={showToast} onClose={() => setOpenChecklistId(null)} />
       )}
     </>
   );

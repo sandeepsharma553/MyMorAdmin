@@ -52,6 +52,9 @@ export const staffInVenue = (s, venueId) =>
   s?.venueId === venueId;
 export const staffCol = (groupId) => groupCol(groupId, "staff");
 export const staffDoc = (groupId, staffId) => doc(db, "restaurantGroups", String(groupId), "staff", String(staffId));
+// Sensitive payroll/personal data — kept in a private subcollection so it is NOT
+// part of the group-readable staff doc (locked to owner/storeAdmin in rules).
+export const staffPrivateDoc = (groupId, staffId) => doc(db, "restaurantGroups", String(groupId), "staff", String(staffId), "private", "details");
 // Group-level audit trail of sensitive changes — surfaced to the super admin.
 export const auditLogCol = (groupId) => groupCol(groupId, "auditLog");
 // Group-level messaging: announcements (broadcast) + direct message threads.

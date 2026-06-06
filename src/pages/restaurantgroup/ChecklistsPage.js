@@ -5,6 +5,8 @@ import { venueCol } from "../../utils/restaurantGroupPaths";
 import { RefImageViewer, RefImageEditor } from "./RefImages";
 import { RichItemList, RichText } from "./RichItems";
 import PrepListPanel from "./PrepListPanel";
+import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
+import { trainingStatusPill, progressColor } from "./rgUtils";
 
 const hasText = (h) => (h || "").replace(/<[^>]*>/g, "").trim().length > 0;
 
@@ -30,12 +32,20 @@ const fmt12 = (t) => { if (!t) return ""; const [h, m] = t.split(":").map(Number
 const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "Opening", area: "FOH", stationId: "", time: "", items: [], days: [], images: [] });
 
 export default function ChecklistsPage() {
-  const { groupId, venues, checklists, stations, selectedVenue, showToast, can } = useRG();
+  const { groupId, venues, staff, checklists, checklistAssignments, stations, selectedVenue, showToast, can, me } = useRG();
   const canEdit = can("checklists", "edit");
   const [venueTab, setVenueTab] = useState(selectedVenue === "all" ? (venues[0]?.id || "") : selectedVenue);
   const [typeFilter, setTypeFilter] = useState("All checklists");
   const [dayFilter, setDayFilter] = useState("all"); // "all" | "today" | weekday key
   const [areaFilter, setAreaFilter] = useState("all"); // all | foh | boh
+  const [openMyId, setOpenMyId] = useState(null);
+
+  // identity → which staff doc is this login, and are they management?
+  const myUid = me?.uid || me?.id;
+  const myStaff = useMemo(() => staff.find((s) => (s.adminUid && s.adminUid === myUid) || (s.email && me?.email && s.email.toLowerCase() === me.email.toLowerCase())), [staff, myUid, me]);
+  const isMgr = ["owner", "storeAdmin", "manager"].includes(me?.groupRole);
+  const myChecklistAssignments = useMemo(() => myStaff ? checklistAssignments.filter((a) => a.staffId === myStaff.id) : [], [myStaff, checklistAssignments]);
+  const openMyAssignment = useMemo(() => checklistAssignments.find((a) => a.id === openMyId) || null, [checklistAssignments, openMyId]);
 
   useEffect(() => {
     if (selectedVenue !== "all") setVenueTab(selectedVenue);
@@ -117,6 +127,49 @@ export default function ChecklistsPage() {
     catch { showToast("Could not delete"); }
   };
 
+  // ── STAFF VIEW: only the checklists assigned to this person, their own copy ──
+  if (!isMgr) {
+    const myVenueIds = myStaff?.venueIds || [];
+    return (
+      <>
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head">
+            <span className="card-title">My checklists</span>
+            <span className="card-sub">{myStaff ? "Tick off the checklists assigned to you" : "No staff profile is linked to your login yet"}</span>
+          </div>
+          {myStaff && myChecklistAssignments.length === 0 && <div style={{ fontSize: 13, color: "var(--gray)" }}>No checklists assigned to you yet.</div>}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
+            {myChecklistAssignments.map((a) => {
+              const total = a.itemsTotal || (a.checks || []).length;
+              const done = (a.checks || []).filter(Boolean).length;
+              const pct = total ? Math.round((done / total) * 100) : 0;
+              return (
+                <div key={a.id} className="training-module" onClick={() => setOpenMyId(a.id)}>
+                  <div className="module-title">{a.checklistTitle}</div>
+                  <div className="module-meta">{a.venue}{a.area ? ` · ${a.area}` : ""}{a.station ? ` · ${a.station}` : ""}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4 }}>
+                    <span className={`pill ${trainingStatusPill(a.status)}`}>{a.status || "Not started"}</span>
+                    <span>{done}/{total}</span>
+                  </div>
+                  <div className="progress-wrap"><div className="progress-bar" style={{ width: `${pct}%`, background: progressColor(pct) }} /></div>
+                  <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>Click to open & tick each item</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {myVenueIds.map((vid) => (
+          <PrepListPanel key={vid} groupId={groupId} venueId={vid} venueLabel={venues.find((v) => v.id === vid)?.name} canEdit={false} myStaffId={myStaff?.id} showToast={showToast} />
+        ))}
+
+        {openMyAssignment && (
+          <ChecklistAssignmentDetail assignment={openMyAssignment} liveChecklist={checklists.find((c) => c.id === openMyAssignment.checklistId) || checklists.find((c) => c.title === openMyAssignment.checklistTitle && c.venueId === openMyAssignment.venueId)} groupId={groupId} canTick showToast={showToast} onClose={() => setOpenMyId(null)} />
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
@@ -144,7 +197,9 @@ export default function ChecklistsPage() {
         </div>
       </div>
 
-      <PrepListPanel groupId={groupId} venueId={venueTab} canEdit={canEdit} showToast={showToast} />
+      <PrepListPanel groupId={groupId} venueId={venueTab} canEdit={canEdit} showToast={showToast}
+        myStaffId={myStaff?.id}
+        staffList={staff.filter((s) => (s.venueIds || []).includes(venueTab)).map((s) => ({ id: s.id, name: s.displayName || s.name }))} />
 
       <div className="grid-2">
         {shown.map((c) => {

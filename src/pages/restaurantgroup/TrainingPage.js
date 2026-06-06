@@ -32,8 +32,12 @@ export default function TrainingPage() {
   const [tab, setTab] = useState("mine");
   const [openAssign, setOpenAssign] = useState(null); // assignment id
 
-  const myStaff = useMemo(() => staff.find((s) => s.adminUid && s.adminUid === me?.uid), [staff, me]);
+  const myUid = me?.uid || me?.id;
+  const myStaff = useMemo(() => staff.find((s) => (s.adminUid && s.adminUid === myUid) || (s.email && me?.email && s.email.toLowerCase() === me.email.toLowerCase())), [staff, myUid, me]);
   const myAssignments = useMemo(() => myStaff ? assignments.filter((a) => a.staffId === myStaff.id) : [], [myStaff, assignments]);
+  // staff (non-management) only get the "My Training" tab; managers/admins get all
+  const isMgr = ["owner", "storeAdmin", "manager"].includes(me?.groupRole);
+  const visibleTabs = isMgr ? TABS : TABS.filter((t) => t.id === "mine");
   const openAssignment = useMemo(() => assignments.find((a) => a.id === openAssign) || null, [assignments, openAssign]);
   const [areaTab, setAreaTab] = useState("all"); // all | foh | boh
   const [detail, setDetail] = useState(null);
@@ -134,7 +138,7 @@ export default function TrainingPage() {
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div className="tabs">
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <button key={t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>
               {t.label}
               {t.id === "modules" && <span className="tab-badge">{venueModules.length}</span>}
@@ -397,6 +401,7 @@ export default function TrainingPage() {
       {openAssignment && (
         <AssignmentDetail
           assignment={openAssignment}
+          liveModule={modules.find((m) => m.id === openAssignment.moduleId) || modules.find((m) => m.title === openAssignment.moduleTitle && m.venueId === openAssignment.venueId)}
           groupId={groupId}
           canTick={canEdit || openAssignment.staffId === myStaff?.id}
           canVerify={canEdit}

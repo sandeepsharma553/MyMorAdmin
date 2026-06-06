@@ -39,6 +39,7 @@ export const leaveStatusPill = (status) => {
 export const trainingStatusPill = (status) => {
   if (status === "Complete") return "pill-green";
   if (status === "Overdue") return "pill-red";
+  if (status === "Awaiting sign-off") return "pill-purple";
   if (status === "In progress") return "pill-amber";
   return "pill-blue";
 };
@@ -67,7 +68,7 @@ export const noteTypePill = (type) => {
 // Managers/supervisors/admins see ALL modules & checklists; FOH/BOH staff see
 // only their area + universal ("All") items, scoped to the venues they work at.
 export const staffSeesAll = (s) =>
-  !!s?.hasAdminLogin || s?.area === "Mgmt" || /manager|supervisor|in charge/i.test(s?.role || "");
+  s?.area === "Mgmt" || /manager|supervisor|in charge|owner|admin/i.test(s?.role || "");
 
 export const moduleForStaff = (m, s) => {
   if (!(s?.venueIds || []).includes(m?.venueId)) return false;
@@ -89,11 +90,22 @@ export const snapshotForAssign = (m) => {
   return { sections: m?.steps || [], checks: Array(total).fill(false), itemsTotal: total, link: m?.link || "" };
 };
 
-// training % derived from a staff member's assignments (1 of 2 complete = 50%)
+// snapshot a checklist's items onto a per-staff assignment so they tick their own copy
+export const snapshotForChecklist = (c) => {
+  const items = c?.items || [];
+  return { items, checks: Array(items.length).fill(false), itemsTotal: items.length, station: c?.station || "", area: c?.area || "All" };
+};
+
+// average ticked-progress across a staff member's assignments (reflects items done)
 export const trainingPct = (staffId, assignments) => {
   const list = (assignments || []).filter((a) => a.staffId === staffId);
   if (!list.length) return 0;
-  return Math.round((list.filter((a) => a.status === "Complete").length / list.length) * 100);
+  return Math.round(list.reduce((a, x) => a + (x.progress || 0), 0) / list.length);
+};
+export const checklistPct = (staffId, checklistAssignments) => {
+  const list = (checklistAssignments || []).filter((a) => a.staffId === staffId);
+  if (!list.length) return 0;
+  return Math.round(list.reduce((a, x) => a + (x.progress || 0), 0) / list.length);
 };
 
 export const noteTypeLabel = (type) => {
