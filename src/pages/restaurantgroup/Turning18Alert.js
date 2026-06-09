@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getDoc, setDoc, doc, serverTimestamp } from "firebase/firestore";
 import { staffPrivateDoc, auditLogCol } from "../../utils/restaurantGroupPaths";
 
@@ -16,6 +16,9 @@ const fmt = (d) => d.toLocaleDateString(undefined, { day: "numeric", month: "sho
 export default function Turning18Alert({ groupId, staff, actorName }) {
   const [flagged, setFlagged] = useState([]);
   const notified = useRef(new Set());
+  // re-run only when the SET of staff changes (not on every field edit) — avoids re-reading
+  // every private DOB doc on each unrelated staff snapshot.
+  const staffKey = useMemo(() => staff.map((s) => s.id).sort().join(","), [staff]);
 
   useEffect(() => {
     if (!groupId || !staff.length) { setFlagged([]); return; }
@@ -56,7 +59,7 @@ export default function Turning18Alert({ groupId, staff, actorName }) {
       }
     })();
     return () => { alive = false; };
-  }, [groupId, staff, actorName]);
+  }, [groupId, staffKey, actorName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!flagged.length) return null;
   const canAsk = typeof Notification !== "undefined" && Notification.permission === "default";

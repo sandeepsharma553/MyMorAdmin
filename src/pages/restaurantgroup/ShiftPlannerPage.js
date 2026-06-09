@@ -2,7 +2,6 @@ import React, { useMemo, useState, useEffect } from "react";
 import { addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
-import { db } from "../../firebase";
 import { fullName } from "./rgUtils";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 
@@ -58,7 +57,7 @@ const AREA_GROUPS = [
 ];
 
 export default function ShiftPlannerPage() {
-  const { groupId, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, selectedVenue, selectedVenueName, showToast, can } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, selectedVenue, selectedVenueName, showToast, can } = useRG();
   const canEdit = can("shifts", "edit");
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
@@ -91,8 +90,11 @@ export default function ShiftPlannerPage() {
     () => rows.reduce((a, s) => a + staffHours(s.id), 0),
     [rows, weekShifts]
   );
-  const labourCost = totalHours * HOURLY;
-  const labourPct = ((labourCost / WEEKLY_REVENUE) * 100).toFixed(1);
+  // configurable per group (set hourlyRate / weeklyRevenue on the group doc); fall back to estimates
+  const hourly = Number(group?.hourlyRate) || HOURLY;
+  const weeklyRev = Number(group?.weeklyRevenue) || WEEKLY_REVENUE;
+  const labourCost = totalHours * hourly;
+  const labourPct = ((labourCost / weeklyRev) * 100).toFixed(1);
 
   // rows grouped into area sections (Management / FOH / BOH / Kitchen / Other),
   // honouring the area filter; empty groups are dropped.

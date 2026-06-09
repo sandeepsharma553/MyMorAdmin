@@ -15,7 +15,7 @@ const cellWeekInfo = (d) => {
 const shortRole = (r) => (r || "").replace(/^(FOH|BOH) — /, "");
 
 export default function CalendarPage() {
-  const { shifts, leave, assignments, venues, staff, scopedStaff, myStaff, myScope, selectedVenue } = useRG();
+  const { shifts, leave, assignments, venues, staff, scopedStaff, myStaff, myScope, selectedVenue, can } = useRG();
   const [monthOffset, setMonthOffset] = useState(0);
   const [dayOpen, setDayOpen] = useState(null); // a Date
 
@@ -28,17 +28,19 @@ export default function CalendarPage() {
     const s = staff.find((x) => x.id === id) || (myStaff?.id === id ? myStaff : null);
     return s ? (s.displayName || s.name || fullName(s)) : "";
   };
+  // venue membership that also honours the legacy single `venueId` field
+  const inVenue = (s, vid) => (s.venueIds || []).includes(vid) || s.venueId === vid;
   // whose schedule this user may see: staff → only self; manager/owner → their scope, filtered by venue
   const scopeIds = useMemo(() => {
     if (myScope === "staff") return new Set(myStaff ? [myStaff.id] : []);
-    return new Set(scopedStaff.filter((s) => selectedVenue === "all" || (s.venueIds || []).includes(selectedVenue)).map((s) => s.id));
+    return new Set(scopedStaff.filter((s) => selectedVenue === "all" || inVenue(s, selectedVenue)).map((s) => s.id));
   }, [myScope, myStaff, scopedStaff, selectedVenue]);
 
   // teammates whose birthdays to celebrate (your venue's staff; owner sees the venue filter)
   const teamStaff = useMemo(() => {
-    if (myScope === "owner") return staff.filter((s) => selectedVenue === "all" || (s.venueIds || []).includes(selectedVenue));
-    const mv = myStaff?.venueIds || [];
-    return staff.filter((s) => (s.venueIds || []).some((v) => mv.includes(v)));
+    if (myScope === "owner") return staff.filter((s) => selectedVenue === "all" || inVenue(s, selectedVenue));
+    const mv = myStaff?.venueIds?.length ? myStaff.venueIds : (myStaff?.venueId ? [myStaff.venueId] : []);
+    return staff.filter((s) => mv.some((v) => inVenue(s, v)));
   }, [myScope, myStaff, staff, selectedVenue]);
 
   const eventsFor = (d) => {
@@ -70,6 +72,10 @@ export default function CalendarPage() {
   );
 
   const detail = dayOpen ? eventsFor(dayOpen) : null;
+
+  if (!can("calendar", "view")) {
+    return <div className="card" style={{ margin: 24, color: "var(--gray)", fontSize: 14 }}>You don’t have access to the calendar.</div>;
+  }
 
   return (
     <>

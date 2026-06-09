@@ -1,7 +1,11 @@
 import React, { useState } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
+import { addDoc, updateDoc, doc, serverTimestamp, writeBatch, getDocs, collection, deleteField } from "firebase/firestore";
+import { db } from "../../firebase";
 import { useRG } from "./RGContext";
 import { venuesCol, groupCol } from "../../utils/restaurantGroupPaths";
+
+const VENUE_SUBCOLLECTIONS = ["shifts", "leaveRequests", "checklists", "checklistAssignments",
+  "trainingModules", "trainingAssignments", "stations", "equipment", "kpis", "performanceNotes", "prepList", "tempLogs"];
 
 const COLORS = [
   ["Red", "#C0392B"], ["Orange", "#e67e22"], ["Purple", "#8b5cf6"], ["Blue", "#2563eb"],
@@ -13,12 +17,23 @@ const STATUSES = ["Trading", "Closed", "Renovation"];
 const blank = (order) => ({ id: null, name: "", color: "#2563eb", type: "FOH", status: "Trading", order });
 
 export default function VenueManager({ open, onClose }) {
-  const { groupId, venues, showToast } = useRG();
+  const { groupId, venues, staff, can, showToast } = useRG();
   const [editor, setEditor] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
+  const [busy, setBusy] = useState(false);
   const setF = (k) => (e) => setEditor((p) => ({ ...p, [k]: e.target.value }));
 
   if (!open) return null;
+  if (!can("settings", "edit")) {
+    return (
+      <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+        <div className="rg-modal" style={{ maxWidth: 420 }}>
+          <div className="modal-head"><span className="modal-title">Manage venues</span><button className="modal-close" onClick={onClose}>✕</button></div>
+          <div style={{ fontSize: 13, color: "var(--gray)" }}>You don’t have access to manage venues.</div>
+        </div>
+      </div>
+    );
+  }
 
   const save = async () => {
     if (!editor.name.trim()) return showToast("Venue name required");
@@ -30,9 +45,32 @@ export default function VenueManager({ open, onClose }) {
     } catch { showToast("Could not save venue"); }
   };
 
+  // Cascade delete: remove the venue doc, all its per-venue subcollections, and strip the
+  // venueId from any staff who reference it. Batched (watch the 500-write cap for huge venues).
   const remove = async (id) => {
-    try { await deleteDoc(doc(groupCol(groupId, "venues"), id)); showToast("Venue removed"); setConfirmId(null); }
-    catch { showToast("Could not remove venue"); }
+    setBusy(true);
+    try {
+      const batch = writeBatch(db);
+      for (const col of VENUE_SUBCOLLECTIONS) {
+        const snap = await getDocs(collection(db, "restaurantGroups", groupId, "venues", id, col));
+        snap.docs.forEach((d) => batch.delete(d.ref));
+      }
+      staff.forEach((s) => {
+        const inArray = Array.isArray(s.venueIds) && s.venueIds.includes(id);
+        if (inArray || s.venueId === id) {
+          batch.update(doc(groupCol(groupId, "staff"), s.id), {
+            venueIds: (s.venueIds || []).filter((vid) => vid !== id),
+            venueNames: (s.venueNames || []).filter((_, i) => (s.venueIds || [])[i] !== id),
+            ...(s.venueId === id ? { venueId: deleteField() } : {}),
+          });
+        }
+      });
+      batch.delete(doc(groupCol(groupId, "venues"), id));
+      await batch.commit();
+      showToast("Venue removed");
+      setConfirmId(null);
+    } catch { showToast("Could not remove venue — it may have too much data to delete at once"); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -59,8 +97,9 @@ export default function VenueManager({ open, onClose }) {
                 </div>
                 {confirmId === v.id ? (
                   <>
-                    <button className="btn btn-sm btn-primary" onClick={() => remove(v.id)}>Remove</button>
-                    <button className="btn btn-sm" onClick={() => setConfirmId(null)}>Cancel</button>
+                    <span style={{ fontSize: 10, color: "var(--red)" }}>Deletes all its shifts, leave, checklists, training…</span>
+                    <button className="btn btn-sm btn-danger" onClick={() => remove(v.id)} disabled={busy}>{busy ? "Removing…" : "Delete venue"}</button>
+                    <button className="btn btn-sm" onClick={() => setConfirmId(null)} disabled={busy}>Cancel</button>
                   </>
                 ) : (
                   <>

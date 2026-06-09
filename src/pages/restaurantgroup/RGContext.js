@@ -31,7 +31,7 @@ const subColl = (col, setter, sortKey) => onSnapshot(
 export function RGProvider({ children }) {
   const employee = useSelector((s) => s.auth.employee);
   const groupId = employee?.groupId || employee?.groupid || null;
-  const groupRole = employee?.groupRole || "owner";
+  const groupRole = employee?.groupRole || "staff"; // safe default — never auto-grant owner
   // current user's effective permission map (explicit overrides, else role defaults)
   const myPerms = useMemo(
     () => ({ ...defaultPermsForRole(groupRole), ...(employee?.permissions && !Array.isArray(employee.permissions) ? employee.permissions : {}) }),
@@ -55,7 +55,7 @@ export function RGProvider({ children }) {
     if (!groupId) { setLoading(false); return; }
     setLoading(true);
     const unsubs = [
-      onSnapshot(groupDoc(groupId), (d) => setGroup(d.exists() ? { id: d.id, ...d.data() } : null)),
+      onSnapshot(groupDoc(groupId), (d) => setGroup(d.exists() ? { id: d.id, ...d.data() } : null), () => setLoading(false)),
       subColl(venuesCol(groupId), setVenues, "order"),
       subColl(staffCol(groupId), setStaff),
       subColl(announcementsCol(groupId), setAnnouncements),

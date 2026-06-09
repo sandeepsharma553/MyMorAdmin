@@ -9,13 +9,23 @@ const fmtTime = (ts) => { try { const d = ts?.toDate ? ts.toDate() : new Date(ts
 const inRange = (t, mn, mx) => (mn == null || t >= mn) && (mx == null || t <= mx);
 
 export default function TemperatureLogPage() {
-  const { groupId, venues, equipment, staff, me, selectedVenue, can, showToast } = useRG();
+  const { groupId, venues, equipment, staff, me, myScope, selectedVenue, can, showToast } = useRG();
   const canLog = can("temperature", "edit");
-  const [venueTab, setVenueTab] = useState(selectedVenue === "all" ? (venues[0]?.id || "") : selectedVenue);
-  useEffect(() => { if (selectedVenue !== "all") setVenueTab(selectedVenue); else if (!venueTab && venues[0]) setVenueTab(venues[0].id); }, [selectedVenue, venues]); // eslint-disable-line
 
   const myUid = me?.uid || me?.id;
   const myStaff = useMemo(() => staff.find((s) => (s.adminUid && s.adminUid === myUid) || (s.email && me?.email && s.email.toLowerCase() === me.email.toLowerCase())), [staff, myUid, me]);
+  // only venues this user belongs to (owner/super → all)
+  const scopedVenues = useMemo(() => {
+    if (myScope === "owner") return venues;
+    const mv = myStaff?.venueIds?.length ? myStaff.venueIds : (myStaff?.venueId ? [myStaff.venueId] : []);
+    return venues.filter((v) => mv.includes(v.id));
+  }, [venues, myScope, myStaff]);
+
+  const [venueTab, setVenueTab] = useState(selectedVenue === "all" ? "" : selectedVenue);
+  useEffect(() => {
+    if (selectedVenue !== "all" && scopedVenues.some((v) => v.id === selectedVenue)) setVenueTab(selectedVenue);
+    else if (!scopedVenues.some((v) => v.id === venueTab) && scopedVenues[0]) setVenueTab(scopedVenues[0].id);
+  }, [selectedVenue, scopedVenues]); // eslint-disable-line
   const recorder = myStaff ? (myStaff.displayName || myStaff.name) : (me?.displayName || me?.name || me?.email || "Staff");
 
   const venueUnits = useMemo(() => equipment.filter((e) => e.venueId === venueTab), [equipment, venueTab]);
@@ -59,7 +69,7 @@ export default function TemperatureLogPage() {
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div className="tabs">
-          {venues.map((v) => (
+          {scopedVenues.map((v) => (
             <button key={v.id} className={`tab ${venueTab === v.id ? "active" : ""}`} onClick={() => setVenueTab(v.id)}>{v.type === "CK" ? "Central Kitchen" : v.name}</button>
           ))}
         </div>

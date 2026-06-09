@@ -4,7 +4,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage
 import { storage } from "../../firebase";
 import { useRG } from "./RGContext";
 import { announcementsCol, messagesCol, conversationsCol, convId } from "../../utils/restaurantGroupPaths";
-import { initials, fullName } from "./rgUtils";
+import { initials } from "./rgUtils";
 
 const fmtTs = (ts) => {
   if (!ts) return "";
@@ -40,7 +40,8 @@ export default function MessagingPage() {
   );
   const myId = myStaff?.id || myUid || "owner";
   const myName = myStaff?.displayName || myStaff?.name || me?.name || me?.displayName || "Admin";
-  const myVenueIds = myStaff?.venueIds || (me?.venueId && me.venueId !== "all" ? [me.venueId] : venues.map((v) => v.id));
+  // an EMPTY venueIds array must not hide every channel — fall back like an absent value
+  const myVenueIds = (myStaff?.venueIds?.length) ? myStaff.venueIds : (me?.venueId && me.venueId !== "all" ? [me.venueId] : venues.map((v) => v.id));
 
   const [tab, setTab] = useState("announcements");
 
@@ -179,6 +180,7 @@ export default function MessagingPage() {
   };
 
   const send = async () => {
+    if (!canPost) return; // messages:view users are read-only
     if ((!draft.trim() && !pendingFiles.length) || !activeResolved) return;
     const base = { conv: activeResolved.key, kind: activeResolved.kind, fromId: myId, fromName: myName, text: draft.trim(), attachments: pendingFiles, at: serverTimestamp(), readBy: [myId] };
     if (activeResolved.kind === "dm") { base.toId = activeResolved.otherId; base.toName = activeResolved.name || nameOf(activeResolved.otherId); }
@@ -329,12 +331,16 @@ export default function MessagingPage() {
                     ))}
                   </div>
                 )}
-                <div style={{ padding: 10, borderTop: "0.5px solid var(--border)", display: "flex", gap: 8, alignItems: "center" }}>
-                  <input ref={fileRef} type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style={{ display: "none" }} onChange={onFiles} />
-                  <button className="btn btn-sm" title="Attach photo / video / document" onClick={() => fileRef.current?.click()} disabled={uploading}>{uploading ? "…" : "📎"}</button>
-                  <input className="form-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Type a message…" onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send())} />
-                  <button className="btn btn-primary" onClick={send} disabled={uploading}>Send</button>
-                </div>
+                {canPost ? (
+                  <div style={{ padding: 10, borderTop: "0.5px solid var(--border)", display: "flex", gap: 8, alignItems: "center" }}>
+                    <input ref={fileRef} type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style={{ display: "none" }} onChange={onFiles} />
+                    <button className="btn btn-sm" title="Attach photo / video / document" onClick={() => fileRef.current?.click()} disabled={uploading}>{uploading ? "…" : "📎"}</button>
+                    <input className="form-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Type a message…" onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send())} />
+                    <button className="btn btn-primary" onClick={send} disabled={uploading}>Send</button>
+                  </div>
+                ) : (
+                  <div style={{ padding: 10, borderTop: "0.5px solid var(--border)", fontSize: 12, color: "var(--gray)", textAlign: "center" }}>You have read‑only access to messages.</div>
+                )}
               </>
             ) : (
               <div style={{ margin: "auto", textAlign: "center", color: "var(--gray)", fontSize: 13 }}>Select a conversation, or start a DM / group.</div>

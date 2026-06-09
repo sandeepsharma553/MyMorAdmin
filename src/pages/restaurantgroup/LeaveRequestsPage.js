@@ -21,7 +21,7 @@ const daysBetween = (s, e) => {
 };
 
 export default function LeaveRequestsPage() {
-  const { groupId, staff, leave, selectedVenue, matchVenue, showToast, can, me, myStaff, myScope, scopedStaff } = useRG();
+  const { groupId, staff, venues, leave, selectedVenue, matchVenue, showToast, can, me, myStaff, myScope, scopedStaff } = useRG();
   // employees can't approve; only venue-managers / owners can.
   const canApprove = can("leave", "edit") && myScope !== "staff";
   const isEmployee = myScope === "staff";
@@ -51,12 +51,16 @@ export default function LeaveRequestsPage() {
     if (!scopedIds.has(staffId)) return showToast("You can only submit leave for your own team");
     if (!form.start) return showToast("Choose a start date");
     const st = staff.find((s) => s.id === staffId);
-    const vid = selectedVenue !== "all" ? selectedVenue : st?.venueIds?.[0] || st?.venueId;
-    if (!vid) return showToast("Select a venue for this request");
+    // file the request under a venue the staff member actually belongs to; derive the
+    // venue NAME from the same id so the doc location and the displayed name never disagree.
+    const stVenues = st?.venueIds?.length ? st.venueIds : (st?.venueId ? [st.venueId] : []);
+    const vid = (selectedVenue !== "all" && stVenues.includes(selectedVenue)) ? selectedVenue : stVenues[0];
+    if (!vid) return showToast("This staff member has no venue assigned");
+    const venueName = venues.find((v) => v.id === vid)?.name || st?.venueNames?.[0] || "";
     try {
       await addDoc(venueCol(groupId, vid, "leaveRequests"), {
         staffId, staffName: st?.displayName || fullName(st),
-        venue: st?.venueNames?.[0] || "", venueId: vid, area: st?.area || (st?.role || "").split(" — ")[0] || "",
+        venue: venueName, venueId: vid, area: st?.area || (st?.role || "").split(" — ")[0] || "",
         type: form.type, dates: fmtRange(form.start, form.end), days: daysBetween(form.start, form.end),
         startDate: form.start, endDate: form.end || form.start, reason: form.reason.trim(),
         status: "Pending", approvedBy: "", createdAt: serverTimestamp(),

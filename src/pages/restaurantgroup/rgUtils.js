@@ -105,11 +105,18 @@ export const trainingPct = (staffId, assignments) => {
 // ── shift hours → auto weekly hours (mirrors ShiftPlannerPage) ──
 export const parseShiftTime = (t) => {
   if (!t) return 0;
-  const m = /(\d+):(\d+)(am|pm)/i.exec(String(t).trim());
-  if (!m) return 0;
-  let h = parseInt(m[1], 10) % 12;
-  if (/pm/i.test(m[3])) h += 12;
-  return h + parseInt(m[2], 10) / 60;
+  const s = String(t).trim().toLowerCase().replace(/\s+/g, "");
+  // 12-hour with meridiem (with or without a space): "9:00am", "2:30 pm"
+  const m = /^(\d{1,2}):(\d{2})(am|pm)$/.exec(s);
+  if (m) {
+    let h = parseInt(m[1], 10) % 12;
+    if (m[3] === "pm") h += 12;
+    return h + parseInt(m[2], 10) / 60;
+  }
+  // 24-hour: "09:00", "14:30"
+  const h24 = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (h24) return parseInt(h24[1], 10) + parseInt(h24[2], 10) / 60;
+  return 0;
 };
 export const shiftHours = (sh) => Math.max(0, parseShiftTime(sh.end) - parseShiftTime(sh.start));
 export const currentWeekKey = () => {
@@ -146,6 +153,6 @@ export const checklistPct = (staffId, checklistAssignments) => {
 export const noteTypeLabel = (type) => {
   if (/recognition/i.test(type)) return "⭐ Recognition";
   if (/warning/i.test(type)) return "⚠️ Warning";
-  if (/coaching/i.test(type)) return "⚠️ Coaching";
+  if (/coaching/i.test(type)) return "🧭 Coaching";
   return "📝 Note";
 };

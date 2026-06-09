@@ -10,21 +10,24 @@ import UserManagementPage from "../pages/restaurantgroup/UserManagementPage";
 import MessagingPage from "../pages/restaurantgroup/MessagingPage";
 import CalendarPage from "../pages/restaurantgroup/CalendarPage";
 import SettingsPage from "../pages/restaurantgroup/SettingsPage";
+import ProtectedRoute from "../pages/restaurantgroup/ProtectedRoute";
+
+const P = (moduleKey, El) => <ProtectedRoute moduleKey={moduleKey}>{El}</ProtectedRoute>;
 
 export default function RestaurantGroupRoutes() {
   return (
     <Routes>
-      <Route path="/rg/staff" element={<StaffDirectoryPage />} />
-      <Route path="/rg/shifts" element={<ShiftPlannerPage />} />
-      <Route path="/rg/leave" element={<LeaveRequestsPage />} />
-      <Route path="/rg/training" element={<TrainingPage />} />
-      <Route path="/rg/checklists" element={<ChecklistsPage />} />
-      <Route path="/rg/temperature" element={<TemperatureLogPage />} />
-      <Route path="/rg/performance" element={<PerformancePage />} />
-      <Route path="/rg/messages" element={<MessagingPage />} />
-      <Route path="/rg/calendar" element={<CalendarPage />} />
-      <Route path="/rg/users" element={<UserManagementPage />} />
-      <Route path="/rg/settings" element={<SettingsPage />} />
+      <Route path="/rg/staff" element={P("staff", <StaffDirectoryPage />)} />
+      <Route path="/rg/shifts" element={P("shifts", <ShiftPlannerPage />)} />
+      <Route path="/rg/leave" element={P("leave", <LeaveRequestsPage />)} />
+      <Route path="/rg/training" element={P("training", <TrainingPage />)} />
+      <Route path="/rg/checklists" element={P("checklists", <ChecklistsPage />)} />
+      <Route path="/rg/temperature" element={P("temperature", <TemperatureLogPage />)} />
+      <Route path="/rg/performance" element={P("performance", <PerformancePage />)} />
+      <Route path="/rg/messages" element={P("messages", <MessagingPage />)} />
+      <Route path="/rg/calendar" element={P("calendar", <CalendarPage />)} />
+      <Route path="/rg/users" element={P("usermgmt", <UserManagementPage />)} />
+      <Route path="/rg/settings" element={P("settings", <SettingsPage />)} />
       <Route path="*" element={<Navigate to="/rg/staff" replace />} />
     </Routes>
   );

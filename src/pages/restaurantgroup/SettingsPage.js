@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol, groupDoc } from "../../utils/restaurantGroupPaths";
 import { SUGGESTED_STATIONS } from "./rgConfig";
@@ -21,8 +21,12 @@ export default function SettingsPage() {
     if (!stForm.name.trim()) return showToast("Station name required");
     const payload = { name: stForm.name.trim(), area: stForm.area, venueId: venueTab, order: stForm.order ?? venueStations.length };
     try {
-      if (stForm.id) await updateDoc(doc(venueCol(groupId, venueTab, "stations"), stForm.id), payload);
-      else await setDoc(doc(venueCol(groupId, venueTab, "stations"), slug(stForm.name) || `st-${Date.now()}`), { ...payload, createdAt: serverTimestamp() });
+      if (stForm.id) { await updateDoc(doc(venueCol(groupId, venueTab, "stations"), stForm.id), payload); }
+      else {
+        const id = slug(stForm.name) || `st-${Date.now()}`;
+        if (venueStations.some((s) => s.id === id)) return showToast("A station with a similar name already exists");
+        await setDoc(doc(venueCol(groupId, venueTab, "stations"), id), { ...payload, createdAt: serverTimestamp() });
+      }
       showToast("Station saved"); setStForm(null);
     } catch { showToast("Could not save station"); }
   };
@@ -44,13 +48,21 @@ export default function SettingsPage() {
   const [eqForm, setEqForm] = useState(null); // {id, name, type, minTemp, maxTemp}
   const saveUnit = async () => {
     if (!eqForm.name.trim()) return showToast("Unit name required");
+    const mn = eqForm.minTemp === "" ? null : Number(eqForm.minTemp);
+    const mx = eqForm.maxTemp === "" ? null : Number(eqForm.maxTemp);
+    if ((eqForm.minTemp !== "" && isNaN(mn)) || (eqForm.maxTemp !== "" && isNaN(mx))) return showToast("Min and max must be numbers");
+    if (mn !== null && mx !== null && mn >= mx) return showToast("Safe min must be less than max");
     const payload = {
       name: eqForm.name.trim(), type: eqForm.type, venueId: venueTab, order: eqForm.order ?? venueEquipment.length,
-      minTemp: eqForm.minTemp === "" ? null : Number(eqForm.minTemp), maxTemp: eqForm.maxTemp === "" ? null : Number(eqForm.maxTemp),
+      minTemp: mn, maxTemp: mx,
     };
     try {
-      if (eqForm.id) await updateDoc(doc(venueCol(groupId, venueTab, "equipment"), eqForm.id), payload);
-      else await setDoc(doc(venueCol(groupId, venueTab, "equipment"), slug(eqForm.name) || `eq-${Date.now()}`), { ...payload, createdAt: serverTimestamp() });
+      if (eqForm.id) { await updateDoc(doc(venueCol(groupId, venueTab, "equipment"), eqForm.id), payload); }
+      else {
+        const id = slug(eqForm.name) || `eq-${Date.now()}`;
+        if (venueEquipment.some((e) => e.id === id)) return showToast("A unit with a similar name already exists");
+        await setDoc(doc(venueCol(groupId, venueTab, "equipment"), id), { ...payload, createdAt: serverTimestamp() });
+      }
       showToast("Unit saved"); setEqForm(null);
     } catch { showToast("Could not save unit"); }
   };

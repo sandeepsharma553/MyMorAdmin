@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { storage } from "../../firebase";
 
 /** Upload a reference image to Storage and return { url, path }. */
@@ -59,7 +59,12 @@ export function RefImageEditor({ value = [], onChange, folder, showToast }) {
     }
   };
   const setCaption = (i, cap) => onChange(value.map((img, idx) => idx === i ? { ...img, caption: cap } : img));
-  const remove = (i) => onChange(value.filter((_, idx) => idx !== i));
+  const remove = (i) => {
+    const img = value[i];
+    onChange(value.filter((_, idx) => idx !== i));
+    // also delete the Storage object so removed images don't leak (best-effort)
+    if (img?.path) deleteObject(storageRef(storage, img.path)).catch(() => {});
+  };
 
   return (
     <div className="form-group">

@@ -65,7 +65,7 @@ export default function PrepListPanel({ groupId, venueId, venueLabel, canEdit, s
             const mine = myStaffId && it.assignedTo === myStaffId;
             return (
               <div key={it.id} className="checklist-item" style={{ alignItems: "flex-start", background: mine ? "rgba(192,57,43,0.06)" : undefined, borderRadius: mine ? 8 : undefined, padding: mine ? "4px 6px" : undefined }}>
-                <div className={`check-box ${it.done ? "checked" : ""}`} style={{ cursor: "pointer", marginTop: 2 }} onClick={() => toggle(it)} />
+                <div className={`check-box ${it.done ? "checked" : ""}`} style={{ cursor: canEdit ? "pointer" : "default", opacity: canEdit ? 1 : 0.6, marginTop: 2 }} onClick={() => canEdit && toggle(it)} />
                 <div style={{ flex: 1 }}>
                   <span className={`check-text ${it.done ? "done" : ""}`}>{it.text}{it.qty ? <strong style={{ marginLeft: 6 }}>× {it.qty}</strong> : null}</span>
                   {it.assignedName ? <span className={`pill ${mine ? "pill-red" : "pill-gray"}`} style={{ marginLeft: 6 }}>{mine ? "You" : it.assignedName}</span> : null}

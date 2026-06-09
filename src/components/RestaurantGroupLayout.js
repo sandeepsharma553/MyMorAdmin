@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
 import VenueManager from "../pages/restaurantgroup/VenueManager";
+import { staffInVenue } from "../utils/restaurantGroupPaths";
 import { logoutAdmin } from "../app/features/AuthSlice";
 import "../pages/restaurantgroup/restaurantGroup.css";
 
@@ -29,7 +30,7 @@ function Shell({ children }) {
   const dispatch = useDispatch();
   const {
     group, venues, staff, leave, assignments, unreadMessages,
-    selectedVenue, setSelectedVenue, selectedVenueName, can, me,
+    selectedVenue, setSelectedVenue, selectedVenueName, can,
   } = useRG();
 
   const [venueMgrOpen, setVenueMgrOpen] = useState(false);
@@ -37,7 +38,6 @@ function Shell({ children }) {
   const visibleNav = useMemo(() => NAV.filter((n) => can(n.key, "view")), [can]);
   const activeKey = NAV.find((n) => location.pathname.startsWith(n.path))?.key || visibleNav[0]?.key || "staff";
   const current = NAV.find((n) => n.key === activeKey) || NAV[0];
-  const isOwnerOrAdmin = me?.groupRole === "owner" || me?.groupRole === "storeAdmin";
 
   const pendingLeave = useMemo(() => leave.filter((l) => l.status === "Pending").length, [leave]);
   const openTraining = useMemo(
@@ -45,11 +45,11 @@ function Shell({ children }) {
     [assignments]
   );
 
-  const groupName = group?.name || "Main Kitchen";
+  const groupName = group?.name || "Group Operations";
   const initials = groupName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 
   const venueStaffCount = (vId) =>
-    vId === "all" ? staff.length : staff.filter((s) => s.venueId === vId).length;
+    vId === "all" ? staff.length : staff.filter((s) => staffInVenue(s, vId)).length;
 
   const subtitle = `${selectedVenueName} · ${venueStaffCount(selectedVenue)} staff`;
 
@@ -131,11 +131,11 @@ function Shell({ children }) {
                 <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>
-            {/* {isOwnerOrAdmin && (
+            {can("settings", "edit") && (
               <button className="btn btn-sm" title="Manage venues" onClick={() => setVenueMgrOpen(true)}>
                 <Settings size={14} /> Venues
               </button>
-            )} */}
+            )}
           </div>
         </div>
 

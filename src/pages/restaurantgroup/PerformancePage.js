@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
+import { addDoc, doc, serverTimestamp, writeBatch } from "firebase/firestore";
+import { db } from "../../firebase";
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, progressColor, noteTypePill, noteTypeLabel } from "./rgUtils";
@@ -13,7 +14,7 @@ const NOTE_TYPES = ["Recognition", "Coaching", "Warning", "Note"];
 const monthLabel = () => { const d = new Date(); return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
 
 export default function PerformancePage() {
-  const { groupId, staff, venues, perfNotes, kpis, selectedVenue, matchVenue, showToast, can } = useRG();
+  const { groupId, staff, venues, perfNotes, kpis, selectedVenue, matchVenue, showToast, can, me } = useRG();
   const canEdit = can("performance", "edit");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ staffId: "", type: "Recognition", note: "" });
@@ -37,17 +38,16 @@ export default function PerformancePage() {
   const saveKpis = async () => {
     if (selectedVenue === "all") return showToast("Pick a venue to edit its KPIs");
     const col = venueCol(groupId, selectedVenue, "kpis");
-    try {
-      await Promise.all(kpiDraft.map(async (row, idx) => {
-        if (row._deleted) { if (row.id) await deleteDoc(doc(col, row.id)); return; }
-        if (!row.label.trim()) return;
-        const payload = { label: row.label.trim(), value: row.value, pct: Math.max(0, Math.min(100, Number(row.pct) || 0)), color: row.color, order: idx };
-        if (row.id) await updateDoc(doc(col, row.id), payload);
-        else await addDoc(col, payload);
-      }));
-      showToast("KPIs updated");
-      setKpiOpen(false);
-    } catch { showToast("Could not save KPIs"); }
+    // one atomic batch — all KPI rows commit together or none do (no partial state)
+    const batch = writeBatch(db);
+    kpiDraft.forEach((row, idx) => {
+      if (row._deleted) { if (row.id) batch.delete(doc(col, row.id)); return; }
+      if (!row.label.trim()) return;
+      const payload = { label: row.label.trim(), value: row.value, pct: Math.max(0, Math.min(100, Number(row.pct) || 0)), color: row.color, order: idx };
+      batch.set(row.id ? doc(col, row.id) : doc(col), payload, { merge: true });
+    });
+    try { await batch.commit(); showToast("KPIs updated"); setKpiOpen(false); }
+    catch { showToast("Could not save KPIs — no changes were written"); }
   };
 
   const scopedStaff = useMemo(
@@ -66,7 +66,8 @@ export default function PerformancePage() {
     try {
       await addDoc(venueCol(groupId, vid, "performanceNotes"), {
         staffId: form.staffId, staffName: fullName(st), venue: venues.find((v) => v.id === vid)?.name || "", venueId: vid,
-        type: form.type, note: form.note.trim(), date: `${d.getDate()} ${MONTHS[d.getMonth()]}`, by: "Manager",
+        type: form.type, note: form.note.trim(), date: `${d.getDate()} ${MONTHS[d.getMonth()]}`,
+        by: me?.displayName || me?.name || me?.email || "Manager", byId: me?.uid || me?.id || "",
         createdAt: serverTimestamp(),
       });
       showToast("Note saved");

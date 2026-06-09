@@ -111,7 +111,10 @@ export default function ChecklistsPage() {
     try {
       if (editor.id) {
         const existing = checklists.find((c) => c.id === editor.id);
-        const checked = items.map((_, i) => (existing?.checked || [])[i] || false);
+        // preserve today's ticks by item CONTENT, not by index — so reorder/delete can't move a
+        // tick onto a different item. (If the same item text appears twice, only the first is kept.)
+        const tickedText = new Set((existing?.items || []).filter((_, i) => (existing?.checked || [])[i]));
+        const checked = items.map((it) => tickedText.has(it));
         await updateDoc(doc(venueCol(groupId, venue.id, "checklists"), editor.id), { ...payload, checked });
         showToast("Checklist updated");
       } else {

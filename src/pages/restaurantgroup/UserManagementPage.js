@@ -28,20 +28,25 @@ export default function UserManagementPage() {
   };
   const applyRoleDefaults = () => setPermDraft(defaultPermsForStaffRole(permUser.role));
   const savePerms = async () => {
+    // 1) staff doc — the source of truth. If this fails, stop and report.
     try {
       await updateDoc(doc(staffCol(groupId), permUser.id), { permissions: permDraft, updatedAt: serverTimestamp() });
-      if (permUser.adminUid) await updateDoc(doc(db, "employees", permUser.adminUid), { permissions: permDraft }); // sync the login
-      const changed = RG_MODULES.filter((m) => (permUser.permissions?.[m.key] || defaultPermsForStaffRole(permUser.role)[m.key]) !== permDraft[m.key])
-        .map((m) => `${m.label}=${permDraft[m.key]}`);
-      try {
-        await addDoc(auditLogCol(groupId), {
-          action: "perms.update", summary: `Permissions changed for ${permUser.displayName || permUser.name}${changed.length ? `: ${changed.join(", ")}` : ""}`,
-          by: actorName, byRole: me?.groupRole || "", staffId: permUser.id, at: serverTimestamp(), notifySuperAdmin: true, seenBySuper: false,
-        });
-      } catch { /* non-blocking */ }
-      showToast(permUser.hasAdminLogin ? "Permissions saved & applied to their login" : "Permissions saved (applies when they get a login)");
-      setPermUser(null);
-    } catch { showToast("Could not save permissions"); }
+    } catch { return showToast("Could not save permissions"); }
+    // 2) mirror to the login doc — isolated, so a sync failure doesn't masquerade as a total failure.
+    if (permUser.adminUid) {
+      try { await updateDoc(doc(db, "employees", permUser.adminUid), { permissions: permDraft }); }
+      catch { setPermUser(null); return showToast("Permissions saved, but the login didn’t sync. Re-save to retry."); }
+    }
+    const changed = RG_MODULES.filter((m) => (permUser.permissions?.[m.key] || defaultPermsForStaffRole(permUser.role)[m.key]) !== permDraft[m.key])
+      .map((m) => `${m.label}=${permDraft[m.key]}`);
+    try {
+      await addDoc(auditLogCol(groupId), {
+        action: "perms.update", summary: `Permissions changed for ${permUser.displayName || permUser.name}${changed.length ? `: ${changed.join(", ")}` : ""}`,
+        by: actorName, byRole: me?.groupRole || "", staffId: permUser.id, at: serverTimestamp(), notifySuperAdmin: true, seenBySuper: false,
+      });
+    } catch { /* non-blocking */ }
+    showToast(permUser.adminUid ? "Permissions saved & applied to their login" : "Permissions saved (applies when they get a login)");
+    setPermUser(null);
   };
 
   return (
@@ -94,7 +99,7 @@ export default function UserManagementPage() {
                       <td><span className="pill" style={{ background: rm.pill, color: rm.text }}>{rm.label}</span></td>
                       <td style={{ fontSize: 11, color: "var(--gray)" }}>{venueLabel(s)}</td>
                       <td>{s.hasAdminLogin ? <span className="pill pill-green" title={s.email}>Website login</span> : <span className="pill pill-gray">PIN only</span>}</td>
-                      {showCreds && <><td style={{ fontSize: 11 }}>{s.email || "—"}</td><td style={{ fontSize: 11, fontFamily: "monospace" }}>{s.password || "—"}</td><td style={{ fontSize: 11 }}>{s.pin || "—"}</td></>}
+                      {showCreds && <><td style={{ fontSize: 11 }}>{s.email || "—"}</td><td style={{ fontSize: 11, color: "var(--gray)" }}>{s.hasAdminLogin ? "in Staff profile" : "—"}</td><td style={{ fontSize: 11 }}>{s.pin || "—"}</td></>}
                       <td style={{ textAlign: "right" }}>
                         {editable ? <button className="btn btn-sm" onClick={() => openPerms(s)}>Permissions</button> : <span style={{ fontSize: 11, color: "var(--gray)" }}>—</span>}
                       </td>

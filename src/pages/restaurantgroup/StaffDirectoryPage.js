@@ -208,10 +208,10 @@ export default function StaffDirectoryPage() {
         cert: (form.certs && form.certs[0]) ? form.certs[0].name : "Not yet obtained", certs: form.certs || [],
         birthday: (form.dob || "").slice(5), // MM-DD only (day+month, team-visible); full DOB stays private
         status: form.status, pin, email: form.hasAdminLogin ? form.email.toLowerCase().trim() : "",
-        hasAdminLogin: !!form.hasAdminLogin, adminUid, password: pwd, createdAt: serverTimestamp(),
+        hasAdminLogin: !!form.hasAdminLogin, adminUid, createdAt: serverTimestamp(),
       });
-      // sensitive payroll data → private subcollection (owner/storeAdmin only in rules)
-      if (canPayroll) await setDoc(staffPrivateDoc(groupId, created.id), { ...payrollFrom(form), updatedAt: serverTimestamp() });
+      // sensitive data (payroll + login password) → private subcollection (owner/storeAdmin only in rules)
+      if (canPayroll) await setDoc(staffPrivateDoc(groupId, created.id), { ...payrollFrom(form), password: pwd, updatedAt: serverTimestamp() });
       showToast(`${displayName} added`);
       logChange("staff.create", `Added staff member ${displayName} (${form.role})`, { venueIds: form.venueIds });
       setAddOpen(false); setForm(blankForm(selectedVenue));
@@ -241,12 +241,22 @@ export default function StaffDirectoryPage() {
   const diffStaff = () => {
     const out = [];
     const cmp = (label, a, b) => { if (String(a ?? "") !== String(b ?? "")) out.push(`${label}: ${a || "—"} → ${b || "—"}`); };
+    cmp("Name", profile.displayName || profile.name, edit.name);
     cmp("Role", profile.role, edit.role);
     cmp("Area", profile.area, edit.area);
+    cmp("Employment", profile.type, edit.type);
+    cmp("Phone", profile.phone, edit.phone);
     cmp("Status", profile.status || "Active", edit.status);
+    cmp("Start date", profile.start, edit.start);
     cmp("End date", profile.endDate, edit.endDate);
+    cmp("POS PIN", profile.pin, edit.pin);
+    cmp("Certificates", (profile.certs || []).map((c) => c.name).join(", "), (edit.certs || []).map((c) => c.name).join(", "));
     cmp("Venues", (profile.venueNames || []).join(", "), edit.venueIds.map(venueName).join(", "));
     cmp("Stations", (profile.stationNames || []).join(", "), (edit.stationIds || []).map(stationName).join(", "));
+    // audit THAT payroll/personal details changed, but never the sensitive values (auditLog is group-readable)
+    if (canPayroll && payroll && PAYROLL_FIELDS.some((f) => String(payroll[f.key] ?? "") !== String(edit[f.key] ?? ""))) {
+      out.push("Payroll/personal details updated");
+    }
     return out;
   };
   const saveEdit = async () => {
@@ -258,7 +268,7 @@ export default function StaffDirectoryPage() {
       const pin = (edit.pin || "").trim();
       if (pin && staff.some((s) => s.id !== profile.id && s.pin === pin)) return showToast("PIN already in use");
       let adminUid = profile.adminUid || "";
-      let newPwd = profile.password || "";
+      let newPwd = payroll?.password || profile.password || ""; // private doc first; fall back to legacy main-doc value (migrates it across on save)
       if (edit.hasAdminLogin && !adminUid) {
         if (!isEmail(edit.email)) return showToast("Admin access needs a valid email");
         newPwd = (edit.password || "").trim() || `${edit.name.replace(/\s+/g, "")}654321`;
@@ -270,8 +280,8 @@ export default function StaffDirectoryPage() {
         stationIds: edit.stationIds || [], stationNames: (edit.stationIds || []).map(stationName),
         phone: edit.phone.trim(), start: edit.start, endDate: edit.endDate || "", type: edit.type,
         cert: (edit.certs && edit.certs[0]) ? edit.certs[0].name : "Not yet obtained", certs: edit.certs || [],
-        ...(canPayroll ? { birthday: (edit.dob || "").slice(5) } : {}), // only owner/admin (who can see DOB) updates this
-        status: edit.status, pin, hasAdminLogin: !!edit.hasAdminLogin, adminUid, password: newPwd,
+        ...(canPayroll && payroll !== null ? { birthday: (edit.dob || "").slice(5) } : {}), // only once the private DOB has loaded, so we never clobber it
+        status: edit.status, pin, hasAdminLogin: !!edit.hasAdminLogin, adminUid,
         email: edit.hasAdminLogin ? edit.email.toLowerCase().trim() : (profile.email || ""), updatedAt: serverTimestamp(),
       };
       const changes = diffStaff();
@@ -280,8 +290,8 @@ export default function StaffDirectoryPage() {
       await updateDoc(doc(staffCol(groupId), profile.id), patch);
       // sensitive payroll data → private subcollection (owner/storeAdmin only in rules)
       if (canPayroll) {
-        await setDoc(staffPrivateDoc(groupId, profile.id), { ...payrollFrom(edit), updatedAt: serverTimestamp() }, { merge: true });
-        setPayroll(payrollFrom(edit));
+        await setDoc(staffPrivateDoc(groupId, profile.id), { ...payrollFrom(edit), password: newPwd, updatedAt: serverTimestamp() }, { merge: true });
+        setPayroll({ ...payrollFrom(edit), password: newPwd });
       }
       if (changes.length) logChange("staff.update", `Updated ${displayName}: ${changes.join("; ")}`, { staffId: profile.id, venueIds: edit.venueIds });
       showToast("Staff profile updated");
@@ -333,7 +343,7 @@ export default function StaffDirectoryPage() {
     let alive = true;
     getDoc(staffPrivateDoc(groupId, profile.id))
       .then((d) => { if (alive) setPayroll(d.exists() ? d.data() : {}); })
-      .catch(() => { if (alive) setPayroll({}); });
+      .catch(() => { if (alive) setPayroll(null); }); // null = load failed → birthday/diff guards skip, never clobber
     return () => { alive = false; };
   }, [profile, groupId, canPayroll]);
 
@@ -624,6 +634,9 @@ export default function StaffDirectoryPage() {
                           if (raw && f.sensitive && !showPayroll) v = "•••• " + String(raw).slice(-3);
                           return <div key={f.key} style={{ gridColumn: f.full ? "1 / -1" : "auto" }}><div className="form-label">{f.label}</div><div style={{ fontSize: 13, wordBreak: "break-word" }}>{v}</div></div>;
                         })}
+                        {profile.hasAdminLogin && (
+                          <div><div className="form-label">Login password</div><div style={{ fontSize: 13, fontFamily: "monospace" }}>{payroll.password ? (showPayroll ? payroll.password : "••••••") : "—"}</div></div>
+                        )}
                       </div>
                     )}
                   </div>
