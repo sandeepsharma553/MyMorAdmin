@@ -27,7 +27,7 @@ const editorToSteps = (steps) => (steps || [])
   .filter((s) => s.heading || s.items.length);
 
 export default function TrainingPage() {
-  const { groupId, staff, venues, modules, assignments, stations, selectedVenue, matchVenue, showToast, can, me } = useRG();
+  const { groupId, staff, scopedStaff: roleStaff, venues, modules, assignments, stations, selectedVenue, matchVenue, showToast, can, me } = useRG();
   const canEdit = can("training", "edit");
   const [tab, setTab] = useState("mine");
   const [openAssign, setOpenAssign] = useState(null); // assignment id
@@ -45,8 +45,8 @@ export default function TrainingPage() {
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
   const scopedStaff = useMemo(
-    () => staff.filter((s) => staffInVenue(s, selectedVenue)),
-    [staff, selectedVenue]
+    () => roleStaff.filter((s) => staffInVenue(s, selectedVenue)),
+    [roleStaff, selectedVenue]
   );
   const scopedAssign = useMemo(() => assignments.filter(matchVenue), [assignments, matchVenue]);
   // training is per-venue: show the selected venue's modules (or all when "All venues")
@@ -235,7 +235,7 @@ export default function TrainingPage() {
               <div className="form-group"><label className="form-label">Staff member</label>
                 <select className="form-input" value={form.staffId} onChange={setF("staffId")}>
                   <option value="">Select staff...</option>
-                  {staff.map((s) => <option key={s.id} value={s.id}>{fullName(s)}</option>)}
+                  {scopedStaff.map((s) => <option key={s.id} value={s.id}>{fullName(s)}</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Module</label>
@@ -405,6 +405,7 @@ export default function TrainingPage() {
           groupId={groupId}
           canTick={canEdit || openAssignment.staffId === myStaff?.id}
           canVerify={canEdit}
+          canComment={isMgr}
           actorName={me?.displayName || me?.name || me?.email || "Trainer"}
           showToast={showToast}
           onClose={() => setOpenAssign(null)}

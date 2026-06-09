@@ -127,6 +127,23 @@ export function RGProvider({ children }) {
   const can = useCallback((moduleKey, level = "view") => hasLevel(myPerms, moduleKey, level), [myPerms]);
   const me = useMemo(() => ({ ...(employee || {}), groupRole, venueId: myVenueId, perms: myPerms }), [employee, groupRole, myVenueId, myPerms]);
 
+  // ── who is this login, and which staff can they act on? ──
+  // owner/super → all staff; manager/storeAdmin → staff at their venue(s); staff → only themselves.
+  const myUidTop = employee?.uid || employee?.id;
+  const myStaff = useMemo(
+    () => staff.find((s) => (s.adminUid && s.adminUid === myUidTop) || (s.email && employee?.email && s.email.toLowerCase() === employee.email.toLowerCase())) || null,
+    [staff, myUidTop, employee]
+  );
+  const isOwnerTier = groupRole === "owner" || employee?.type === "superadmin";
+  const isManagerTier = groupRole === "manager" || groupRole === "storeAdmin";
+  const myScope = isOwnerTier ? "owner" : isManagerTier ? "manager" : "staff";
+  const scopedStaff = useMemo(() => {
+    if (isOwnerTier) return staff;
+    const mv = myStaff?.venueIds || [];
+    if (isManagerTier) return staff.filter((s) => (s.venueIds || []).some((v) => mv.includes(v)));
+    return myStaff ? [myStaff] : [];
+  }, [staff, myStaff, isOwnerTier, isManagerTier]);
+
   // Unread messaging badge (direct messages addressed to me + un-acked announcements in my scope).
   const unreadMessages = useMemo(() => {
     const myUid = me?.uid || me?.id || null;
@@ -143,11 +160,11 @@ export function RGProvider({ children }) {
     groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, roles,
     announcements, messages, unreadMessages,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
-    me, groupRole, myPerms, can,
+    me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, showToast,
   }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, roles,
       announcements, messages, unreadMessages,
-      selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, loading, showToast]);
+      selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, showToast]);
 
   return (
     <RGContext.Provider value={value}>

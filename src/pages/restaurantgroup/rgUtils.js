@@ -102,6 +102,41 @@ export const trainingPct = (staffId, assignments) => {
   if (!list.length) return 0;
   return Math.round(list.reduce((a, x) => a + (x.progress || 0), 0) / list.length);
 };
+// ── shift hours → auto weekly hours (mirrors ShiftPlannerPage) ──
+export const parseShiftTime = (t) => {
+  if (!t) return 0;
+  const m = /(\d+):(\d+)(am|pm)/i.exec(String(t).trim());
+  if (!m) return 0;
+  let h = parseInt(m[1], 10) % 12;
+  if (/pm/i.test(m[3])) h += 12;
+  return h + parseInt(m[2], 10) / 60;
+};
+export const shiftHours = (sh) => Math.max(0, parseShiftTime(sh.end) - parseShiftTime(sh.start));
+export const currentWeekKey = () => {
+  const d = new Date();
+  const dow = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - dow);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+};
+// total hours rostered to this staff member in the CURRENT week
+export const weeklyHours = (staffId, shifts) => {
+  const wk = currentWeekKey();
+  const total = (shifts || [])
+    .filter((sh) => sh.staffId === staffId && (sh.weekKey || wk) === wk)
+    .reduce((a, sh) => a + shiftHours(sh), 0);
+  return Math.round(total * 10) / 10;
+};
+
+// ── certificate expiry status ──
+export const certStatus = (expiry) => {
+  if (!expiry) return { pill: "pill-gray", note: "" };
+  const days = Math.ceil((new Date(expiry) - new Date()) / 86400000);
+  if (days < 0) return { pill: "pill-red", note: "expired" };
+  if (days <= 30) return { pill: "pill-amber", note: `${days}d left` };
+  return { pill: "pill-green", note: "" };
+};
+
 export const checklistPct = (staffId, checklistAssignments) => {
   const list = (checklistAssignments || []).filter((a) => a.staffId === staffId);
   if (!list.length) return 0;

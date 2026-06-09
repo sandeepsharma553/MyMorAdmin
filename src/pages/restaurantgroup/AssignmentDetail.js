@@ -12,9 +12,11 @@ import { trainingStatusPill } from "./rgUtils";
  * If the frozen snapshot has no items (e.g. assigned before the module had steps),
  * we fall back to the LIVE module's current steps so it's never empty.
  */
-export default function AssignmentDetail({ assignment, liveModule, groupId, canTick, canVerify, actorName, showToast, onClose }) {
+export default function AssignmentDetail({ assignment, liveModule, groupId, canTick, canVerify, canComment, actorName, showToast, onClose }) {
   const [vNote, setVNote] = useState("");
+  const [cmt, setCmt] = useState({ i: null, text: "" });
   if (!assignment) return null;
+  const comments = assignment.comments || {};
 
   // Resolve sections: prefer the snapshot, fall back to the live module's steps.
   const snapSections = (assignment.sections || []).filter((s) => (s.items || []).length);
@@ -45,6 +47,10 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
   };
   const setCheck = (flatI, val) => { const next = [...checks]; next[flatI] = val; write(next); };
   const markAll = (val) => write(Array(total).fill(val));
+  const saveComment = async (flatI) => {
+    try { await updateDoc(ref(), { [`comments.${flatI}`]: cmt.text.trim() }); setCmt({ i: null, text: "" }); }
+    catch { showToast?.("Could not save note"); }
+  };
 
   const verify = async () => {
     const note = vNote.trim();
@@ -96,10 +102,23 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
             {(sec.items || []).map((it, ii) => {
               const flatI = sec._off + ii;
               const checked = !!checks[flatI];
+              const note = comments[flatI];
+              const editing = cmt.i === flatI;
               return (
-                <div key={ii} className="checklist-item">
-                  <div className={`check-box ${checked ? "checked" : ""}`} style={{ cursor: canTick ? "pointer" : "default" }} onClick={() => canTick && setCheck(flatI, !checked)} />
-                  <RichText html={it} className={`check-text ${checked ? "done" : ""}`} />
+                <div key={ii} style={{ marginBottom: 2 }}>
+                  <div className="checklist-item">
+                    <div className={`check-box ${checked ? "checked" : ""}`} style={{ cursor: canTick ? "pointer" : "default" }} onClick={() => canTick && setCheck(flatI, !checked)} />
+                    <RichText html={it} className={`check-text ${checked ? "done" : ""}`} />
+                    {canComment && <button className="btn btn-sm" style={{ marginLeft: "auto" }} title="Leave a note on this step" onClick={() => setCmt({ i: flatI, text: note || "" })}>💬</button>}
+                  </div>
+                  {note && !editing && <div style={{ fontSize: 11, color: "var(--gray)", margin: "1px 0 0 30px" }}>💬 <strong>Trainer:</strong> {note}</div>}
+                  {editing && (
+                    <div style={{ display: "flex", gap: 6, margin: "4px 0 0 30px" }}>
+                      <input className="form-input" value={cmt.text} autoFocus onChange={(e) => setCmt({ i: flatI, text: e.target.value })} placeholder="Note for this step (e.g. watch the timing)" onKeyDown={(e) => e.key === "Enter" && saveComment(flatI)} />
+                      <button className="btn btn-sm btn-primary" onClick={() => saveComment(flatI)}>Save</button>
+                      <button className="btn btn-sm" onClick={() => setCmt({ i: null, text: "" })}>✕</button>
+                    </div>
+                  )}
                 </div>
               );
             })}

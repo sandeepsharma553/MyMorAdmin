@@ -4,6 +4,7 @@ import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { db } from "../../firebase";
 import { fullName } from "./rgUtils";
+import StaffCapabilityCard from "./StaffCapabilityCard";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const FULL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -38,12 +39,32 @@ const shiftHours = (sh) => Math.max(0, parseTime(sh.end) - parseTime(sh.start));
 const cellClass = (type) =>
   type === "evening" ? "shift-evening" : type === "open" ? "shift-open" : type === "off" ? "shift-off" : "shift-morning";
 
+// group a staff member into an area bucket (for the categorized roster)
+const staffArea = (s) => {
+  if (s.area === "FOH" || s.area === "BOH" || s.area === "CK") return s.area;
+  const r = s.role || "";
+  if (/manager|owner|admin|supervisor|in charge/i.test(r)) return "Mgmt";
+  if (/central|\bck\b/i.test(r)) return "CK";
+  if (/foh|floor|\bbar\b|barista|counter|service/i.test(r)) return "FOH";
+  if (/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i.test(r)) return "BOH";
+  return s.area || "Other";
+};
+const AREA_GROUPS = [
+  { key: "Mgmt", label: "Management" },
+  { key: "FOH", label: "Front of House" },
+  { key: "BOH", label: "Back of House" },
+  { key: "CK", label: "Kitchen / Central" },
+  { key: "Other", label: "Other" },
+];
+
 export default function ShiftPlannerPage() {
-  const { groupId, staff, shifts, venues, stations, roles, selectedVenue, selectedVenueName, showToast, can } = useRG();
+  const { groupId, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, selectedVenue, selectedVenueName, showToast, can } = useRG();
   const canEdit = can("shifts", "edit");
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
   const [shiftDetail, setShiftDetail] = useState(null);
+  const [capStaff, setCapStaff] = useState(null); // staff capability card
+  const [areaFilter, setAreaFilter] = useState("all"); // all | FOH | BOH | CK | Mgmt
   const [splitMode, setSplitMode] = useState(false);
   const [splitA, setSplitA] = useState("");
   const [splitB, setSplitB] = useState("");
@@ -55,8 +76,8 @@ export default function ShiftPlannerPage() {
   const weekLabel = `Week of ${fmt(monday)} – ${fmt(sunday)} ${sunday.getFullYear()}`;
 
   const rows = useMemo(
-    () => staff.filter((s) => staffInVenue(s, selectedVenue)),
-    [staff, selectedVenue]
+    () => scopedStaff.filter((s) => staffInVenue(s, selectedVenue)),
+    [scopedStaff, selectedVenue]
   );
 
   const weekShifts = useMemo(() => shifts.filter((sh) => (sh.weekKey || wk) === wk), [shifts, wk]);
@@ -72,6 +93,14 @@ export default function ShiftPlannerPage() {
   );
   const labourCost = totalHours * HOURLY;
   const labourPct = ((labourCost / WEEKLY_REVENUE) * 100).toFixed(1);
+
+  // rows grouped into area sections (Management / FOH / BOH / Kitchen / Other),
+  // honouring the area filter; empty groups are dropped.
+  const groupedRows = useMemo(() =>
+    AREA_GROUPS
+      .map((g) => ({ ...g, members: rows.filter((s) => staffArea(s) === g.key) }))
+      .filter((g) => g.members.length && (areaFilter === "all" || areaFilter === g.key)),
+    [rows, areaFilter]);
 
   const [form, setForm] = useState({ staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: ROLES[0], venueId: "", stationId: "", notes: "" });
   const formStations = useMemo(() => stations.filter((s) => s.venueId === form.venueId), [stations, form.venueId]);
@@ -92,6 +121,13 @@ export default function ShiftPlannerPage() {
     const venue = venues.find((v) => v.id === form.venueId) || venues.find((v) => v.id === (st?.venueIds?.[0] || st?.venueId));
     if (!venue) return showToast("Select a venue");
     const dayIdx = FULL_DAYS.indexOf(form.day);
+    const ns = parseTime(form.start), ne = parseTime(form.end);
+    if (ne <= ns) return showToast("End time must be after start time");
+    // Hard block: no overlapping shift for this person that day, across ANY venue.
+    // (7am–3pm + 3pm–9pm is fine — they only touch; strict overlap = ns < end && start < ne.)
+    const clash = weekShifts.find((sh) => sh.staffId === form.staffId && sh.day === dayIdx
+      && ns < parseTime(sh.end) && parseTime(sh.start) < ne);
+    if (clash) return showToast(`Already rostered ${clash.start}–${clash.end} at ${clash.venue} that day — can't double-book.`);
     const type = parseTime(form.start) >= 15 ? "evening" : "morning";
     const station = stations.find((s) => s.id === form.stationId && s.venueId === venue.id);
     try {
@@ -118,7 +154,7 @@ export default function ShiftPlannerPage() {
   // Cell shifts scoped to a venue (for the split comparison view).
   const cellShiftsV = (staffId, day, vid) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day && (vid === "all" || sh.venueId === vid));
   const VenueGrid = ({ vid }) => {
-    const gridRows = staff.filter((s) => staffInVenue(s, vid));
+    const gridRows = scopedStaff.filter((s) => staffInVenue(s, vid));
     const gh = gridRows.reduce((a, s) => a + weekShifts.filter((sh) => sh.staffId === s.id && (vid === "all" || sh.venueId === vid)).reduce((x, sh) => x + shiftHours(sh), 0), 0);
     return (
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -134,7 +170,7 @@ export default function ShiftPlannerPage() {
               {gridRows.map((s) => (
                 <tr key={s.id}>
                   <td style={{ padding: "6px 10px", borderBottom: "0.5px solid var(--gray-light)" }}>
-                    <div style={{ fontSize: 11, fontWeight: 600 }}>{fullName(s)}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--red)" }} onClick={() => setCapStaff(s)} title="View capability">{fullName(s)}</div>
                     <div style={{ fontSize: 9, color: "var(--gray)" }}>{s.role}</div>
                   </td>
                   {DAYS.map((_, day) => {
@@ -166,6 +202,34 @@ export default function ShiftPlannerPage() {
     );
   };
 
+  // one staff row in the main (categorized) roster — name is clickable → capability card
+  const renderRow = (s) => (
+    <tr key={s.id}>
+      <td style={{ padding: "8px 14px", borderBottom: "0.5px solid var(--gray-light)" }}>
+        <div style={{ fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--red)" }} onClick={() => setCapStaff(s)} title="View capability (certs, training, history)">{fullName(s)}</div>
+        <div style={{ fontSize: 10, color: "var(--gray)" }}>{s.role}</div>
+      </td>
+      {DAYS.map((_, day) => {
+        const shs = cellShifts(s.id, day);
+        return (
+          <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {shs.map((sh) => (
+                <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} title="Click to view" onClick={() => setShiftDetail(sh)}>
+                  <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
+                  <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
+                </div>
+              ))}
+              {canEdit && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 8px" }} onClick={() => openAdd(s.id, day)}>+</div>}
+              {!canEdit && shs.length === 0 && <div className="shift-cell shift-off" style={{ textAlign: "center", opacity: 0.5 }}>·</div>}
+            </div>
+          </td>
+        );
+      })}
+      <td style={{ textAlign: "center", fontSize: 11, fontWeight: 600, borderBottom: "0.5px solid var(--gray-light)" }}>{staffHours(s.id).toFixed(1)}</td>
+    </tr>
+  );
+
   return (
     <>
       {/* Week nav */}
@@ -190,6 +254,16 @@ export default function ShiftPlannerPage() {
           </span>
         ))}
       </div>
+
+      {/* Area filter */}
+      {!splitMode && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+          {[["all", "All"], ["Mgmt", "Management"], ["FOH", "FOH"], ["BOH", "BOH"], ["CK", "Kitchen"]].map(([k, l]) => (
+            <button key={k} className="btn btn-sm" onClick={() => setAreaFilter(k)}
+              style={areaFilter === k ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
+          ))}
+        </div>
+      )}
 
       {/* Split comparison view */}
       {splitMode ? (
@@ -216,33 +290,17 @@ export default function ShiftPlannerPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((s) => (
-                <tr key={s.id}>
-                  <td style={{ padding: "8px 14px", borderBottom: "0.5px solid var(--gray-light)" }}>
-                    <div style={{ fontSize: 11, fontWeight: 600 }}>{fullName(s)}</div>
-                    <div style={{ fontSize: 10, color: "var(--gray)" }}>{s.role}</div>
-                  </td>
-                  {DAYS.map((_, day) => {
-                    const shs = cellShifts(s.id, day);
-                    return (
-                      <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                          {shs.map((sh) => (
-                            <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} title="Click to view" onClick={() => setShiftDetail(sh)}>
-                              <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
-                              <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
-                            </div>
-                          ))}
-                          {canEdit && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 8px" }} onClick={() => openAdd(s.id, day)}>+</div>}
-                          {!canEdit && shs.length === 0 && <div className="shift-cell shift-off" style={{ textAlign: "center", opacity: 0.5 }}>·</div>}
-                        </div>
-                      </td>
-                    );
-                  })}
-                  <td style={{ textAlign: "center", fontSize: 11, fontWeight: 600, borderBottom: "0.5px solid var(--gray-light)" }}>{staffHours(s.id).toFixed(1)}</td>
-                </tr>
+              {groupedRows.map((g) => (
+                <React.Fragment key={g.key}>
+                  <tr>
+                    <td colSpan={9} style={{ padding: "6px 14px", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", borderBottom: "0.5px solid var(--border)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                      {g.label} <span style={{ fontWeight: 400 }}>· {g.members.length}</span>
+                    </td>
+                  </tr>
+                  {g.members.map(renderRow)}
+                </React.Fragment>
               ))}
-              {rows.length === 0 && <tr><td colSpan={9} style={{ padding: 20, color: "var(--gray)", fontSize: 13 }}>No staff for {selectedVenueName}.</td></tr>}
+              {groupedRows.length === 0 && <tr><td colSpan={9} style={{ padding: 20, color: "var(--gray)", fontSize: 13 }}>No staff for {selectedVenueName}{areaFilter !== "all" ? ` in ${areaFilter}` : ""}.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -266,7 +324,7 @@ export default function ShiftPlannerPage() {
               <div className="form-group"><label className="form-label">Staff member</label>
                 <select className="form-input" value={form.staffId} onChange={setF("staffId")}>
                   <option value="">Select...</option>
-                  {staff.map((s) => <option key={s.id} value={s.id}>{fullName(s)}</option>)}
+                  {scopedStaff.map((s) => <option key={s.id} value={s.id}>{fullName(s)}</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Day</label>
@@ -319,6 +377,19 @@ export default function ShiftPlannerPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Staff capability card (click a name) */}
+      {capStaff && (
+        <StaffCapabilityCard
+          staff={capStaff}
+          assignments={assignments}
+          shifts={shifts}
+          perfNotes={perfNotes}
+          canAssign={canEdit}
+          onAssign={(id) => { setCapStaff(null); openAdd(id, 0); }}
+          onClose={() => setCapStaff(null)}
+        />
       )}
     </>
   );

@@ -21,31 +21,41 @@ const daysBetween = (s, e) => {
 };
 
 export default function LeaveRequestsPage() {
-  const { groupId, staff, leave, selectedVenue, matchVenue, showToast, can } = useRG();
-  const canApprove = can("leave", "edit");
-  const [form, setForm] = useState({ staffId: "", type: TYPES[0], start: "", end: "", reason: "" });
+  const { groupId, staff, leave, selectedVenue, matchVenue, showToast, can, me, myStaff, myScope, scopedStaff } = useRG();
+  // employees can't approve; only venue-managers / owners can.
+  const canApprove = can("leave", "edit") && myScope !== "staff";
+  const isEmployee = myScope === "staff";
+  const actorName = me?.displayName || me?.name || me?.email || "Manager";
+  const [form, setForm] = useState({ staffId: isEmployee ? (myStaff?.id || "") : "", type: TYPES[0], start: "", end: "", reason: "" });
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
-  const scoped = useMemo(() => leave.filter(matchVenue), [leave, matchVenue]);
+  // who this user is allowed to submit-for / see leave of
+  const scopedIds = useMemo(() => new Set(scopedStaff.map((s) => s.id)), [scopedStaff]);
+  const scoped = useMemo(
+    () => leave.filter(matchVenue).filter((l) => myScope === "owner" || scopedIds.has(l.staffId)),
+    [leave, matchVenue, myScope, scopedIds]
+  );
   const pending = scoped.filter((l) => l.status === "Pending");
   const history = scoped.filter((l) => l.status !== "Pending");
 
   const decide = async (l, status) => {
     try {
-      await updateDoc(doc(venueCol(groupId, l.venueId, "leaveRequests"), l.id), { status, approvedBy: "Manager", decidedAt: serverTimestamp() });
+      await updateDoc(doc(venueCol(groupId, l.venueId, "leaveRequests"), l.id), { status, approvedBy: actorName, decidedAt: serverTimestamp() });
       showToast(status === "Approved" ? "Leave approved — blocked in shift planner" : "Leave declined — staff notified");
     } catch { showToast("Could not update request"); }
   };
 
   const submit = async () => {
-    if (!form.staffId) return showToast("Select a staff member");
+    const staffId = isEmployee ? (myStaff?.id || "") : form.staffId;
+    if (!staffId) return showToast("Select a staff member");
+    if (!scopedIds.has(staffId)) return showToast("You can only submit leave for your own team");
     if (!form.start) return showToast("Choose a start date");
-    const st = staff.find((s) => s.id === form.staffId);
+    const st = staff.find((s) => s.id === staffId);
     const vid = selectedVenue !== "all" ? selectedVenue : st?.venueIds?.[0] || st?.venueId;
     if (!vid) return showToast("Select a venue for this request");
     try {
       await addDoc(venueCol(groupId, vid, "leaveRequests"), {
-        staffId: form.staffId, staffName: st?.displayName || fullName(st),
+        staffId, staffName: st?.displayName || fullName(st),
         venue: st?.venueNames?.[0] || "", venueId: vid, area: st?.area || (st?.role || "").split(" — ")[0] || "",
         type: form.type, dates: fmtRange(form.start, form.end), days: daysBetween(form.start, form.end),
         startDate: form.start, endDate: form.end || form.start, reason: form.reason.trim(),
@@ -98,11 +108,16 @@ export default function LeaveRequestsPage() {
         <div className="card">
           <div className="card-head"><span className="card-title">Submit leave request</span></div>
           <div className="form-group">
-            <label className="form-label">Staff member</label>
-            <select className="form-input" value={form.staffId} onChange={setF("staffId")}>
-              <option value="">Select staff member...</option>
-              {staff.map((s) => <option key={s.id} value={s.id}>{fullName(s)}</option>)}
-            </select>
+            <label className="form-label">Staff member {isEmployee && <span style={{ color: "var(--gray)", fontWeight: 400 }}>(you)</span>}</label>
+            {isEmployee ? (
+              <input className="form-input" value={myStaff ? fullName(myStaff) : "—"} disabled style={{ background: "var(--gray-light)", color: "var(--gray)" }} />
+            ) : (
+              <select className="form-input" value={form.staffId} onChange={setF("staffId")}>
+                <option value="">Select staff member...</option>
+                {scopedStaff.map((s) => <option key={s.id} value={s.id}>{fullName(s)}</option>)}
+              </select>
+            )}
+            {myScope === "manager" && <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>You can submit for staff at your venue(s).</div>}
           </div>
           <div className="form-group">
             <label className="form-label">Leave type</label>

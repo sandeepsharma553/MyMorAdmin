@@ -6,7 +6,7 @@ import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
 import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
-import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist } from "./rgUtils";
+import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
 import AssignmentDetail from "./AssignmentDetail";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
 
@@ -18,7 +18,15 @@ const fmtDate = (iso) => { try { const d = new Date(iso); return d.toLocaleDateS
 const ROLES = ["Manager", "FOH Supervisor", "FOH In Charge", "FOH", "BOH In Charge", "BOH", "Chef"];
 const AREAS = ["FOH", "BOH", "Mgmt"];
 const EMP_TYPES = ["Casual", "Part-time", "Full-time"];
+const SHIST_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const SHIST_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const shiftDateLabel = (sh) => {
+  if (!sh.weekKey) return SHIST_DAYS[sh.day] || "";
+  const d = new Date(sh.weekKey); d.setDate(d.getDate() + (sh.day || 0));
+  return `${SHIST_DAYS[sh.day] || ""} ${d.getDate()} ${SHIST_MONTHS[d.getMonth()]}`;
+};
 const CERTS = ["Not yet obtained", "Food Handler", "Food Safety Supervisor", "RSA"];
+const CERT_OPTIONS = ["RSA", "Food Safety Supervisor", "Food Handler", "First Aid / CPR", "Working with Children", "Barista Certificate", "Allergen Awareness", "Other"];
 const DAY_IDX = (new Date().getDay() + 6) % 7;
 const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e || "").trim());
 
@@ -56,12 +64,12 @@ const payrollFromProfile = (p) => PAYROLL_FIELDS.reduce((o, f) => { o[f.key] = p
 
 const blankForm = (defaultVenue) => ({
   name: "", role: "FOH", area: "FOH", venueIds: defaultVenue && defaultVenue !== "all" ? [defaultVenue] : [],
-  phone: "", start: "", endDate: "", type: "Casual", cert: "Not yet obtained", hours: 0, status: "Active",
+  phone: "", start: "", endDate: "", type: "Casual", cert: "Not yet obtained", certs: [], hours: 0, status: "Active",
   stationIds: [], pin: "", hasAdminLogin: false, email: "", password: "", ...payrollBlank(),
 });
 
 export default function StaffDirectoryPage() {
-  const { groupId, group, staff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, stations, roles, selectedVenue, showToast, can, me } = useRG();
+  const { groupId, group, staff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, selectedVenue, showToast, can, me } = useRG();
   const canEdit = can("staff", "edit");
   // Sensitive payroll (TFN/bank/super) is restricted to owner/storeAdmin (and super),
   // matching the Firestore rule on staff/{id}/private. Managers manage staff but not payroll.
@@ -87,13 +95,15 @@ export default function StaffDirectoryPage() {
   const [saving, setSaving] = useState(false);
   const [showPayroll, setShowPayroll] = useState(false);
   const [payroll, setPayroll] = useState(null); // private payroll doc for the open profile
+  const [profileTab, setProfileTab] = useState("profile"); // profile | history
+  const [certDraft, setCertDraft] = useState({ name: "RSA", other: "", expiry: "" });
   const [recForm, setRecForm] = useState({ type: "Coaching", note: "" });
 
   const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
   const stationName = (id) => stations.find((st) => st.id === id)?.name || "";
   const avatarColor = (s) => venueColor(s?.venueNames?.[0] || venueName(s?.venueIds?.[0]) || s?.venue);
 
-  const venueScoped = useMemo(() => staff.filter((s) => staffInVenue(s, selectedVenue)), [staff, selectedVenue]);
+  const venueScoped = useMemo(() => scopedStaff.filter((s) => staffInVenue(s, selectedVenue)), [scopedStaff, selectedVenue]);
   const filtered = useMemo(() => {
     let list = venueScoped;
     if (roleFilter !== "all") list = list.filter((s) => (s.area || areaOf(s.role)).toLowerCase() === roleFilter || (roleFilter === "manager" && /manager|supervisor|in charge/i.test(s.role)));
@@ -110,6 +120,33 @@ export default function StaffDirectoryPage() {
   const trainingIncomplete = assignments.filter((a) => a.status !== "Complete").length;
 
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+
+  // ── Certificates (multiple, each with optional expiry) ──
+  const addCert = (setter) => {
+    const name = certDraft.name === "Other" ? certDraft.other.trim() : certDraft.name;
+    if (!name) return;
+    setter((p) => ({ ...p, certs: [...(p.certs || []), { name, expiry: certDraft.expiry }] }));
+    setCertDraft({ name: "RSA", other: "", expiry: "" });
+  };
+  const removeCert = (setter, idx) => setter((p) => ({ ...p, certs: (p.certs || []).filter((_, i) => i !== idx) }));
+  const renderCerts = (state, setter) => (
+    <div className="form-group">
+      <label className="form-label">Certificates (with expiry)</label>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+        {(state.certs || []).map((c, i) => {
+          const st = certStatus(c.expiry);
+          return <span key={i} className={`pill ${st.pill}`}>{c.name}{c.expiry ? ` · ${c.expiry}` : ""}{st.note ? ` (${st.note})` : ""} <span style={{ cursor: "pointer" }} onClick={() => removeCert(setter, i)}>✕</span></span>;
+        })}
+        {!(state.certs || []).length && <span style={{ fontSize: 12, color: "var(--gray)" }}>None added yet</span>}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <select className="form-input" style={{ width: 170 }} value={certDraft.name} onChange={(e) => setCertDraft((p) => ({ ...p, name: e.target.value }))}>{CERT_OPTIONS.map((c) => <option key={c}>{c}</option>)}</select>
+        {certDraft.name === "Other" && <input className="form-input" style={{ width: 150 }} value={certDraft.other} onChange={(e) => setCertDraft((p) => ({ ...p, other: e.target.value }))} placeholder="Certificate name" />}
+        <input type="date" className="form-input" style={{ width: 150 }} value={certDraft.expiry} onChange={(e) => setCertDraft((p) => ({ ...p, expiry: e.target.value }))} title="Expiry date (optional)" />
+        <button type="button" className="btn btn-sm" onClick={() => addCert(setter)}>+ Add</button>
+      </div>
+    </div>
+  );
 
   // Payroll & personal details block, shared by Add + Edit forms.
   const renderPayroll = (state, handler) => (
@@ -166,8 +203,8 @@ export default function StaffDirectoryPage() {
         groupRole: roleToGroupRole(form.role), permissions,
         venueIds: form.venueIds, venueNames: form.venueIds.map(venueName),
         stationIds: form.stationIds || [], stationNames: (form.stationIds || []).map(stationName),
-        phone: form.phone.trim(), start: form.start, endDate: form.endDate || "", type: form.type, cert: form.cert,
-        hours: Number(form.hours) || 0,
+        phone: form.phone.trim(), start: form.start, endDate: form.endDate || "", type: form.type,
+        cert: (form.certs && form.certs[0]) ? form.certs[0].name : "Not yet obtained", certs: form.certs || [],
         status: form.status, pin, email: form.hasAdminLogin ? form.email.toLowerCase().trim() : "",
         hasAdminLogin: !!form.hasAdminLogin, adminUid, password: pwd, createdAt: serverTimestamp(),
       });
@@ -182,13 +219,14 @@ export default function StaffDirectoryPage() {
   };
 
   // ── profile / edit ──
-  const openProfile = (s) => { setProfile(s); setEditing(false); setConfirmDel(false); };
+  const openProfile = (s) => { setProfile(s); setEditing(false); setConfirmDel(false); setProfileTab("profile"); };
   const startEdit = () => {
     setEdit({
       name: profile.name || profile.displayName, role: profile.role, area: profile.area || areaOf(profile.role),
       venueIds: profile.venueIds || (profile.venueId ? [profile.venueId] : []),
       phone: profile.phone || "", start: profile.start || "", endDate: profile.endDate || "", type: profile.type || "Casual",
       cert: profile.cert || "Not yet obtained", hours: profile.hours || 0, stationIds: profile.stationIds || [],
+      certs: profile.certs || (profile.cert && profile.cert !== "Not yet obtained" ? [{ name: profile.cert, expiry: "" }] : []),
       status: profile.status || "Active", pin: profile.pin || "",
       hasAdminLogin: !!profile.hasAdminLogin, email: profile.email || "", password: "",
       ...payrollFromProfile(payroll || {}),
@@ -228,8 +266,8 @@ export default function StaffDirectoryPage() {
         name: edit.name.trim(), displayName, role: edit.role, area: edit.area || areaOf(edit.role),
         venueIds: edit.venueIds, venueNames: edit.venueIds.map(venueName),
         stationIds: edit.stationIds || [], stationNames: (edit.stationIds || []).map(stationName),
-        phone: edit.phone.trim(), start: edit.start, endDate: edit.endDate || "", type: edit.type, cert: edit.cert,
-        hours: Number(edit.hours) || 0,
+        phone: edit.phone.trim(), start: edit.start, endDate: edit.endDate || "", type: edit.type,
+        cert: (edit.certs && edit.certs[0]) ? edit.certs[0].name : "Not yet obtained", certs: edit.certs || [],
         status: edit.status, pin, hasAdminLogin: !!edit.hasAdminLogin, adminUid, password: newPwd,
         email: edit.hasAdminLogin ? edit.email.toLowerCase().trim() : (profile.email || ""), updatedAt: serverTimestamp(),
       };
@@ -294,10 +332,52 @@ export default function StaffDirectoryPage() {
       .then((d) => { if (alive) setPayroll(d.exists() ? d.data() : {}); })
       .catch(() => { if (alive) setPayroll({}); });
     return () => { alive = false; };
-  }, [profile, groupId, canEdit]);
+  }, [profile, groupId, canPayroll]);
 
   const myTraining = useMemo(() => profile ? assignments.filter((a) => a.staffId === profile.id) : [], [profile, assignments]);
   const myChecklists = useMemo(() => profile ? checklistAssignments.filter((a) => a.staffId === profile.id) : [], [profile, checklistAssignments]);
+
+  // ── Activity & history tab ──
+  const renderHistory = () => {
+    const sh = shifts.filter((x) => x.staffId === profile.id)
+      .sort((a, b) => (b.weekKey || "").localeCompare(a.weekKey || "") || (b.day || 0) - (a.day || 0));
+    const tDone = myTraining.filter((a) => a.verified || a.status === "Complete");
+    const cDone = myChecklists.filter((a) => a.status === "Complete");
+    const notes = (perfNotes || []).filter((n) => n.staffId === profile.id);
+    const timeline = [
+      ...(profile.records || []).map((r) => ({ at: r.at, by: r.by, tag: r.type, text: r.note })),
+      ...tDone.filter((a) => a.verifyNote).map((a) => ({ at: a.verifiedAt, by: a.verifiedBy, tag: "Training sign-off", text: `${a.moduleTitle}: ${a.verifyNote}` })),
+      ...notes.map((n) => ({ at: n.createdAt || n.at, by: n.by, tag: n.type || "Note", text: n.note || n.text })),
+    ].filter((t) => t.text).sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+    const Stat = ({ n, l }) => <div style={{ flex: 1, textAlign: "center", padding: "8px 4px", background: "var(--gray-light)", borderRadius: 8 }}><div style={{ fontSize: 18, fontWeight: 700 }}>{n}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{l}</div></div>;
+    const Head = ({ t, top }) => <div className="card-head" style={{ margin: top ? "14px 0 6px" : "0 0 6px" }}><span className="card-title">{t}</span></div>;
+    return (
+      <div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <Stat n={sh.length} l="Shifts worked" />
+          <Stat n={`${tDone.length}/${myTraining.length}`} l="Training done" />
+          <Stat n={`${cDone.length}/${myChecklists.length}`} l="Checklists done" />
+        </div>
+        <Head t="Shift history" />
+        {sh.length ? sh.slice(0, 40).map((x) => (
+          <div key={x.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+            <span>{shiftDateLabel(x)} · <strong>{x.start}–{x.end}</strong></span>
+            <span style={{ color: "var(--gray)" }}>{(x.role || "").replace(/^(FOH|BOH) — /, "")}{x.station ? ` · ${x.station}` : ""} · {x.venue} · {shiftHours(x).toFixed(1)}h</span>
+          </div>
+        )) : <div style={{ fontSize: 12, color: "var(--gray)" }}>No shifts recorded yet.</div>}
+        <Head t="Completed training" top />
+        {tDone.length ? <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{tDone.map((a) => <span key={a.id} className="pill pill-green">{a.moduleTitle}{a.verified ? " ✓" : ""}</span>)}</div> : <div style={{ fontSize: 12, color: "var(--gray)" }}>None yet.</div>}
+        <Head t="Completed checklists" top />
+        {cDone.length ? <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{cDone.map((a) => <span key={a.id} className="pill pill-blue">{a.checklistTitle}</span>)}</div> : <div style={{ fontSize: 12, color: "var(--gray)" }}>None yet.</div>}
+        <Head t="Notes & feedback" top />
+        {timeline.length ? timeline.map((t, i) => (
+          <div key={i} style={{ fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+            <span className="pill pill-gray">{t.tag}</span> {t.text} <span style={{ color: "var(--gray)" }}>— {t.by || ""}{t.at ? `, ${fmtDate(t.at)}` : ""}</span>
+          </div>
+        )) : <div style={{ fontSize: 12, color: "var(--gray)" }}>No notes yet.</div>}
+      </div>
+    );
+  };
   const eligibleModules = useMemo(() => {
     if (!profile) return [];
     const taken = new Set(myTraining.map((a) => `${a.venueId}:${a.moduleId}`));
@@ -418,7 +498,7 @@ export default function StaffDirectoryPage() {
                   </span>
                 ))}
               </div>
-              <div className="staff-meta-row">🕐 {s.type}{s.hours ? ` · ${s.hours}h/wk` : ""}</div>
+              <div className="staff-meta-row">🕐 {s.type}{weeklyHours(s.id, shifts) ? ` · ${weeklyHours(s.id, shifts)}h this wk` : ""}</div>
               <div className="staff-meta-row" style={{ gap: 6 }}>
                 <span className={`pill ${certPill(s.cert)}`}>{s.cert}</span>
                 {s.pin && <span className="pill pill-blue" title="POS PIN">PIN {s.pin}</span>}
@@ -450,7 +530,7 @@ export default function StaffDirectoryPage() {
               <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={form.phone} onChange={setF("phone")} placeholder="04xx xxx xxx" /></div>
               <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={form.start} onChange={setF("start")} /></div>
               <div className="form-group"><label className="form-label">End date (if leaving)</label><input type="date" className="form-input" value={form.endDate} onChange={setF("endDate")} /></div>
-              <div className="form-group"><label className="form-label">Certificate</label><select className="form-input" value={form.cert} onChange={setF("cert")}>{CERTS.map((c) => <option key={c}>{c}</option>)}</select></div>
+              {renderCerts(form, setForm)}
               <div className="form-group"><label className="form-label">POS PIN (4-digit, optional)</label>
                 <div style={{ display: "flex", gap: 6 }}>
                   <input className="form-input" maxLength={4} value={form.pin} onChange={(e) => setForm((p) => ({ ...p, pin: e.target.value.replace(/\D/g, "").slice(0, 4) }))} placeholder="auto" />
@@ -496,11 +576,29 @@ export default function StaffDirectoryPage() {
 
             {!editing ? (
               <>
+                <div className="tabs" style={{ marginBottom: 12 }}>
+                  {[["profile", "Profile"], ["history", "History"]].map(([id, l]) => (
+                    <button key={id} className={`tab ${profileTab === id ? "active" : ""}`} onClick={() => setProfileTab(id)}>{l}</button>
+                  ))}
+                </div>
+                {profileTab === "history" && renderHistory()}
+                {profileTab === "profile" && (
+                <>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  {[["Employment", profile.type], ["Weekly hours", profile.hours ? `${profile.hours}h` : "—"], ["Start date", profile.start || "—"],
-                    ["End date", profile.endDate || "—"], ["Status", profile.status || "Active"], ["Phone", profile.phone || "—"],
-                    ["Stations", (profile.stationNames || []).join(", ") || "—"],
-                    ["Certificate", profile.cert || "—"], ["POS PIN", profile.pin || "— (none)"], ["Admin login", profile.hasAdminLogin ? (profile.email || "yes") : "No"]].map(([k, v]) => (
+                  {(() => {
+                    const hoursWk = weeklyHours(profile.id, shifts);
+                    const pCerts = (profile.certs && profile.certs.length) ? profile.certs
+                      : (profile.cert && profile.cert !== "Not yet obtained" ? [{ name: profile.cert, expiry: "" }] : []);
+                    const certCell = pCerts.length ? (
+                      <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 4 }}>
+                        {pCerts.map((c, i) => { const st = certStatus(c.expiry); return <span key={i} className={`pill ${st.pill}`}>{c.name}{c.expiry ? ` · ${c.expiry}` : ""}{st.note ? ` (${st.note})` : ""}</span>; })}
+                      </span>
+                    ) : "Not yet obtained";
+                    return [["Employment", profile.type], ["Weekly hours", hoursWk ? `${hoursWk}h · this week` : "— (no shifts)"], ["Start date", profile.start || "—"],
+                      ["End date", profile.endDate || "—"], ["Status", profile.status || "Active"], ["Phone", profile.phone || "—"],
+                      ["Stations", (profile.stationNames || []).join(", ") || "—"],
+                      ["Certificates", certCell], ["POS PIN", profile.pin || "— (none)"], ["Admin login", profile.hasAdminLogin ? (profile.email || "yes") : "No"]];
+                  })().map(([k, v]) => (
                     <div key={k}><div className="form-label">{k}</div><div style={{ fontSize: 13 }}>{v}</div></div>
                   ))}
                 </div>
@@ -614,6 +712,8 @@ export default function StaffDirectoryPage() {
                   ))}
                   {!(profile.history || []).length && <div style={{ fontSize: 12, color: "var(--gray)" }}>No changes recorded yet.</div>}
                 </div>
+                </>
+                )}
 
                 {confirmDel ? (
                   <div className="btn-row" style={{ alignItems: "center" }}>
@@ -639,9 +739,8 @@ export default function StaffDirectoryPage() {
                   <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={edit.phone} onChange={setE("phone")} /></div>
                   <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={edit.start} onChange={setE("start")} /></div>
                   <div className="form-group"><label className="form-label">End date (if leaving)</label><input type="date" className="form-input" value={edit.endDate} onChange={setE("endDate")} /></div>
-                  <div className="form-group"><label className="form-label">Certificate</label><select className="form-input" value={edit.cert} onChange={setE("cert")}>{CERTS.map((c) => <option key={c}>{c}</option>)}</select></div>
                   <div className="form-group"><label className="form-label">Status</label><select className="form-input" value={edit.status} onChange={setE("status")}><option>Active</option><option>Inactive</option><option>On leave</option><option>Left</option></select></div>
-                  <div className="form-group"><label className="form-label">Weekly hours</label><input type="number" min="0" className="form-input" value={edit.hours} onChange={setE("hours")} /></div>
+                  <div className="form-group"><label className="form-label">Weekly hours</label><div className="form-input" style={{ color: "var(--gray)", background: "var(--gray-light)" }}>{weeklyHours(profile.id, shifts)}h · auto from roster</div></div>
                   <div className="form-group"><label className="form-label">POS PIN</label>
                     <div style={{ display: "flex", gap: 6 }}>
                       <input className="form-input" maxLength={4} value={edit.pin} onChange={(e) => setEdit((p) => ({ ...p, pin: e.target.value.replace(/\D/g, "").slice(0, 4) }))} />
@@ -649,6 +748,7 @@ export default function StaffDirectoryPage() {
                     </div>
                   </div>
                 </div>
+                {renderCerts(edit, setEdit)}
                 <div className="form-group"><label className="form-label">Venues (works at)</label><VenuePicker value={edit.venueIds} onToggle={(vid) => toggleVenue(vid, edit, setEdit)} /></div>
                 <div className="form-group"><label className="form-label">Stations</label><StationPicker venueIds={edit.venueIds} value={edit.stationIds} setter={setEdit} /></div>
                 {canPayroll && renderPayroll(edit, setE)}
@@ -718,10 +818,10 @@ export default function StaffDirectoryPage() {
       )}
 
       {openAssignment && (
-        <AssignmentDetail assignment={openAssignment} liveModule={modules.find((m) => m.id === openAssignment.moduleId) || modules.find((m) => m.title === openAssignment.moduleTitle && m.venueId === openAssignment.venueId)} groupId={groupId} canTick={canEdit} canVerify={can("training", "edit")} actorName={actorName} showToast={showToast} onClose={() => setOpenAssignId(null)} />
+        <AssignmentDetail assignment={openAssignment} liveModule={modules.find((m) => m.id === openAssignment.moduleId) || modules.find((m) => m.title === openAssignment.moduleTitle && m.venueId === openAssignment.venueId)} groupId={groupId} canTick={canEdit} canVerify={can("training", "edit")} canComment={can("training", "edit")} actorName={actorName} showToast={showToast} onClose={() => setOpenAssignId(null)} />
       )}
       {openChecklistAssignment && (
-        <ChecklistAssignmentDetail assignment={openChecklistAssignment} liveChecklist={checklists.find((c) => c.id === openChecklistAssignment.checklistId) || checklists.find((c) => c.title === openChecklistAssignment.checklistTitle && c.venueId === openChecklistAssignment.venueId)} groupId={groupId} canTick={canEdit} showToast={showToast} onClose={() => setOpenChecklistId(null)} />
+        <ChecklistAssignmentDetail assignment={openChecklistAssignment} liveChecklist={checklists.find((c) => c.id === openChecklistAssignment.checklistId) || checklists.find((c) => c.title === openChecklistAssignment.checklistTitle && c.venueId === openChecklistAssignment.venueId)} groupId={groupId} canTick={canEdit} canComment={canEdit} showToast={showToast} onClose={() => setOpenChecklistId(null)} />
       )}
     </>
   );

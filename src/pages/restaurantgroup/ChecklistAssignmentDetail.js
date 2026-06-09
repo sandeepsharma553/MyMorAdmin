@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { updateDoc, doc } from "firebase/firestore";
 import { venueCol } from "../../utils/restaurantGroupPaths";
 import { RichText } from "./RichItems";
@@ -9,8 +9,10 @@ import { trainingStatusPill } from "./rgUtils";
  * get their own % (independent of the shared daily board). Falls back to the live
  * checklist's current items if the snapshot was empty.
  */
-export default function ChecklistAssignmentDetail({ assignment, liveChecklist, groupId, canTick, showToast, onClose }) {
+export default function ChecklistAssignmentDetail({ assignment, liveChecklist, groupId, canTick, canComment, showToast, onClose }) {
+  const [cmt, setCmt] = useState({ i: null, text: "" });
   if (!assignment) return null;
+  const comments = assignment.comments || {};
   const items = (assignment.items && assignment.items.length) ? assignment.items : (liveChecklist?.items || []);
   const total = items.length;
   const checks = (assignment.checks && assignment.checks.length === total)
@@ -29,6 +31,10 @@ export default function ChecklistAssignmentDetail({ assignment, liveChecklist, g
     catch { showToast?.("Could not save"); }
   };
   const setCheck = (i, val) => { const next = [...checks]; next[i] = val; write(next); };
+  const saveComment = async (i) => {
+    try { await updateDoc(ref(), { [`comments.${i}`]: cmt.text.trim() }); setCmt({ i: null, text: "" }); }
+    catch { showToast?.("Could not save note"); }
+  };
 
   return (
     <div className="rg-modal-overlay" style={{ zIndex: 1200 }} onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -50,10 +56,23 @@ export default function ChecklistAssignmentDetail({ assignment, liveChecklist, g
         {total === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>This checklist has no items.</div>}
         {items.map((it, i) => {
           const checked = !!checks[i];
+          const note = comments[i];
+          const editing = cmt.i === i;
           return (
-            <div key={i} className="checklist-item">
-              <div className={`check-box ${checked ? "checked" : ""}`} style={{ cursor: canTick ? "pointer" : "default" }} onClick={() => canTick && setCheck(i, !checked)} />
-              <RichText html={it} className={`check-text ${checked ? "done" : ""}`} />
+            <div key={i} style={{ marginBottom: 2 }}>
+              <div className="checklist-item">
+                <div className={`check-box ${checked ? "checked" : ""}`} style={{ cursor: canTick ? "pointer" : "default" }} onClick={() => canTick && setCheck(i, !checked)} />
+                <RichText html={it} className={`check-text ${checked ? "done" : ""}`} />
+                {canComment && <button className="btn btn-sm" style={{ marginLeft: "auto" }} title="Leave a note on this item" onClick={() => setCmt({ i, text: note || "" })}>💬</button>}
+              </div>
+              {note && !editing && <div style={{ fontSize: 11, color: "var(--gray)", margin: "1px 0 0 30px" }}>💬 <strong>Trainer:</strong> {note}</div>}
+              {editing && (
+                <div style={{ display: "flex", gap: 6, margin: "4px 0 0 30px" }}>
+                  <input className="form-input" value={cmt.text} autoFocus onChange={(e) => setCmt({ i, text: e.target.value })} placeholder="Note for this item" onKeyDown={(e) => e.key === "Enter" && saveComment(i)} />
+                  <button className="btn btn-sm btn-primary" onClick={() => saveComment(i)}>Save</button>
+                  <button className="btn btn-sm" onClick={() => setCmt({ i: null, text: "" })}>✕</button>
+                </div>
+              )}
             </div>
           );
         })}
