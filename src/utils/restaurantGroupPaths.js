@@ -63,19 +63,20 @@ export const messagesCol = (groupId) => groupCol(groupId, "messages");
 export const conversationsCol = (groupId) => groupCol(groupId, "conversations");
 // Deterministic conversation id for a pair of staff ids (order-independent).
 export const convId = (a, b) => [String(a), String(b)].sort().join("__");
-export const shiftsCol = (groupId) => groupCol(groupId, "shifts");
-export const leaveCol = (groupId) => groupCol(groupId, "leaveRequests");
-export const modulesCol = (groupId) => groupCol(groupId, "trainingModules");
-export const assignmentsCol = (groupId) => groupCol(groupId, "trainingAssignments");
-export const checklistsCol = (groupId) => groupCol(groupId, "checklists");
-export const perfNotesCol = (groupId) => groupCol(groupId, "performanceNotes");
-export const kpisCol = (groupId) => groupCol(groupId, "kpis");
 
+// Brand colours for the first client's venues; any other venue gets a stable colour
+// derived from its name (so new/renamed venues aren't all grey).
 export const VENUE_COLORS = {
   "Mad Benji": "#C0392B",
   "Hey Sister": "#e67e22",
   "Mad Hot Pot": "#8b5cf6",
   "Main Kitchen": "#2563eb",
 };
-
-export const venueColor = (name) => VENUE_COLORS[name] || "#6b7280";
+const VENUE_PALETTE = ["#C0392B", "#e67e22", "#8b5cf6", "#2563eb", "#16a34a", "#0d9488", "#db2777", "#475569"];
+export const venueColor = (name) => {
+  if (!name) return "#6b7280";
+  if (VENUE_COLORS[name]) return VENUE_COLORS[name];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return VENUE_PALETTE[h % VENUE_PALETTE.length];
+};

@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
-import { fullName } from "./rgUtils";
+import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -23,7 +23,6 @@ function mondayOf(offset) {
   return d;
 }
 const fmt = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
-const keyOf = (d) => d.toISOString().slice(0, 10);
 
 function parseTime(t) {
   if (!t) return 0;
@@ -71,7 +70,7 @@ export default function ShiftPlannerPage() {
 
   const monday = mondayOf(offset);
   const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-  const wk = keyOf(monday);
+  const wk = weekKeyOf(monday);
   const weekLabel = `Week of ${fmt(monday)} – ${fmt(sunday)} ${sunday.getFullYear()}`;
 
   const rows = useMemo(
@@ -244,7 +243,7 @@ export default function ShiftPlannerPage() {
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-sm" onClick={() => setSplitMode((s) => !s)} style={splitMode ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>⊟ Split view</button>
           {canEdit && <button className="btn btn-sm btn-primary" onClick={() => openAdd("", 0)}>+ Add shift</button>}
-          <button className="btn btn-sm" onClick={() => showToast("Roster exported as PDF")}>Export</button>
+          <button className="btn btn-sm" onClick={() => { downloadCsv(`roster-${wk}.csv`, [["Staff", "Day", "Start", "End", "Role", "Station", "Venue", "Hours"], ...weekShifts.slice().sort((a, b) => (a.day - b.day) || a.start.localeCompare(b.start)).map((sh) => [sh.staffName, FULL_DAYS[sh.day] || "", sh.start, sh.end, sh.role, sh.station || "", sh.venue, shiftHours(sh).toFixed(1)])]); showToast("Roster exported (CSV)"); }}>Export</button>
         </div>
       </div>
 

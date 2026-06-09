@@ -46,6 +46,8 @@ export function RefImageEditor({ value = [], onChange, folder, showToast }) {
   const onPick = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!file.type.startsWith("image/")) { e.target.value = ""; return showToast?.("Only image files are allowed"); }
+    if (file.size > 8 * 1024 * 1024) { e.target.value = ""; return showToast?.("Image too large (max 8 MB)"); }
     setBusy(true);
     try {
       const { url, path } = await uploadRefImage(file, folder);

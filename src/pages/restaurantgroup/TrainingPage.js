@@ -64,7 +64,7 @@ export default function TrainingPage() {
     ? Math.round(scopedStaff.reduce((a, s) => a + trainingPct(s.id, assignments), 0) / scopedStaff.length)
     : 0;
   const trained = scopedStaff.filter((s) => trainingPct(s.id, assignments) >= 90).length;
-  const completionsWeek = scopedAssign.filter((a) => a.status === "Complete").length;
+  const completionsDone = scopedAssign.filter((a) => a.status === "Complete").length;
 
   // modules eligible for the staff selected in the assign form (area-aware)
   const assignStaff = staff.find((s) => s.id === form.staffId);
@@ -179,7 +179,7 @@ export default function TrainingPage() {
           <div className="grid-4" style={{ marginBottom: 16 }}>
             <div className="metric"><div className="metric-label">Modules total</div><div className="metric-value">{venueModules.length}</div><div className="metric-change" style={{ color: "var(--gray)" }}>{selectedVenue === "all" ? "All venues" : (venues.find((v) => v.id === selectedVenue)?.name || "")}</div><div className="metric-bar" style={{ background: "var(--blue)" }} /></div>
             <div className="metric"><div className="metric-label">Staff trained</div><div className="metric-value">{trained}/{scopedStaff.length}</div><div className="metric-change down">{scopedStaff.length - trained} incomplete</div><div className="metric-bar" style={{ background: "var(--amber)" }} /></div>
-            <div className="metric"><div className="metric-label">Completions</div><div className="metric-value">{completionsWeek}</div><div className="metric-change up">assigned modules done</div><div className="metric-bar" style={{ background: "var(--green)" }} /></div>
+            <div className="metric"><div className="metric-label">Completions</div><div className="metric-value">{completionsDone}</div><div className="metric-change up">assigned modules done</div><div className="metric-bar" style={{ background: "var(--green)" }} /></div>
             <div className="metric"><div className="metric-label">Avg. completion</div><div className="metric-value">{avgCompletion}%</div><div className="metric-change down">Target 90%</div><div className="metric-bar" style={{ background: "var(--red)" }} /></div>
           </div>
           <div className="card">

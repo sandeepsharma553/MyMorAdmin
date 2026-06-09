@@ -1,11 +1,12 @@
 import React, { useEffect, useRef } from "react";
+import DOMPurify from "dompurify";
 
-// Light sanitize — internal admin content, but strip scripts / event handlers.
+// Robust sanitize via DOMPurify — keeps our formatting tags, strips scripts / handlers / vectors.
 export const cleanHtml = (html) =>
-  (html || "")
-    .replace(/<\s*script[^>]*>[\s\S]*?<\/\s*script>/gi, "")
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/javascript:/gi, "");
+  DOMPurify.sanitize(html || "", {
+    ALLOWED_TAGS: ["b", "i", "u", "strong", "em", "span", "font", "mark", "br", "a"],
+    ALLOWED_ATTR: ["style", "color", "href", "target", "rel", "class"],
+  });
 
 // Render formatted item text (bold / colour / highlight).
 export function RichText({ html, className, style }) {
@@ -15,10 +16,14 @@ export function RichText({ html, className, style }) {
 const TEXT_COLORS = [["#1f1f1f", "Black"], ["#EE0000", "Red"], ["#156082", "Blue"], ["#3A7C22", "Green"], ["#BF4E14", "Orange"], ["#7c3aed", "Purple"]];
 const HILITES = [["#FFF59D", "Yellow"], ["#C8E6C9", "Green"], ["#FFCDD2", "Red"], ["transparent", "None"]];
 
-// One contentEditable per item; mounts its HTML once to avoid caret jumps.
+// One contentEditable per item. Re-syncs innerHTML when the prop changes BUT only while
+// the box isn't focused — so a reorder/delete updates the content without clobbering the caret.
 function ItemEditor({ html, onChange }) {
   const ref = useRef(null);
-  useEffect(() => { if (ref.current && ref.current.innerHTML !== (html || "")) ref.current.innerHTML = html || ""; }, []); // eslint-disable-line
+  useEffect(() => {
+    const el = ref.current;
+    if (el && document.activeElement !== el && el.innerHTML !== (html || "")) el.innerHTML = html || "";
+  }, [html]);
   return (
     <div
       ref={ref}

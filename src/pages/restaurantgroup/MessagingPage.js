@@ -73,6 +73,7 @@ export default function MessagingPage() {
   const annFiles = async (e) => {
     const files = Array.from(e.target.files || []); if (annFileRef.current) annFileRef.current.value = "";
     if (!files.length) return;
+    if (files.some((f) => f.size > 25 * 1024 * 1024)) return showToast("Each file must be under 25 MB");
     setAnnUploading(true);
     try {
       for (const f of files) {
@@ -166,6 +167,7 @@ export default function MessagingPage() {
   const onFiles = async (e) => {
     const files = Array.from(e.target.files || []); if (fileRef.current) fileRef.current.value = "";
     if (!files.length) return;
+    if (files.some((f) => f.size > 25 * 1024 * 1024)) return showToast("Each file must be under 25 MB");
     setUploading(true);
     try {
       for (const f of files) {

@@ -16,7 +16,6 @@ const REC_TYPES = ["Coaching", "Mistake", "Commendation", "Incident"];
 const recPill = (t) => t === "Mistake" ? "pill-red" : t === "Incident" ? "pill-amber" : t === "Commendation" ? "pill-green" : "pill-blue";
 const fmtDate = (iso) => { try { const d = new Date(iso); return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); } catch { return iso; } };
 
-const ROLES = ["Manager", "FOH Supervisor", "FOH In Charge", "FOH", "BOH In Charge", "BOH", "Chef"];
 const AREAS = ["FOH", "BOH", "Mgmt"];
 const EMP_TYPES = ["Casual", "Part-time", "Full-time"];
 const SHIST_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -26,7 +25,6 @@ const shiftDateLabel = (sh) => {
   const d = new Date(sh.weekKey); d.setDate(d.getDate() + (sh.day || 0));
   return `${SHIST_DAYS[sh.day] || ""} ${d.getDate()} ${SHIST_MONTHS[d.getMonth()]}`;
 };
-const CERTS = ["Not yet obtained", "Food Handler", "Food Safety Supervisor", "RSA"];
 const CERT_OPTIONS = ["RSA", "Food Safety Supervisor", "Food Handler", "First Aid / CPR", "Working with Children", "Barista Certificate", "Allergen Awareness", "Other"];
 const DAY_IDX = (new Date().getDay() + 6) % 7;
 const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e || "").trim());
@@ -65,7 +63,7 @@ const payrollFromProfile = (p) => PAYROLL_FIELDS.reduce((o, f) => { o[f.key] = p
 
 const blankForm = (defaultVenue) => ({
   name: "", role: "FOH", area: "FOH", venueIds: defaultVenue && defaultVenue !== "all" ? [defaultVenue] : [],
-  phone: "", start: "", endDate: "", type: "Casual", cert: "Not yet obtained", certs: [], hours: 0, status: "Active",
+  phone: "", start: "", endDate: "", type: "Casual", cert: "Not yet obtained", certs: [], status: "Active",
   stationIds: [], pin: "", hasAdminLogin: false, email: "", password: "", ...payrollBlank(),
 });
 
@@ -227,7 +225,7 @@ export default function StaffDirectoryPage() {
       name: profile.name || profile.displayName, role: profile.role, area: profile.area || areaOf(profile.role),
       venueIds: profile.venueIds || (profile.venueId ? [profile.venueId] : []),
       phone: profile.phone || "", start: profile.start || "", endDate: profile.endDate || "", type: profile.type || "Casual",
-      cert: profile.cert || "Not yet obtained", hours: profile.hours || 0, stationIds: profile.stationIds || [],
+      cert: profile.cert || "Not yet obtained", stationIds: profile.stationIds || [],
       certs: profile.certs || (profile.cert && profile.cert !== "Not yet obtained" ? [{ name: profile.cert, expiry: "" }] : []),
       status: profile.status || "Active", pin: profile.pin || "",
       hasAdminLogin: !!profile.hasAdminLogin, email: profile.email || "", password: "",

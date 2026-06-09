@@ -50,7 +50,9 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
   const setCheck = (flatI, val) => { const next = [...checks]; next[flatI] = val; write(next); };
   const markAll = (val) => write(Array(total).fill(val));
   const saveComment = async (flatI) => {
-    try { await updateDoc(ref(), { [`comments.${flatI}`]: cmt.text.trim() }); setCmt({ i: null, text: "" }); }
+    const text = cmt.text.trim();
+    if (!text && !comments[flatI]) { setCmt({ i: null, text: "" }); return; } // nothing to write
+    try { await updateDoc(ref(), { [`comments.${flatI}`]: text }); setCmt({ i: null, text: "" }); }
     catch { showToast?.("Could not save note"); }
   };
 

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol } from "../../utils/restaurantGroupPaths";
-import { fullName, leaveTypePill, leaveStatusPill, avatarColor, initials } from "./rgUtils";
+import { fullName, leaveTypePill, leaveStatusPill, avatarColor, initials, downloadCsv } from "./rgUtils";
 
 const TYPES = ["Annual Leave", "Sick Leave", "Personal Leave", "Study Leave", "Unpaid Leave", "RDO"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -138,7 +138,7 @@ export default function LeaveRequestsPage() {
 
       {/* History */}
       <div className="card">
-        <div className="card-head"><span className="card-title">Leave history</span><button className="btn btn-sm" onClick={() => showToast("Exporting leave report...")}>Export</button></div>
+        <div className="card-head"><span className="card-title">Leave history</span><button className="btn btn-sm" onClick={() => { downloadCsv("leave-history.csv", [["Staff", "Venue", "Type", "Dates", "Days", "Status", "Approved by"], ...history.map((l) => [l.staffName, l.venue, l.type, l.dates, l.days, l.status, l.approvedBy || ""])]); showToast("Leave history exported (CSV)"); }}>Export</button></div>
         <div style={{ overflowX: "auto" }}>
           <table className="data-table">
             <thead><tr><th>Staff</th><th>Venue</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Approved by</th></tr></thead>

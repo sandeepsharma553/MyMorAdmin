@@ -119,13 +119,18 @@ export const parseShiftTime = (t) => {
   return 0;
 };
 export const shiftHours = (sh) => Math.max(0, parseShiftTime(sh.end) - parseShiftTime(sh.start));
-export const currentWeekKey = () => {
-  const d = new Date();
-  const dow = (d.getDay() + 6) % 7;
+// SINGLE source of truth for shift week keys. Returns the Monday-of-week key for a date.
+// Kept in the existing `toISOString().slice(0,10)` form so already-stored shift weekKeys
+// still match (see Issue 18 — format intentionally unchanged, just consolidated).
+export const weekKeyOf = (date = new Date()) => {
+  const d = new Date(date);
+  const dow = (d.getDay() + 6) % 7; // 0 = Monday
   d.setDate(d.getDate() - dow);
   d.setHours(0, 0, 0, 0);
   return d.toISOString().slice(0, 10);
 };
+export const weekDayIndex = (date = new Date()) => (new Date(date).getDay() + 6) % 7; // 0 = Monday
+export const currentWeekKey = () => weekKeyOf();
 // total hours rostered to this staff member in the CURRENT week
 export const weeklyHours = (staffId, shifts) => {
   const wk = currentWeekKey();
@@ -148,6 +153,17 @@ export const checklistPct = (staffId, checklistAssignments) => {
   const list = (checklistAssignments || []).filter((a) => a.staffId === staffId);
   if (!list.length) return 0;
   return Math.round(list.reduce((a, x) => a + (x.progress || 0), 0) / list.length);
+};
+
+// Download an array-of-rows as a CSV file (rows[0] is the header row).
+export const downloadCsv = (filename, rows) => {
+  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = (rows || []).map((r) => r.map(esc).join(",")).join("\r\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
 export const noteTypeLabel = (type) => {

@@ -1,17 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { useRG } from "./RGContext";
-import { fullName } from "./rgUtils";
+import { fullName, weekKeyOf, weekDayIndex } from "./rgUtils";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const pad = (n) => String(n).padStart(2, "0");
 const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-// recompute weekKey + day index the SAME way ShiftPlannerPage stores them, so shifts match exactly
-const cellWeekInfo = (d) => {
-  const dow = (d.getDay() + 6) % 7;
-  const m = new Date(d); m.setDate(d.getDate() - dow); m.setHours(0, 0, 0, 0);
-  return { weekKey: m.toISOString().slice(0, 10), dayIdx: dow };
-};
+// weekKey + day index via the shared helper, so shifts match ShiftPlanner exactly
+const cellWeekInfo = (d) => ({ weekKey: weekKeyOf(d), dayIdx: weekDayIndex(d) });
 const shortRole = (r) => (r || "").replace(/^(FOH|BOH) — /, "");
 
 export default function CalendarPage() {

@@ -32,7 +32,9 @@ export default function ChecklistAssignmentDetail({ assignment, liveChecklist, g
   };
   const setCheck = (i, val) => { const next = [...checks]; next[i] = val; write(next); };
   const saveComment = async (i) => {
-    try { await updateDoc(ref(), { [`comments.${i}`]: cmt.text.trim() }); setCmt({ i: null, text: "" }); }
+    const text = cmt.text.trim();
+    if (!text && !comments[i]) { setCmt({ i: null, text: "" }); return; } // nothing to write
+    try { await updateDoc(ref(), { [`comments.${i}`]: text }); setCmt({ i: null, text: "" }); }
     catch { showToast?.("Could not save note"); }
   };
 
