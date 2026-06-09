@@ -13,8 +13,10 @@ export const RG_MODULES = [
   { key: "leave", label: "Leave Requests", path: "/rg/leave" },
   { key: "training", label: "Training", path: "/rg/training" },
   { key: "checklists", label: "SOPs & Checklists", path: "/rg/checklists" },
+  { key: "temperature", label: "Temperature Log", path: "/rg/temperature" },
   { key: "performance", label: "Performance", path: "/rg/performance" },
   { key: "messages", label: "Messages", path: "/rg/messages" },
+  { key: "calendar", label: "Calendar", path: "/rg/calendar" },
   { key: "usermgmt", label: "User Management", path: "/rg/users" },
   { key: "settings", label: "Settings", path: "/rg/settings" },
 ];
@@ -41,10 +43,10 @@ export const RG_ROLES = [
 
 // Default permission matrix per role (per module → level).
 export const DEFAULT_PERMISSIONS = {
-  owner: { staff: "edit", shifts: "edit", leave: "edit", training: "edit", checklists: "edit", performance: "edit", messages: "edit", usermgmt: "edit", settings: "edit" },
-  storeAdmin: { staff: "edit", shifts: "edit", leave: "edit", training: "edit", checklists: "edit", performance: "view", messages: "edit", usermgmt: "edit", settings: "edit" },
-  manager: { staff: "view", shifts: "edit", leave: "edit", training: "edit", checklists: "edit", performance: "view", messages: "edit", usermgmt: "none", settings: "none" },
-  staff: { staff: "none", shifts: "view", leave: "view", training: "view", checklists: "edit", performance: "none", messages: "view", usermgmt: "none", settings: "none" },
+  owner: { staff: "edit", shifts: "edit", leave: "edit", training: "edit", checklists: "edit", temperature: "edit", performance: "edit", messages: "edit", calendar: "view", usermgmt: "edit", settings: "edit" },
+  storeAdmin: { staff: "edit", shifts: "edit", leave: "edit", training: "edit", checklists: "edit", temperature: "edit", performance: "view", messages: "edit", calendar: "view", usermgmt: "edit", settings: "edit" },
+  manager: { staff: "view", shifts: "edit", leave: "edit", training: "edit", checklists: "edit", temperature: "edit", performance: "view", messages: "edit", calendar: "view", usermgmt: "none", settings: "none" },
+  staff: { staff: "none", shifts: "view", leave: "view", training: "view", checklists: "edit", temperature: "edit", performance: "none", messages: "view", calendar: "view", usermgmt: "none", settings: "none" },
 };
 
 export const defaultPermsForRole = (role) => ({ ...(DEFAULT_PERMISSIONS[role] || DEFAULT_PERMISSIONS.staff) });

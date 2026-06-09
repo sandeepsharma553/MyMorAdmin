@@ -9,6 +9,7 @@ import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
 import AssignmentDetail from "./AssignmentDetail";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
+import Turning18Alert from "./Turning18Alert";
 
 const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent", "Urgent — today"]];
 const REC_TYPES = ["Coaching", "Mistake", "Commendation", "Incident"];
@@ -205,6 +206,7 @@ export default function StaffDirectoryPage() {
         stationIds: form.stationIds || [], stationNames: (form.stationIds || []).map(stationName),
         phone: form.phone.trim(), start: form.start, endDate: form.endDate || "", type: form.type,
         cert: (form.certs && form.certs[0]) ? form.certs[0].name : "Not yet obtained", certs: form.certs || [],
+        birthday: (form.dob || "").slice(5), // MM-DD only (day+month, team-visible); full DOB stays private
         status: form.status, pin, email: form.hasAdminLogin ? form.email.toLowerCase().trim() : "",
         hasAdminLogin: !!form.hasAdminLogin, adminUid, password: pwd, createdAt: serverTimestamp(),
       });
@@ -268,6 +270,7 @@ export default function StaffDirectoryPage() {
         stationIds: edit.stationIds || [], stationNames: (edit.stationIds || []).map(stationName),
         phone: edit.phone.trim(), start: edit.start, endDate: edit.endDate || "", type: edit.type,
         cert: (edit.certs && edit.certs[0]) ? edit.certs[0].name : "Not yet obtained", certs: edit.certs || [],
+        ...(canPayroll ? { birthday: (edit.dob || "").slice(5) } : {}), // only owner/admin (who can see DOB) updates this
         status: edit.status, pin, hasAdminLogin: !!edit.hasAdminLogin, adminUid, password: newPwd,
         email: edit.hasAdminLogin ? edit.email.toLowerCase().trim() : (profile.email || ""), updatedAt: serverTimestamp(),
       };
@@ -468,6 +471,8 @@ export default function StaffDirectoryPage() {
         <Metric label="Leave pending" value={pendingLeave} change="Needs approval" down bar="var(--amber)" />
         <Metric label="Training incomplete" value={trainingIncomplete} change="modules outstanding" down bar="var(--blue)" />
       </div>
+
+      {canPayroll && <Turning18Alert groupId={groupId} staff={scopedStaff} actorName={actorName} />}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
         <FilterBtn id="all">All</FilterBtn>

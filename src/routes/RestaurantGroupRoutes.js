@@ -4,9 +4,11 @@ import ShiftPlannerPage from "../pages/restaurantgroup/ShiftPlannerPage";
 import LeaveRequestsPage from "../pages/restaurantgroup/LeaveRequestsPage";
 import TrainingPage from "../pages/restaurantgroup/TrainingPage";
 import ChecklistsPage from "../pages/restaurantgroup/ChecklistsPage";
+import TemperatureLogPage from "../pages/restaurantgroup/TemperatureLogPage";
 import PerformancePage from "../pages/restaurantgroup/PerformancePage";
 import UserManagementPage from "../pages/restaurantgroup/UserManagementPage";
 import MessagingPage from "../pages/restaurantgroup/MessagingPage";
+import CalendarPage from "../pages/restaurantgroup/CalendarPage";
 import SettingsPage from "../pages/restaurantgroup/SettingsPage";
 
 export default function RestaurantGroupRoutes() {
@@ -17,8 +19,10 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/leave" element={<LeaveRequestsPage />} />
       <Route path="/rg/training" element={<TrainingPage />} />
       <Route path="/rg/checklists" element={<ChecklistsPage />} />
+      <Route path="/rg/temperature" element={<TemperatureLogPage />} />
       <Route path="/rg/performance" element={<PerformancePage />} />
       <Route path="/rg/messages" element={<MessagingPage />} />
+      <Route path="/rg/calendar" element={<CalendarPage />} />
       <Route path="/rg/users" element={<UserManagementPage />} />
       <Route path="/rg/settings" element={<SettingsPage />} />
       <Route path="*" element={<Navigate to="/rg/staff" replace />} />

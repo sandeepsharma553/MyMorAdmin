@@ -8,7 +8,7 @@ const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").r
 const AREAS = ["FOH", "BOH"];
 
 export default function SettingsPage() {
-  const { groupId, group, venues, stations, roles, can, showToast } = useRG();
+  const { groupId, group, venues, stations, equipment, roles, can, showToast } = useRG();
   const editable = can("settings", "edit");
   const [tab, setTab] = useState("stations");
   const [venueTab, setVenueTab] = useState(venues[0]?.id || "");
@@ -36,6 +36,35 @@ export default function SettingsPage() {
     catch { showToast("Could not remove"); }
   };
 
+  // ── Temperature units (fridges/freezers/etc.) ──
+  const UNIT_TYPES = ["Fridge", "Freezer", "Cool room", "Hot hold", "Grill", "Display", "Other"];
+  const DEFAULT_RANGE = { Fridge: [1, 5], Freezer: [-22, -15], "Cool room": [1, 5], "Hot hold": [60, 75], Grill: [165, 230], Display: [1, 5], Other: ["", ""] };
+  const SUGGESTED_UNITS = [["Fridge 1", "Fridge"], ["Fridge 2", "Fridge"], ["Freezer 1", "Freezer"], ["Cool room", "Cool room"], ["Hot hold", "Hot hold"], ["Grill", "Grill"]];
+  const venueEquipment = useMemo(() => equipment.filter((e) => e.venueId === venueTab), [equipment, venueTab]);
+  const [eqForm, setEqForm] = useState(null); // {id, name, type, minTemp, maxTemp}
+  const saveUnit = async () => {
+    if (!eqForm.name.trim()) return showToast("Unit name required");
+    const payload = {
+      name: eqForm.name.trim(), type: eqForm.type, venueId: venueTab, order: eqForm.order ?? venueEquipment.length,
+      minTemp: eqForm.minTemp === "" ? null : Number(eqForm.minTemp), maxTemp: eqForm.maxTemp === "" ? null : Number(eqForm.maxTemp),
+    };
+    try {
+      if (eqForm.id) await updateDoc(doc(venueCol(groupId, venueTab, "equipment"), eqForm.id), payload);
+      else await setDoc(doc(venueCol(groupId, venueTab, "equipment"), slug(eqForm.name) || `eq-${Date.now()}`), { ...payload, createdAt: serverTimestamp() });
+      showToast("Unit saved"); setEqForm(null);
+    } catch { showToast("Could not save unit"); }
+  };
+  const quickAddUnit = async (name, type) => {
+    if (venueEquipment.some((e) => e.name.toLowerCase() === name.toLowerCase())) return;
+    const [mn, mx] = DEFAULT_RANGE[type] || ["", ""];
+    try { await setDoc(doc(venueCol(groupId, venueTab, "equipment"), slug(name)), { name, type, minTemp: mn === "" ? null : mn, maxTemp: mx === "" ? null : mx, venueId: venueTab, order: venueEquipment.length, createdAt: serverTimestamp() }); }
+    catch { showToast("Could not add"); }
+  };
+  const removeUnit = async (e) => {
+    try { await deleteDoc(doc(venueCol(groupId, venueTab, "equipment"), e.id)); showToast("Unit removed"); }
+    catch { showToast("Could not remove"); }
+  };
+
   // ── Roles ──
   const [newRole, setNewRole] = useState("");
   const saveRoles = async (next) => {
@@ -57,7 +86,7 @@ export default function SettingsPage() {
   return (
     <>
       <div className="tabs" style={{ marginBottom: 16 }}>
-        {[["stations", "Stations"], ["roles", "Roles"]].map(([id, l]) => (
+        {[["stations", "Stations"], ["units", "Temperature units"], ["roles", "Roles"]].map(([id, l]) => (
           <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
@@ -100,6 +129,47 @@ export default function SettingsPage() {
         </>
       )}
 
+      {/* TEMPERATURE UNITS */}
+      {tab === "units" && (
+        <>
+          <div className="tabs" style={{ marginBottom: 14 }}>
+            {venues.map((v) => (
+              <button key={v.id} className={`tab ${venueTab === v.id ? "active" : ""}`} onClick={() => setVenueTab(v.id)}>{v.name}</button>
+            ))}
+          </div>
+          <div className="card">
+            <div className="card-head">
+              <div><span className="card-title">Temperature units</span><span className="card-sub">{venues.find((v) => v.id === venueTab)?.name} — fridges, freezers, grills… with safe ranges for the log</span></div>
+              {editable && <button className="btn btn-sm btn-primary" onClick={() => setEqForm({ id: null, name: "", type: "Fridge", minTemp: 1, maxTemp: 5 })}>+ Add unit</button>}
+            </div>
+
+            {editable && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                <span style={{ fontSize: 11, color: "var(--gray)", alignSelf: "center" }}>Quick add:</span>
+                {SUGGESTED_UNITS.map(([n, t]) => (
+                  <button key={n} className="btn btn-sm" onClick={() => quickAddUnit(n, t)} disabled={venueEquipment.some((e) => e.name.toLowerCase() === n.toLowerCase())}>{n}</button>
+                ))}
+              </div>
+            )}
+
+            <div className="grid-2">
+              {venueEquipment.map((e) => (
+                <div key={e.id} className="leave-card" style={{ marginBottom: 0 }}>
+                  <span className="pill pill-blue">{e.type}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{e.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--gray)" }}>Safe: {e.minTemp ?? "–"}°C to {e.maxTemp ?? "–"}°C</div>
+                  </div>
+                  {editable && <><button className="btn btn-sm" onClick={() => setEqForm({ id: e.id, name: e.name, type: e.type, minTemp: e.minTemp ?? "", maxTemp: e.maxTemp ?? "", order: e.order })}>Edit</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => removeUnit(e)}>✕</button></>}
+                </div>
+              ))}
+              {venueEquipment.length === 0 && <div style={{ fontSize: 13, color: "var(--gray)" }}>No units yet for this venue.</div>}
+            </div>
+          </div>
+        </>
+      )}
+
       {/* ROLES */}
       {tab === "roles" && (
         <div className="card" style={{ maxWidth: 520 }}>
@@ -129,6 +199,25 @@ export default function SettingsPage() {
               <select className="form-input" value={stForm.area} onChange={(e) => setStForm((p) => ({ ...p, area: e.target.value }))}>{AREAS.map((a) => <option key={a}>{a}</option>)}</select>
             </div>
             <div className="btn-row"><button className="btn btn-primary" onClick={saveStation}>Save station</button><button className="btn" onClick={() => setStForm(null)}>Cancel</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* Unit add/edit modal */}
+      {eqForm && (
+        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setEqForm(null)}>
+          <div className="rg-modal" style={{ maxWidth: 440 }}>
+            <div className="modal-head"><span className="modal-title">{eqForm.id ? "Edit unit" : "New unit"}</span><button className="modal-close" onClick={() => setEqForm(null)}>✕</button></div>
+            <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={eqForm.name} onChange={(e) => setEqForm((p) => ({ ...p, name: e.target.value }))} placeholder="Fridge 1" /></div>
+            <div className="form-group"><label className="form-label">Type</label>
+              <select className="form-input" value={eqForm.type} onChange={(e) => { const t = e.target.value; const [mn, mx] = DEFAULT_RANGE[t] || ["", ""]; setEqForm((p) => ({ ...p, type: t, minTemp: mn, maxTemp: mx })); }}>{UNIT_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div className="form-group"><label className="form-label">Safe min (°C)</label><input type="number" className="form-input" value={eqForm.minTemp} onChange={(e) => setEqForm((p) => ({ ...p, minTemp: e.target.value }))} placeholder="e.g. 1" /></div>
+              <div className="form-group"><label className="form-label">Safe max (°C)</label><input type="number" className="form-input" value={eqForm.maxTemp} onChange={(e) => setEqForm((p) => ({ ...p, maxTemp: e.target.value }))} placeholder="e.g. 5" /></div>
+            </div>
+            <div style={{ fontSize: 10, color: "var(--gray)", marginBottom: 10 }}>Readings outside this range are flagged red in the Temperature Log. Leave blank for no limit.</div>
+            <div className="btn-row"><button className="btn btn-primary" onClick={saveUnit}>Save unit</button><button className="btn" onClick={() => setEqForm(null)}>Cancel</button></div>
           </div>
         </div>
       )}

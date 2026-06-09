@@ -100,6 +100,7 @@ export function RGProvider({ children }) {
   const kpis = useMemo(() => flat("kpis", "order"), [pv.kpis]); // eslint-disable-line react-hooks/exhaustive-deps
   const modules = useMemo(() => flat("trainingModules"), [pv.trainingModules]); // eslint-disable-line react-hooks/exhaustive-deps
   const stations = useMemo(() => flat("stations", "order"), [pv.stations]); // eslint-disable-line react-hooks/exhaustive-deps
+  const equipment = useMemo(() => flat("equipment", "order"), [pv.equipment]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => (group?.roles?.length ? group.roles : DEFAULT_ROLES), [group]);
 
   // ── Toast ─────────────────────────────────────────────
@@ -153,16 +154,19 @@ export function RGProvider({ children }) {
     const myVenueIds = myStaff?.venueIds || (myVenueId && myVenueId !== "all" ? [myVenueId] : venues.map((v) => v.id));
     const dm = messages.filter((m) => m.toId === myId && !(m.readBy || []).includes(myId)).length;
     const ann = announcements.filter((a) => (a.scope === "all" || myVenueIds.includes(a.scope)) && !(a.readBy || []).includes(myId)).length;
-    return dm + ann;
+    // venue team-group messages (conv = "venue_<venueId>") I haven't read
+    const grp = messages.filter((m) => typeof m.conv === "string" && m.conv.startsWith("venue_")
+      && myVenueIds.includes(m.conv.slice(6)) && m.fromId !== myId && !(m.readBy || []).includes(myId)).length;
+    return dm + ann + grp;
   }, [messages, announcements, staff, me, myVenueId, venues]);
 
   const value = useMemo(() => ({
-    groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, roles,
+    groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles,
     announcements, messages, unreadMessages,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, showToast,
-  }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, roles,
+  }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles,
       announcements, messages, unreadMessages,
       selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, showToast]);
 
