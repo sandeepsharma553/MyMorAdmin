@@ -80,8 +80,9 @@ export default function ChecklistAssignmentDetail({ assignment, liveChecklist, g
         })}
 
         <div className="btn-row" style={{ marginTop: 12 }}>
-          {canTick && total > 0 && <button className="btn btn-primary" onClick={() => write(Array(total).fill(true))}>Mark all done</button>}
-          {canTick && done > 0 && <button className="btn" onClick={() => write(Array(total).fill(false))}>Reset</button>}
+          {/* bulk shortcuts are a supervisor action (canComment = manager/owner) — the assignee ticks items individually */}
+          {canComment && total > 0 && <button className="btn btn-primary" onClick={() => write(Array(total).fill(true))}>Mark all done</button>}
+          {canComment && done > 0 && <button className="btn" onClick={() => write(Array(total).fill(false))}>Reset</button>}
           <button className="btn" onClick={onClose}>Close</button>
         </div>
       </div>

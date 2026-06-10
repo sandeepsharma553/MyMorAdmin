@@ -153,8 +153,9 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
         </div>
 
         <div className="btn-row">
-          {canTick && total > 0 && <button className="btn btn-primary" onClick={() => markAll(true)}>Mark all done</button>}
-          {canTick && done > 0 && <button className="btn" onClick={() => markAll(false)}>Reset</button>}
+          {/* bulk shortcuts are a supervisor action — the assignee ticks items individually */}
+          {canVerify && total > 0 && <button className="btn btn-primary" onClick={() => markAll(true)}>Mark all done</button>}
+          {canVerify && done > 0 && <button className="btn" onClick={() => markAll(false)}>Reset</button>}
           <button className="btn" onClick={onClose}>Close</button>
         </div>
       </div>

@@ -105,12 +105,15 @@ export default function ShiftPlannerPage() {
 
   const [form, setForm] = useState({ staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: ROLES[0], venueId: "", stationId: "", notes: "" });
   const formStations = useMemo(() => stations.filter((s) => s.venueId === form.venueId), [stations, form.venueId]);
-  const openAdd = (staffId, day) => {
+  const openAdd = (staffId, day, venueOverride) => {
+    const st = staff.find((s) => s.id === staffId);
     setForm((p) => ({
       ...p,
       staffId: staffId || rows[0]?.id || "",
       day: typeof day === "number" ? FULL_DAYS[day] : "Monday",
-      venueId: staff.find((s) => s.id === staffId)?.venueId || (selectedVenue !== "all" ? selectedVenue : venues[0]?.id || ""),
+      // venueOverride wins (e.g. the split-view column you clicked); else the staff's venue, else selected/first
+      venueId: venueOverride || st?.venueIds?.[0] || st?.venueId || (selectedVenue !== "all" ? selectedVenue : venues[0]?.id || ""),
+      stationId: "",
     }));
     setModal(true);
   };
@@ -185,7 +188,7 @@ export default function ShiftPlannerPage() {
                               <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}</div>
                             </div>
                           ))}
-                          {canEdit && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day)}>+</div>}
+                          {canEdit && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day, vid)}>+</div>}
                         </div>
                       </td>
                     );
