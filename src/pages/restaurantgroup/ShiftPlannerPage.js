@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
+import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
@@ -47,6 +47,18 @@ const staffArea = (s) => {
   if (/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i.test(r)) return "BOH";
   return s.area || "Other";
 };
+// area colours (#5): FOH green, BOH blue, CK purple, Mgmt black — station-specific
+// colour (set in Settings) wins when the shift has a station.
+const AREA_COLORS = { FOH: "#16a34a", BOH: "#2563eb", CK: "#8b5cf6", Mgmt: "#111111", Other: "#6b7280" };
+const roleArea = (role) => {
+  const r = role || "";
+  if (/manager|owner|admin|supervisor|in charge/i.test(r)) return "Mgmt";
+  if (/central|\bck\b/i.test(r)) return "CK";
+  if (/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i.test(r)) return "BOH";
+  if (/foh|floor|\bbar\b|barista|counter|service/i.test(r)) return "FOH";
+  return "Other";
+};
+
 const AREA_GROUPS = [
   { key: "Mgmt", label: "Management" },
   { key: "FOH", label: "Front of House" },
@@ -56,7 +68,7 @@ const AREA_GROUPS = [
 ];
 
 export default function ShiftPlannerPage() {
-  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, selectedVenue, selectedVenueName, showToast, can } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope } = useRG();
   const canEdit = can("shifts", "edit");
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
@@ -73,12 +85,35 @@ export default function ShiftPlannerPage() {
   const wk = weekKeyOf(monday);
   const weekLabel = `Week of ${fmt(monday)} – ${fmt(sunday)} ${sunday.getFullYear()}`;
 
+  // Staff can SEE the full roster for their venue(s) — who they're working with —
+  // while editing stays gated behind canEdit. Managers/owners keep their scope.
+  const visibleStaff = useMemo(() => {
+    if (myScope !== "staff") return scopedStaff;
+    const mv = myStaff?.venueIds?.length ? myStaff.venueIds : (myStaff?.venueId ? [myStaff.venueId] : []);
+    return staff.filter((s) => (s.venueIds || []).some((v) => mv.includes(v)) || (s.venueId && mv.includes(s.venueId)));
+  }, [myScope, scopedStaff, staff, myStaff]);
   const rows = useMemo(
-    () => scopedStaff.filter((s) => staffInVenue(s, selectedVenue)),
-    [scopedStaff, selectedVenue]
+    () => visibleStaff.filter((s) => staffInVenue(s, selectedVenue)),
+    [visibleStaff, selectedVenue]
   );
 
+  // ── Clock in / out (staff, today's own shift) ──
+  const todayIdx = (new Date().getDay() + 6) % 7;
+  const fmtClock = (iso) => { try { return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
+  const curWk = weekKeyOf(mondayOf(0));
+  const myTodayShifts = useMemo(
+    () => (myStaff ? shifts.filter((sh) => sh.staffId === myStaff.id && (sh.weekKey || curWk) === curWk && sh.day === todayIdx) : []),
+    [shifts, myStaff, curWk, todayIdx]
+  );
+  const clock = async (sh, field) => {
+    try {
+      await updateDoc(doc(venueCol(groupId, sh.venueId, "shifts"), sh.id), { [field]: new Date().toISOString() });
+      showToast(field === "clockInAt" ? "Clocked in — have a good shift!" : "Clocked out — see you next time!");
+    } catch { showToast("Could not record time"); }
+  };
+
   const weekShifts = useMemo(() => shifts.filter((sh) => (sh.weekKey || wk) === wk), [shifts, wk]);
+  const shiftColor = (sh) => stations.find((x) => x.id === sh.stationId)?.color || AREA_COLORS[roleArea(sh.role)];
 
   const cellShifts = (staffId, day) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day);
 
@@ -103,7 +138,7 @@ export default function ShiftPlannerPage() {
       .filter((g) => g.members.length && (areaFilter === "all" || areaFilter === g.key)),
     [rows, areaFilter]);
 
-  const [form, setForm] = useState({ staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: ROLES[0], venueId: "", stationId: "", notes: "" });
+  const [form, setForm] = useState({ staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: (roles && roles[0]) || ROLES[0], venueId: "", stationId: "", notes: "" });
   const formStations = useMemo(() => stations.filter((s) => s.venueId === form.venueId), [stations, form.venueId]);
   const openAdd = (staffId, day, venueOverride) => {
     const st = staff.find((s) => s.id === staffId);
@@ -111,6 +146,8 @@ export default function ShiftPlannerPage() {
       ...p,
       staffId: staffId || rows[0]?.id || "",
       day: typeof day === "number" ? FULL_DAYS[day] : "Monday",
+      // default to a role that actually exists in this group (custom roles drive auto-assign matching)
+      role: (roles && roles.includes(p.role)) ? p.role : ((roles && roles[0]) || ROLES[0]),
       // venueOverride wins (e.g. the split-view column you clicked); else the staff's venue, else selected/first
       venueId: venueOverride || st?.venueIds?.[0] || st?.venueId || (selectedVenue !== "all" ? selectedVenue : venues[0]?.id || ""),
       stationId: "",
@@ -183,7 +220,7 @@ export default function ShiftPlannerPage() {
                       <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                           {shs.map((sh) => (
-                            <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} title="Click to view" onClick={() => setShiftDetail(sh)}>
+                            <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} style={{ borderLeft: `3px solid ${shiftColor(sh)}` }} title="Click to view" onClick={() => setShiftDetail(sh)}>
                               <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                               <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}</div>
                             </div>
@@ -219,7 +256,7 @@ export default function ShiftPlannerPage() {
           <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {shs.map((sh) => (
-                <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} title="Click to view" onClick={() => setShiftDetail(sh)}>
+                <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} style={{ borderLeft: `3px solid ${shiftColor(sh)}` }} title="Click to view" onClick={() => setShiftDetail(sh)}>
                   <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                   <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
                 </div>
@@ -249,6 +286,25 @@ export default function ShiftPlannerPage() {
           <button className="btn btn-sm" onClick={() => { downloadCsv(`roster-${wk}.csv`, [["Staff", "Day", "Start", "End", "Role", "Station", "Venue", "Hours"], ...weekShifts.slice().sort((a, b) => (a.day - b.day) || a.start.localeCompare(b.start)).map((sh) => [sh.staffName, FULL_DAYS[sh.day] || "", sh.start, sh.end, sh.role, sh.station || "", sh.venue, shiftHours(sh).toFixed(1)])]); showToast("Roster exported (CSV)"); }}>Export</button>
         </div>
       </div>
+
+      {/* My shift today — clock in / out */}
+      {myTodayShifts.length > 0 && (
+        <div className="card" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <strong style={{ fontSize: 13 }}>⏱ Your shift today</strong>
+          {myTodayShifts.map((sh) => (
+            <div key={sh.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+              <span>{sh.start}–{sh.end} · {sh.venue}{sh.station ? ` · ${sh.station}` : ""}</span>
+              {sh.clockInAt && <span className="pill pill-green">In {fmtClock(sh.clockInAt)}</span>}
+              {sh.clockOutAt && <span className="pill pill-gray">Out {fmtClock(sh.clockOutAt)}</span>}
+              {!sh.clockInAt
+                ? <button className="btn btn-sm btn-primary" onClick={() => clock(sh, "clockInAt")}>Clock in</button>
+                : !sh.clockOutAt
+                  ? <button className="btn btn-sm" onClick={() => clock(sh, "clockOutAt")}>Clock out</button>
+                  : null}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Legend */}
       <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
@@ -370,7 +426,7 @@ export default function ShiftPlannerPage() {
           <div className="rg-modal" style={{ maxWidth: 440 }}>
             <div className="modal-head"><span className="modal-title">Shift — {shiftDetail.staffName}</span><button className="modal-close" onClick={() => setShiftDetail(null)}>✕</button></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {[["Day", FULL_DAYS[shiftDetail.day]], ["Time", `${shiftDetail.start} – ${shiftDetail.end}`], ["Role", shiftDetail.role], ["Venue", shiftDetail.venue], ["Station", shiftDetail.station]].map(([k, v]) => (
+              {[["Day", FULL_DAYS[shiftDetail.day]], ["Rostered", `${shiftDetail.start} – ${shiftDetail.end}`], ["Role", shiftDetail.role], ["Venue", shiftDetail.venue], ["Station", shiftDetail.station], ["Clocked in", shiftDetail.clockInAt ? fmtClock(shiftDetail.clockInAt) : "—"], ["Clocked out", shiftDetail.clockOutAt ? fmtClock(shiftDetail.clockOutAt) : "—"]].map(([k, v]) => (
                 <div key={k}><div className="form-label">{k}</div><div style={{ fontSize: 13 }}>{v || "—"}</div></div>
               ))}
             </div>

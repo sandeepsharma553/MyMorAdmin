@@ -3,6 +3,7 @@ import { addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol } from "../../utils/restaurantGroupPaths";
 import { fullName, leaveTypePill, leaveStatusPill, avatarColor, initials, downloadCsv } from "./rgUtils";
+import { sendNotification } from "./notify";
 
 const TYPES = ["Annual Leave", "Sick Leave", "Personal Leave", "Study Leave", "Unpaid Leave", "RDO"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -42,6 +43,7 @@ export default function LeaveRequestsPage() {
     try {
       await updateDoc(doc(venueCol(groupId, l.venueId, "leaveRequests"), l.id), { status, approvedBy: actorName, decidedAt: serverTimestamp() });
       showToast(status === "Approved" ? "Leave approved — blocked in shift planner" : "Leave declined — staff notified");
+      sendNotification(groupId, { to: l.staffId, type: "leave", title: `Leave ${status.toLowerCase()}`, body: `${l.type} ${l.dates} — ${status.toLowerCase()} by ${actorName}`, venueId: l.venueId, by: actorName });
     } catch { showToast("Could not update request"); }
   };
 
@@ -66,6 +68,7 @@ export default function LeaveRequestsPage() {
         status: "Pending", approvedBy: "", createdAt: serverTimestamp(),
       });
       showToast("Leave request submitted — manager notified");
+      sendNotification(groupId, { to: "managers", type: "leave", title: "New leave request", body: `${st?.displayName || fullName(st)} · ${form.type} ${fmtRange(form.start, form.end)}`, venueId: vid, by: st?.displayName || fullName(st) });
       setForm({ staffId: "", type: TYPES[0], start: "", end: "", reason: "" });
     } catch { showToast("Could not submit request"); }
   };

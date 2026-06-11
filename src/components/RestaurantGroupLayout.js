@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import {
-  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer,
+  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell,
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
+import { markNotificationRead } from "../pages/restaurantgroup/notify";
 import VenueManager from "../pages/restaurantgroup/VenueManager";
 import { staffInVenue } from "../utils/restaurantGroupPaths";
 import { logoutAdmin } from "../app/features/AuthSlice";
@@ -23,6 +24,89 @@ const NAV = [
   { key: "usermgmt", path: "/rg/users", label: "User Management", Icon: ShieldCheck, title: "User Management" },
   { key: "settings", path: "/rg/settings", label: "Settings", Icon: SlidersHorizontal, title: "Settings" },
 ];
+
+// ── Topbar notification bell: unread badge + feed dropdown + browser popups ──
+function NotificationsBell() {
+  const { groupId, myNotifications, unreadNotifications, myStaff, me } = useRG();
+  const [open, setOpen] = useState(false);
+  const myId = myStaff?.id || me?.uid || me?.id || null;
+  const seenRef = useRef(null); // ids already seen this session (so we only pop NEW arrivals)
+
+  useEffect(() => {
+    if (!myId) return;
+    // seed on the FIRST NON-EMPTY snapshot so the initial backlog never replays as popups
+    if (seenRef.current === null) {
+      if (myNotifications.length === 0) return;
+      seenRef.current = new Set(myNotifications.map((n) => n.id));
+      return;
+    }
+    myNotifications.forEach((n) => {
+      if (seenRef.current.has(n.id)) return;
+      seenRef.current.add(n.id);
+      // belt-and-braces: only pop notifications created in the last 10 minutes
+      const ageOk = n.at?.seconds ? (Date.now() / 1000 - n.at.seconds) < 600 : true;
+      if (ageOk && typeof Notification !== "undefined" && Notification.permission === "granted" && !(n.readBy || []).includes(myId)) {
+        try { new Notification(n.title || "MyMor", { body: n.body || "" }); } catch { /* blocked */ }
+      }
+    });
+  }, [myNotifications, myId]);
+
+  const toggle = () => {
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+    setOpen((o) => !o);
+  };
+  const markAll = () => myNotifications.filter((n) => !(n.readBy || []).includes(myId)).slice(0, 60).forEach((n) => markNotificationRead(groupId, n.id, myId));
+  const ago = (at) => {
+    const s = at?.seconds ? at.seconds * 1000 : null;
+    if (!s) return "";
+    const m = Math.round((Date.now() - s) / 60000);
+    if (m < 1) return "now";
+    if (m < 60) return `${m}m`;
+    if (m < 1440) return `${Math.round(m / 60)}h`;
+    return `${Math.round(m / 1440)}d`;
+  };
+  const TYPE_ICON = { shift: "🗓", training: "🎓", checklist: "✅", leave: "🌴", temperature: "🌡", info: "🔔" };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button className="btn btn-sm" onClick={toggle} title="Notifications" style={{ position: "relative" }}>
+        <Bell size={14} />
+        {unreadNotifications > 0 && (
+          <span style={{ position: "absolute", top: -6, right: -6, background: "var(--red)", color: "#fff", borderRadius: 999, fontSize: 9, fontWeight: 700, minWidth: 15, height: 15, lineHeight: "15px", textAlign: "center", padding: "0 3px" }}>
+            {unreadNotifications > 99 ? "99+" : unreadNotifications}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", width: 340, maxHeight: 420, overflowY: "auto", background: "#fff", border: "0.5px solid var(--border)", borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,0.12)", zIndex: 1300 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: "0.5px solid var(--border)" }}>
+            <strong style={{ fontSize: 13 }}>Notifications</strong>
+            <div style={{ display: "flex", gap: 6 }}>
+              {unreadNotifications > 0 && <button className="btn btn-sm" onClick={markAll}>Mark all read</button>}
+              <button className="btn btn-sm" onClick={() => setOpen(false)}>✕</button>
+            </div>
+          </div>
+          {myNotifications.length === 0 && <div style={{ padding: 16, fontSize: 12, color: "var(--gray)" }}>Nothing yet — shift, training, checklist and leave updates will appear here.</div>}
+          {myNotifications.map((n) => {
+            const unread = !(n.readBy || []).includes(myId);
+            return (
+              <div key={n.id} onClick={() => unread && markNotificationRead(groupId, n.id, myId)}
+                style={{ padding: "9px 12px", borderBottom: "0.5px solid var(--gray-light)", cursor: unread ? "pointer" : "default", background: unread ? "rgba(192,57,43,0.05)" : "transparent" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: unread ? 700 : 600 }}>{TYPE_ICON[n.type] || "🔔"} {n.title}</span>
+                  <span style={{ fontSize: 10, color: "var(--gray)", whiteSpace: "nowrap" }}>{ago(n.at)}</span>
+                </div>
+                {n.body && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}>{n.body}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Shell({ children }) {
   const navigate = useNavigate();
@@ -120,6 +204,7 @@ function Shell({ children }) {
             <span className="tb-sub">{subtitle}</span>
           </div>
           <div className="tb-right">
+            <NotificationsBell />
             <select
               className="form-input"
               style={{ width: 160 }}

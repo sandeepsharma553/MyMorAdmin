@@ -16,10 +16,13 @@ export default function SettingsPage() {
 
   // ── Stations ──
   const venueStations = useMemo(() => stations.filter((s) => s.venueId === venueTab), [stations, venueTab]);
-  const [stForm, setStForm] = useState(null); // {id, name, area}
+  const [stForm, setStForm] = useState(null); // {id, name, area, color}
+  // station colour defaults by area (#5): FOH green, BOH blue, CK purple
+  const AREA_COLOR_DEFAULT = { FOH: "#16a34a", BOH: "#2563eb", CK: "#8b5cf6" };
+  const STATION_COLORS = [["Green (FOH)", "#16a34a"], ["Blue (BOH)", "#2563eb"], ["Purple (CK)", "#8b5cf6"], ["Amber", "#d97706"], ["Red", "#C0392B"], ["Pink", "#db2777"], ["Teal", "#0d9488"], ["Slate", "#475569"]];
   const saveStation = async () => {
     if (!stForm.name.trim()) return showToast("Station name required");
-    const payload = { name: stForm.name.trim(), area: stForm.area, venueId: venueTab, order: stForm.order ?? venueStations.length };
+    const payload = { name: stForm.name.trim(), area: stForm.area, color: stForm.color || AREA_COLOR_DEFAULT[stForm.area] || "#6b7280", venueId: venueTab, order: stForm.order ?? venueStations.length };
     try {
       if (stForm.id) { await updateDoc(doc(venueCol(groupId, venueTab, "stations"), stForm.id), payload); }
       else {
@@ -32,7 +35,7 @@ export default function SettingsPage() {
   };
   const quickAdd = async (name, area) => {
     if (venueStations.some((s) => s.name.toLowerCase() === name.toLowerCase())) return;
-    try { await setDoc(doc(venueCol(groupId, venueTab, "stations"), slug(name)), { name, area, venueId: venueTab, order: venueStations.length, createdAt: serverTimestamp() }); }
+    try { await setDoc(doc(venueCol(groupId, venueTab, "stations"), slug(name)), { name, area, color: AREA_COLOR_DEFAULT[area] || "#6b7280", venueId: venueTab, order: venueStations.length, createdAt: serverTimestamp() }); }
     catch { showToast("Could not add"); }
   };
   const removeStation = async (s) => {
@@ -131,7 +134,7 @@ export default function SettingsPage() {
                 <div key={s.id} className="leave-card" style={{ marginBottom: 0 }}>
                   <span className={`pill ${s.area === "BOH" ? "pill-amber" : "pill-green"}`}>{s.area}</span>
                   <div style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{s.name}</div>
-                  {editable && <><button className="btn btn-sm" onClick={() => setStForm({ id: s.id, name: s.name, area: s.area, order: s.order })}>Edit</button>
+                  {editable && <><button className="btn btn-sm" onClick={() => setStForm({ id: s.id, name: s.name, area: s.area, color: s.color || "", order: s.order })}>Edit</button>
                     <button className="btn btn-sm btn-danger" onClick={() => removeStation(s)}>✕</button></>}
                 </div>
               ))}
@@ -208,7 +211,15 @@ export default function SettingsPage() {
             <div className="modal-head"><span className="modal-title">{stForm.id ? "Edit station" : "New station"}</span><button className="modal-close" onClick={() => setStForm(null)}>✕</button></div>
             <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={stForm.name} onChange={(e) => setStForm((p) => ({ ...p, name: e.target.value }))} placeholder="Grill" /></div>
             <div className="form-group"><label className="form-label">Area</label>
-              <select className="form-input" value={stForm.area} onChange={(e) => setStForm((p) => ({ ...p, area: e.target.value }))}>{AREAS.map((a) => <option key={a}>{a}</option>)}</select>
+              <select className="form-input" value={stForm.area} onChange={(e) => setStForm((p) => ({ ...p, area: e.target.value, color: p.color || AREA_COLOR_DEFAULT[e.target.value] || "" }))}>{AREAS.map((a) => <option key={a}>{a}</option>)}</select>
+            </div>
+            <div className="form-group"><label className="form-label">Colour (shown on roster shift chips)</label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {STATION_COLORS.map(([l, c]) => (
+                  <button key={c} type="button" className="btn btn-sm" title={l} onClick={() => setStForm((p) => ({ ...p, color: c }))}
+                    style={{ background: c, width: 30, height: 30, borderRadius: 8, border: (stForm.color || AREA_COLOR_DEFAULT[stForm.area]) === c ? "2.5px solid var(--ink)" : "2.5px solid transparent" }} />
+                ))}
+              </div>
             </div>
             <div className="btn-row"><button className="btn btn-primary" onClick={saveStation}>Save station</button><button className="btn" onClick={() => setStForm(null)}>Cancel</button></div>
           </div>

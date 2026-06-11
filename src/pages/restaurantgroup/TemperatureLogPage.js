@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol } from "../../utils/restaurantGroupPaths";
+import { sendNotification } from "./notify";
 
 const pad = (n) => String(n).padStart(2, "0");
 const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -59,11 +60,38 @@ export default function TemperatureLogPage() {
         venueId: venueTab, dateKey: todayKey, at: serverTimestamp(),
       });
       setDraft((p) => ({ ...p, [u.id]: "" })); setNoteDraft((p) => ({ ...p, [u.id]: "" }));
-      if (!ok) showToast(`⚠ ${u.name} out of safe range — logged & flagged`);
+      if (!ok) { showToast(`⚠ ${u.name} out of safe range — logged & flagged`); sendNotification(groupId, { to: "managers", type: "temperature", title: "Temperature out of range", body: `${u.name}: ${temp}°C (safe ${u.minTemp ?? "—"}–${u.maxTemp ?? "—"}°C) · ${recorder}`, venueId: venueTab, by: recorder }); }
     } catch { showToast("Could not save reading"); }
   };
 
   const outToday = logs.filter((l) => l.dateKey === todayKey && l.ok === false).length;
+
+  // ── History calendar (#7): one cell per day — green all-in-range, red any out, gray unlogged ──
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const [histMonth, setHistMonth] = useState(0); // month offset
+  const [histDay, setHistDay] = useState(null); // selected dateKey
+  const histBase = useMemo(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth() + histMonth, 1); }, [histMonth]);
+  const histCells = useMemo(() => {
+    const y = histBase.getFullYear(), m = histBase.getMonth();
+    const firstDow = (new Date(y, m, 1).getDay() + 6) % 7;
+    const days = new Date(y, m + 1, 0).getDate();
+    const arr = [];
+    for (let i = 0; i < firstDow; i++) arr.push(null);
+    for (let d = 1; d <= days; d++) arr.push(`${y}-${pad(m + 1)}-${pad(d)}`);
+    while (arr.length % 7) arr.push(null);
+    return arr;
+  }, [histBase]);
+  const byDate = useMemo(() => {
+    const map = {};
+    logs.forEach((l) => {
+      if (!l.dateKey) return;
+      map[l.dateKey] = map[l.dateKey] || { count: 0, bad: 0 };
+      map[l.dateKey].count++;
+      if (l.ok === false) map[l.dateKey].bad++;
+    });
+    return map;
+  }, [logs]);
+  const histDayLogs = histDay ? logs.filter((l) => l.dateKey === histDay) : [];
 
   return (
     <>
@@ -112,6 +140,47 @@ export default function TemperatureLogPage() {
           })}
         </div>
       )}
+
+      {/* History calendar — month at a glance for compliance review (e.g. the council) */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <div><span className="card-title">Compliance calendar</span><span className="card-sub">Green = all in range · Red = out-of-range reading · Gray = nothing logged</span></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className="btn btn-sm" onClick={() => setHistMonth((o) => o - 1)}>←</button>
+            <strong style={{ fontSize: 13, minWidth: 90, textAlign: "center" }}>{MONTHS[histBase.getMonth()]} {histBase.getFullYear()}</strong>
+            <button className="btn btn-sm" onClick={() => setHistMonth((o) => o + 1)}>→</button>
+            {histMonth !== 0 && <button className="btn btn-sm" onClick={() => setHistMonth(0)}>This month</button>}
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
+          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <div key={d} style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: "var(--gray)" }}>{d}</div>)}
+          {histCells.map((k, i) => {
+            if (!k) return <div key={i} />;
+            const st = byDate[k];
+            const bg = !st ? "var(--gray-light)" : st.bad > 0 ? "#fee2e2" : "#dcfce7";
+            const fg = !st ? "var(--gray)" : st.bad > 0 ? "#991b1b" : "#166534";
+            return (
+              <div key={k} onClick={() => st && setHistDay(histDay === k ? null : k)}
+                style={{ background: bg, color: fg, borderRadius: 6, padding: "7px 2px", textAlign: "center", fontSize: 11, fontWeight: 600, cursor: st ? "pointer" : "default", outline: histDay === k ? "2px solid var(--ink)" : "none" }}
+                title={st ? `${st.count} reading(s)${st.bad ? ` · ${st.bad} out of range` : ""}` : "No readings"}>
+                {Number(k.slice(8))}
+                {st && <div style={{ fontSize: 9, fontWeight: 500 }}>{st.bad > 0 ? `⚠ ${st.bad}` : `✓ ${st.count}`}</div>}
+              </div>
+            );
+          })}
+        </div>
+        {histDay && (
+          <div style={{ marginTop: 10, borderTop: "0.5px solid var(--border)", paddingTop: 8 }}>
+            <div className="form-label">Readings on {histDay}</div>
+            {histDayLogs.map((l) => (
+              <div key={l.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                <span>{l.unitName}{l.note ? ` · ${l.note}` : ""}</span>
+                <span style={{ fontWeight: 600, color: l.ok === false ? "var(--red)" : "var(--ink)" }}>{l.temp}°C {l.ok === false ? "⚠" : "✓"} <span style={{ color: "var(--gray)", fontWeight: 400 }}>· {l.recordedBy}</span></span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* History */}
       <div className="card">

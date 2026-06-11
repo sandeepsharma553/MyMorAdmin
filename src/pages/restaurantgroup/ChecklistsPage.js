@@ -29,10 +29,12 @@ const pushHist = (c) => {
 const areaOf = (c) => c.area || (/\bboh\b|kitchen|grill|fry|wash|prep|cook|dressing/i.test(c.title || "") ? "BOH" : /\bfoh\b|floor|barista|bar|counter|service|opening|closing/i.test(c.title || "") ? "FOH" : "All");
 const nowHHMM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const fmt12 = (t) => { if (!t) return ""; const [h, m] = t.split(":").map(Number); const ap = h >= 12 ? "pm" : "am"; const h12 = h % 12 || 12; return `${h12}:${String(m).padStart(2, "0")}${ap}`; };
-const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "Opening", area: "FOH", stationId: "", time: "", items: [], days: [], images: [] });
+const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "Opening", area: "FOH", stationId: "", time: "", items: [], days: [], images: [], frequency: "daily", scheduleDay: "mon", scheduleDate: 1, autoRoles: [], autoShiftStart: "" });
+// shift start times offered for auto-assign linking (mirrors ShiftPlanner STARTS)
+const AUTO_STARTS = ["", "7:00am", "7:30am", "8:00am", "9:00am", "10:00am", "11:00am", "12:00pm", "3:00pm", "4:00pm", "5:00pm", "6:00pm"];
 
 export default function ChecklistsPage() {
-  const { groupId, venues, staff, checklists, checklistAssignments, stations, selectedVenue, showToast, can, me } = useRG();
+  const { groupId, venues, staff, checklists, checklistAssignments, stations, roles, selectedVenue, showToast, can, me } = useRG();
   const canEdit = can("checklists", "edit");
   const [venueTab, setVenueTab] = useState(selectedVenue === "all" ? (venues[0]?.id || "") : selectedVenue);
   const [typeFilter, setTypeFilter] = useState("All checklists");
@@ -97,7 +99,8 @@ export default function ChecklistsPage() {
   const [editor, setEditor] = useState(null);
   const setEd = (k) => (e) => setEditor((p) => ({ ...p, [k]: e.target.value }));
   const openNew = () => setEditor(blankForm(venueTab));
-  const openEdit = (c) => setEditor({ id: c.id, title: c.title, sub: c.sub || "", venueId: c.venueId, type: c.type, area: areaOf(c), stationId: c.stationId || "", time: c.time || "", items: c.items || [], days: c.days || [], images: c.images || [] });
+  const openEdit = (c) => setEditor({ id: c.id, title: c.title, sub: c.sub || "", venueId: c.venueId, type: c.type, area: areaOf(c), stationId: c.stationId || "", time: c.time || "", items: c.items || [], days: c.days || [], images: c.images || [], frequency: c.frequency || "daily", scheduleDay: c.scheduleDay || "mon", scheduleDate: c.scheduleDate || 1, autoRoles: c.autoAssign?.roles || [], autoShiftStart: c.autoAssign?.shiftStart || "" });
+  const toggleAutoRole = (r) => setEditor((p) => ({ ...p, autoRoles: p.autoRoles.includes(r) ? p.autoRoles.filter((x) => x !== r) : [...p.autoRoles, r] }));
   const toggleDay = (d) => setEditor((p) => ({ ...p, days: p.days.includes(d) ? p.days.filter((x) => x !== d) : [...p.days, d] }));
 
   const saveChecklist = async () => {
@@ -107,7 +110,14 @@ export default function ChecklistsPage() {
     const venue = venues.find((v) => v.id === editor.venueId);
     if (!venue) return showToast("Pick a venue");
     const stn = stations.find((s) => s.id === editor.stationId && s.venueId === venue.id);
-    const payload = { title: editor.title.trim(), sub: editor.sub.trim(), venueId: venue.id, venue: venue.name, type: editor.type, area: editor.area || "All", stationId: stn?.id || "", station: stn?.name || "", time: editor.time || "", items, days: editor.days || [], images: editor.images || [] };
+    const payload = {
+      title: editor.title.trim(), sub: editor.sub.trim(), venueId: venue.id, venue: venue.name, type: editor.type, area: editor.area || "All", stationId: stn?.id || "", station: stn?.name || "", time: editor.time || "", items, days: editor.days || [], images: editor.images || [],
+      // recurrence + auto-assignment (consumed by Cloud Functions: rgOnShiftCreated / rgRecurringChecklists)
+      frequency: editor.frequency || "daily",
+      scheduleDay: editor.scheduleDay || "mon",
+      scheduleDate: Math.max(1, Math.min(28, Number(editor.scheduleDate) || 1)),
+      autoAssign: { roles: editor.autoRoles || [], shiftStart: editor.autoShiftStart || "" },
+    };
     try {
       if (editor.id) {
         const existing = checklists.find((c) => c.id === editor.id);
@@ -167,7 +177,7 @@ export default function ChecklistsPage() {
         ))}
 
         {openMyAssignment && (
-          <ChecklistAssignmentDetail assignment={openMyAssignment} liveChecklist={checklists.find((c) => c.id === openMyAssignment.checklistId) || checklists.find((c) => c.title === openMyAssignment.checklistTitle && c.venueId === openMyAssignment.venueId)} groupId={groupId} canTick showToast={showToast} onClose={() => setOpenMyId(null)} />
+          <ChecklistAssignmentDetail assignment={openMyAssignment} liveChecklist={checklists.find((c) => c.id === openMyAssignment.checklistId) || checklists.find((c) => c.title === openMyAssignment.checklistTitle && c.venueId === openMyAssignment.venueId)} groupId={groupId} canTick actorName={me?.displayName || me?.name || me?.email || "Staff"} showToast={showToast} onClose={() => setOpenMyId(null)} />
         )}
       </>
     );
@@ -300,6 +310,56 @@ export default function ChecklistsPage() {
                     style={editor.days.includes(k) ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
                 ))}
               </div>
+            </div>
+            {/* Recurrence + auto-assignment (handled server-side by Cloud Functions) */}
+            <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 12 }}>
+              <label className="form-label">Schedule & auto-assign</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
+                <div>
+                  <label className="form-label" style={{ fontSize: 10 }}>Frequency</label>
+                  <select className="form-input" value={editor.frequency} onChange={setEd("frequency")}>
+                    <option value="daily">Daily (resets each day)</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                {editor.frequency === "weekly" && (
+                  <div>
+                    <label className="form-label" style={{ fontSize: 10 }}>Assigned every</label>
+                    <select className="form-input" value={editor.scheduleDay} onChange={setEd("scheduleDay")}>
+                      {WEEKDAYS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </div>
+                )}
+                {editor.frequency === "monthly" && (
+                  <div>
+                    <label className="form-label" style={{ fontSize: 10 }}>Assigned on day of month</label>
+                    <select className="form-input" value={editor.scheduleDate} onChange={setEd("scheduleDate")}>
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <label className="form-label" style={{ fontSize: 10 }}>Auto-assign to roles — anyone rostered with these roles gets this checklist automatically</label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                {(roles || []).map((r) => (
+                  <button key={r} type="button" className="btn btn-sm" onClick={() => toggleAutoRole(r)}
+                    style={editor.autoRoles.includes(r) ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{r}</button>
+                ))}
+              </div>
+              {editor.frequency === "daily" && editor.autoRoles.length > 0 && (
+                <div>
+                  <label className="form-label" style={{ fontSize: 10 }}>Only for shifts starting at (optional — e.g. opening checklist → 7:00am shift)</label>
+                  <select className="form-input" value={editor.autoShiftStart} onChange={setEd("autoShiftStart")}>
+                    {AUTO_STARTS.map((t) => <option key={t || "any"} value={t}>{t || "Any start time"}</option>)}
+                  </select>
+                </div>
+              )}
+              {editor.frequency !== "daily" && (
+                <div style={{ fontSize: 10, color: "var(--gray)" }}>
+                  {editor.autoRoles.length ? "Assigned automatically to matching staff on the scheduled day (3am Sydney). You can also assign manually anytime to override." : "Pick at least one role, or it will default to managers on the scheduled day."}
+                </div>
+              )}
             </div>
             <div className="form-group"><label className="form-label">Items — add each separately, format with the toolbar</label>
               <RichItemList value={editor.items} onChange={(items) => setEditor((p) => ({ ...p, items }))} />

@@ -3,6 +3,7 @@ import { updateDoc, doc, serverTimestamp, arrayUnion } from "firebase/firestore"
 import { venueCol, staffCol } from "../../utils/restaurantGroupPaths";
 import { RichText } from "./RichItems";
 import { trainingStatusPill } from "./rgUtils";
+import { sendNotification } from "./notify";
 
 /**
  * Opened training-assignment view. The assignee ticks each step item (verifiable).
@@ -14,9 +15,15 @@ import { trainingStatusPill } from "./rgUtils";
  */
 export default function AssignmentDetail({ assignment, liveModule, groupId, canTick, canVerify, canComment, actorName, showToast, onClose }) {
   const [vNote, setVNote] = useState("");
-  const [cmt, setCmt] = useState({ i: null, text: "" });
+  const [cmt, setCmt] = useState({ i: null, text: "", priv: false });
   if (!assignment) return null;
-  const comments = assignment.comments || {};
+  const comments = assignment.comments || {}; // legacy single-comment map (read-only)
+  const threads = assignment.threads || {}; // v2: threads.{i} = [{ text, by, at, private }]
+  // merged thread per item; private entries are trainer-only
+  const threadFor = (i) => {
+    const legacy = comments[i] ? [{ text: comments[i], by: "Trainer", at: "", private: false }] : [];
+    return [...legacy, ...(threads[i] || [])].filter((c) => canComment || !c.private);
+  };
 
   // Resolve sections: prefer the snapshot, fall back to the live module's steps.
   const snapSections = (assignment.sections || []).filter((s) => (s.items || []).length);
@@ -44,16 +51,24 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
     const heal = snapSections.length ? {} : { sections, itemsTotal: total, link };
     // if a verified assignment drops below complete, clear the sign-off — never "verified" + incomplete
     const clearVerify = (!allDone && assignment.verified) ? { verified: false, verifiedBy: "", verifyNote: "" } : {};
-    try { await updateDoc(ref(), { checks: next, progress, status, ...heal, ...clearVerify }); }
-    catch { showToast?.("Could not save"); }
+    try {
+      await updateDoc(ref(), { checks: next, progress, status, ...heal, ...clearVerify });
+      // tell the managers when someone finishes all steps (ready to sign off)
+      if (status === "Awaiting sign-off" && assignment.status !== "Awaiting sign-off") {
+        sendNotification(groupId, { to: "managers", type: "training", title: "Training ready for sign-off", body: `${assignment.staffName} completed all steps of "${assignment.moduleTitle}"`, venueId: assignment.venueId, by: assignment.staffName });
+      }
+    } catch { showToast?.("Could not save"); }
   };
   const setCheck = (flatI, val) => { const next = [...checks]; next[flatI] = val; write(next); };
   const markAll = (val) => write(Array(total).fill(val));
   const saveComment = async (flatI) => {
     const text = cmt.text.trim();
-    if (!text && !comments[flatI]) { setCmt({ i: null, text: "" }); return; } // nothing to write
-    try { await updateDoc(ref(), { [`comments.${flatI}`]: text }); setCmt({ i: null, text: "" }); }
-    catch { showToast?.("Could not save note"); }
+    if (!text) { setCmt({ i: null, text: "", priv: false }); return; }
+    try {
+      // append to the per-item thread; `private` notes are visible to trainers/managers only
+      await updateDoc(ref(), { [`threads.${flatI}`]: arrayUnion({ text, by: actorName || "Trainer", at: new Date().toISOString(), private: !!cmt.priv }) });
+      setCmt({ i: null, text: "", priv: false });
+    } catch { showToast?.("Could not save note"); }
   };
 
   const verify = async () => {
@@ -75,6 +90,7 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
         });
       }
       showToast?.("Training verified & logged"); setVNote("");
+      sendNotification(groupId, { to: assignment.staffId, type: "training", title: "Training signed off", body: `"${assignment.moduleTitle}" was verified by ${actorName || "your trainer"}`, venueId: assignment.venueId, by: actorName || "Trainer" });
     } catch { showToast?.("Could not verify — please try again"); }
   };
   const unverify = async () => {
@@ -107,21 +123,30 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
             {(sec.items || []).map((it, ii) => {
               const flatI = sec._off + ii;
               const checked = !!checks[flatI];
-              const note = comments[flatI];
+              const thread = threadFor(flatI);
               const editing = cmt.i === flatI;
               return (
                 <div key={ii} style={{ marginBottom: 2 }}>
                   <div className="checklist-item">
                     <div className={`check-box ${checked ? "checked" : ""}`} style={{ cursor: canTick ? "pointer" : "default" }} onClick={() => canTick && setCheck(flatI, !checked)} />
                     <RichText html={it} className={`check-text ${checked ? "done" : ""}`} />
-                    {canComment && <button className="btn btn-sm" style={{ marginLeft: "auto" }} title="Leave a note on this step" onClick={() => setCmt({ i: flatI, text: note || "" })}>💬</button>}
+                    {canComment && <button className="btn btn-sm" style={{ marginLeft: "auto" }} title="Add a comment on this step" onClick={() => setCmt({ i: flatI, text: "", priv: false })}>💬{thread.length ? ` ${thread.length}` : ""}</button>}
                   </div>
-                  {note && !editing && <div style={{ fontSize: 11, color: "var(--gray)", margin: "1px 0 0 30px" }}>💬 <strong>Trainer:</strong> {note}</div>}
+                  {thread.map((c, ci) => (
+                    <div key={ci} style={{ fontSize: 11, color: "var(--gray)", margin: "1px 0 0 30px" }}>
+                      💬 <strong>{c.by || "Trainer"}:</strong> {c.text}
+                      {c.private && <span className="pill pill-amber" style={{ marginLeft: 5 }}>🔒 trainer-only</span>}
+                      {c.at && <span style={{ opacity: 0.7 }}> · {new Date(c.at).toLocaleDateString()}</span>}
+                    </div>
+                  ))}
                   {editing && (
-                    <div style={{ display: "flex", gap: 6, margin: "4px 0 0 30px" }}>
-                      <input className="form-input" value={cmt.text} autoFocus onChange={(e) => setCmt({ i: flatI, text: e.target.value })} placeholder="Note for this step (e.g. watch the timing)" onKeyDown={(e) => e.key === "Enter" && saveComment(flatI)} />
-                      <button className="btn btn-sm btn-primary" onClick={() => saveComment(flatI)}>Save</button>
-                      <button className="btn btn-sm" onClick={() => setCmt({ i: null, text: "" })}>✕</button>
+                    <div style={{ display: "flex", gap: 6, margin: "4px 0 0 30px", alignItems: "center", flexWrap: "wrap" }}>
+                      <input className="form-input" style={{ flex: 1, minWidth: 180 }} value={cmt.text} autoFocus onChange={(e) => setCmt((p) => ({ ...p, text: e.target.value }))} placeholder={thread.length ? "Add another comment…" : "Note for this step (e.g. watch the timing)"} onKeyDown={(e) => e.key === "Enter" && saveComment(flatI)} />
+                      <label style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+                        <input type="checkbox" checked={cmt.priv} onChange={(e) => setCmt((p) => ({ ...p, priv: e.target.checked }))} />🔒 just for trainers
+                      </label>
+                      <button className="btn btn-sm btn-primary" onClick={() => saveComment(flatI)}>Add</button>
+                      <button className="btn btn-sm" onClick={() => setCmt({ i: null, text: "", priv: false })}>✕</button>
                     </div>
                   )}
                 </div>

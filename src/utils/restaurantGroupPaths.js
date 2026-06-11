@@ -61,6 +61,7 @@ export const auditLogCol = (groupId) => groupCol(groupId, "auditLog");
 export const announcementsCol = (groupId) => groupCol(groupId, "announcements");
 export const messagesCol = (groupId) => groupCol(groupId, "messages");
 export const conversationsCol = (groupId) => groupCol(groupId, "conversations");
+export const notificationsCol = (groupId) => groupCol(groupId, "notifications");
 // Deterministic conversation id for a pair of staff ids (order-independent).
 export const convId = (a, b) => [String(a), String(b)].sort().join("__");
 

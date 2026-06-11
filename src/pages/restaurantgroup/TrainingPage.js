@@ -3,6 +3,7 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/fir
 import { useRG } from "./RGContext";
 import { venueTrainingCol, venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, trainingStatusPill, trainingBarColor, progressColor, trainingPct, moduleForStaff, snapshotForAssign } from "./rgUtils";
+import { sendNotification } from "./notify";
 import { RefImageViewer, RefImageEditor } from "./RefImages";
 import { RichItemList, RichText } from "./RichItems";
 import AssignmentDetail from "./AssignmentDetail";
@@ -20,14 +21,14 @@ const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent"
 const CATS = ["FOH", "BOH", "All", "Management"];
 const ICONS = ["🌅", "🌙", "⭐", "🤝", "🍔", "🥗", "🍳", "🔥", "🛡️", "☕", "🏭", "👑", "📋", "🧂"];
 const MOD_COLORS = [["Amber", "#fef3c7"], ["Purple", "#ede9fe"], ["Yellow", "#fef9c3"], ["Green", "#dcfce7"], ["Red", "#fee2e2"], ["Blue", "#e0f2fe"], ["Cyan", "#cffafe"], ["Pink", "#fce7f3"]];
-const blankModule = () => ({ id: null, venueId: "", title: "", cat: "FOH", stationId: "", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", link: "", mandatory: false, steps: [{ heading: "Procedure", items: [] }], images: [] });
+const blankModule = () => ({ id: null, venueId: "", title: "", cat: "FOH", stationId: "", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", link: "", mandatory: false, steps: [{ heading: "Procedure", items: [] }], images: [], autoRoles: [] });
 const stepsToEditor = (steps) => (Array.isArray(steps) && steps.length ? steps.map((s) => ({ heading: s.heading || "", items: s.items || [] })) : [{ heading: "Procedure", items: [] }]);
 const editorToSteps = (steps) => (steps || [])
   .map((s) => ({ heading: (s.heading || "").trim(), items: (s.items || []).filter(hasText) }))
   .filter((s) => s.heading || s.items.length);
 
 export default function TrainingPage() {
-  const { groupId, staff, scopedStaff: roleStaff, venues, modules, assignments, stations, selectedVenue, matchVenue, showToast, can, me } = useRG();
+  const { groupId, staff, scopedStaff: roleStaff, venues, modules, assignments, stations, roles, selectedVenue, matchVenue, showToast, can, me } = useRG();
   const canEdit = can("training", "edit");
   const [tab, setTab] = useState("mine");
   const [openAssign, setOpenAssign] = useState(null); // assignment id
@@ -95,6 +96,7 @@ export default function TrainingPage() {
         notes: form.notes.trim(), ...snapshotForAssign(mod), status: "Not started", progress: 0, createdAt: serverTimestamp(),
       });
       showToast("Training module assigned — staff notified");
+      sendNotification(groupId, { to: form.staffId, type: "training", title: "Training assigned", body: `"${mod?.title || ""}"${form.due ? ` · due ${form.due}` : ""}`, venueId: mod.venueId, by: me?.displayName || me?.name || "" });
       setForm({ staffId: "", moduleId: "", due: "", priority: "normal", notes: "" });
     } catch { showToast("Could not assign module"); }
   };
@@ -103,7 +105,7 @@ export default function TrainingPage() {
   const [modEditor, setModEditor] = useState(null);
   const setM = (k) => (e) => setModEditor((p) => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
   const openNewModule = () => setModEditor({ ...blankModule(), venueId: selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || "") });
-  const openEditModule = (m) => { setDetail(null); setModEditor({ id: m.id, venueId: m.venueId || "", title: m.title, cat: m.cat, stationId: m.stationId || "", duration: m.duration, icon: m.icon, color: m.color, desc: m.desc || "", link: m.link || "", mandatory: !!m.mandatory, steps: stepsToEditor(m.steps), images: m.images || [] }); };
+  const openEditModule = (m) => { setDetail(null); setModEditor({ id: m.id, venueId: m.venueId || "", title: m.title, cat: m.cat, stationId: m.stationId || "", duration: m.duration, icon: m.icon, color: m.color, desc: m.desc || "", link: m.link || "", mandatory: !!m.mandatory, steps: stepsToEditor(m.steps), images: m.images || [], autoRoles: m.autoAssign?.roles || [] }); };
   // step-section editing
   const setStep = (i, k) => (e) => setModEditor((p) => ({ ...p, steps: p.steps.map((s, idx) => idx === i ? { ...s, [k]: e.target.value } : s) }));
   const setStepItems = (i) => (items) => setModEditor((p) => ({ ...p, steps: p.steps.map((s, idx) => idx === i ? { ...s, items } : s) }));
@@ -116,7 +118,7 @@ export default function TrainingPage() {
     const venueNameStr = venues.find((v) => v.id === vid)?.name || "";
     const steps = editorToSteps(modEditor.steps);
     const stn = stations.find((s) => s.id === modEditor.stationId && s.venueId === vid);
-    const payload = { title: modEditor.title.trim(), cat: modEditor.cat, stationId: stn?.id || "", station: stn?.name || "", venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), link: (modEditor.link || "").trim(), mandatory: modEditor.mandatory, steps, images: modEditor.images || [] };
+    const payload = { title: modEditor.title.trim(), cat: modEditor.cat, stationId: stn?.id || "", station: stn?.name || "", venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), link: (modEditor.link || "").trim(), mandatory: modEditor.mandatory, steps, images: modEditor.images || [], autoAssign: { roles: modEditor.autoRoles || [] } };
     try {
       if (modEditor.id) { await updateDoc(doc(venueTrainingCol(groupId, vid), modEditor.id), payload); showToast("Module updated"); }
       else { await addDoc(venueTrainingCol(groupId, vid), payload); showToast("Module created"); }
@@ -366,6 +368,18 @@ export default function TrainingPage() {
             </div>
             <div className="form-group"><label className="form-label">Description</label><textarea className="form-input" rows={2} value={modEditor.desc} onChange={setM("desc")} /></div>
             <div className="form-group"><label className="form-label">External training link (optional — redirect to another platform)</label><input className="form-input" value={modEditor.link} onChange={setM("link")} placeholder="https://... (course on another platform)" /></div>
+
+            {/* Auto-assign by role — anyone rostered with one of these roles gets this module (once) */}
+            <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 12 }}>
+              <label className="form-label">Auto-assign to roles (optional) — staff rostered with these roles get this module automatically</label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {(roles || []).map((r) => (
+                  <button key={r} type="button" className="btn btn-sm"
+                    onClick={() => setModEditor((p) => ({ ...p, autoRoles: p.autoRoles.includes(r) ? p.autoRoles.filter((x) => x !== r) : [...p.autoRoles, r] }))}
+                    style={modEditor.autoRoles.includes(r) ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{r}</button>
+                ))}
+              </div>
+            </div>
 
             {/* Step sections — matches the module detail layout */}
             <div className="form-group">

@@ -3,6 +3,7 @@ import { onSnapshot } from "firebase/firestore";
 import { useSelector } from "react-redux";
 import {
   groupDoc, venuesCol, venueCol, staffCol, announcementsCol, messagesCol, PER_VENUE_COLLECTIONS,
+  notificationsCol,
 } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForRole, hasLevel, DEFAULT_ROLES } from "./rgConfig";
 
@@ -45,6 +46,7 @@ export function RGProvider({ children }) {
   const [staff, setStaff] = useState([]); // GROUP-LEVEL (multi-venue via venueIds)
   const [announcements, setAnnouncements] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   // pv[collection][venueId] = rows[]  — the rest is per-venue
   const [pv, setPv] = useState({});
   const [selectedVenue, setSelectedVenue] = useState("all"); // "all" | venueId
@@ -60,6 +62,7 @@ export function RGProvider({ children }) {
       subColl(staffCol(groupId), setStaff),
       subColl(announcementsCol(groupId), setAnnouncements),
       subColl(messagesCol(groupId), setMessages),
+      subColl(notificationsCol(groupId), setNotifications),
     ];
     const t = setTimeout(() => setLoading(false), 600);
     return () => { clearTimeout(t); unsubs.forEach((u) => u && u()); };
@@ -160,14 +163,30 @@ export function RGProvider({ children }) {
     return dm + ann + grp;
   }, [messages, announcements, staff, me, myVenueId, venues]);
 
+  // In-app notification feed: addressed to me, to managers (if I am one), or to everyone.
+  const myNotifications = useMemo(() => {
+    const myId = myStaff?.id || me?.uid || me?.id || null;
+    if (!myId) return [];
+    const mgr = myScope !== "staff";
+    return notifications
+      .filter((n) => n.to === "all" || n.to === myId || (n.to === "managers" && mgr))
+      .sort((a, b) => (b.at?.seconds || 0) - (a.at?.seconds || 0))
+      .slice(0, 80);
+  }, [notifications, myStaff, myScope, me]);
+  const unreadNotifications = useMemo(() => {
+    const myId = myStaff?.id || me?.uid || me?.id || null;
+    if (!myId) return 0;
+    return myNotifications.filter((n) => !(n.readBy || []).includes(myId)).length;
+  }, [myNotifications, myStaff, me]);
+
   const value = useMemo(() => ({
     groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles,
-    announcements, messages, unreadMessages,
+    announcements, messages, unreadMessages, myNotifications, unreadNotifications,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, showToast,
   }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles,
-      announcements, messages, unreadMessages,
+      announcements, messages, unreadMessages, myNotifications, unreadNotifications,
       selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, showToast]);
 
   return (

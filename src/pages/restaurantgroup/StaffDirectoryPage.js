@@ -7,6 +7,7 @@ import { useRG } from "./RGContext";
 import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
+import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
 import Turning18Alert from "./Turning18Alert";
@@ -416,6 +417,7 @@ export default function StaffDirectoryPage() {
           });
         }
         showToast(`Assigned ${picked.length} module(s)`);
+        sendNotification(groupId, { to: profile.id, type: "training", title: "Training assigned", body: `${picked.length} module(s) assigned to you${assignDue ? ` · due ${assignDue}` : ""}`, by: actorName });
       } else {
         for (const key of picked) {
           const c = eligibleChecklists.find((x) => `${x.venueId}:${x.id}` === key);
@@ -427,6 +429,7 @@ export default function StaffDirectoryPage() {
           });
         }
         showToast(`Assigned ${picked.length} checklist(s)`);
+        sendNotification(groupId, { to: profile.id, type: "checklist", title: "Checklists assigned", body: `${picked.length} checklist(s) assigned to you`, by: actorName });
       }
       setAssignKind(null);
     } catch { showToast("Could not assign"); }
@@ -837,7 +840,7 @@ export default function StaffDirectoryPage() {
         <AssignmentDetail assignment={openAssignment} liveModule={modules.find((m) => m.id === openAssignment.moduleId) || modules.find((m) => m.title === openAssignment.moduleTitle && m.venueId === openAssignment.venueId)} groupId={groupId} canTick={canEdit} canVerify={can("training", "edit")} canComment={can("training", "edit")} actorName={actorName} showToast={showToast} onClose={() => setOpenAssignId(null)} />
       )}
       {openChecklistAssignment && (
-        <ChecklistAssignmentDetail assignment={openChecklistAssignment} liveChecklist={checklists.find((c) => c.id === openChecklistAssignment.checklistId) || checklists.find((c) => c.title === openChecklistAssignment.checklistTitle && c.venueId === openChecklistAssignment.venueId)} groupId={groupId} canTick={canEdit} canComment={canEdit} showToast={showToast} onClose={() => setOpenChecklistId(null)} />
+        <ChecklistAssignmentDetail assignment={openChecklistAssignment} liveChecklist={checklists.find((c) => c.id === openChecklistAssignment.checklistId) || checklists.find((c) => c.title === openChecklistAssignment.checklistTitle && c.venueId === openChecklistAssignment.venueId)} groupId={groupId} canTick={canEdit} canComment={canEdit} actorName={actorName} showToast={showToast} onClose={() => setOpenChecklistId(null)} />
       )}
     </>
   );

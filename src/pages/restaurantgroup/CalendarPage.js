@@ -13,6 +13,8 @@ const shortRole = (r) => (r || "").replace(/^(FOH|BOH) — /, "");
 export default function CalendarPage() {
   const { shifts, leave, assignments, venues, staff, scopedStaff, myStaff, myScope, selectedVenue, can } = useRG();
   const [monthOffset, setMonthOffset] = useState(0);
+  const [view, setView] = useState("month"); // "month" | "week"
+  const [weekOffset, setWeekOffset] = useState(0);
   const [dayOpen, setDayOpen] = useState(null); // a Date
 
   const today = new Date();
@@ -62,6 +64,16 @@ export default function CalendarPage() {
     return arr;
   }, [year, month]);
 
+  // week view: the 7 days of the (Mon-first) week at weekOffset
+  const weekDays = useMemo(() => {
+    const start = new Date();
+    const dow = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - dow + weekOffset * 7);
+    start.setHours(0, 0, 0, 0);
+    return Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+  }, [weekOffset]);
+  const weekLabel = `${weekDays[0].getDate()} ${MONTHS[weekDays[0].getMonth()]} – ${weekDays[6].getDate()} ${MONTHS[weekDays[6].getMonth()]} ${weekDays[6].getFullYear()}`;
+
   const isStaff = myScope === "staff";
   const Chip = ({ bg, color, children, title }) => (
     <div title={title} style={{ background: bg, color, fontSize: 10, borderRadius: 4, padding: "1px 4px", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{children}</div>
@@ -77,14 +89,51 @@ export default function CalendarPage() {
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button className="btn btn-sm" onClick={() => setMonthOffset((o) => o - 1)}>← Prev</button>
-          <span style={{ fontSize: 15, fontWeight: 700, minWidth: 170, textAlign: "center" }}>{MONTHS[month]} {year}</span>
-          <button className="btn btn-sm" onClick={() => setMonthOffset((o) => o + 1)}>Next →</button>
-          {monthOffset !== 0 && <button className="btn btn-sm" onClick={() => setMonthOffset(0)}>Today</button>}
+          <button className="btn btn-sm" onClick={() => (view === "month" ? setMonthOffset((o) => o - 1) : setWeekOffset((o) => o - 1))}>← Prev</button>
+          <span style={{ fontSize: 15, fontWeight: 700, minWidth: 190, textAlign: "center" }}>{view === "month" ? `${MONTHS[month]} ${year}` : weekLabel}</span>
+          <button className="btn btn-sm" onClick={() => (view === "month" ? setMonthOffset((o) => o + 1) : setWeekOffset((o) => o + 1))}>Next →</button>
+          {(monthOffset !== 0 || weekOffset !== 0) && <button className="btn btn-sm" onClick={() => { setMonthOffset(0); setWeekOffset(0); }}>Today</button>}
+          <div className="tabs" style={{ marginLeft: 6 }}>
+            {[["week", "Week"], ["month", "Month"]].map(([v, l]) => (
+              <button key={v} className={`tab ${view === v ? "active" : ""}`} onClick={() => setView(v)}>{l}</button>
+            ))}
+          </div>
         </div>
         <div style={{ fontSize: 12, color: "var(--gray)" }}>{isStaff ? "Your schedule" : "Team schedule"} · shifts, approved leave & training due</div>
       </div>
 
+      {view === "week" && (
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)" }}>
+            {weekDays.map((d) => {
+              const k = dayKey(d);
+              return (
+                <div key={k} style={{ padding: "8px 6px", textAlign: "center", fontSize: 11, fontWeight: 700, color: k === todayKey ? "var(--red)" : "var(--gray)", background: "var(--gray-light)", borderBottom: "0.5px solid var(--border)" }}>
+                  {DOW[(d.getDay() + 6) % 7]} {d.getDate()} {MONTHS[d.getMonth()]}
+                </div>
+              );
+            })}
+            {weekDays.map((d) => {
+              const k = dayKey(d);
+              const { sh, lv, tr, bd } = eventsFor(d);
+              const items = [
+                ...bd.map((s) => ({ t: `🎂 ${nameOf(s.id)}`, bg: "#fce7f3", color: "#9d174d" })),
+                ...sh.sort((a, b) => (a.start || "").localeCompare(b.start || "")).map((s) => ({ t: `${s.start}–${s.end} ${isStaff ? "" : nameOf(s.staffId)}${s.station ? ` · ${s.station}` : ""}`, bg: "var(--blue-light)", color: "var(--ink)" })),
+                ...lv.map((l) => ({ t: `${isStaff ? "" : nameOf(l.staffId) + " "}${l.type}`, bg: "var(--amber-light)", color: "var(--ink)" })),
+                ...tr.map((a) => ({ t: `${a.moduleTitle} due${isStaff ? "" : ` · ${nameOf(a.staffId)}`}`, bg: "#fee2e2", color: "#991b1b" })),
+              ];
+              return (
+                <div key={k} onClick={() => setDayOpen(d)} style={{ minHeight: 260, padding: 6, borderRight: "0.5px solid var(--gray-light)", cursor: "pointer", background: k === todayKey ? "rgba(192,57,43,0.05)" : "#fff" }}>
+                  {items.length === 0 && <div style={{ fontSize: 10, color: "var(--gray)", textAlign: "center", marginTop: 16 }}>—</div>}
+                  {items.map((it, j) => <Chip key={j} bg={it.bg} color={it.color}>{it.t}</Chip>)}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {view === "month" && (
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)" }}>
           {DOW.map((d) => <div key={d} style={{ padding: "8px 6px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "var(--gray)", background: "var(--gray-light)", borderBottom: "0.5px solid var(--border)" }}>{d}</div>)}
@@ -108,6 +157,7 @@ export default function CalendarPage() {
           })}
         </div>
       </div>
+      )}
 
       <div style={{ display: "flex", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
         {[["var(--blue-light)", "Shift"], ["var(--amber-light)", "Approved leave"], ["#fee2e2", "Training due"], ["#fce7f3", "Birthday 🎂"]].map(([bg, l]) => (
