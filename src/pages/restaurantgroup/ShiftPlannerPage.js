@@ -4,6 +4,7 @@ import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
 import StaffCapabilityCard from "./StaffCapabilityCard";
+import { checkAndCreateShiftAssignments } from "./checklistShiftUtils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const FULL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -68,7 +69,7 @@ const AREA_GROUPS = [
 ];
 
 export default function ShiftPlannerPage() {
-  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope } = useRG();
   const canEdit = can("shifts", "edit");
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
@@ -172,15 +173,22 @@ export default function ShiftPlannerPage() {
     const type = parseTime(form.start) >= 15 ? "evening" : "morning";
     const station = stations.find((s) => s.id === form.stationId && s.venueId === venue.id);
     try {
-      await addDoc(venueCol(groupId, venue.id, "shifts"), {
+      const shiftData = {
         staffId: form.staffId, staffName: fullName(st),
         day: dayIdx, start: form.start, end: form.end, role: form.role,
         venueId: venue.id, venue: venue.name,
         stationId: station?.id || "", station: station?.name || "",
         type, notes: form.notes.trim(), weekKey: wk, published: true,
-        createdAt: serverTimestamp(),
-      });
+      };
+      const created = await addDoc(venueCol(groupId, venue.id, "shifts"), { ...shiftData, createdAt: serverTimestamp() });
       showToast("Shift saved");
+      // slot-linked checklist auto-assignment — separate async op, NEVER blocks the shift save
+      checkAndCreateShiftAssignments(shiftData, created.id, groupId, checklists)
+        .then((r) => {
+          if (r.created) showToast(`${r.created} checklist(s) auto-assigned for this shift`);
+          else if (r.errors.length) showToast("Shift saved — checklist auto-assign failed");
+        })
+        .catch(() => showToast("Shift saved — checklist auto-assign failed"));
       setModal(null);
     } catch (e) { showToast("Could not save shift"); }
   };

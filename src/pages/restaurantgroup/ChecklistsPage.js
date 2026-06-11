@@ -29,12 +29,12 @@ const pushHist = (c) => {
 const areaOf = (c) => c.area || (/\bboh\b|kitchen|grill|fry|wash|prep|cook|dressing/i.test(c.title || "") ? "BOH" : /\bfoh\b|floor|barista|bar|counter|service|opening|closing/i.test(c.title || "") ? "FOH" : "All");
 const nowHHMM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const fmt12 = (t) => { if (!t) return ""; const [h, m] = t.split(":").map(Number); const ap = h >= 12 ? "pm" : "am"; const h12 = h % 12 || 12; return `${h12}:${String(m).padStart(2, "0")}${ap}`; };
-const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "Opening", area: "FOH", stationId: "", time: "", items: [], days: [], images: [], frequency: "daily", scheduleDay: "mon", scheduleDate: 1, autoRoles: [], autoShiftStart: "" });
+const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "Opening", area: "FOH", stationId: "", time: "", items: [], days: [], images: [], frequency: "daily", scheduleDay: "mon", scheduleDate: 1, autoRoles: [], autoShiftStart: "", shiftLinks: [], recurring: true });
 // shift start times offered for auto-assign linking (mirrors ShiftPlanner STARTS)
 const AUTO_STARTS = ["", "7:00am", "7:30am", "8:00am", "9:00am", "10:00am", "11:00am", "12:00pm", "3:00pm", "4:00pm", "5:00pm", "6:00pm"];
 
 export default function ChecklistsPage() {
-  const { groupId, venues, staff, checklists, checklistAssignments, stations, roles, selectedVenue, showToast, can, me } = useRG();
+  const { groupId, venues, staff, checklists, checklistAssignments, stations, roles, shifts, selectedVenue, showToast, can, me } = useRG();
   const canEdit = can("checklists", "edit");
   const [venueTab, setVenueTab] = useState(selectedVenue === "all" ? (venues[0]?.id || "") : selectedVenue);
   const [typeFilter, setTypeFilter] = useState("All checklists");
@@ -99,9 +99,26 @@ export default function ChecklistsPage() {
   const [editor, setEditor] = useState(null);
   const setEd = (k) => (e) => setEditor((p) => ({ ...p, [k]: e.target.value }));
   const openNew = () => setEditor(blankForm(venueTab));
-  const openEdit = (c) => setEditor({ id: c.id, title: c.title, sub: c.sub || "", venueId: c.venueId, type: c.type, area: areaOf(c), stationId: c.stationId || "", time: c.time || "", items: c.items || [], days: c.days || [], images: c.images || [], frequency: c.frequency || "daily", scheduleDay: c.scheduleDay || "mon", scheduleDate: c.scheduleDate || 1, autoRoles: c.autoAssign?.roles || [], autoShiftStart: c.autoAssign?.shiftStart || "" });
+  const openEdit = (c) => setEditor({ id: c.id, title: c.title, sub: c.sub || "", venueId: c.venueId, type: c.type, area: areaOf(c), stationId: c.stationId || "", time: c.time || "", items: c.items || [], days: c.days || [], images: c.images || [], frequency: c.frequency || "daily", scheduleDay: c.scheduleDay || "mon", scheduleDate: c.scheduleDate || 1, autoRoles: c.autoAssign?.roles || [], autoShiftStart: c.autoAssign?.shiftStart || "", shiftLinks: c.shiftLinks || [], recurring: c.recurring !== false });
   const toggleAutoRole = (r) => setEditor((p) => ({ ...p, autoRoles: p.autoRoles.includes(r) ? p.autoRoles.filter((x) => x !== r) : [...p.autoRoles, r] }));
   const toggleDay = (d) => setEditor((p) => ({ ...p, days: p.days.includes(d) ? p.days.filter((x) => x !== d) : [...p.days, d] }));
+  const toggleShiftLink = (slot) => setEditor((p) => {
+    const has = (p.shiftLinks || []).some((l) => l.day === slot.day && l.start === slot.start);
+    return { ...p, shiftLinks: has ? p.shiftLinks.filter((l) => !(l.day === slot.day && l.start === slot.start)) : [...(p.shiftLinks || []), slot] };
+  });
+  // unique day+start slots that exist in this venue's roster, sorted Mon→Sun then by start time
+  const SLOT_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const slot24 = (t) => { const m = /(\d+):(\d+)(am|pm)/i.exec(t || ""); if (!m) return 0; let h = parseInt(m[1], 10) % 12; if (/pm/i.test(m[3])) h += 12; return h * 60 + parseInt(m[2], 10); };
+  const venueShiftSlots = useMemo(() => {
+    if (!editor) return [];
+    const seen = new Map();
+    (shifts || []).filter((sh) => sh.venueId === editor.venueId && typeof sh.day === "number" && sh.start).forEach((sh) => {
+      const day = SLOT_DAYS[sh.day];
+      const key = `${day}|${sh.start}`;
+      if (day && !seen.has(key)) seen.set(key, { day, start: sh.start, label: sh.role || "" });
+    });
+    return [...seen.values()].sort((a, b) => (SLOT_DAYS.indexOf(a.day) - SLOT_DAYS.indexOf(b.day)) || (slot24(a.start) - slot24(b.start)));
+  }, [shifts, editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveChecklist = async () => {
     if (!editor.title.trim()) return showToast("Title required");
@@ -117,6 +134,9 @@ export default function ChecklistsPage() {
       scheduleDay: editor.scheduleDay || "mon",
       scheduleDate: Math.max(1, Math.min(28, Number(editor.scheduleDate) || 1)),
       autoAssign: { roles: editor.autoRoles || [], shiftStart: editor.autoShiftStart || "" },
+      // slot links (#shiftLinks): the single source of truth for shift-triggered assignment
+      shiftLinks: editor.shiftLinks || [],
+      recurring: editor.recurring !== false,
     };
     try {
       if (editor.id) {
@@ -359,6 +379,30 @@ export default function ChecklistsPage() {
                 <div style={{ fontSize: 10, color: "var(--gray)" }}>
                   {editor.autoRoles.length ? "Assigned automatically to matching staff on the scheduled day (3am Sydney). You can also assign manually anytime to override." : "Pick at least one role, or it will default to managers on the scheduled day."}
                 </div>
+              )}
+            </div>
+            {/* Slot links — assignment follows the shift slot, not the person */}
+            <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 12 }}>
+              <label className="form-label">LINK TO SHIFTS — CHECKLIST APPEARS WHEN THIS SHIFT IS PUBLISHED</label>
+              {venueShiftSlots.length === 0 ? (
+                <div style={{ fontSize: 11, color: "var(--gray)" }}>No shifts found for this venue. Add shifts in the Shift Planner first.</div>
+              ) : (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                  {venueShiftSlots.map((slot) => {
+                    const on = (editor.shiftLinks || []).some((l) => l.day === slot.day && l.start === slot.start);
+                    return (
+                      <button key={`${slot.day}|${slot.start}`} type="button" className="btn btn-sm" title={slot.label} onClick={() => toggleShiftLink(slot)}
+                        style={on ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{slot.day} {slot.start}</button>
+                    );
+                  })}
+                </div>
+              )}
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginTop: 4 }}>
+                <input type="checkbox" checked={editor.recurring !== false} onChange={(e) => setEditor((p) => ({ ...p, recurring: e.target.checked }))} />
+                Recurring — recreate this assignment every week when the shift publishes
+              </label>
+              {(editor.shiftLinks || []).length > 0 && (editor.autoRoles || []).length > 0 && (
+                <div style={{ fontSize: 10, color: "var(--amber)", marginTop: 6 }}>⚠ Shift links take over: role auto-assign is skipped for checklists with shift links.</div>
               )}
             </div>
             <div className="form-group"><label className="form-label">Items — add each separately, format with the toolbar</label>
