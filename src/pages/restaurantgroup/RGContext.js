@@ -4,6 +4,7 @@ import { useSelector } from "react-redux";
 import {
   groupDoc, venuesCol, venueCol, staffCol, announcementsCol, messagesCol, PER_VENUE_COLLECTIONS,
   notificationsCol,
+  inventoryItemsCol, menuItemsCol, recipesCol, modifierGroupsCol, suppliersCol, purchaseOrdersCol,
 } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForRole, hasLevel, DEFAULT_ROLES } from "./rgConfig";
 
@@ -47,6 +48,14 @@ export function RGProvider({ children }) {
   const [announcements, setAnnouncements] = useState([]);
   const [messages, setMessages] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  // Stock module — group-level shared definitions (item library is one master
+  // list across venues; per-venue quantities live in pv.stock below).
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
+  const [recipes, setRecipes] = useState([]);
+  const [modifierGroups, setModifierGroups] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
   // pv[collection][venueId] = rows[]  — the rest is per-venue
   const [pv, setPv] = useState({});
   const [selectedVenue, setSelectedVenue] = useState("all"); // "all" | venueId
@@ -63,6 +72,12 @@ export function RGProvider({ children }) {
       subColl(announcementsCol(groupId), setAnnouncements),
       subColl(messagesCol(groupId), setMessages),
       subColl(notificationsCol(groupId), setNotifications),
+      subColl(inventoryItemsCol(groupId), setInventoryItems),
+      subColl(menuItemsCol(groupId), setMenuItems),
+      subColl(recipesCol(groupId), setRecipes),
+      subColl(modifierGroupsCol(groupId), setModifierGroups),
+      subColl(suppliersCol(groupId), setSuppliers),
+      subColl(purchaseOrdersCol(groupId), setPurchaseOrders),
     ];
     const t = setTimeout(() => setLoading(false), 600);
     return () => { clearTimeout(t); unsubs.forEach((u) => u && u()); };
@@ -104,6 +119,7 @@ export function RGProvider({ children }) {
   const modules = useMemo(() => flat("trainingModules"), [pv.trainingModules]); // eslint-disable-line react-hooks/exhaustive-deps
   const stations = useMemo(() => flat("stations", "order"), [pv.stations]); // eslint-disable-line react-hooks/exhaustive-deps
   const equipment = useMemo(() => flat("equipment", "order"), [pv.equipment]); // eslint-disable-line react-hooks/exhaustive-deps
+  const stock = useMemo(() => flat("stock"), [pv.stock]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => (group?.roles?.length ? group.roles : DEFAULT_ROLES), [group]);
 
   // ── Toast ─────────────────────────────────────────────
@@ -182,11 +198,13 @@ export function RGProvider({ children }) {
   const value = useMemo(() => ({
     groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles,
     announcements, messages, unreadMessages, myNotifications, unreadNotifications,
+    inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, showToast,
   }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles,
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
+      inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
       selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, showToast]);
 
   return (

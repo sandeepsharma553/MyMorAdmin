@@ -10,6 +10,9 @@ import UserManagementPage from "../pages/restaurantgroup/UserManagementPage";
 import MessagingPage from "../pages/restaurantgroup/MessagingPage";
 import CalendarPage from "../pages/restaurantgroup/CalendarPage";
 import SettingsPage from "../pages/restaurantgroup/SettingsPage";
+import StockPage from "../pages/restaurantgroup/StockPage";
+import MenusPage from "../pages/restaurantgroup/MenusPage";
+import SupplierPage from "../pages/restaurantgroup/SupplierPage";
 import ProtectedRoute from "../pages/restaurantgroup/ProtectedRoute";
 
 const P = (moduleKey, El) => <ProtectedRoute moduleKey={moduleKey}>{El}</ProtectedRoute>;
@@ -24,6 +27,9 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/checklists" element={P("checklists", <ChecklistsPage />)} />
       <Route path="/rg/temperature" element={P("temperature", <TemperatureLogPage />)} />
       <Route path="/rg/performance" element={P("performance", <PerformancePage />)} />
+      <Route path="/rg/stock" element={P("stock", <StockPage />)} />
+      <Route path="/rg/menus" element={P("menus", <MenusPage />)} />
+      <Route path="/rg/supplier" element={P("supplier", <SupplierPage />)} />
       <Route path="/rg/messages" element={P("messages", <MessagingPage />)} />
       <Route path="/rg/calendar" element={P("calendar", <CalendarPage />)} />
       <Route path="/rg/users" element={P("usermgmt", <UserManagementPage />)} />

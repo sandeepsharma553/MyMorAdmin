@@ -39,9 +39,13 @@ export const venueTrainingCol = (groupId, venueId) => venueCol(groupId, venueId,
 // Collections stored per-venue (subscribed & merged by the context).
 // NB: `staff` is GROUP-LEVEL (a staff member can belong to multiple venues via
 // venueIds), so it is NOT in this list — see staffCol() below.
+// NB: `stockMovements`, `stocktakes` and `batches` are also per-venue but are
+// NOT in this list — they grow without bound, so pages subscribe to them
+// directly with query limits (same precedent as tempLogs).
 export const PER_VENUE_COLLECTIONS = [
   "shifts", "leaveRequests", "checklists", "stations", "equipment",
   "performanceNotes", "trainingModules", "trainingAssignments", "checklistAssignments", "kpis",
+  "stock",
 ];
 
 // A staff member belongs to one venue or many: matches when venueIds includes
@@ -64,6 +68,29 @@ export const conversationsCol = (groupId) => groupCol(groupId, "conversations");
 export const notificationsCol = (groupId) => groupCol(groupId, "notifications");
 // Deterministic conversation id for a pair of staff ids (order-independent).
 export const convId = (a, b) => [String(a), String(b)].sort().join("__");
+
+/* ── Stock Management + Menus + Supplier Ordering (module #2) ──────────
+ * Item DEFINITIONS are group-level (one master library across venues);
+ * stock QUANTITY/status is per-venue at /venues/{v}/stock/{itemId} (same
+ * doc id as the inventory item, so the two join trivially).            */
+export const inventoryItemsCol = (groupId) => groupCol(groupId, "inventoryItems");
+export const inventoryItemDoc = (groupId, itemId) => doc(inventoryItemsCol(groupId), String(itemId));
+export const menuItemsCol = (groupId) => groupCol(groupId, "menuItems"); // shared with POS Settings
+export const menuItemDoc = (groupId, menuItemId) => doc(menuItemsCol(groupId), String(menuItemId));
+export const recipesCol = (groupId) => groupCol(groupId, "recipes");
+export const recipeDoc = (groupId, recipeId) => doc(recipesCol(groupId), String(recipeId));
+export const modifierGroupsCol = (groupId) => groupCol(groupId, "modifierGroups"); // shared with POS Settings
+export const modifierGroupDoc = (groupId, id) => doc(modifierGroupsCol(groupId), String(id));
+export const suppliersCol = (groupId) => groupCol(groupId, "suppliers");
+export const supplierDoc = (groupId, supplierId) => doc(suppliersCol(groupId), String(supplierId));
+export const purchaseOrdersCol = (groupId) => groupCol(groupId, "purchaseOrders");
+export const purchaseOrderDoc = (groupId, poId) => doc(purchaseOrdersCol(groupId), String(poId));
+// Per-venue stock state + audit collections.
+export const stockCol = (groupId, venueId) => venueCol(groupId, venueId, "stock");
+export const stockDoc = (groupId, venueId, itemId) => doc(stockCol(groupId, venueId), String(itemId));
+export const stockMovementsCol = (groupId, venueId) => venueCol(groupId, venueId, "stockMovements");
+export const stocktakesCol = (groupId, venueId) => venueCol(groupId, venueId, "stocktakes");
+export const batchesCol = (groupId, venueId) => venueCol(groupId, venueId, "batches");
 
 // Brand colours for the first client's venues; any other venue gets a stable colour
 // derived from its name (so new/renamed venues aren't all grey).

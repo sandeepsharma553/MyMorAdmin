@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import {
-  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell,
+  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck,
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
 import { markNotificationRead } from "../pages/restaurantgroup/notify";
@@ -18,6 +18,9 @@ const NAV = [
   { key: "training", path: "/rg/training", label: "Training", Icon: GraduationCap, title: "Training & Development" },
   { key: "checklists", path: "/rg/checklists", label: "SOPs & Checklists", Icon: CheckSquare, title: "SOPs & Checklists" },
   { key: "temperature", path: "/rg/temperature", label: "Temperature Log", Icon: Thermometer, title: "Temperature Log" },
+  { key: "stock", path: "/rg/stock", label: "Stock", Icon: Package, title: "Stock Management" },
+  { key: "menus", path: "/rg/menus", label: "Menus", Icon: UtensilsCrossed, title: "Menus" },
+  { key: "supplier", path: "/rg/supplier", label: "Supplier Ordering", Icon: Truck, title: "Supplier Ordering" },
   { key: "performance", path: "/rg/performance", label: "Performance", Icon: BarChart3, title: "Performance" },
   { key: "messages", path: "/rg/messages", label: "Messages", Icon: MessageCircle, title: "Messages" },
   { key: "calendar", path: "/rg/calendar", label: "Calendar", Icon: CalendarRange, title: "Calendar" },
@@ -114,6 +117,7 @@ function Shell({ children }) {
   const dispatch = useDispatch();
   const {
     group, venues, staff, leave, assignments, unreadMessages,
+    stock, purchaseOrders,
     selectedVenue, setSelectedVenue, selectedVenueName, can,
   } = useRG();
 
@@ -128,6 +132,8 @@ function Shell({ children }) {
     () => assignments.filter((a) => a.status !== "Complete").length,
     [assignments]
   );
+  const criticalStock = useMemo(() => stock.filter((s) => s.status === "critical").length, [stock]);
+  const draftPOs = useMemo(() => purchaseOrders.filter((p) => p.status === "draft").length, [purchaseOrders]);
 
   const groupName = group?.name || "Group Operations";
   const initials = groupName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -152,7 +158,7 @@ function Shell({ children }) {
         <div className="nav-section">
           <div className="nav-label">Operations</div>
           {visibleNav.map(({ key, path, label, Icon }) => {
-            const badge = key === "leave" ? pendingLeave : key === "training" ? openTraining : key === "messages" ? unreadMessages : 0;
+            const badge = key === "leave" ? pendingLeave : key === "training" ? openTraining : key === "messages" ? unreadMessages : key === "stock" ? criticalStock : key === "supplier" ? draftPOs : 0;
             return (
               <button
                 key={key}
