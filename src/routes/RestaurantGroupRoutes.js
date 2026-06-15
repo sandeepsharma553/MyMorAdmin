@@ -13,6 +13,7 @@ import SettingsPage from "../pages/restaurantgroup/SettingsPage";
 import StockPage from "../pages/restaurantgroup/StockPage";
 import MenusPage from "../pages/restaurantgroup/MenusPage";
 import SupplierPage from "../pages/restaurantgroup/SupplierPage";
+import CompliancePage from "../pages/restaurantgroup/CompliancePage";
 import ProtectedRoute from "../pages/restaurantgroup/ProtectedRoute";
 
 const P = (moduleKey, El) => <ProtectedRoute moduleKey={moduleKey}>{El}</ProtectedRoute>;
@@ -30,6 +31,7 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/stock" element={P("stock", <StockPage />)} />
       <Route path="/rg/menus" element={P("menus", <MenusPage />)} />
       <Route path="/rg/supplier" element={P("supplier", <SupplierPage />)} />
+      <Route path="/rg/compliance" element={P("compliance", <CompliancePage />)} />
       <Route path="/rg/messages" element={P("messages", <MessagingPage />)} />
       <Route path="/rg/calendar" element={P("calendar", <CalendarPage />)} />
       <Route path="/rg/users" element={P("usermgmt", <UserManagementPage />)} />

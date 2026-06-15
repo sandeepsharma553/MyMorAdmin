@@ -5,6 +5,7 @@ import {
   groupDoc, venuesCol, venueCol, staffCol, announcementsCol, messagesCol, PER_VENUE_COLLECTIONS,
   notificationsCol,
   inventoryItemsCol, menuItemsCol, recipesCol, modifierGroupsCol, suppliersCol, purchaseOrdersCol,
+  awardRatesCol, complianceManualDoc, acknowledgementsCol,
 } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForRole, hasLevel, DEFAULT_ROLES } from "./rgConfig";
 
@@ -56,6 +57,11 @@ export function RGProvider({ children }) {
   const [modifierGroups, setModifierGroups] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
+  // Awards & Compliance — group-level award rates + the single versioned manual.
+  const [awardRates, setAwardRates] = useState([]);
+  const [complianceManual, setComplianceManual] = useState(null);
+  // Acknowledgements: per-staff subcollections, keyed by staffId (fan-out below).
+  const [acks, setAcks] = useState({}); // { [staffId]: [{id, ...}] }
   // pv[collection][venueId] = rows[]  — the rest is per-venue
   const [pv, setPv] = useState({});
   const [selectedVenue, setSelectedVenue] = useState("all"); // "all" | venueId
@@ -78,6 +84,8 @@ export function RGProvider({ children }) {
       subColl(modifierGroupsCol(groupId), setModifierGroups),
       subColl(suppliersCol(groupId), setSuppliers),
       subColl(purchaseOrdersCol(groupId), setPurchaseOrders),
+      subColl(awardRatesCol(groupId), setAwardRates),
+      onSnapshot(complianceManualDoc(groupId), (d) => setComplianceManual(d.exists() ? { id: d.id, ...d.data() } : null), () => setComplianceManual(null)),
     ];
     const t = setTimeout(() => setLoading(false), 600);
     return () => { clearTimeout(t); unsubs.forEach((u) => u && u()); };
@@ -164,6 +172,29 @@ export function RGProvider({ children }) {
     return myStaff ? [myStaff] : [];
   }, [staff, myStaff, isOwnerTier, isManagerTier]);
 
+  // ── Acknowledgements fan-out (compliance) ──
+  // Per-staff subcollection. Managers+ can read everyone's (overview tab); a
+  // plain staff member can read only their OWN per firestore.rules, so we
+  // subscribe only to the staff ids this caller is allowed to read — avoids a
+  // wall of permission-denied listeners. Each listener has an error callback
+  // (resets that staff's slot to []) and is unsubscribed on cleanup.
+  const ackStaffIds = useMemo(
+    () => (isOwnerTier || isManagerTier ? staff.map((s) => s.id) : (myStaff ? [myStaff.id] : [])),
+    [staff, isOwnerTier, isManagerTier, myStaff]
+  );
+  const ackStaffKey = ackStaffIds.join(",");
+  useEffect(() => {
+    if (!groupId || !ackStaffIds.length) { setAcks({}); return; }
+    const unsubs = ackStaffIds.map((sid) => onSnapshot(
+      acknowledgementsCol(groupId, sid),
+      (snap) => setAcks((prev) => ({ ...prev, [sid]: snap.docs.map((d) => ({ id: d.id, staffId: sid, ...d.data() })) })),
+      () => setAcks((prev) => ({ ...prev, [sid]: [] }))
+    ));
+    return () => unsubs.forEach((u) => u && u());
+  }, [groupId, ackStaffKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const acksByStaff = acks; // { staffId: [{id, version, ackedAt, ...}] }
+  const acknowledgements = useMemo(() => Object.values(acks).flat(), [acks]);
+
   // Unread messaging badge (direct messages addressed to me + un-acked announcements in my scope).
   const unreadMessages = useMemo(() => {
     const myUid = me?.uid || me?.id || null;
@@ -199,12 +230,14 @@ export function RGProvider({ children }) {
     groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles,
     announcements, messages, unreadMessages, myNotifications, unreadNotifications,
     inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
+    awardRates, complianceManual, acksByStaff, acknowledgements,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, showToast,
   }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles,
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
       inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
+      awardRates, complianceManual, acksByStaff, acknowledgements,
       selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, showToast]);
 
   return (

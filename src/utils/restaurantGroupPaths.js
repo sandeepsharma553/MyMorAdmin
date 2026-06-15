@@ -92,6 +92,20 @@ export const stockMovementsCol = (groupId, venueId) => venueCol(groupId, venueId
 export const stocktakesCol = (groupId, venueId) => venueCol(groupId, venueId, "stocktakes");
 export const batchesCol = (groupId, venueId) => venueCol(groupId, venueId, "batches");
 
+/* ── Awards & Compliance (module #3) ──────────────────────────────────
+ * Group-level: one wage-award doc per Fair Work code (awardRates/{code})
+ * and a single versioned manual doc (compliance/manual). Each venue
+ * selects its award via an explicit venue.awardCode field (NOT venue.type,
+ * which is the FOH|BOH|CK venue role). Per-staff acknowledgements live in a
+ * subcollection of the staff doc, keyed by manual version — so history is
+ * preserved and re-acknowledgement on a new version is one more doc.        */
+export const awardRatesCol = (groupId) => groupCol(groupId, "awardRates");
+export const awardRateDoc = (groupId, code) => doc(awardRatesCol(groupId), String(code));
+export const complianceCol = (groupId) => groupCol(groupId, "compliance");
+export const complianceManualDoc = (groupId) => doc(complianceCol(groupId), "manual");
+export const acknowledgementsCol = (groupId, staffId) => collection(staffDoc(groupId, staffId), "acknowledgements");
+export const acknowledgementDoc = (groupId, staffId, version) => doc(acknowledgementsCol(groupId, staffId), String(version));
+
 // Brand colours for the first client's venues; any other venue gets a stable colour
 // derived from its name (so new/renamed venues aren't all grey).
 export const VENUE_COLORS = {
