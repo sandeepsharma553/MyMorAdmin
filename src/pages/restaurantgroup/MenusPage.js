@@ -197,18 +197,21 @@ export default function MenusPage() {
       : <span className="pill pill-amber" style={{ cursor: canEdit ? "pointer" : "default" }} onClick={() => canEdit && openRecipe(m)}>No recipe</span>;
   };
 
-  // pricing KPIs (all ex-GST — one base, Hard Rule 8)
+  // Phase 3 — venue-aware food cost for the Pricing/Margins screen (cost at the
+  // selected venue via Phase 2 venueCost). overview/availability keep group cost.
+  const foodCostAtVenue = (m) => menuItemFoodCost(m, recipeByMenuItemId, itemById, recipeStockByItem);
+  // pricing KPIs (all ex-GST — one base, Hard Rule 8) — at the selected venue
   const pricing = useMemo(() => {
     if (!vItems.length) return { avgSell: 0, avgCost: 0, avgCostPct: 0, avgMargin: 0, below35: 0 };
     let sell = 0, cost = 0, mg = 0, below = 0;
     vItems.forEach((m) => {
-      const c = foodCostOf(m); const g = marginPct(m.sellPrice, c);
+      const c = foodCostAtVenue(m); const g = marginPct(m.sellPrice, c);
       sell += Number(m.sellPrice) || 0; cost += c; mg += g;
       if (g < 35) below++;
     });
     const n = vItems.length;
     return { avgSell: sell / n, avgCost: cost / n, avgCostPct: sell > 0 ? Math.round((cost / sell) * 100) : 0, avgMargin: Math.round(mg / n), below35: below };
-  }, [vItems, recipeByMenuItemId, itemById]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [vItems, recipeByMenuItemId, itemById, recipeStockByItem]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -418,6 +421,13 @@ export default function MenusPage() {
 
       {tab === "pricing" && (
         <>
+          <div className="card" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, color: "var(--gray)" }}>Margins at venue:</span>
+            <select className="form-input" style={{ width: 180 }} value={recipeVenue} onChange={(e) => setRecipeVenue(e.target.value)}>
+              {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+            <span style={{ fontSize: 11, color: "var(--gray)" }}>· food cost uses this venue's per-venue costs</span>
+          </div>
           <div className="grid-4" style={{ marginBottom: 16 }}>
             <div className="card"><div className="card-sub">Avg sell (ex-GST)</div><div style={{ fontSize: 22, fontWeight: 700 }}>{money(pricing.avgSell)}</div></div>
             <div className="card"><div className="card-sub">Avg food cost</div><div style={{ fontSize: 22, fontWeight: 700 }}>{money(pricing.avgCost)} <span style={{ fontSize: 12, color: "var(--gray)" }}>{pricing.avgCostPct}%</span></div></div>
@@ -430,7 +440,7 @@ export default function MenusPage() {
                 <thead><tr><th>Item</th><th>Sell inc-GST</th><th>Sell ex-GST</th><th>Food cost</th><th>Margin</th><th>Gross profit</th><th></th></tr></thead>
                 <tbody>
                   {vItems.map((m) => {
-                    const fc = foodCostOf(m);
+                    const fc = foodCostAtVenue(m);
                     const mg = marginPct(m.sellPrice, fc);
                     const gp = (Number(m.sellPrice) || 0) - fc;
                     return (

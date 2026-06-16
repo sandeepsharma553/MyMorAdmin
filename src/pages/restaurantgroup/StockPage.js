@@ -136,6 +136,7 @@ export default function StockPage() {
     id: null, name: "", sku: "", category: categories[0] || "", unit: units[0] || "kg",
     purchaseUnit: units[0] || "kg", recipeUnit: units[0] || "kg", purchaseToStock: 1, stockToRecipe: 1, yieldPercent: 100,
     supplierId: suppliers[0]?.id || "", cost: "", sell: "", gstApplicable: true, storageLocation: "",
+    itemType: "ingredient",
     venueId: selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || ""),
     qtyOnHand: "", par: "", reorderPoint: "", reorderQty: "",
   });
@@ -151,6 +152,7 @@ export default function StockPage() {
       purchaseUnit: i.purchaseUnit || i.unit || "kg", recipeUnit: i.recipeUnit || i.unit || "kg",
       purchaseToStock: i.purchaseToStock ?? 1, stockToRecipe: i.stockToRecipe ?? 1, yieldPercent: i.yieldPercent ?? 100,
       supplierId: i.supplierId || "", cost: i.cost ?? "", sell: i.sell ?? "", gstApplicable: i.gstApplicable !== false,
+      itemType: i.itemType || "ingredient",
       storageLocation: i.storageLocation || "", venueId, ...stockFieldsFor(i.id, venueId),
     });
   };
@@ -184,6 +186,7 @@ export default function StockPage() {
       purchaseToStock: posFactor(editor.purchaseToStock), stockToRecipe: posFactor(editor.stockToRecipe),
       yieldPercent: Number(editor.yieldPercent) > 0 ? Number(editor.yieldPercent) : 100,
       supplierId: editor.supplierId || null, cost: num(editor.cost), sell: num(editor.sell),
+      itemType: editor.itemType || "ingredient",
       gstApplicable: !!editor.gstApplicable, storageLocation: editor.storageLocation || "", archived: false,
       updatedAt: serverTimestamp(),
     };
@@ -328,6 +331,7 @@ export default function StockPage() {
               <tbody>
                 {rows.map((i) => {
                   const m = marginPct(i.sell, i.cost);
+                  const sellable = i.itemType === "product" || i.itemType === "both"; // sell/margin only where meaningful
                   return (
                     <tr key={i.id} onClick={() => openEdit(i)} style={{ cursor: "pointer", opacity: i.archived ? 0.5 : 1 }}>
                       <td><strong>{i.name}</strong>{i.archived ? " (archived)" : ""}<div style={{ fontSize: 11, color: "var(--gray)" }}>{i.sku}</div></td>
@@ -336,9 +340,9 @@ export default function StockPage() {
                       <td style={{ fontSize: 12 }}>{supplierById[i.supplierId]?.company || "—"}</td>
                       <td>{money(i.cost)}</td>
                       <td style={{ color: "var(--gray)" }}>{money(incGst(i.cost, i.gstApplicable !== false))}</td>
-                      <td>{Number(i.sell) > 0 ? money(i.sell) : "—"}</td>
-                      <td style={{ color: "var(--gray)" }}>{Number(i.sell) > 0 ? money(incGst(i.sell, i.gstApplicable !== false)) : "—"}</td>
-                      <td>{Number(i.sell) > 0 ? <span style={{ fontWeight: 600, color: marginColor(m) }}>{m}%</span> : "—"}</td>
+                      <td>{sellable && Number(i.sell) > 0 ? money(i.sell) : "—"}</td>
+                      <td style={{ color: "var(--gray)" }}>{sellable && Number(i.sell) > 0 ? money(incGst(i.sell, i.gstApplicable !== false)) : "—"}</td>
+                      <td>{sellable && Number(i.sell) > 0 ? <span style={{ fontWeight: 600, color: marginColor(m) }}>{m}%</span> : "—"}</td>
                       <td>
                         <strong>{i.stock.qtyOnHand}</strong> {i.unit}
                         <div style={{ width: 64, height: 4, background: "var(--gray-light)", borderRadius: 2, marginTop: 3 }}>
@@ -458,8 +462,16 @@ export default function StockPage() {
                   <option value="">—</option>
                   {locations.map((l) => <option key={l} value={l}>{l}</option>)}
                 </select></div>
+              <div><div className="form-label">Item type</div>
+                <select className="form-input" value={editor.itemType} onChange={(e) => setF("itemType", e.target.value)}>
+                  <option value="ingredient">Ingredient (used in recipes, not sold as-is)</option>
+                  <option value="product">Product (sold as-is, not a recipe ingredient)</option>
+                  <option value="both">Both (sold as-is and used as an ingredient)</option>
+                </select></div>
               <div><div className="form-label">Cost ex-GST ($)</div><input className="form-input" type="number" step="0.01" value={editor.cost} onChange={(e) => setF("cost", e.target.value)} /></div>
-              <div><div className="form-label">Sell ex-GST ($, 0 = not sold)</div><input className="form-input" type="number" step="0.01" value={editor.sell} onChange={(e) => setF("sell", e.target.value)} /></div>
+              {editor.itemType !== "ingredient" && (
+                <div><div className="form-label">Sell ex-GST ($, 0 = not sold)</div><input className="form-input" type="number" step="0.01" value={editor.sell} onChange={(e) => setF("sell", e.target.value)} /></div>
+              )}
             </div>
             <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, margin: "10px 0" }}>
               <input type="checkbox" checked={!!editor.gstApplicable} onChange={(e) => setF("gstApplicable", e.target.checked)} /> GST applies (10%)
