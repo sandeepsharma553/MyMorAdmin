@@ -129,8 +129,10 @@ export default function MenusPage() {
   // demo POS sale (the real rgSellOrder transaction)
   const [selling, setSelling] = useState("");
   const demoSell = async (m) => {
-    const venueId = selectedVenue !== "all" ? selectedVenue : (m.venueIds || [])[0];
-    if (!venueId) return showToast("Pick a venue first");
+    // Phase 0 / Fix 0.3 — require an explicit selected venue; never infer the
+    // selling location from the menu item's first venueId.
+    if (selectedVenue === "all") return showToast("Select a venue (top-right) to run a demo sale");
+    const venueId = selectedVenue;
     setSelling(m.id);
     try {
       const r = await sellOrder({ groupId, venueId, lines: [{ menuItemId: m.id, qty: 1 }], reference: `DEMO-${Date.now().toString().slice(-5)}` });
