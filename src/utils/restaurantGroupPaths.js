@@ -91,6 +91,9 @@ export const stockDoc = (groupId, venueId, itemId) => doc(stockCol(groupId, venu
 export const stockMovementsCol = (groupId, venueId) => venueCol(groupId, venueId, "stockMovements");
 export const stocktakesCol = (groupId, venueId) => venueCol(groupId, venueId, "stocktakes");
 export const batchesCol = (groupId, venueId) => venueCol(groupId, venueId, "batches");
+// Central-kitchen production log (Phase 4) — per venue, covered by the existing
+// venues/{venueId}/{coll}/{docId=**} security rule (group-member read/write).
+export const productionCol = (groupId, venueId) => venueCol(groupId, venueId, "production");
 
 /* ── Awards & Compliance (module #3) ──────────────────────────────────
  * Group-level: one wage-award doc per Fair Work code (awardRates/{code})

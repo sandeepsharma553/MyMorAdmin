@@ -97,7 +97,23 @@ export const MOVEMENT_TYPES = [
   { key: "transferIn", label: "Transfer in" },
   { key: "transferOut", label: "Transfer out" },
   { key: "stocktake", label: "Stocktake" },
+  { key: "production", label: "Production" },
 ];
+
+// Cycle-safe check: does prepped item `targetId` get consumed (directly or
+// transitively) by `recipeId`'s production tree? prodRecipeByItem maps a prepped
+// itemId -> its production recipe { ingredients:[{itemId}] }. Returns true if a cycle.
+export const productionHasCycle = (targetId, ingredients, prodRecipeByItem, seen = new Set()) => {
+  for (const ing of ingredients || []) {
+    if (!ing?.itemId) continue;
+    if (ing.itemId === targetId) return true;
+    if (seen.has(ing.itemId)) continue;
+    seen.add(ing.itemId);
+    const sub = prodRecipeByItem?.[ing.itemId];
+    if (sub && productionHasCycle(targetId, sub.ingredients, prodRecipeByItem, seen)) return true;
+  }
+  return false;
+};
 export const movementTypeLabel = (key) => MOVEMENT_TYPES.find((t) => t.key === key)?.label || key;
 export const REASON_REQUIRED_TYPES = ["manualAdj", "wastage"];
 

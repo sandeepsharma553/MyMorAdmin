@@ -4,7 +4,7 @@ import { db } from "../../firebase";
 import { useRG } from "./RGContext";
 import { inventoryItemsCol, inventoryItemDoc, stockDoc, stockMovementsCol } from "../../utils/restaurantGroupPaths";
 import { sellOrder } from "./sellOrder";
-import { StocktakeTab, PriceAdjustTab, ValuationTab, ExpiryTab, ScannerTab, AdjustmentsTab } from "./StockExtraTabs";
+import { StocktakeTab, PriceAdjustTab, ValuationTab, ExpiryTab, ScannerTab, AdjustmentsTab, ProductionTab } from "./StockExtraTabs";
 import {
   computeStockStatus, stockStatusMeta, marginPct, marginColor, pctOfPar, incGst, money,
   movementTypeLabel,
@@ -136,7 +136,7 @@ export default function StockPage() {
     id: null, name: "", sku: "", category: categories[0] || "", unit: units[0] || "kg",
     purchaseUnit: units[0] || "kg", recipeUnit: units[0] || "kg", purchaseToStock: 1, stockToRecipe: 1, yieldPercent: 100,
     supplierId: suppliers[0]?.id || "", cost: "", sell: "", gstApplicable: true, storageLocation: "",
-    itemType: "ingredient",
+    itemType: "ingredient", isPrepped: false,
     venueId: selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || ""),
     qtyOnHand: "", par: "", reorderPoint: "", reorderQty: "",
   });
@@ -152,7 +152,7 @@ export default function StockPage() {
       purchaseUnit: i.purchaseUnit || i.unit || "kg", recipeUnit: i.recipeUnit || i.unit || "kg",
       purchaseToStock: i.purchaseToStock ?? 1, stockToRecipe: i.stockToRecipe ?? 1, yieldPercent: i.yieldPercent ?? 100,
       supplierId: i.supplierId || "", cost: i.cost ?? "", sell: i.sell ?? "", gstApplicable: i.gstApplicable !== false,
-      itemType: i.itemType || "ingredient",
+      itemType: i.itemType || "ingredient", isPrepped: i.isPrepped === true,
       storageLocation: i.storageLocation || "", venueId, ...stockFieldsFor(i.id, venueId),
     });
   };
@@ -186,7 +186,7 @@ export default function StockPage() {
       purchaseToStock: posFactor(editor.purchaseToStock), stockToRecipe: posFactor(editor.stockToRecipe),
       yieldPercent: Number(editor.yieldPercent) > 0 ? Number(editor.yieldPercent) : 100,
       supplierId: editor.supplierId || null, cost: num(editor.cost), sell: num(editor.sell),
-      itemType: editor.itemType || "ingredient",
+      itemType: editor.itemType || "ingredient", isPrepped: !!editor.isPrepped,
       gstApplicable: !!editor.gstApplicable, storageLocation: editor.storageLocation || "", archived: false,
       updatedAt: serverTimestamp(),
     };
@@ -269,6 +269,7 @@ export default function StockPage() {
           <button className={`tab ${tab === "expiry" ? "active" : ""}`} onClick={() => setTab("expiry")}>Expiry & batches</button>
           <button className={`tab ${tab === "scanner" ? "active" : ""}`} onClick={() => setTab("scanner")}>Scanner</button>
           <button className={`tab ${tab === "adjustments" ? "active" : ""}`} onClick={() => setTab("adjustments")}>Adjustments</button>
+          <button className={`tab ${tab === "production" ? "active" : ""}`} onClick={() => setTab("production")}>Production</button>
         </div>
         <div style={{ fontSize: 12, color: "var(--gray)" }}>
           {selectedVenueName} · {kpis.items} items
@@ -434,6 +435,7 @@ export default function StockPage() {
       {tab === "expiry" && <ExpiryTab />}
       {tab === "scanner" && <ScannerTab />}
       {tab === "adjustments" && <AdjustmentsTab />}
+      {tab === "production" && <ProductionTab />}
 
       {/* Create / edit item */}
       {editor && (
@@ -475,6 +477,9 @@ export default function StockPage() {
             </div>
             <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, margin: "10px 0" }}>
               <input type="checkbox" checked={!!editor.gstApplicable} onChange={(e) => setF("gstApplicable", e.target.checked)} /> GST applies (10%)
+            </label>
+            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, margin: "0 0 10px" }}>
+              <input type="checkbox" checked={!!editor.isPrepped} onChange={(e) => setF("isPrepped", e.target.checked)} /> Prepped item (made in-house — set its production recipe in the <strong>Production</strong> tab)
             </label>
 
             <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 10, marginTop: 4 }}>

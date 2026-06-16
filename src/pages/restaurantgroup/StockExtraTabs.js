@@ -5,8 +5,9 @@ import { db } from "../../firebase";
 import { useRG } from "./RGContext";
 import {
   inventoryItemDoc, stockDoc, stockMovementsCol, stocktakesCol, batchesCol,
+  recipesCol, recipeDoc, productionCol,
 } from "../../utils/restaurantGroupPaths";
-import { computeStockStatus, stockStatusMeta, marginPct, money, movementTypeLabel, REASON_REQUIRED_TYPES } from "./rgStockUtils";
+import { computeStockStatus, stockStatusMeta, marginPct, money, movementTypeLabel, REASON_REQUIRED_TYPES, grossStockQty, venueCost, productionHasCycle } from "./rgStockUtils";
 
 const round4 = (n) => Math.round((Number(n) || 0) * 10000) / 10000;
 const fmtWhen = (ts) => { try { const d = ts?.toDate ? ts.toDate() : new Date(ts); return d.toLocaleString("en-AU", { day: "numeric", month: "short", year: "numeric" }); } catch { return "—"; } };
@@ -664,6 +665,171 @@ export function AdjustmentsTab() {
             </tbody>
           </table>
         </div>
+      </div>
+    </>
+  );
+}
+
+/* ── Central Kitchen / Production (Phase 4) ──
+   Define a prepped item's production recipe (raws per 1 stock-unit of output) and
+   "Produce" a batch at a venue: deduct raws (gross, at venue cost), raise the
+   prepped item's venue stock, blend its venue cost (weighted-average), log both
+   sides. Recipe cost rolls up automatically because the prepped item then carries
+   its own per-venue stock.cost. */
+export function ProductionTab() {
+  const { groupId, inventoryItems, recipes, stock, can, showToast, me, myStaff } = useRG();
+  const canEdit = can("stock", "edit");
+  const actor = myStaff?.displayName || myStaff?.name || me?.name || me?.email || "Admin";
+  const [venueId, setVenueId] = useVenuePick();
+  const [sel, setSel] = useState("");        // selected prepped itemId
+  const [qty, setQty] = useState("");        // qty to produce (stock units)
+  const [busy, setBusy] = useState(false);
+  const [recDraft, setRecDraft] = useState(null); // editing the production recipe
+
+  const itemById = useMemo(() => Object.fromEntries(inventoryItems.map((i) => [i.id, i])), [inventoryItems]);
+  // production recipes are keyed by producesItemId; dish recipes by menuItemId.
+  const prodRecipeByItem = useMemo(() => {
+    const m = {}; recipes.forEach((r) => { if (r.producesItemId) m[r.producesItemId] = r; }); return m;
+  }, [recipes]);
+  const preppedItems = useMemo(() => inventoryItems.filter((i) => i.isPrepped && !i.archived), [inventoryItems]);
+  const selItem = sel ? itemById[sel] : null;
+  const selRecipe = sel ? prodRecipeByItem[sel] : null;
+  const stockFor = (itemId, v) => stock.find((s) => s.id === itemId && s.venueId === v);
+
+  // live per-unit cost preview at the chosen venue
+  const stockByItemV = useMemo(() => { const m = {}; stock.forEach((s) => { if (s.venueId === venueId) m[s.id] = s; }); return m; }, [stock, venueId]);
+  const unitCostAt = (ings) => (ings || []).reduce((sum, ing) => {
+    const it = itemById[ing.itemId]; if (!it) return sum;
+    return sum + grossStockQty(ing, it) * venueCost(it, stockByItemV[ing.itemId]);
+  }, 0);
+
+  const openRecipe = () => setRecDraft((selRecipe?.ingredients || []).map((g) => ({ itemId: g.itemId, netQty: g.netQty != null ? g.netQty : g.qty, recipeUnit: g.recipeUnit || itemById[g.itemId]?.recipeUnit || "" })));
+  const saveRecipe = async () => {
+    if (!canEdit || !selItem) return;
+    const ings = (recDraft || []).filter((g) => g.itemId && Number(g.netQty) > 0)
+      .map((g) => ({ itemId: g.itemId, qty: Number(g.netQty), netQty: Number(g.netQty), recipeUnit: g.recipeUnit || itemById[g.itemId]?.recipeUnit || "" }));
+    if (!ings.length) return showToast("Add at least one raw ingredient");
+    if (ings.some((g) => g.itemId === sel)) return showToast("A production recipe can't consume its own output");
+    if (productionHasCycle(sel, ings, prodRecipeByItem)) return showToast("Cyclic production recipe rejected");
+    try {
+      let rid = selItem.producedByRecipeId;
+      if (rid) await setDoc(recipeDoc(groupId, rid), { producesItemId: sel, ingredients: ings, updatedAt: serverTimestamp() }, { merge: true });
+      else { const ref = await addDoc(recipesCol(groupId), { producesItemId: sel, ingredients: ings, createdAt: serverTimestamp() }); rid = ref.id; }
+      await setDoc(inventoryItemDoc(groupId, sel), { producedByRecipeId: rid, isPrepped: true, updatedAt: serverTimestamp() }, { merge: true });
+      showToast("Production recipe saved");
+      setRecDraft(null);
+    } catch (e) { showToast(`Could not save: ${e?.code || e?.message || "error"}`); }
+  };
+
+  const produce = async () => {
+    if (!canEdit || busy) return;
+    const n = Number(qty);
+    if (!selItem || !selRecipe || isNaN(n) || n <= 0) return showToast("Pick a prepped item with a recipe and a qty > 0");
+    if (productionHasCycle(sel, selRecipe.ingredients, prodRecipeByItem)) return showToast("Cyclic production recipe — blocked");
+    setBusy(true);
+    try {
+      const rawIds = [...new Set((selRecipe.ingredients || []).map((g) => g.itemId))];
+      await runTransaction(db, async (tx) => {
+        const preppedRef = stockDoc(groupId, venueId, sel);
+        const rawRefs = rawIds.map((id) => stockDoc(groupId, venueId, id));
+        const preppedSnap = await tx.get(preppedRef);
+        const rawSnaps = await Promise.all(rawRefs.map((r) => tx.get(r)));
+        const rawData = {}; rawSnaps.forEach((s, i) => { rawData[rawIds[i]] = s.exists() ? s.data() : null; });
+        // deduct each raw (gross × n) and tally cost
+        let totalRawCost = 0; const lines = [];
+        for (const ing of selRecipe.ingredients) {
+          const it = itemById[ing.itemId]; const rs = rawData[ing.itemId];
+          if (!it || !rs) throw new Error(`raw ${ing.itemId} has no stock at this venue`);
+          const grossPerUnit = grossStockQty(ing, it);
+          const gross = round4(grossPerUnit * n);
+          const before = Number(rs.qtyOnHand) || 0;
+          const after = Math.max(0, round4(before - gross));
+          const cost = round4(gross * venueCost(it, rs));
+          totalRawCost = round4(totalRawCost + cost);
+          lines.push({ itemId: ing.itemId, gross, cost });
+          tx.set(stockDoc(groupId, venueId, ing.itemId), { qtyOnHand: after, status: computeStockStatus(after, rs.reorderPoint, rs.par), updatedAt: serverTimestamp() }, { merge: true });
+          tx.set(doc(stockMovementsCol(groupId, venueId)), { itemId: ing.itemId, itemName: it.name, type: "production", qtyChange: round4(after - before), before, after, unit: it.stockUnit || it.unit || "", reason: `produce ${selItem.name}`, reference: "", by: actor, costAtMove: cost, createdAt: serverTimestamp() }, { merge: true });
+        }
+        // raise prepped stock + blend its venue cost
+        const pCur = preppedSnap.exists() ? preppedSnap.data() : { qtyOnHand: 0, par: 0, reorderPoint: 0 };
+        const pBefore = Number(pCur.qtyOnHand) || 0;
+        const pAfter = round4(pBefore + n);
+        const unitCost = round4(totalRawCost / n);
+        const pOld = (pCur.cost != null && !isNaN(Number(pCur.cost))) ? Number(pCur.cost) : unitCost;
+        const pNewCost = pAfter > 0 ? round4((pBefore * pOld + n * unitCost) / pAfter) : unitCost;
+        const hist = [...(Array.isArray(pCur.costHistory) ? pCur.costHistory : []), { cost: pNewCost, qty: n, source: "production", by: actor, at: new Date().toISOString() }];
+        tx.set(preppedRef, { qtyOnHand: pAfter, status: computeStockStatus(pAfter, pCur.reorderPoint, pCur.par), cost: pNewCost, costMethod: "wavg", costHistory: hist, updatedAt: serverTimestamp() }, { merge: true });
+        tx.set(doc(stockMovementsCol(groupId, venueId)), { itemId: sel, itemName: selItem.name, type: "production", qtyChange: n, before: pBefore, after: pAfter, unit: selItem.stockUnit || selItem.unit || "", reason: "batch produced", reference: "", by: actor, costAtMove: round4(n * unitCost), createdAt: serverTimestamp() }, { merge: true });
+        tx.set(doc(productionCol(groupId, venueId)), { preppedItemId: sel, preppedName: selItem.name, qty: n, unitCost, totalRawCost, lines, by: actor, createdAt: serverTimestamp() }, { merge: true });
+      });
+      showToast(`Produced ${n} ${selItem.stockUnit || selItem.unit || ""} of ${selItem.name}`);
+      setQty("");
+    } catch (e) { showToast(`Could not produce: ${e?.code || e?.message || "error"}`); }
+    setBusy(false);
+  };
+
+  return (
+    <>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <div><span className="card-title">Central Kitchen — production</span><span className="card-sub">Produce a prepped item from raws; cost rolls up per venue</span></div>
+          <VenueSelect value={venueId} onChange={setVenueId} />
+        </div>
+        {preppedItems.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No prepped items yet. Mark an item as “prepped” in the Item library editor, then define its production recipe here.</div>}
+        {preppedItems.length > 0 && (
+          <div className="grid-2" style={{ gap: 14 }}>
+            <div>
+              <div className="form-label">Prepped item</div>
+              <select className="form-input" value={sel} onChange={(e) => { setSel(e.target.value); setRecDraft(null); }}>
+                <option value="">Choose…</option>
+                {preppedItems.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.stockUnit || i.unit})</option>)}
+              </select>
+              {selItem && (
+                <div style={{ marginTop: 10, fontSize: 12 }}>
+                  <div style={{ color: "var(--gray)" }}>Production recipe (raws per 1 {selItem.stockUnit || selItem.unit}):</div>
+                  {!recDraft && (selRecipe?.ingredients || []).map((g) => (
+                    <div key={g.itemId} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                      <span>{itemById[g.itemId]?.name || g.itemId}</span><span>{g.netQty != null ? g.netQty : g.qty} {g.recipeUnit}</span>
+                    </div>
+                  ))}
+                  {!recDraft && !selRecipe && <div style={{ color: "var(--amber)" }}>No production recipe yet.</div>}
+                  {!recDraft && canEdit && <button className="btn btn-sm" style={{ marginTop: 6 }} onClick={openRecipe}>{selRecipe ? "Edit recipe" : "Add recipe"}</button>}
+                  {recDraft && (
+                    <div style={{ marginTop: 6 }}>
+                      {recDraft.map((g, i) => (
+                        <div key={i} style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+                          <select className="form-input" style={{ flex: 1 }} value={g.itemId} onChange={(e) => setRecDraft((p) => p.map((x, j) => j === i ? { ...x, itemId: e.target.value, recipeUnit: itemById[e.target.value]?.recipeUnit || "" } : x))}>
+                            <option value="">Raw…</option>
+                            {inventoryItems.filter((x) => !x.archived && x.id !== sel).map((x) => <option key={x.id} value={x.id}>{x.name} ({x.recipeUnit || x.unit})</option>)}
+                          </select>
+                          <input className="form-input" style={{ width: 80 }} type="number" step="0.001" value={g.netQty} onChange={(e) => setRecDraft((p) => p.map((x, j) => j === i ? { ...x, netQty: e.target.value } : x))} />
+                          <button className="btn btn-sm" onClick={() => setRecDraft((p) => p.filter((_, j) => j !== i))}>✕</button>
+                        </div>
+                      ))}
+                      <button className="btn btn-sm" onClick={() => setRecDraft((p) => [...p, { itemId: "", netQty: "", recipeUnit: "" }])}>+ Raw</button>{" "}
+                      <button className="btn btn-primary btn-sm" onClick={saveRecipe}>Save recipe</button>{" "}
+                      <button className="btn btn-sm" onClick={() => setRecDraft(null)}>Cancel</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="form-label">Produce a batch</div>
+              {selRecipe ? (
+                <>
+                  <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 6 }}>Unit cost at this venue: <strong>{money(unitCostAt(selRecipe.ingredients))}</strong> / {selItem?.stockUnit || selItem?.unit}</div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input className="form-input" style={{ width: 120 }} type="number" step="0.001" placeholder="qty to produce" value={qty} onChange={(e) => setQty(e.target.value)} />
+                    <span style={{ fontSize: 12, color: "var(--gray)" }}>{selItem?.stockUnit || selItem?.unit}</span>
+                    {canEdit && <button className="btn btn-primary btn-sm" disabled={busy} onClick={produce}>{busy ? "Producing…" : "Produce"}</button>}
+                  </div>
+                  {Number(qty) > 0 && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 6 }}>≈ {money(unitCostAt(selRecipe.ingredients) * Number(qty))} of raws → {qty} {selItem?.stockUnit || selItem?.unit} of {selItem?.name}</div>}
+                </>
+              ) : <div style={{ fontSize: 12, color: "var(--gray)" }}>Define a production recipe first.</div>}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
