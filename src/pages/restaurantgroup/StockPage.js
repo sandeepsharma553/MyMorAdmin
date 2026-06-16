@@ -134,6 +134,7 @@ export default function StockPage() {
   const [editor, setEditor] = useState(null);
   const blankForm = () => ({
     id: null, name: "", sku: "", category: categories[0] || "", unit: units[0] || "kg",
+    purchaseUnit: units[0] || "kg", recipeUnit: units[0] || "kg", purchaseToStock: 1, stockToRecipe: 1, yieldPercent: 100,
     supplierId: suppliers[0]?.id || "", cost: "", sell: "", gstApplicable: true, storageLocation: "",
     venueId: selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || ""),
     qtyOnHand: "", par: "", reorderPoint: "", reorderQty: "",
@@ -147,6 +148,8 @@ export default function StockPage() {
     const venueId = selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || "");
     setEditor({
       id: i.id, name: i.name || "", sku: i.sku || "", category: i.category || "", unit: i.unit || "kg",
+      purchaseUnit: i.purchaseUnit || i.unit || "kg", recipeUnit: i.recipeUnit || i.unit || "kg",
+      purchaseToStock: i.purchaseToStock ?? 1, stockToRecipe: i.stockToRecipe ?? 1, yieldPercent: i.yieldPercent ?? 100,
       supplierId: i.supplierId || "", cost: i.cost ?? "", sell: i.sell ?? "", gstApplicable: i.gstApplicable !== false,
       storageLocation: i.storageLocation || "", venueId, ...stockFieldsFor(i.id, venueId),
     });
@@ -173,9 +176,14 @@ export default function StockPage() {
     if (!editor.name.trim()) return showToast("Name is required");
     if (isNaN(Number(editor.cost)) || isNaN(Number(editor.sell))) return showToast("Cost and sell must be numbers");
     const qty = num(editor.qtyOnHand), par = num(editor.par), ro = num(editor.reorderPoint), roq = num(editor.reorderQty);
+    const posFactor = (v) => (Number(v) > 0 ? Number(v) : 1);
     const defs = {
       name: editor.name.trim(), sku: editor.sku.trim() || nextSku(editor.category), category: editor.category,
-      unit: editor.unit, supplierId: editor.supplierId || null, cost: num(editor.cost), sell: num(editor.sell),
+      unit: editor.unit, // kept = stockUnit for back-compat
+      stockUnit: editor.unit, purchaseUnit: editor.purchaseUnit || editor.unit, recipeUnit: editor.recipeUnit || editor.unit,
+      purchaseToStock: posFactor(editor.purchaseToStock), stockToRecipe: posFactor(editor.stockToRecipe),
+      yieldPercent: Number(editor.yieldPercent) > 0 ? Number(editor.yieldPercent) : 100,
+      supplierId: editor.supplierId || null, cost: num(editor.cost), sell: num(editor.sell),
       gstApplicable: !!editor.gstApplicable, storageLocation: editor.storageLocation || "", archived: false,
       updatedAt: serverTimestamp(),
     };
@@ -436,7 +444,7 @@ export default function StockPage() {
                 <select className="form-input" value={editor.category} onChange={(e) => setF("category", e.target.value)}>
                   {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select></div>
-              <div><div className="form-label">Unit</div>
+              <div><div className="form-label">Stock unit (counted / on-hand)</div>
                 <select className="form-input" value={editor.unit} onChange={(e) => setF("unit", e.target.value)}>
                   {units.map((u) => <option key={u} value={u}>{u}</option>)}
                 </select></div>
@@ -458,8 +466,28 @@ export default function StockPage() {
             </label>
 
             <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 10, marginTop: 4 }}>
+              <div className="form-label" style={{ marginBottom: 6 }}>Units &amp; yield <span style={{ color: "var(--gray)", fontWeight: 400 }}>· leave at defaults (factors 1, yield 100%) if you buy, count and cook in the same unit</span></div>
+              <div className="grid-3" style={{ gap: 10 }}>
+                <div><div className="form-label">Purchase unit</div>
+                  <select className="form-input" value={editor.purchaseUnit} onChange={(e) => setF("purchaseUnit", e.target.value)}>
+                    {units.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select></div>
+                <div><div className="form-label">Recipe unit</div>
+                  <select className="form-input" value={editor.recipeUnit} onChange={(e) => setF("recipeUnit", e.target.value)}>
+                    {units.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select></div>
+                <div><div className="form-label">Yield %</div><input className="form-input" type="number" step="1" value={editor.yieldPercent} onChange={(e) => setF("yieldPercent", e.target.value)} /></div>
+                <div><div className="form-label">1 purchase unit = N stock units</div><input className="form-input" type="number" step="0.0001" value={editor.purchaseToStock} onChange={(e) => setF("purchaseToStock", e.target.value)} /></div>
+                <div><div className="form-label">1 stock unit = N recipe units</div><input className="form-input" type="number" step="0.0001" value={editor.stockToRecipe} onChange={(e) => setF("stockToRecipe", e.target.value)} /></div>
+                <div style={{ fontSize: 11, color: "var(--gray)", alignSelf: "end" }}>
+                  e.g. box→kg = 10, kg→g = 1000. Yield 85% = 15% trim loss; a recipe needing the net amount deducts the gross.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 10, marginTop: 4 }}>
               <div className="form-label" style={{ marginBottom: 6 }}>
-                Stock levels {editor.id ? "for venue" : "(applied to every venue on create)"}
+                Stock levels {editor.id ? "for venue" : "(applied to every venue on create)"} <span style={{ color: "var(--gray)", fontWeight: 400 }}>· in {editor.unit}</span>
               </div>
               {editor.id && (
                 <select className="form-input" style={{ marginBottom: 8 }} value={editor.venueId} onChange={(e) => switchEditorVenue(e.target.value)}>

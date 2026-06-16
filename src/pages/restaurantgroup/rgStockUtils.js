@@ -43,12 +43,24 @@ export const pctOfPar = (qty, par) => {
   return p > 0 ? Math.min(100, Math.round(((Number(qty) || 0) / p) * 100)) : 100;
 };
 
-// Food cost of a recipe at current ingredient costs (ex-GST).
-// recipe.ingredients = [{ itemId, qty }]; itemsById = { [itemId]: inventoryItem }.
+// Phase 1 — convert a recipe-unit qty to GROSS stock units, applying unit
+// conversion and yield. Keep this formula in sync with rgSellOrder in
+// functions/index.js. Fallbacks (netQty→qty, factor→1, yield→100) make it a
+// no-op on un-migrated data, so it equals the old `qty` exactly with identity.
+export const grossStockQty = (ing, item) => {
+  const recipeUnitQty = Number(ing?.netQty != null ? ing.netQty : ing?.qty) || 0;
+  const stockToRecipe = Number(item?.stockToRecipe) > 0 ? Number(item.stockToRecipe) : 1; // stock units → recipe units
+  const yieldPct = Number(item?.yieldPercent) > 0 ? Number(item.yieldPercent) : 100;
+  return (recipeUnitQty / stockToRecipe) / (yieldPct / 100); // recipe qty → stock qty → gross (pre-yield-loss)
+};
+
+// Food cost of a recipe at current ingredient costs (ex-GST). cost is per stock
+// unit; line cost = gross stock used × cost. recipe.ingredients = [{ itemId, qty,
+// netQty?, recipeUnit? }]; itemsById = { [itemId]: inventoryItem }.
 export const recipeFoodCost = (recipe, itemsById) =>
   (recipe?.ingredients || []).reduce((sum, ing) => {
     const item = itemsById?.[ing.itemId];
-    return sum + (item ? (Number(ing.qty) || 0) * (Number(item.cost) || 0) : 0);
+    return sum + (item ? grossStockQty(ing, item) * (Number(item.cost) || 0) : 0);
   }, 0);
 
 // A menu item's authoritative food cost: recipe-computed when a recipe exists,

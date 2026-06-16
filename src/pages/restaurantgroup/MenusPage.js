@@ -5,7 +5,7 @@ import { useRG } from "./RGContext";
 import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc, menuItemsCol } from "../../utils/restaurantGroupPaths";
 import { sellOrder } from "./sellOrder";
 import {
-  incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost,
+  incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty,
   DEFAULT_MENU_CATEGORIES,
 } from "./rgStockUtils";
 
@@ -101,16 +101,24 @@ export default function MenusPage() {
   };
 
   // ── recipe modal ──
-  const [recEditor, setRecEditor] = useState(null); // {menuItemId, recipeId|null, ingredients:[{itemId, qty}]}
+  const [recEditor, setRecEditor] = useState(null); // {menuItemId, recipeId|null, ingredients:[{itemId, qty, netQty, recipeUnit}]}
+  const recipeUnitOf = (itemId) => itemById[itemId]?.recipeUnit || itemById[itemId]?.unit || "";
   const openRecipe = (m) => {
     const r = recipeByMenuItemId[m.id];
-    setRecEditor({ menuItemId: m.id, recipeId: r?.id || null, ingredients: (r?.ingredients || []).map((g) => ({ ...g })) });
+    // normalise lines: netQty (fallback qty) is the entered amount; recipeUnit
+    // defaults to the item's recipeUnit. Phase 1 — backward compatible.
+    setRecEditor({ menuItemId: m.id, recipeId: r?.id || null, ingredients: (r?.ingredients || []).map((g) => ({
+      itemId: g.itemId, netQty: g.netQty != null ? g.netQty : g.qty, recipeUnit: g.recipeUnit || recipeUnitOf(g.itemId),
+    })) });
   };
   const recMenuItem = recEditor ? menuItems.find((m) => m.id === recEditor.menuItemId) : null;
   const recCost = recEditor ? recipeFoodCost({ ingredients: recEditor.ingredients }, itemById) : 0;
   const saveRecipe = async () => {
     if (!canEdit || !recEditor) return;
-    const ingredients = recEditor.ingredients.filter((g) => g.itemId && Number(g.qty) > 0).map((g) => ({ itemId: g.itemId, qty: Number(g.qty) }));
+    // store qty = netQty for back-compat, plus netQty + recipeUnit (Phase 1)
+    const ingredients = recEditor.ingredients.filter((g) => g.itemId && Number(g.netQty) > 0).map((g) => ({
+      itemId: g.itemId, qty: Number(g.netQty), netQty: Number(g.netQty), recipeUnit: g.recipeUnit || recipeUnitOf(g.itemId),
+    }));
     if (!ingredients.length) return showToast("Add at least one ingredient");
     try {
       let recipeId = recEditor.recipeId;
@@ -494,23 +502,25 @@ export default function MenusPage() {
             <div className="modal-head"><span className="modal-title">Recipe — {recMenuItem.displayName}</span><button className="modal-close" onClick={() => setRecEditor(null)}>✕</button></div>
             {recEditor.ingredients.map((g, i) => {
               const inv = itemById[g.itemId];
-              const lc = inv ? (Number(g.qty) || 0) * (Number(inv.cost) || 0) : 0;
+              const lc = inv ? grossStockQty(g, inv) * (Number(inv.cost) || 0) : 0; // gross stock used × cost
+              const ru = g.recipeUnit || recipeUnitOf(g.itemId);
               return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                   <select className="form-input" style={{ flex: 1 }} value={g.itemId}
-                    onChange={(e) => setRecEditor((p) => ({ ...p, ingredients: p.ingredients.map((x, j) => (j === i ? { ...x, itemId: e.target.value } : x)) }))}>
+                    onChange={(e) => setRecEditor((p) => ({ ...p, ingredients: p.ingredients.map((x, j) => (j === i ? { ...x, itemId: e.target.value, recipeUnit: recipeUnitOf(e.target.value) } : x)) }))}>
                     <option value="">Choose ingredient…</option>
-                    {inventoryItems.filter((x) => !x.archived).map((x) => <option key={x.id} value={x.id}>{x.name} ({x.unit} · {money(x.cost)})</option>)}
+                    {inventoryItems.filter((x) => !x.archived).map((x) => <option key={x.id} value={x.id}>{x.name} ({x.recipeUnit || x.unit} · {money(x.cost)})</option>)}
                   </select>
-                  <input className="form-input" style={{ width: 90 }} type="number" step="0.001" value={g.qty}
-                    onChange={(e) => setRecEditor((p) => ({ ...p, ingredients: p.ingredients.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)) }))} />
-                  <span style={{ fontSize: 11, color: "var(--gray)", width: 36 }}>{inv?.unit || ""}</span>
+                  <input className="form-input" style={{ width: 90 }} type="number" step="0.001" value={g.netQty} placeholder="net qty"
+                    onChange={(e) => setRecEditor((p) => ({ ...p, ingredients: p.ingredients.map((x, j) => (j === i ? { ...x, netQty: e.target.value } : x)) }))} />
+                  <span style={{ fontSize: 11, color: "var(--gray)", width: 44 }}>{ru}</span>
                   <span style={{ fontSize: 12, fontWeight: 600, width: 60, textAlign: "right" }}>{money(lc)}</span>
                   <button className="btn btn-sm" onClick={() => setRecEditor((p) => ({ ...p, ingredients: p.ingredients.filter((_, j) => j !== i) }))}>✕</button>
                 </div>
               );
             })}
-            <button className="btn btn-sm" onClick={() => setRecEditor((p) => ({ ...p, ingredients: [...p.ingredients, { itemId: "", qty: "" }] }))}>+ Add ingredient</button>
+            <div style={{ fontSize: 11, color: "var(--gray)", margin: "2px 0 8px" }}>Enter the <strong>net</strong> amount in the item's recipe unit; stock deducts the gross (after yield).</div>
+            <button className="btn btn-sm" onClick={() => setRecEditor((p) => ({ ...p, ingredients: [...p.ingredients, { itemId: "", netQty: "", recipeUnit: "" }] }))}>+ Add ingredient</button>
             <div style={{ borderTop: "0.5px solid var(--border)", marginTop: 12, paddingTop: 10, fontSize: 13 }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}><span>Total food cost</span><strong>{money(recCost)}</strong></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}><span>Sell price (ex-GST)</span><strong>{money(recMenuItem.sellPrice)}</strong></div>
