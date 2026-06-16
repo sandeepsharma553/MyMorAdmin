@@ -340,14 +340,20 @@ export function PriceAdjustTab() {
 export function ValuationTab() {
   const { inventoryItems, stock, selectedVenue, selectedVenueName } = useRG();
   const rows = useMemo(() => {
-    const qtyByItem = {};
+    // Phase 2 — value at each venue's own stock.cost (weighted-average), summed
+    // across in-scope venues; fall back to the item's group cost where absent.
+    const groupCost = {}; inventoryItems.forEach((i) => { groupCost[i.id] = Number(i.cost) || 0; });
+    const agg = {}; // id -> { qty, costVal }
     stock.forEach((s) => {
       if (selectedVenue !== "all" && s.venueId !== selectedVenue) return;
-      qtyByItem[s.id] = (qtyByItem[s.id] || 0) + (Number(s.qtyOnHand) || 0);
+      const q = Number(s.qtyOnHand) || 0;
+      const c = (s.cost != null && !isNaN(Number(s.cost))) ? Number(s.cost) : (groupCost[s.id] || 0);
+      const a = agg[s.id] || { qty: 0, costVal: 0 };
+      a.qty += q; a.costVal += q * c; agg[s.id] = a;
     });
     return inventoryItems.filter((i) => !i.archived).map((i) => {
-      const qty = qtyByItem[i.id] || 0;
-      return { ...i, qty, costVal: qty * (Number(i.cost) || 0), retailVal: qty * (Number(i.sell) || 0) };
+      const a = agg[i.id] || { qty: 0, costVal: 0 };
+      return { ...i, qty: a.qty, costVal: round4(a.costVal), retailVal: a.qty * (Number(i.sell) || 0) };
     });
   }, [inventoryItems, stock, selectedVenue]);
 
@@ -367,7 +373,7 @@ export function ValuationTab() {
   return (
     <>
       <div className="grid-4" style={{ marginBottom: 16 }}>
-        <div className="card"><div className="card-sub">Total at cost (ex-GST) — {selectedVenueName}</div><div style={{ fontSize: 22, fontWeight: 700 }}>{money(totals.cost)}</div></div>
+        <div className="card"><div className="card-sub">Total at cost (ex-GST) — {selectedVenueName}</div><div style={{ fontSize: 22, fontWeight: 700 }}>{money(totals.cost)}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>weighted average (per venue)</div></div>
         <div className="card"><div className="card-sub">Retail value (ex-GST)</div><div style={{ fontSize: 22, fontWeight: 700 }}>{money(totals.retail)}</div></div>
         <div className="card"><div className="card-sub">Avg item margin</div><div style={{ fontSize: 22, fontWeight: 700 }}>{avgMargin}%</div></div>
         <div className="card"><div className="card-sub">GST claimable (10%)</div><div style={{ fontSize: 22, fontWeight: 700 }}>{money(totals.gst)}</div></div>

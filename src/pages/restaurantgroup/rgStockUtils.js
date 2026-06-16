@@ -54,20 +54,34 @@ export const grossStockQty = (ing, item) => {
   return (recipeUnitQty / stockToRecipe) / (yieldPct / 100); // recipe qty → stock qty → gross (pre-yield-loss)
 };
 
+// Phase 2 (per-venue cost) — resolve the cost-per-stock-unit for an item at a
+// venue: the venue's own weighted-average (stock.cost) if present, else the
+// group last-known/reference (inventoryItems.cost). Keep in sync with rgSellOrder.
+export const venueCost = (item, stockDoc) => {
+  const v = Number(stockDoc?.cost);
+  if (stockDoc && stockDoc.cost != null && !isNaN(v)) return v;
+  return Number(item?.cost) || 0;
+};
+
 // Food cost of a recipe at current ingredient costs (ex-GST). cost is per stock
 // unit; line cost = gross stock used × cost. recipe.ingredients = [{ itemId, qty,
 // netQty?, recipeUnit? }]; itemsById = { [itemId]: inventoryItem }.
-export const recipeFoodCost = (recipe, itemsById) =>
+// Optional stockByItem = { [itemId]: venueStockDoc } makes costing VENUE-AWARE:
+// each ingredient is costed at venueCost(item, stockByItem[itemId]); without it,
+// falls back to the item's group cost (unchanged behaviour).
+export const recipeFoodCost = (recipe, itemsById, stockByItem) =>
   (recipe?.ingredients || []).reduce((sum, ing) => {
     const item = itemsById?.[ing.itemId];
-    return sum + (item ? grossStockQty(ing, item) * (Number(item.cost) || 0) : 0);
+    if (!item) return sum;
+    const unitCost = stockByItem ? venueCost(item, stockByItem[ing.itemId]) : (Number(item.cost) || 0);
+    return sum + grossStockQty(ing, item) * unitCost;
   }, 0);
 
 // A menu item's authoritative food cost: recipe-computed when a recipe exists,
 // the stored fallback `cost` otherwise (signed-off discrepancy ruling).
-export const menuItemFoodCost = (menuItem, recipesByMenuItemId, itemsById) => {
+export const menuItemFoodCost = (menuItem, recipesByMenuItemId, itemsById, stockByItem) => {
   const r = recipesByMenuItemId?.[menuItem?.id];
-  if (r && (r.ingredients || []).length) return recipeFoodCost(r, itemsById);
+  if (r && (r.ingredients || []).length) return recipeFoodCost(r, itemsById, stockByItem);
   return Number(menuItem?.cost) || 0;
 };
 

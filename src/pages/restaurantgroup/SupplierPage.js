@@ -4,7 +4,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage
 import { db, storage } from "../../firebase";
 import { useRG } from "./RGContext";
 import {
-  purchaseOrdersCol, purchaseOrderDoc, suppliersCol, supplierDoc, stockDoc, stockMovementsCol,
+  purchaseOrdersCol, purchaseOrderDoc, suppliersCol, supplierDoc, stockDoc, stockMovementsCol, inventoryItemDoc,
 } from "../../utils/restaurantGroupPaths";
 import { sendNotification } from "./notify";
 import { computeStockStatus, poStatusMeta, money } from "./rgStockUtils";
@@ -112,16 +112,24 @@ export default function SupplierPage() {
           const cur = snap.exists() ? snap.data() : { qtyOnHand: 0, par: 0, reorderPoint: 0, reorderQty: 0 };
           const before = Number(cur.qtyOnHand) || 0;
           const after = round4(before + qtyRec);
+          // Phase 2 (per-venue cost): weighted-average against THIS venue's on-hand only.
+          const lineUnitCost = Number(l.unitCost) || 0;
+          const vOld = (cur.cost != null && !isNaN(Number(cur.cost))) ? Number(cur.cost) : lineUnitCost;
+          const newCost = after > 0 ? round4((before * vOld + qtyRec * lineUnitCost) / after) : vOld;
+          const histEntry = { cost: newCost, qty: qtyRec, source: `receipt ${poLabel(po)}`, by: actor, at: new Date().toISOString() };
           tx.set(refs[i], {
             qtyOnHand: after,
             status: computeStockStatus(after, cur.reorderPoint, cur.par),
+            cost: newCost, costMethod: "wavg", costHistory: [...(Array.isArray(cur.costHistory) ? cur.costHistory : []), histEntry],
             updatedAt: serverTimestamp(),
           }, { merge: true });
+          // last-known / reference cost at the group item (used as fallback for venues with no stock.cost)
+          tx.set(inventoryItemDoc(groupId, l.itemId), { cost: lineUnitCost, updatedAt: serverTimestamp() }, { merge: true });
           tx.set(doc(stockMovementsCol(groupId, po.venueId)), {
             itemId: l.itemId, itemName: l.itemName || l.itemId, type: "delivery",
             qtyChange: qtyRec, before, after, unit: l.unit || "",
             reason: "", reference: poLabel(po), menuItemId: null, menuName: "",
-            by: actor, costAtMove: round4(qtyRec * (Number(l.unitCost) || 0)),
+            by: actor, costAtMove: round4(qtyRec * lineUnitCost),
             createdAt: serverTimestamp(),
           });
         });

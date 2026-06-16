@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useRG } from "./RGContext";
 import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc, menuItemsCol } from "../../utils/restaurantGroupPaths";
 import { sellOrder } from "./sellOrder";
 import {
-  incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty,
+  incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost,
   DEFAULT_MENU_CATEGORIES,
 } from "./rgStockUtils";
 
@@ -15,7 +15,7 @@ const fmtWhen = (iso) => { try { return new Date(iso).toLocaleString("en-AU", { 
 
 export default function MenusPage() {
   const {
-    groupId, group, venues, menuItems, recipes, modifierGroups, inventoryItems,
+    groupId, group, venues, menuItems, recipes, modifierGroups, inventoryItems, stock,
     selectedVenue, selectedVenueName, venueName, can, showToast, me, myStaff,
   } = useRG();
   const canEdit = can("menus", "edit");
@@ -28,6 +28,13 @@ export default function MenusPage() {
 
   const itemById = useMemo(() => Object.fromEntries(inventoryItems.map((i) => [i.id, i])), [inventoryItems]);
   const recipeByMenuItemId = useMemo(() => Object.fromEntries(recipes.map((r) => [r.menuItemId, r])), [recipes]);
+  // Phase 2 — venue selector for recipe costing (cost is per venue). Build a
+  // { itemId: that venue's stock doc } map so costing resolves venueCost.
+  const [recipeVenue, setRecipeVenue] = useState("");
+  useEffect(() => { setRecipeVenue(selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || "")); }, [selectedVenue, venues]);
+  const recipeStockByItem = useMemo(() => {
+    const m = {}; (stock || []).forEach((s) => { if (s.venueId === recipeVenue) m[s.id] = s; }); return m;
+  }, [stock, recipeVenue]);
 
   // venue-filtered menu (prototype vM())
   const vItems = useMemo(() => {
@@ -112,7 +119,7 @@ export default function MenusPage() {
     })) });
   };
   const recMenuItem = recEditor ? menuItems.find((m) => m.id === recEditor.menuItemId) : null;
-  const recCost = recEditor ? recipeFoodCost({ ingredients: recEditor.ingredients }, itemById) : 0;
+  const recCost = recEditor ? recipeFoodCost({ ingredients: recEditor.ingredients }, itemById, recipeStockByItem) : 0;
   const saveRecipe = async () => {
     if (!canEdit || !recEditor) return;
     // store qty = netQty for back-compat, plus netQty + recipeUnit (Phase 1)
@@ -333,7 +340,13 @@ export default function MenusPage() {
         <>
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-head">
-              <div><span className="card-title">Recipe costing</span><span className="card-sub">Food cost computed live from ingredient costs (ex-GST) — POS sales deduct these exact quantities</span></div>
+              <div><span className="card-title">Recipe costing</span><span className="card-sub">Per-venue food cost (weighted-average) — POS sales deduct these exact quantities</span></div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 12, color: "var(--gray)" }}>Cost at venue:</span>
+                <select className="form-input" style={{ width: 160 }} value={recipeVenue} onChange={(e) => setRecipeVenue(e.target.value)}>
+                  {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </div>
             </div>
             <div style={{ overflowX: "auto" }}>
               <table className="data-table">
@@ -341,7 +354,7 @@ export default function MenusPage() {
                 <tbody>
                   {vItems.filter((m) => recipeByMenuItemId[m.id]).map((m) => {
                     const r = recipeByMenuItemId[m.id];
-                    const fc = recipeFoodCost(r, itemById);
+                    const fc = recipeFoodCost(r, itemById, recipeStockByItem);
                     const fcp = Number(m.sellPrice) > 0 ? Math.round((fc / Number(m.sellPrice)) * 100) : 0;
                     const mg = marginPct(m.sellPrice, fc);
                     return (
@@ -502,7 +515,7 @@ export default function MenusPage() {
             <div className="modal-head"><span className="modal-title">Recipe — {recMenuItem.displayName}</span><button className="modal-close" onClick={() => setRecEditor(null)}>✕</button></div>
             {recEditor.ingredients.map((g, i) => {
               const inv = itemById[g.itemId];
-              const lc = inv ? grossStockQty(g, inv) * (Number(inv.cost) || 0) : 0; // gross stock used × cost
+              const lc = inv ? grossStockQty(g, inv) * venueCost(inv, recipeStockByItem[g.itemId]) : 0; // gross × this venue's cost
               const ru = g.recipeUnit || recipeUnitOf(g.itemId);
               return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
