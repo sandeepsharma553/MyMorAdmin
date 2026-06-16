@@ -1,0 +1,1240 @@
+{
+  "exportedAt": "2026-06-16T10:08:40.360Z",
+  "phase": "4-pre-subrecipes",
+  "inventoryItems": [
+    {
+      "id": "inv-001",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 20,
+        "supplierId": "vic-meats-co",
+        "sell": 30.91,
+        "name": "Beef brisket",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Protein",
+        "sku": "MK-PROT-001",
+        "createdAt": "<ts:1781255391>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604231>"
+      }
+    },
+    {
+      "id": "inv-002",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 9.09,
+        "supplierId": "vic-meats-co",
+        "sell": 12.73,
+        "name": "Chicken thigh (trimmed)",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Protein",
+        "sku": "MK-PROT-002",
+        "createdAt": "<ts:1781255391>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604232>"
+      }
+    },
+    {
+      "id": "inv-003",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 10.91,
+        "supplierId": "vic-meats-co",
+        "sell": 16.36,
+        "name": "Pork belly (cured)",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Protein",
+        "sku": "MK-PROT-003",
+        "createdAt": "<ts:1781255392>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604232>"
+      }
+    },
+    {
+      "id": "inv-004",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 12,
+        "supplierId": "vic-meats-co",
+        "sell": 18,
+        "name": "Pulled pork",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Protein",
+        "sku": "MK-PROT-004",
+        "createdAt": "<ts:1781255392>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604233>"
+      }
+    },
+    {
+      "id": "inv-005",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 16,
+        "supplierId": "vic-meats-co",
+        "sell": 24,
+        "name": "Pulled beef",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Protein",
+        "sku": "MK-PROT-005",
+        "createdAt": "<ts:1781255393>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604233>"
+      }
+    },
+    {
+      "id": "inv-006",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 14,
+        "supplierId": "united-food-express",
+        "sell": 21,
+        "name": "White fish fillet",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Protein",
+        "sku": "MK-PROT-006",
+        "createdAt": "<ts:1781255393>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604234>"
+      }
+    },
+    {
+      "id": "inv-007",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 22,
+        "supplierId": "triple-asian-grocery",
+        "sell": 33,
+        "name": "Frozen beef roll",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Frozen",
+        "sku": "MK-FROZ-001",
+        "createdAt": "<ts:1781255394>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604234>"
+      }
+    },
+    {
+      "id": "inv-008",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 18,
+        "supplierId": "triple-asian-grocery",
+        "sell": 27,
+        "name": "Frozen pork roll",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Frozen",
+        "sku": "MK-FROZ-002",
+        "createdAt": "<ts:1781255394>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604235>"
+      }
+    },
+    {
+      "id": "inv-009",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 26,
+        "supplierId": "triple-asian-grocery",
+        "sell": 39,
+        "name": "Frozen lamb roll",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Frozen",
+        "sku": "MK-FROZ-003",
+        "createdAt": "<ts:1781255395>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604235>"
+      }
+    },
+    {
+      "id": "inv-010",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 3.5,
+        "supplierId": "veggie-order",
+        "sell": 5.45,
+        "name": "Lettuce",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Produce",
+        "sku": "MK-PROD-001",
+        "createdAt": "<ts:1781255395>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604235>"
+      }
+    },
+    {
+      "id": "inv-011",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 4,
+        "supplierId": "veggie-order",
+        "sell": 6.36,
+        "name": "Tomato",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Produce",
+        "sku": "MK-PROD-002",
+        "createdAt": "<ts:1781255395>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604236>"
+      }
+    },
+    {
+      "id": "inv-012",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 2.5,
+        "supplierId": "veggie-order",
+        "sell": 4.09,
+        "name": "Red onion",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Produce",
+        "sku": "MK-PROD-003",
+        "createdAt": "<ts:1781255396>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604236>"
+      }
+    },
+    {
+      "id": "inv-013",
+      "data": {
+        "archived": false,
+        "unit": "units",
+        "cost": 1.8,
+        "supplierId": "veggie-order",
+        "sell": 2.73,
+        "name": "Avocado",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Produce",
+        "sku": "MK-PROD-004",
+        "createdAt": "<ts:1781255396>",
+        "purchaseUnit": "units",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "units",
+        "stockUnit": "units",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604237>"
+      }
+    },
+    {
+      "id": "inv-014",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 12,
+        "supplierId": "veggie-order",
+        "sell": 18.18,
+        "name": "Shiitake mushroom",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Produce",
+        "sku": "MK-PROD-005",
+        "createdAt": "<ts:1781255396>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604237>"
+      }
+    },
+    {
+      "id": "inv-015",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 5,
+        "supplierId": "veggie-order",
+        "sell": 7.73,
+        "name": "Caramelised onion",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Produce",
+        "sku": "MK-PROD-006",
+        "createdAt": "<ts:1781255396>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604238>"
+      }
+    },
+    {
+      "id": "inv-016",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 4.5,
+        "supplierId": "veggie-order",
+        "sell": 6.82,
+        "name": "Pickles",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Produce",
+        "sku": "MK-PROD-007",
+        "createdAt": "<ts:1781255397>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604238>"
+      }
+    },
+    {
+      "id": "inv-017",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 6,
+        "supplierId": "veggie-order",
+        "sell": 9.09,
+        "name": "Jalapeno",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Produce",
+        "sku": "MK-PROD-008",
+        "createdAt": "<ts:1781255397>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604238>"
+      }
+    },
+    {
+      "id": "inv-018",
+      "data": {
+        "archived": false,
+        "unit": "bunch",
+        "cost": 1.36,
+        "supplierId": "veggie-order",
+        "sell": 2.73,
+        "name": "Spring onion (bunches)",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Produce",
+        "sku": "MK-PROD-009",
+        "createdAt": "<ts:1781255397>",
+        "purchaseUnit": "bunch",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "bunch",
+        "stockUnit": "bunch",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604239>"
+      }
+    },
+    {
+      "id": "inv-019",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 4,
+        "supplierId": "veggie-order",
+        "sell": 6.36,
+        "name": "Coleslaw mix",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Produce",
+        "sku": "MK-PROD-010",
+        "createdAt": "<ts:1781255397>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604239>"
+      }
+    },
+    {
+      "id": "inv-020",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 10,
+        "supplierId": "vic-meats-co",
+        "sell": 15.45,
+        "name": "Cheese slices",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Dairy",
+        "sku": "MK-DAIR-001",
+        "createdAt": "<ts:1781255398>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604239>"
+      }
+    },
+    {
+      "id": "inv-021",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 7.27,
+        "supplierId": "vic-meats-co",
+        "sell": 10.91,
+        "name": "Butter (unsalted)",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Dairy",
+        "sku": "MK-DAIR-002",
+        "createdAt": "<ts:1781255398>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604239>"
+      }
+    },
+    {
+      "id": "inv-022",
+      "data": {
+        "archived": false,
+        "unit": "L",
+        "cost": 4.09,
+        "supplierId": "vic-meats-co",
+        "sell": 5.45,
+        "name": "Thickened cream 35%",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Dairy",
+        "sku": "MK-DAIR-003",
+        "createdAt": "<ts:1781255398>",
+        "purchaseUnit": "L",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "L",
+        "stockUnit": "L",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604239>"
+      }
+    },
+    {
+      "id": "inv-023",
+      "data": {
+        "archived": false,
+        "unit": "units",
+        "cost": 0.4,
+        "supplierId": "veggie-order",
+        "sell": 0.64,
+        "name": "Egg",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Dairy",
+        "sku": "MK-DAIR-004",
+        "createdAt": "<ts:1781255399>",
+        "purchaseUnit": "units",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "units",
+        "stockUnit": "units",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604240>"
+      }
+    },
+    {
+      "id": "inv-024",
+      "data": {
+        "archived": false,
+        "unit": "units",
+        "cost": 0.8,
+        "supplierId": "vic-meats-co",
+        "sell": 1.27,
+        "name": "Brioche bun",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Dry goods",
+        "sku": "MK-DRY-001",
+        "createdAt": "<ts:1781255399>",
+        "purchaseUnit": "units",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "units",
+        "stockUnit": "units",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604240>"
+      }
+    },
+    {
+      "id": "inv-025",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 1.82,
+        "supplierId": "triple-asian-grocery",
+        "sell": 2.73,
+        "name": "Jasmine rice",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Dry goods",
+        "sku": "MK-DRY-002",
+        "createdAt": "<ts:1781255399>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604240>"
+      }
+    },
+    {
+      "id": "inv-026",
+      "data": {
+        "archived": false,
+        "unit": "can",
+        "cost": 2.27,
+        "supplierId": "triple-asian-grocery",
+        "sell": 3.64,
+        "name": "Coconut milk (400ml)",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Dry goods",
+        "sku": "MK-DRY-003",
+        "createdAt": "<ts:1781255399>",
+        "purchaseUnit": "can",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "can",
+        "stockUnit": "can",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604240>"
+      }
+    },
+    {
+      "id": "inv-027",
+      "data": {
+        "archived": false,
+        "unit": "pack",
+        "cost": 2.5,
+        "supplierId": "triple-asian-grocery",
+        "sell": 3.82,
+        "name": "Potato noodle",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Asian grocery",
+        "sku": "MK-ASIA-001",
+        "createdAt": "<ts:1781255400>",
+        "purchaseUnit": "pack",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "pack",
+        "stockUnit": "pack",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604241>"
+      }
+    },
+    {
+      "id": "inv-028",
+      "data": {
+        "archived": false,
+        "unit": "L",
+        "cost": 9.09,
+        "supplierId": "triple-asian-grocery",
+        "sell": 12.73,
+        "name": "Sesame oil",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Sauces",
+        "sku": "MK-SAUC-001",
+        "createdAt": "<ts:1781255400>",
+        "purchaseUnit": "L",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "L",
+        "stockUnit": "L",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604241>"
+      }
+    },
+    {
+      "id": "inv-029",
+      "data": {
+        "archived": false,
+        "unit": "kg",
+        "cost": 8,
+        "supplierId": "five-ways",
+        "sell": 14.55,
+        "name": "Chilli paste",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Sauces",
+        "sku": "MK-SAUC-002",
+        "createdAt": "<ts:1781255400>",
+        "purchaseUnit": "kg",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "kg",
+        "stockUnit": "kg",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604241>"
+      }
+    },
+    {
+      "id": "inv-030",
+      "data": {
+        "archived": false,
+        "unit": "L",
+        "cost": 6,
+        "supplierId": "five-ways",
+        "sell": 9.09,
+        "name": "BBQ sauce",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Sauces",
+        "sku": "MK-SAUC-003",
+        "createdAt": "<ts:1781255400>",
+        "purchaseUnit": "L",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "L",
+        "stockUnit": "L",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604241>"
+      }
+    },
+    {
+      "id": "inv-031",
+      "data": {
+        "archived": false,
+        "unit": "L",
+        "cost": 4,
+        "supplierId": "five-ways",
+        "sell": 6.36,
+        "name": "Ketchup",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Sauces",
+        "sku": "MK-SAUC-004",
+        "createdAt": "<ts:1781255401>",
+        "purchaseUnit": "L",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "L",
+        "stockUnit": "L",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604241>"
+      }
+    },
+    {
+      "id": "inv-032",
+      "data": {
+        "archived": false,
+        "unit": "L",
+        "cost": 7,
+        "supplierId": "five-ways",
+        "sell": 10.45,
+        "name": "Aioli",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Sauces",
+        "sku": "MK-SAUC-005",
+        "createdAt": "<ts:1781255401>",
+        "purchaseUnit": "L",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "L",
+        "stockUnit": "L",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604242>"
+      }
+    },
+    {
+      "id": "inv-033",
+      "data": {
+        "archived": false,
+        "unit": "L",
+        "cost": 7.5,
+        "supplierId": "five-ways",
+        "sell": 11.36,
+        "name": "Sweet chilli mayo",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Sauces",
+        "sku": "MK-SAUC-006",
+        "createdAt": "<ts:1781255401>",
+        "purchaseUnit": "L",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "L",
+        "stockUnit": "L",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604242>"
+      }
+    },
+    {
+      "id": "inv-034",
+      "data": {
+        "archived": false,
+        "unit": "L",
+        "cost": 7.5,
+        "supplierId": "five-ways",
+        "sell": 11.36,
+        "name": "Hot mayo",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Sauces",
+        "sku": "MK-SAUC-007",
+        "createdAt": "<ts:1781255401>",
+        "purchaseUnit": "L",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "L",
+        "stockUnit": "L",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604242>"
+      }
+    },
+    {
+      "id": "inv-035",
+      "data": {
+        "archived": false,
+        "unit": "L",
+        "cost": 7.5,
+        "supplierId": "five-ways",
+        "sell": 11.36,
+        "name": "Sriracha mayo",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Sauces",
+        "sku": "MK-SAUC-008",
+        "createdAt": "<ts:1781255402>",
+        "purchaseUnit": "L",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "L",
+        "stockUnit": "L",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604242>"
+      }
+    },
+    {
+      "id": "inv-036",
+      "data": {
+        "archived": false,
+        "unit": "carton",
+        "cost": 15,
+        "supplierId": "packaging-supplier",
+        "sell": 0,
+        "name": "Paper bag small",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Packaging",
+        "sku": "MK-PACK-001",
+        "createdAt": "<ts:1781255402>",
+        "purchaseUnit": "carton",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "carton",
+        "stockUnit": "carton",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604242>"
+      }
+    },
+    {
+      "id": "inv-037",
+      "data": {
+        "archived": false,
+        "unit": "pack",
+        "cost": 6,
+        "supplierId": "packaging-supplier",
+        "sell": 0,
+        "name": "Coffee cup 6oz",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Packaging",
+        "sku": "MK-PACK-002",
+        "createdAt": "<ts:1781255402>",
+        "purchaseUnit": "pack",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "pack",
+        "stockUnit": "pack",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604243>"
+      }
+    },
+    {
+      "id": "inv-038",
+      "data": {
+        "archived": false,
+        "unit": "pack",
+        "cost": 18,
+        "supplierId": "united-food-express",
+        "sell": 27.27,
+        "name": "Prawn 26/30",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Seafood",
+        "sku": "MK-SEAF-001",
+        "createdAt": "<ts:1781255402>",
+        "purchaseUnit": "pack",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "pack",
+        "stockUnit": "pack",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604243>"
+      }
+    },
+    {
+      "id": "inv-039",
+      "data": {
+        "archived": false,
+        "unit": "pack",
+        "cost": 12,
+        "supplierId": "united-food-express",
+        "sell": 18.18,
+        "name": "Squid ring",
+        "gstApplicable": true,
+        "storageLocation": "",
+        "category": "Seafood",
+        "sku": "MK-SEAF-002",
+        "createdAt": "<ts:1781255403>",
+        "purchaseUnit": "pack",
+        "stockToRecipe": 1,
+        "yieldPercent": 100,
+        "purchaseToStock": 1,
+        "recipeUnit": "pack",
+        "stockUnit": "pack",
+        "itemType": "ingredient",
+        "updatedAt": "<ts:1781604243>"
+      }
+    }
+  ],
+  "recipes": [
+    {
+      "id": "rec-102",
+      "data": {
+        "menuItemId": "menu-102",
+        "createdAt": "<ts:1781255439>",
+        "ingredients": [
+          {
+            "itemId": "inv-001",
+            "qty": 0.2,
+            "netQty": 0.2,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-024",
+            "qty": 1,
+            "netQty": 1,
+            "recipeUnit": "units"
+          },
+          {
+            "itemId": "inv-031",
+            "qty": 0.02,
+            "netQty": 0.02,
+            "recipeUnit": "L"
+          },
+          {
+            "itemId": "inv-016",
+            "qty": 0.02,
+            "netQty": 0.02,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-017",
+            "qty": 0.015,
+            "netQty": 0.015,
+            "recipeUnit": "kg"
+          }
+        ],
+        "updatedAt": "<ts:1781601469>"
+      }
+    },
+    {
+      "id": "rec-104",
+      "data": {
+        "menuItemId": "menu-104",
+        "createdAt": "<ts:1781255438>",
+        "ingredients": [
+          {
+            "itemId": "inv-001",
+            "qty": 0.2,
+            "netQty": 0.2,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-024",
+            "qty": 1,
+            "netQty": 1,
+            "recipeUnit": "units"
+          },
+          {
+            "itemId": "inv-010",
+            "qty": 0.03,
+            "netQty": 0.03,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-030",
+            "qty": 0.02,
+            "netQty": 0.02,
+            "recipeUnit": "L"
+          }
+        ],
+        "updatedAt": "<ts:1781601469>"
+      }
+    },
+    {
+      "id": "rec-105",
+      "data": {
+        "menuItemId": "menu-105",
+        "createdAt": "<ts:1781255439>",
+        "ingredients": [
+          {
+            "itemId": "inv-001",
+            "qty": 0.2,
+            "netQty": 0.2,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-024",
+            "qty": 1,
+            "netQty": 1,
+            "recipeUnit": "units"
+          },
+          {
+            "itemId": "inv-034",
+            "qty": 0.025,
+            "netQty": 0.025,
+            "recipeUnit": "L"
+          },
+          {
+            "itemId": "inv-016",
+            "qty": 0.02,
+            "netQty": 0.02,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-017",
+            "qty": 0.015,
+            "netQty": 0.015,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-015",
+            "qty": 0.03,
+            "netQty": 0.03,
+            "recipeUnit": "kg"
+          }
+        ],
+        "updatedAt": "<ts:1781601469>"
+      }
+    },
+    {
+      "id": "rec-109",
+      "data": {
+        "menuItemId": "menu-109",
+        "createdAt": "<ts:1781255440>",
+        "ingredients": [
+          {
+            "itemId": "inv-006",
+            "qty": 0.18,
+            "netQty": 0.18,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-024",
+            "qty": 1,
+            "netQty": 1,
+            "recipeUnit": "units"
+          },
+          {
+            "itemId": "inv-032",
+            "qty": 0.025,
+            "netQty": 0.025,
+            "recipeUnit": "L"
+          },
+          {
+            "itemId": "inv-011",
+            "qty": 0.04,
+            "netQty": 0.04,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-012",
+            "qty": 0.02,
+            "netQty": 0.02,
+            "recipeUnit": "kg"
+          }
+        ],
+        "updatedAt": "<ts:1781601470>"
+      }
+    },
+    {
+      "id": "rec-111",
+      "data": {
+        "menuItemId": "menu-111",
+        "createdAt": "<ts:1781255439>",
+        "ingredients": [
+          {
+            "itemId": "inv-002",
+            "qty": 0.18,
+            "netQty": 0.18,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-024",
+            "qty": 1,
+            "netQty": 1,
+            "recipeUnit": "units"
+          },
+          {
+            "itemId": "inv-013",
+            "qty": 0.5,
+            "netQty": 0.5,
+            "recipeUnit": "units"
+          },
+          {
+            "itemId": "inv-010",
+            "qty": 0.03,
+            "netQty": 0.03,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-032",
+            "qty": 0.025,
+            "netQty": 0.025,
+            "recipeUnit": "L"
+          }
+        ],
+        "updatedAt": "<ts:1781601470>"
+      }
+    },
+    {
+      "id": "rec-112",
+      "data": {
+        "menuItemId": "menu-112",
+        "createdAt": "<ts:1781255439>",
+        "ingredients": [
+          {
+            "itemId": "inv-002",
+            "qty": 0.18,
+            "netQty": 0.18,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-024",
+            "qty": 1,
+            "netQty": 1,
+            "recipeUnit": "units"
+          },
+          {
+            "itemId": "inv-033",
+            "qty": 0.025,
+            "netQty": 0.025,
+            "recipeUnit": "L"
+          },
+          {
+            "itemId": "inv-016",
+            "qty": 0.02,
+            "netQty": 0.02,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-015",
+            "qty": 0.03,
+            "netQty": 0.03,
+            "recipeUnit": "kg"
+          }
+        ],
+        "updatedAt": "<ts:1781601470>"
+      }
+    },
+    {
+      "id": "rec-118",
+      "data": {
+        "menuItemId": "menu-118",
+        "createdAt": "<ts:1781255440>",
+        "ingredients": [
+          {
+            "itemId": "inv-014",
+            "qty": 0.15,
+            "netQty": 0.15,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-024",
+            "qty": 1,
+            "netQty": 1,
+            "recipeUnit": "units"
+          },
+          {
+            "itemId": "inv-032",
+            "qty": 0.025,
+            "netQty": 0.025,
+            "recipeUnit": "L"
+          },
+          {
+            "itemId": "inv-010",
+            "qty": 0.03,
+            "netQty": 0.03,
+            "recipeUnit": "kg"
+          }
+        ],
+        "updatedAt": "<ts:1781601470>"
+      }
+    },
+    {
+      "id": "rec-119",
+      "data": {
+        "menuItemId": "menu-119",
+        "createdAt": "<ts:1781255440>",
+        "ingredients": [
+          {
+            "itemId": "inv-021",
+            "qty": 0.02,
+            "netQty": 0.02,
+            "recipeUnit": "kg"
+          },
+          {
+            "itemId": "inv-030",
+            "qty": 0.03,
+            "netQty": 0.03,
+            "recipeUnit": "L"
+          }
+        ],
+        "updatedAt": "<ts:1781601471>"
+      }
+    }
+  ]
+}
