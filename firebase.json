@@ -1,4 +1,13 @@
 {
+  "firestore": [
+    { "database": "mymor-australia", "rules": "firestore.mymor-australia.rules" },
+    { "database": "(default)", "rules": "firestore.default.rules" }
+  ],
+  "storage": [
+    { "bucket": "mymor-one", "rules": "storage.rules" },
+    { "bucket": "mymor-one.firebasestorage.app", "rules": "storage.default.rules" },
+    { "bucket": "mymor-one-firestore-backup-aus", "rules": "storage.backup-aus.rules" }
+  ],
   "hosting": [
     {
       "target": "dev",
