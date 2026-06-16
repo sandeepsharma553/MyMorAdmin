@@ -96,7 +96,11 @@ service cloud.firestore {
         allow read, write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
       match /purchaseOrders/{poId} {
-        allow read, write: if rgIsSuper() || rgCanManageStaff(groupId);
+        // Write tightened to owner/storeAdmin (supplier:edit). Managers are
+        // supplier:view and don't create/approve POs from the client; auto-draft
+        // POs are written by the rgSellOrder CF (Admin SDK). Read unchanged at manager+.
+        allow read:  if rgIsSuper() || rgCanManageStaff(groupId);
+        allow write: if rgIsSuper() || rgIsGroupAdmin(groupId);
       }
 
       // ── Compliance & Award (your recent work) — read: members; write: manager+ ──
@@ -150,9 +154,15 @@ service cloud.firestore {
       allow update: if rgIsSuper() || rgCanManageStaff(resource.data.groupId) || request.auth.uid == uid;
     }
 
-    // ⚠️ SECURITY: world read+write, no auth. Left unchanged to avoid breaking the
-    // signup/verify flow — close this deliberately once the access pattern is known.
-    match /emailVerifications/{email} { allow read, write: if true; }
+    // Locked: confirmed unused by every app/function (real verification runs
+    // through Cloud Functions writing emailOtps via the Admin SDK).
+    match /emailVerifications/{email} { allow read, write: if false; }
+
+    // OTP collections are written/read ONLY by Cloud Functions (Admin SDK, which
+    // bypasses rules). Deny all client access so email + code hash aren't exposed
+    // to signed-in users via the bottom catch-all.
+    match /emailOtps/{id}         { allow read, write: if false; }
+    match /passwordResetOtps/{id} { allow read, write: if false; }
 
     match /events/{eventId}           { allow read: if request.auth != null; }
     match /eventBookings/{docId}      { allow read: if request.auth != null && request.auth.uid == resource.data.userId; }
