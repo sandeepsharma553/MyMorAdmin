@@ -8,7 +8,7 @@ import {
   awardRatesCol, complianceManualDoc, acknowledgementsCol,
 } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForRole, hasLevel } from "./rgConfig";
-import { resolveAreas, resolveRoles } from "./staffStructureUtils";
+import { resolveAreas, resolveRoles, resolveEmpTypes } from "./staffStructureUtils";
 
 const RGContext = createContext(null);
 export const useRG = () => useContext(RGContext);
@@ -132,6 +132,8 @@ export function RGProvider({ children }) {
   const roles = useMemo(() => resolveRoles(group), [group]);
   // Staff areas: group config when present, else the seed defaults (FOH/BOH/Mgmt).
   const areas = useMemo(() => resolveAreas(group), [group]);
+  // Employment types: group config when present, else Casual/Part-time/Full-time/Junior.
+  const empTypes = useMemo(() => resolveEmpTypes(group), [group]);
 
   // ── Toast ─────────────────────────────────────────────
   const [toast, setToast] = useState(null);
@@ -230,14 +232,14 @@ export function RGProvider({ children }) {
   }, [myNotifications, myStaff, me]);
 
   const value = useMemo(() => ({
-    groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas,
+    groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
     announcements, messages, unreadMessages, myNotifications, unreadNotifications,
     inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
     awardRates, complianceManual, acksByStaff, acknowledgements,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, showToast,
-  }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas,
+  }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
       inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
       awardRates, complianceManual, acksByStaff, acknowledgements,

@@ -1,11 +1,12 @@
-import { DEFAULT_AREAS, DEFAULT_ROLES } from "./rgConfig";
+import { DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES } from "./rgConfig";
 
 /* Pure helpers for the staff-structure (Area/Role/Station) foundation — no React,
  * no Firestore, so they're trivially unit-testable. */
 
-// Areas/Roles come from the group doc when configured, else the seed defaults.
+// Areas/Roles/EmploymentTypes come from the group doc when configured, else the seed defaults.
 export const resolveAreas = (group) => (group?.areas?.length ? group.areas : DEFAULT_AREAS);
 export const resolveRoles = (group) => (group?.roles?.length ? group.roles : DEFAULT_ROLES);
+export const resolveEmpTypes = (group) => (group?.empTypes?.length ? group.empTypes : DEFAULT_EMP_TYPES);
 
 // Add a value to a picklist — trimmed, case-insensitively de-duplicated. Returns
 // the SAME array reference when nothing changes, so callers can skip the write.

@@ -7,6 +7,7 @@ import { useRG } from "./RGContext";
 import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
+import { isJuniorType } from "./staffMinorUtils";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
@@ -26,7 +27,6 @@ const tsLabel = (t) => {
   } catch { return ""; }
 };
 
-const EMP_TYPES = ["Casual", "Part-time", "Full-time"];
 const SHIST_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const SHIST_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shiftDateLabel = (sh) => {
@@ -77,7 +77,7 @@ const blankForm = (defaultVenue) => ({
 });
 
 export default function StaffDirectoryPage() {
-  const { groupId, group, staff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, areas, selectedVenue, showToast, can, me } = useRG();
+  const { groupId, group, staff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, areas, empTypes, selectedVenue, showToast, can, me } = useRG();
   const canEdit = can("staff", "edit");
   // Sensitive payroll (TFN/bank/super) is restricted to owner/storeAdmin (and super),
   // matching the Firestore rule on staff/{id}/private. Managers manage staff but not payroll.
@@ -541,6 +541,7 @@ export default function StaffDirectoryPage() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 4 }}>
               <div className="staff-avatar" style={{ background: avatarColor(s) }}>{initials(s)}</div>
               <span style={{ display: "inline-flex", gap: 4 }}>
+                {isJuniorType(s.type) && <span className="pill pill-amber" title="Junior employment type">Junior</span>}
                 {s.status === "Left" && <span className="pill pill-gray" title={s.endDate ? `Left ${s.endDate}` : "Left"}>Left</span>}
                 {s.hasAdminLogin && <span className="pill pill-purple" title="Has admin website login">🔑 Admin</span>}
               </span>
@@ -583,7 +584,7 @@ export default function StaffDirectoryPage() {
               <div className="form-group"><label className="form-label">Name *</label><input className="form-input" value={form.name} onChange={setF("name")} placeholder="First name" /></div>
               <div className="form-group"><label className="form-label">Role *</label><select className="form-input" value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value, area: areaOf(e.target.value) }))}>{roles.map((r) => <option key={r}>{r}</option>)}</select></div>
               <div className="form-group"><label className="form-label">Area</label><select className="form-input" value={form.area} onChange={setF("area")}>{areas.map((a) => <option key={a}>{a}</option>)}</select></div>
-              <div className="form-group"><label className="form-label">Employment</label><select className="form-input" value={form.type} onChange={setF("type")}>{EMP_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+              <div className="form-group"><label className="form-label">Employment</label><select className="form-input" value={form.type} onChange={setF("type")}>{empTypes.map((t) => <option key={t}>{t}</option>)}</select></div>
               <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={form.phone} onChange={setF("phone")} placeholder="04xx xxx xxx" /></div>
               <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={form.start} onChange={setF("start")} /></div>
               <div className="form-group"><label className="form-label">End date (if leaving)</label><input type="date" className="form-input" value={form.endDate} onChange={setF("endDate")} /></div>
@@ -826,7 +827,7 @@ export default function StaffDirectoryPage() {
                   <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={edit.name} onChange={setE("name")} /></div>
                   <div className="form-group"><label className="form-label">Role</label><select className="form-input" value={edit.role} onChange={(e) => setEdit((p) => ({ ...p, role: e.target.value, area: areaOf(e.target.value) }))}>{roles.map((r) => <option key={r}>{r}</option>)}</select></div>
                   <div className="form-group"><label className="form-label">Area</label><select className="form-input" value={edit.area} onChange={setE("area")}>{areas.map((a) => <option key={a}>{a}</option>)}</select></div>
-                  <div className="form-group"><label className="form-label">Employment</label><select className="form-input" value={edit.type} onChange={setE("type")}>{EMP_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+                  <div className="form-group"><label className="form-label">Employment</label><select className="form-input" value={edit.type} onChange={setE("type")}>{empTypes.map((t) => <option key={t}>{t}</option>)}</select></div>
                   <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={edit.phone} onChange={setE("phone")} /></div>
                   <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={edit.start} onChange={setE("start")} /></div>
                   <div className="form-group"><label className="form-label">End date (if leaving)</label><input type="date" className="form-input" value={edit.endDate} onChange={setE("endDate")} /></div>

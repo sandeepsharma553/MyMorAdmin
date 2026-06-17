@@ -31,6 +31,8 @@ export const DEFAULT_ROLES = ["Manager", "FOH Supervisor", "FOH In Charge", "FOH
 // NB: "CK"/"Kitchen" is NOT an area — Central Kitchen is a VENUE; its staff carry
 // their real FOH/BOH area and are found via the venue filter.
 export const DEFAULT_AREAS = ["FOH", "BOH", "Mgmt"];
+// Employment types. Editable in Settings (group.empTypes[]); seed defaults.
+export const DEFAULT_EMP_TYPES = ["Casual", "Part-time", "Full-time", "Junior"];
 export const SUGGESTED_STATIONS = {
   FOH: ["Counter", "Floor", "Barista", "Bar"],
   BOH: ["Grill", "Salad", "Food Prep", "Restock", "Fryer", "Dishwashing"],
