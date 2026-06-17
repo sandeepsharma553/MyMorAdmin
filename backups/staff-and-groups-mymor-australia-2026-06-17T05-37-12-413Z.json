@@ -1,0 +1,1402 @@
+{
+  "db": "mymor-australia",
+  "exportedAt": "2026-06-17T05:37:12.414Z",
+  "groupCount": 2,
+  "staffCount": 29,
+  "groups": [
+    {
+      "id": "2JVqK8PxJQFeDgvHmw4n",
+      "data": {
+        "name": "MyMor Group",
+        "abn": "87878",
+        "ownerEmail": "admin@gmail.com",
+        "ownerName": "admin",
+        "phone": "7668787",
+        "createdAt": {
+          "_seconds": 1780654248,
+          "_nanoseconds": 604000000
+        },
+        "ownerUid": "QJ7RncDwkabWaQqsnVR3IbWE57r1"
+      }
+    },
+    {
+      "id": "YQRkUwBO5wMIdLSgcpji",
+      "data": {
+        "name": "Mad Kitchen Group",
+        "abn": "2037676733",
+        "ownerEmail": "manager@madkitchen.com",
+        "ownerName": "Ben J",
+        "phone": "988989",
+        "createdAt": {
+          "_seconds": 1780293247,
+          "_nanoseconds": 572000000
+        },
+        "ownerUid": "Y9yhzM12ITadXm2dBWk1gHt2tAt1",
+        "stockCategories": [
+          "Protein",
+          "Frozen",
+          "Produce",
+          "Dairy",
+          "Dry goods",
+          "Asian grocery",
+          "Sauces",
+          "Packaging",
+          "Seafood"
+        ],
+        "stockUnits": [
+          "kg",
+          "g",
+          "L",
+          "ml",
+          "units",
+          "pack",
+          "box",
+          "carton",
+          "bunch",
+          "can"
+        ],
+        "storageLocations": [
+          "Fridge A",
+          "Fridge B",
+          "Freezer",
+          "Dry store",
+          "Bar fridge"
+        ],
+        "menuCategories": [
+          "Burgers",
+          "Chicken",
+          "Vegan",
+          "Vegetarian",
+          "Sides",
+          "Coffee",
+          "Drinks"
+        ],
+        "awardLinks": [
+          {
+            "code": "MA000003",
+            "label": "Fast Food Industry Award",
+            "desc": "Takeaway cafés & fast food outlets — summary & pay guide",
+            "url": "https://www.fairwork.gov.au/employment-conditions/awards/awards-summary/ma000003-summary",
+            "tag": "Primary"
+          },
+          {
+            "code": "MA000119",
+            "label": "Restaurant Industry Award",
+            "desc": "Dine-in cafés, table-service venues — summary & pay guide",
+            "url": "https://www.fairwork.gov.au/employment-conditions/awards/awards-summary/ma000119-summary",
+            "tag": "Dine-in"
+          },
+          {
+            "code": "MA000004",
+            "label": "General Retail Award",
+            "desc": "Only if operating as part of a retail business",
+            "url": "https://www.fairwork.gov.au/employment-conditions/awards/awards-summary/ma000004-summary",
+            "tag": "Occasional"
+          },
+          {
+            "code": "",
+            "label": "Fair Work pay guides",
+            "desc": "Authoritative source — updated annually around 1 July",
+            "url": "https://www.fairwork.gov.au/pay-and-wages/minimum-wages/pay-guides",
+            "tag": "Verify here"
+          }
+        ]
+      }
+    }
+  ],
+  "staff": [
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "H1LyJUwxdwdiloKfdLuG",
+      "data": {
+        "name": "Chiggi",
+        "displayName": "Chiggi",
+        "role": "Chef",
+        "area": "BOH",
+        "groupRole": "staff",
+        "permissions": {
+          "staff": "none",
+          "shifts": "view",
+          "leave": "view",
+          "training": "view",
+          "checklists": "edit",
+          "temperature": "edit",
+          "performance": "none",
+          "messages": "view",
+          "calendar": "view",
+          "usermgmt": "none",
+          "settings": "none",
+          "stock": "none",
+          "menus": "none",
+          "supplier": "none",
+          "compliance": "view"
+        },
+        "venueIds": [
+          "main-kitchen"
+        ],
+        "venueNames": [
+          "Central Kitchen"
+        ],
+        "stationIds": [],
+        "stationNames": [],
+        "phone": "04847462462746",
+        "start": "2026-06-16",
+        "endDate": "",
+        "type": "Casual",
+        "cert": "Not yet obtained",
+        "certs": [],
+        "birthday": "",
+        "status": "Active",
+        "pin": "4798",
+        "email": "",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "createdAt": {
+          "_seconds": 1781610538,
+          "_nanoseconds": 507000000
+        }
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "angelina",
+      "data": {
+        "hours": 0,
+        "importedAt": {
+          "_seconds": 1780391713,
+          "_nanoseconds": 509000000
+        },
+        "displayName": "Angelina",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "6619",
+        "name": "Angelina",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff",
+        "area": "BOH",
+        "role": "BOH",
+        "phone": "",
+        "start": "",
+        "bankAccount": "",
+        "address": "",
+        "endDate": "",
+        "stationIds": [],
+        "contactEmail": "",
+        "legalName": "",
+        "password": "123456",
+        "superUsi": "",
+        "superAccount": "",
+        "stationNames": [],
+        "dob": "",
+        "hasAdminLogin": true,
+        "adminUid": "4EsJ2wGmkkb12JPNgRWdDUAzPGs1",
+        "bankBsb": "",
+        "tfn": "",
+        "email": "angelina@madkitchen.com",
+        "updatedAt": {
+          "_seconds": 1780616196,
+          "_nanoseconds": 629000000
+        },
+        "records": [
+          {
+            "id": "train-5xmkc6zsgsCslk19gUMa",
+            "type": "Training",
+            "note": "Signed off \"Back Of House – Closing\"",
+            "at": "2026-06-10T10:38:10.083Z",
+            "by": "Ben J"
+          }
+        ]
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "bowser",
+      "data": {
+        "area": "BOH",
+        "hours": 0,
+        "role": "BOH",
+        "importedAt": {
+          "_seconds": 1780391710,
+          "_nanoseconds": 838000000
+        },
+        "displayName": "Bowser",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "3214",
+        "name": "Bowser",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji",
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji",
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "bridie",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391712,
+          "_nanoseconds": 293000000
+        },
+        "displayName": "Bridie",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "6246",
+        "name": "Bridie",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "cassie",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH Supervisor",
+        "importedAt": {
+          "_seconds": 1780391708,
+          "_nanoseconds": 34000000
+        },
+        "displayName": "Cassie",
+        "adminAccessRequested": true,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "4198",
+        "name": "Cassie",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": true,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "view",
+          "usermgmt": "none",
+          "leave": "edit",
+          "shifts": "edit",
+          "staff": "view",
+          "training": "edit"
+        },
+        "groupRole": "manager"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "chloe",
+      "data": {
+        "hours": 0,
+        "importedAt": {
+          "_seconds": 1780391708,
+          "_nanoseconds": 814000000
+        },
+        "adminAccessRequested": true,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "7589",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": true,
+        "venueIds": [
+          "mad-benji",
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji",
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "view",
+          "usermgmt": "none",
+          "leave": "edit",
+          "shifts": "edit",
+          "staff": "view",
+          "training": "edit"
+        },
+        "groupRole": "manager",
+        "phone": "",
+        "start": "",
+        "displayName": "Chloe",
+        "name": "Chloe",
+        "area": "BOH",
+        "birthday": "",
+        "role": "Chef",
+        "endDate": "",
+        "stationIds": [],
+        "stationNames": [],
+        "history": [
+          {
+            "at": "2026-06-16T11:35:28.590Z",
+            "by": "Ben J",
+            "changes": [
+              "Role: FOH In Charge → Chef",
+              "Area: FOH → BOH"
+            ]
+          }
+        ],
+        "certs": [],
+        "updatedAt": {
+          "_seconds": 1781609732,
+          "_nanoseconds": 564000000
+        }
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "david",
+      "data": {
+        "area": "BOH",
+        "hours": 0,
+        "role": "BOH",
+        "importedAt": {
+          "_seconds": 1780391715,
+          "_nanoseconds": 657000000
+        },
+        "displayName": "David",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "5331",
+        "name": "David",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "elyssa",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391711,
+          "_nanoseconds": 564000000
+        },
+        "displayName": "Elyssa",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "3110",
+        "name": "Elyssa",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "hudson",
+      "data": {
+        "area": "BOH",
+        "hours": 0,
+        "role": "BOH",
+        "importedAt": {
+          "_seconds": 1780391714,
+          "_nanoseconds": 234000000
+        },
+        "displayName": "Hudson",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "5799",
+        "name": "Hudson",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "imogen",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391713,
+          "_nanoseconds": 743000000
+        },
+        "displayName": "Imogen",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "8737",
+        "name": "Imogen",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "jackson",
+      "data": {
+        "area": "BOH",
+        "hours": 0,
+        "role": "BOH",
+        "importedAt": {
+          "_seconds": 1780391711,
+          "_nanoseconds": 326000000
+        },
+        "displayName": "Jackson",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "8793",
+        "name": "Jackson",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji",
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji",
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "jade",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391710,
+          "_nanoseconds": 331000000
+        },
+        "displayName": "Jade",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "3947",
+        "name": "Jade",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji",
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji",
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "jason",
+      "data": {
+        "area": "BOH",
+        "hours": 0,
+        "role": "BOH / Manager",
+        "importedAt": {
+          "_seconds": 1780391710,
+          "_nanoseconds": 72000000
+        },
+        "displayName": "Jason",
+        "adminAccessRequested": true,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "2023",
+        "name": "Jason",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": true,
+        "venueIds": [
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Hotpot"
+        ],
+        "groupRole": "storeAdmin",
+        "permissions": {
+          "staff": "view",
+          "shifts": "edit",
+          "leave": "edit",
+          "training": "edit",
+          "checklists": "edit",
+          "performance": "view",
+          "usermgmt": "edit"
+        },
+        "updatedAt": {
+          "_seconds": 1780397373,
+          "_nanoseconds": 274000000
+        }
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "jayley",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391715,
+          "_nanoseconds": 424000000
+        },
+        "displayName": "Jayley",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "4305",
+        "name": "Jayley",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "jess",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391713,
+          "_nanoseconds": 23000000
+        },
+        "displayName": "Jess",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "1098",
+        "name": "Jess",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "jessica",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391715,
+          "_nanoseconds": 190000000
+        },
+        "displayName": "Jessica",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "3378",
+        "name": "Jessica",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "jiny",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391714,
+          "_nanoseconds": 735000000
+        },
+        "displayName": "Jiny",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "9340",
+        "name": "Jiny",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "jolene",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391712,
+          "_nanoseconds": 48000000
+        },
+        "displayName": "Jolene",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "2443",
+        "name": "Jolene",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "jordan",
+      "data": {
+        "area": "BOH",
+        "hours": 0,
+        "role": "BOH",
+        "importedAt": {
+          "_seconds": 1780391714,
+          "_nanoseconds": 491000000
+        },
+        "displayName": "Jordan",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "1519",
+        "name": "Jordan",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "kav",
+      "data": {
+        "area": "BOH",
+        "hours": 0,
+        "role": "BOH",
+        "importedAt": {
+          "_seconds": 1780391711,
+          "_nanoseconds": 85000000
+        },
+        "displayName": "Kav",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "5012",
+        "name": "Kav",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji",
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji",
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "kelly",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391714,
+          "_nanoseconds": 963000000
+        },
+        "displayName": "Kelly",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "4530",
+        "name": "Kelly",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "kulith",
+      "data": {
+        "area": "BOH",
+        "hours": 0,
+        "role": "Chef",
+        "importedAt": {
+          "_seconds": 1780391713,
+          "_nanoseconds": 982000000
+        },
+        "displayName": "Kulith",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "8841",
+        "name": "Kulith",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "libby",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391712,
+          "_nanoseconds": 787000000
+        },
+        "displayName": "Libby",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "9896",
+        "name": "Libby",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "lina",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391710,
+          "_nanoseconds": 587000000
+        },
+        "displayName": "Lina",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "2652",
+        "name": "Lina",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji",
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji",
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "maddie",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391712,
+          "_nanoseconds": 538000000
+        },
+        "displayName": "Maddie",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "6686",
+        "name": "Maddie",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "rachele",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391711,
+          "_nanoseconds": 802000000
+        },
+        "displayName": "Rachele",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "8767",
+        "name": "Rachele",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "ryan",
+      "data": {
+        "area": "Mgmt",
+        "hours": 0,
+        "role": "Manager",
+        "importedAt": {
+          "_seconds": 1780391707,
+          "_nanoseconds": 739000000
+        },
+        "displayName": "Ryan",
+        "adminAccessRequested": true,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "7285",
+        "name": "Ryan",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "view",
+          "usermgmt": "edit",
+          "leave": "edit",
+          "shifts": "edit",
+          "staff": "edit",
+          "training": "edit"
+        },
+        "groupRole": "storeAdmin"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "van",
+      "data": {
+        "area": "BOH",
+        "hours": 0,
+        "role": "BOH In Charge",
+        "importedAt": {
+          "_seconds": 1780391709,
+          "_nanoseconds": 102000000
+        },
+        "displayName": "Van",
+        "adminAccessRequested": true,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "9073",
+        "name": "Van",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": true,
+        "venueIds": [
+          "mad-hotpot"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Hotpot"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "view",
+          "usermgmt": "none",
+          "leave": "edit",
+          "shifts": "edit",
+          "staff": "view",
+          "training": "edit"
+        },
+        "groupRole": "manager"
+      }
+    },
+    {
+      "groupId": "YQRkUwBO5wMIdLSgcpji",
+      "id": "zoe",
+      "data": {
+        "area": "FOH",
+        "hours": 0,
+        "role": "FOH",
+        "importedAt": {
+          "_seconds": 1780391713,
+          "_nanoseconds": 254000000
+        },
+        "displayName": "Zoe",
+        "adminAccessRequested": false,
+        "cert": "Not yet obtained",
+        "training": 0,
+        "source": "import",
+        "type": "Casual",
+        "pin": "6260",
+        "name": "Zoe",
+        "hasAdminLogin": false,
+        "adminUid": "",
+        "inCharge": false,
+        "venueIds": [
+          "mad-benji"
+        ],
+        "email": "",
+        "status": "Active",
+        "venueNames": [
+          "Mad Benji"
+        ],
+        "permissions": {
+          "checklists": "edit",
+          "performance": "none",
+          "usermgmt": "none",
+          "leave": "view",
+          "shifts": "view",
+          "staff": "none",
+          "training": "view"
+        },
+        "groupRole": "staff"
+      }
+    }
+  ]
+}
