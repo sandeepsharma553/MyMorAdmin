@@ -62,6 +62,19 @@ export const isAssignmentLocked = (a) => a?.status === "Complete" || a?.verified
  * on a KNOWN area mismatch). This is the AUTO-assign layer; the broader manual-assign
  * eligibility stays moduleForStaff/checklistForStaff (venue + area, no role-targeting).
  * ════════════════════════════════════════════════════════════════════ */
+/* Derive an Area from a role string — used to give a SHIFT a rostered area (shift
+ * docs carry a role + station but no area field). Mirrors the Phase-2 staffAreaBucket /
+ * ShiftPlanner roleArea regex (no "CK" — Central Kitchen is a venue, and a "Central
+ * Kitchen" role contains "kitchen" → BOH). Unknown → "" so the shouldAutoAssign
+ * "unknown area never blocks" escape applies. Kept byte-identical to functions/rgAutoAssign.js. */
+export function areaFromRole(role) {
+  const r = role || "";
+  if (/manager|owner|admin|supervisor|in charge/i.test(r)) return "Mgmt";
+  if (/foh|floor|\bbar\b|barista|counter|service/i.test(r)) return "FOH";
+  if (/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i.test(r)) return "BOH";
+  return "";
+}
+
 export function shouldAutoAssign(item, staff, venueId) {
   if (!item || !staff) return false;
   // venue membership (multi-venue via venueIds, legacy single venueId)

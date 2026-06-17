@@ -6,7 +6,7 @@
  * (server auto-assign and client suggest pick the same staff for the same item).
  *
  * ⚠ KEEP CASES identical to functions/scripts/rgAutoAssign.test.js. */
-import { shouldAutoAssign } from "./assignmentUtils";
+import { shouldAutoAssign, areaFromRole } from "./assignmentUtils";
 
 const foh = { area: "FOH", role: "FOH", venueIds: ["v1"] };
 const boh = { area: "BOH", role: "BOH", venueIds: ["v1"] };
@@ -56,5 +56,52 @@ describe("same-people proof — server filter == client filter for one item", ()
     const roster = [foh, boh, mgr, sup, fohNoArea];
     const assigned = roster.filter((s) => shouldAutoAssign(clFOHnoRole, s, "v1"));
     expect(assigned).toEqual([mgr, sup]);
+  });
+});
+
+// ── Rostered-role fix (the shift carries role + station but no area) ──
+// ⚠ KEEP AREA_CASES + the rostered proof identical to functions/scripts/rgAutoAssign.test.js.
+const AREA_CASES = [
+  ["FOH", "FOH"],
+  ["FOH — Bar", "FOH"],
+  ["BOH", "BOH"],
+  ["BOH — Kitchen", "BOH"],
+  ["Chef", "BOH"],
+  ["Central Kitchen", "BOH"], // a CK *role* is kitchen work → BOH (CK is a venue, not an area)
+  ["Store Manager", "Mgmt"],
+  ["FOH Supervisor", "Mgmt"],
+  ["Junior", ""],             // unknown → "" so it never blocks
+  ["", ""],
+];
+
+describe("areaFromRole — area derived from the rostered role", () => {
+  test.each(AREA_CASES)("%s → %s", (role, area) => {
+    expect(areaFromRole(role)).toBe(area);
+  });
+});
+
+describe("rostered-role basis — assign off the shift's role/area, NOT the home profile", () => {
+  // Mirrors how rgOnShiftCreated builds its match identity from the shift doc.
+  const rosteredFromShift = (shift, venueId) => ({
+    role: shift.role,
+    area: areaFromRole(shift.role),
+    venueIds: [venueId],
+    stationIds: shift.stationId ? [shift.stationId] : [],
+  });
+
+  test("a BOH-home person rostered as FOH gets the FOH item, not the BOH item", () => {
+    // home profile is BOH — but the function never reads it; only the shift matters.
+    const shift = { staffId: "x", role: "FOH", venueId: "v1", stationId: "" };
+    const rostered = rosteredFromShift(shift, "v1");
+    expect(rostered.area).toBe("FOH");
+    expect(shouldAutoAssign(clFOHrole, rostered, "v1")).toBe(true);  // FOH checklist → yes
+    expect(shouldAutoAssign(mBOHrole, rostered, "v1")).toBe(false); // BOH module → no
+  });
+  test("the same person rostered as BOH the next day gets the BOH item instead", () => {
+    const shift = { staffId: "x", role: "BOH", venueId: "v1", stationId: "" };
+    const rostered = rosteredFromShift(shift, "v1");
+    expect(rostered.area).toBe("BOH");
+    expect(shouldAutoAssign(mBOHrole, rostered, "v1")).toBe(true);
+    expect(shouldAutoAssign(clFOHrole, rostered, "v1")).toBe(false);
   });
 });
