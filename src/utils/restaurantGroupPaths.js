@@ -35,6 +35,12 @@ export const venueCol = (groupId, venueId, name) => {
   return collection(db, "restaurantGroups", String(groupId), "venues", String(venueId), name);
 };
 export const venueTrainingCol = (groupId, venueId) => venueCol(groupId, venueId, "trainingModules");
+// Archive of completed/in-progress training assignments removed or reassigned.
+// Per-venue subcollection (same shape/location as trainingAssignments) so it is
+// covered by the existing venues/{venueId}/{coll}/{docId=**} group-member rule.
+// Grows over time → fetched on-demand per staff profile, NOT in PER_VENUE_COLLECTIONS.
+export const trainingArchiveCol = (groupId, venueId) => venueCol(groupId, venueId, "trainingArchive");
+export const trainingArchiveDoc = (groupId, venueId, id) => doc(trainingArchiveCol(groupId, venueId), String(id));
 
 // Collections stored per-venue (subscribed & merged by the context).
 // NB: `staff` is GROUP-LEVEL (a staff member can belong to multiple venues via

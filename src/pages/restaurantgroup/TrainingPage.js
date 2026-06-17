@@ -3,6 +3,7 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/fir
 import { useRG } from "./RGContext";
 import { venueTrainingCol, venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, trainingStatusPill, trainingBarColor, progressColor, trainingPct, moduleForStaff, snapshotForAssign } from "./rgUtils";
+import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { sendNotification } from "./notify";
 import { RefImageViewer, RefImageEditor } from "./RefImages";
 import { RichItemList, RichText } from "./RichItems";
@@ -79,8 +80,10 @@ export default function TrainingPage() {
     catch { showToast("Could not update"); }
   };
   const removeAssign = async (a) => {
-    try { await deleteDoc(doc(venueCol(groupId, a.venueId, "trainingAssignments"), a.id)); showToast("Assignment removed"); }
-    catch { showToast("Could not remove"); }
+    try {
+      const { archived } = await archiveAndRemoveTraining(groupId, a, "removed");
+      showToast(archived ? "Assignment archived & removed" : "Assignment removed");
+    } catch { showToast("Could not remove"); }
   };
 
   const assign = async () => {

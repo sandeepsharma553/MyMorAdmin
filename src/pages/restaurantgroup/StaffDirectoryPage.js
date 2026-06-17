@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, serverTimestamp, arrayUnion, arrayRemove } from "firebase/firestore";
+import { addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, query, where, setDoc, serverTimestamp, arrayUnion, arrayRemove } from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor } from "../../utils/restaurantGroupPaths";
+import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
+import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
@@ -16,6 +17,14 @@ const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent"
 const REC_TYPES = ["Coaching", "Mistake", "Commendation", "Incident"];
 const recPill = (t) => t === "Mistake" ? "pill-red" : t === "Incident" ? "pill-amber" : t === "Commendation" ? "pill-green" : "pill-blue";
 const fmtDate = (iso) => { try { const d = new Date(iso); return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); } catch { return iso; } };
+// Firestore Timestamp | {seconds} | ISO string → short date label
+const tsLabel = (t) => {
+  if (!t) return "";
+  try {
+    const d = t.toDate ? t.toDate() : (typeof t?.seconds === "number" ? new Date(t.seconds * 1000) : new Date(t));
+    return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  } catch { return ""; }
+};
 
 const AREAS = ["FOH", "BOH", "Mgmt"];
 const EMP_TYPES = ["Casual", "Part-time", "Full-time"];
@@ -334,6 +343,10 @@ export default function StaffDirectoryPage() {
   const openAssignment = useMemo(() => assignments.find((a) => a.id === openAssignId) || null, [assignments, openAssignId]);
   const [openChecklistId, setOpenChecklistId] = useState(null);
   const openChecklistAssignment = useMemo(() => checklistAssignments.find((a) => a.id === openChecklistId) || null, [checklistAssignments, openChecklistId]);
+  // archived (past) training for the open profile — fetched on demand (grows over time)
+  const [archivedTraining, setArchivedTraining] = useState(null); // null = loading, [] = none
+  const [openArchiveId, setOpenArchiveId] = useState(null);
+  const openArchiveRecord = useMemo(() => (archivedTraining || []).find((a) => a.id === openArchiveId) || null, [archivedTraining, openArchiveId]);
 
   // fetch the private payroll doc when a profile opens (only managers/admins can read it)
   useEffect(() => {
@@ -345,6 +358,27 @@ export default function StaffDirectoryPage() {
       .catch(() => { if (alive) setPayroll(null); }); // null = load failed → birthday/diff guards skip, never clobber
     return () => { alive = false; };
   }, [profile, groupId, canPayroll]);
+
+  // fetch archived training across the staff member's venues when a profile opens
+  useEffect(() => {
+    setArchivedTraining(null);
+    setOpenArchiveId(null);
+    if (!profile || !groupId) return;
+    let alive = true;
+    const vids = profile.venueIds || (profile.venueId ? [profile.venueId] : []);
+    Promise.all(vids.map((vid) =>
+      getDocs(query(trainingArchiveCol(groupId, vid), where("staffId", "==", profile.id)))
+        .then((snap) => snap.docs.map((d) => ({ id: d.id, venueId: vid, ...d.data() })))
+        .catch(() => [])
+    ))
+      .then((lists) => {
+        if (!alive) return;
+        const all = lists.flat().sort((a, b) => (b.archivedAt?.seconds || 0) - (a.archivedAt?.seconds || 0));
+        setArchivedTraining(all);
+      })
+      .catch(() => { if (alive) setArchivedTraining([]); });
+    return () => { alive = false; };
+  }, [profile, groupId]);
 
   const myTraining = useMemo(() => profile ? assignments.filter((a) => a.staffId === profile.id) : [], [profile, assignments]);
   const myChecklists = useMemo(() => profile ? checklistAssignments.filter((a) => a.staffId === profile.id) : [], [profile, checklistAssignments]);
@@ -435,8 +469,16 @@ export default function StaffDirectoryPage() {
     } catch { showToast("Could not assign"); }
   };
   const removeAssignment = async (a, kind) => {
-    try { await deleteDoc(doc(venueCol(groupId, a.venueId, kind === "training" ? "trainingAssignments" : "checklistAssignments"), a.id)); showToast("Removed"); }
-    catch { showToast("Could not remove"); }
+    try {
+      if (kind === "training") {
+        // archive completion history before removing (reassign = remove + assign fresh)
+        const { archived } = await archiveAndRemoveTraining(groupId, a, "removed");
+        showToast(archived ? "Archived & removed" : "Removed");
+      } else {
+        await deleteDoc(doc(venueCol(groupId, a.venueId, "checklistAssignments"), a.id));
+        showToast("Removed");
+      }
+    } catch { showToast("Could not remove"); }
   };
   const toggleAssignDone = async (a) => {
     try { await updateDoc(doc(venueCol(groupId, a.venueId, "trainingAssignments"), a.id), a.status === "Complete" ? { status: "Not started", progress: 0 } : { status: "Complete", progress: 100 }); }
@@ -681,6 +723,37 @@ export default function StaffDirectoryPage() {
                   {myTraining.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No training assigned.</div>}
                 </div>
 
+                {/* Past / archived training — preserved when a training was removed or reassigned */}
+                <div style={{ marginTop: 16 }}>
+                  <div className="card-head" style={{ marginBottom: 8 }}>
+                    <span className="card-title">Past / archived training</span>
+                    {archivedTraining && archivedTraining.length > 0 && <span className="pill pill-gray">{archivedTraining.length}</span>}
+                  </div>
+                  {archivedTraining === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
+                  {archivedTraining && archivedTraining.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No archived training.</div>}
+                  {(archivedTraining || []).map((a) => (
+                    <div key={a.id} style={{ padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                      <div className="staff-meta-row" style={{ justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 12 }}>
+                          {a.moduleTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span>
+                          {a.archivedReason && <span className="pill pill-gray" style={{ marginLeft: 6 }}>{a.archivedReason}</span>}
+                        </span>
+                        <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                          {a.verified && <span className="pill pill-green">✓ Verified</span>}
+                          <span className={`pill ${trainingStatusPill(a.status)}`}>{a.status}</span>
+                          <button className="btn btn-sm" onClick={() => setOpenArchiveId(a.id)}>View</button>
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 2 }}>
+                        {a.verifiedBy ? `Signed off by ${a.verifiedBy}` : ""}
+                        {a.verifiedAt ? `${a.verifiedBy ? " · " : ""}${tsLabel(a.verifiedAt)}` : ""}
+                        {a.archivedAt ? `${(a.verifiedBy || a.verifiedAt) ? " · " : ""}archived ${tsLabel(a.archivedAt)}` : ""}
+                        {a.verifyNote ? <span style={{ display: "block", color: "var(--ink)" }}>“{a.verifyNote}”</span> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
                 {/* Assigned checklists */}
                 <div style={{ marginTop: 16 }}>
                   <div className="card-head" style={{ marginBottom: 8 }}>
@@ -841,6 +914,10 @@ export default function StaffDirectoryPage() {
       )}
       {openChecklistAssignment && (
         <ChecklistAssignmentDetail assignment={openChecklistAssignment} liveChecklist={checklists.find((c) => c.id === openChecklistAssignment.checklistId) || checklists.find((c) => c.title === openChecklistAssignment.checklistTitle && c.venueId === openChecklistAssignment.venueId)} groupId={groupId} canTick={canEdit} canComment={canEdit} actorName={actorName} showToast={showToast} onClose={() => setOpenChecklistId(null)} />
+      )}
+      {/* Archived training — strictly read-only (all caps disabled, so no writes can occur) */}
+      {openArchiveRecord && (
+        <AssignmentDetail assignment={openArchiveRecord} liveModule={modules.find((m) => m.id === openArchiveRecord.moduleId)} groupId={groupId} canTick={false} canVerify={false} canComment={false} actorName={actorName} showToast={showToast} onClose={() => setOpenArchiveId(null)} />
       )}
     </>
   );
