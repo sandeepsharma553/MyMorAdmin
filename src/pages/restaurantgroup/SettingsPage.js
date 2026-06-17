@@ -3,14 +3,14 @@ import { updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from "firebase/fir
 import { useRG } from "./RGContext";
 import { venueCol, groupDoc } from "../../utils/restaurantGroupPaths";
 import { SUGGESTED_STATIONS } from "./rgConfig";
+import { addToList, removeFromList } from "./staffStructureUtils";
 
 const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-const AREAS = ["FOH", "BOH"];
 
 export default function SettingsPage() {
-  const { groupId, group, venues, stations, equipment, roles, can, showToast } = useRG();
+  const { groupId, group, venues, stations, equipment, roles, areas, can, showToast } = useRG();
   const editable = can("settings", "edit");
-  const [tab, setTab] = useState("stations");
+  const [tab, setTab] = useState("structure");
   const [venueTab, setVenueTab] = useState(venues[0]?.id || "");
   useEffect(() => { if (!venueTab && venues[0]) setVenueTab(venues[0].id); }, [venues]); // eslint-disable-line
 
@@ -87,12 +87,26 @@ export default function SettingsPage() {
     catch { showToast("Could not save roles"); }
   };
   const addRole = async () => {
-    const r = newRole.trim();
-    if (!r) return;
-    if (roles.some((x) => x.toLowerCase() === r.toLowerCase())) { setNewRole(""); return; }
-    await saveRoles([...roles, r]); setNewRole(""); showToast("Role added");
+    const next = addToList(roles, newRole);
+    setNewRole("");
+    if (next === roles) return; // empty or duplicate — nothing to save
+    await saveRoles(next); showToast("Role added");
   };
-  const removeRole = async (r) => { await saveRoles(roles.filter((x) => x !== r)); };
+  const removeRole = async (r) => { await saveRoles(removeFromList(roles, r)); };
+
+  // ── Areas ── (same shape as Roles: an editable group-doc list, FOH/BOH/Mgmt by default)
+  const [newArea, setNewArea] = useState("");
+  const saveAreas = async (next) => {
+    try { await updateDoc(groupDoc(groupId), { areas: next }); }
+    catch { showToast("Could not save areas"); }
+  };
+  const addArea = async () => {
+    const next = addToList(areas, newArea);
+    setNewArea("");
+    if (next === areas) return; // empty or duplicate — nothing to save
+    await saveAreas(next); showToast("Area added");
+  };
+  const removeArea = async (a) => { await saveAreas(removeFromList(areas, a)); };
 
   if (!can("settings", "view")) {
     return <div className="card" style={{ color: "var(--gray)", fontSize: 14 }}>You don’t have access to Settings. Ask an admin if you need it.</div>;
@@ -101,7 +115,7 @@ export default function SettingsPage() {
   return (
     <>
       <div className="tabs" style={{ marginBottom: 16 }}>
-        {[["stations", "Stations"], ["units", "Temperature units"], ["roles", "Roles"]].map(([id, l]) => (
+        {[["structure", "Staff structure"], ["stations", "Stations"], ["units", "Temperature units"]].map(([id, l]) => (
           <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
@@ -123,7 +137,7 @@ export default function SettingsPage() {
             {editable && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
                 <span style={{ fontSize: 11, color: "var(--gray)", alignSelf: "center" }}>Quick add:</span>
-                {AREAS.flatMap((a) => SUGGESTED_STATIONS[a].map((n) => (
+                {Object.keys(SUGGESTED_STATIONS).flatMap((a) => SUGGESTED_STATIONS[a].map((n) => (
                   <button key={a + n} className="btn btn-sm" onClick={() => quickAdd(n, a)} disabled={venueStations.some((s) => s.name.toLowerCase() === n.toLowerCase())}>{n} <span style={{ color: "var(--gray)" }}>· {a}</span></button>
                 )))}
               </div>
@@ -185,23 +199,75 @@ export default function SettingsPage() {
         </>
       )}
 
-      {/* ROLES */}
-      {tab === "roles" && (
-        <div className="card" style={{ maxWidth: 520 }}>
-          <div className="card-head"><div><span className="card-title">Roles</span><span className="card-sub">Used across staff, shifts & permissions</span></div></div>
-          {roles.map((r) => (
-            <div key={r} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
-              <span style={{ fontSize: 13 }}>{r}</span>
-              {editable && <button className="btn btn-sm btn-danger" onClick={() => removeRole(r)}>✕</button>}
+      {/* STAFF STRUCTURE — Areas + Roles + Stations-by-area, the whole flow in one view */}
+      {tab === "structure" && (
+        <>
+          <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 12 }}>
+            Define the staff structure — the <strong>Areas</strong> and <strong>Roles</strong> staff can be assigned, and the <strong>Stations</strong> within each venue. Used across Staff, Shifts, Training, Checklists &amp; permissions.
+          </div>
+          <div className="grid-2">
+            {/* AREAS */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Areas</span><span className="card-sub">Staff &amp; checklists group by these (FOH, BOH, Mgmt…)</span></div></div>
+              {areas.map((a) => (
+                <div key={a} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <span style={{ fontSize: 13 }}>{a}</span>
+                  {editable && areas.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the picklist (existing staff keep their area)" onClick={() => removeArea(a)}>✕</button>}
+                </div>
+              ))}
+              {editable && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <input className="form-input" value={newArea} onChange={(e) => setNewArea(e.target.value)} placeholder="New area (e.g. Bar)" onKeyDown={(e) => e.key === "Enter" && addArea()} />
+                  <button className="btn btn-primary" onClick={addArea}>Add</button>
+                </div>
+              )}
             </div>
-          ))}
-          {editable && (
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <input className="form-input" value={newRole} onChange={(e) => setNewRole(e.target.value)} placeholder="New role (e.g. Waitress)" onKeyDown={(e) => e.key === "Enter" && addRole()} />
-              <button className="btn btn-primary" onClick={addRole}>Add</button>
+            {/* ROLES */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Roles</span><span className="card-sub">Used across staff, shifts &amp; permissions</span></div></div>
+              {roles.map((r) => (
+                <div key={r} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <span style={{ fontSize: 13 }}>{r}</span>
+                  {editable && <button className="btn btn-sm btn-danger" onClick={() => removeRole(r)}>✕</button>}
+                </div>
+              ))}
+              {editable && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <input className="form-input" value={newRole} onChange={(e) => setNewRole(e.target.value)} placeholder="New role (e.g. Waitress)" onKeyDown={(e) => e.key === "Enter" && addRole()} />
+                  <button className="btn btn-primary" onClick={addRole}>Add</button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+
+          {/* STATIONS BY AREA — per venue, read-only overview (full editing in the Stations tab) */}
+          <div className="card" style={{ marginTop: 12 }}>
+            <div className="card-head">
+              <div><span className="card-title">Stations by area</span><span className="card-sub">Per venue — the stations within each area</span></div>
+              <button className="btn btn-sm" onClick={() => setTab("stations")}>Edit stations →</button>
+            </div>
+            {venues.map((v) => {
+              const vs = stations.filter((s) => s.venueId === v.id);
+              const orphan = vs.filter((s) => !areas.includes(s.area));
+              return (
+                <div key={v.id} style={{ padding: "8px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{v.name}</div>
+                  {vs.length ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {areas.flatMap((a) => vs.filter((s) => s.area === a).map((s) => (
+                        <span key={s.id} className="pill" style={{ background: s.color || "var(--gray-light)", color: s.color ? "#fff" : "var(--ink)" }}>{s.name} · {s.area}</span>
+                      )))}
+                      {orphan.map((s) => (
+                        <span key={s.id} className="pill pill-amber" title="Station area is not in the current Areas list">{s.name} · {s.area || "—"}</span>
+                      ))}
+                    </div>
+                  ) : <div style={{ fontSize: 11, color: "var(--gray)" }}>No stations yet for this venue.</div>}
+                </div>
+              );
+            })}
+            {venues.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No venues.</div>}
+          </div>
+        </>
       )}
 
       {/* Station add/edit modal */}
@@ -211,7 +277,7 @@ export default function SettingsPage() {
             <div className="modal-head"><span className="modal-title">{stForm.id ? "Edit station" : "New station"}</span><button className="modal-close" onClick={() => setStForm(null)}>✕</button></div>
             <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={stForm.name} onChange={(e) => setStForm((p) => ({ ...p, name: e.target.value }))} placeholder="Grill" /></div>
             <div className="form-group"><label className="form-label">Area</label>
-              <select className="form-input" value={stForm.area} onChange={(e) => setStForm((p) => ({ ...p, area: e.target.value, color: p.color || AREA_COLOR_DEFAULT[e.target.value] || "" }))}>{AREAS.map((a) => <option key={a}>{a}</option>)}</select>
+              <select className="form-input" value={stForm.area} onChange={(e) => setStForm((p) => ({ ...p, area: e.target.value, color: p.color || AREA_COLOR_DEFAULT[e.target.value] || "" }))}>{areas.map((a) => <option key={a}>{a}</option>)}</select>
             </div>
             <div className="form-group"><label className="form-label">Colour (shown on roster shift chips)</label>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

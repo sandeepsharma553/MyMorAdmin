@@ -26,7 +26,6 @@ const tsLabel = (t) => {
   } catch { return ""; }
 };
 
-const AREAS = ["FOH", "BOH", "Mgmt"];
 const EMP_TYPES = ["Casual", "Part-time", "Full-time"];
 const SHIST_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const SHIST_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -78,7 +77,7 @@ const blankForm = (defaultVenue) => ({
 });
 
 export default function StaffDirectoryPage() {
-  const { groupId, group, staff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, selectedVenue, showToast, can, me } = useRG();
+  const { groupId, group, staff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, areas, selectedVenue, showToast, can, me } = useRG();
   const canEdit = can("staff", "edit");
   // Sensitive payroll (TFN/bank/super) is restricted to owner/storeAdmin (and super),
   // matching the Firestore rule on staff/{id}/private. Managers manage staff but not payroll.
@@ -583,7 +582,7 @@ export default function StaffDirectoryPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group"><label className="form-label">Name *</label><input className="form-input" value={form.name} onChange={setF("name")} placeholder="First name" /></div>
               <div className="form-group"><label className="form-label">Role *</label><select className="form-input" value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value, area: areaOf(e.target.value) }))}>{roles.map((r) => <option key={r}>{r}</option>)}</select></div>
-              <div className="form-group"><label className="form-label">Area</label><select className="form-input" value={form.area} onChange={setF("area")}>{AREAS.map((a) => <option key={a}>{a}</option>)}</select></div>
+              <div className="form-group"><label className="form-label">Area</label><select className="form-input" value={form.area} onChange={setF("area")}>{areas.map((a) => <option key={a}>{a}</option>)}</select></div>
               <div className="form-group"><label className="form-label">Employment</label><select className="form-input" value={form.type} onChange={setF("type")}>{EMP_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
               <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={form.phone} onChange={setF("phone")} placeholder="04xx xxx xxx" /></div>
               <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={form.start} onChange={setF("start")} /></div>
@@ -826,7 +825,7 @@ export default function StaffDirectoryPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={edit.name} onChange={setE("name")} /></div>
                   <div className="form-group"><label className="form-label">Role</label><select className="form-input" value={edit.role} onChange={(e) => setEdit((p) => ({ ...p, role: e.target.value, area: areaOf(e.target.value) }))}>{roles.map((r) => <option key={r}>{r}</option>)}</select></div>
-                  <div className="form-group"><label className="form-label">Area</label><select className="form-input" value={edit.area} onChange={setE("area")}>{AREAS.map((a) => <option key={a}>{a}</option>)}</select></div>
+                  <div className="form-group"><label className="form-label">Area</label><select className="form-input" value={edit.area} onChange={setE("area")}>{areas.map((a) => <option key={a}>{a}</option>)}</select></div>
                   <div className="form-group"><label className="form-label">Employment</label><select className="form-input" value={edit.type} onChange={setE("type")}>{EMP_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
                   <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={edit.phone} onChange={setE("phone")} /></div>
                   <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={edit.start} onChange={setE("start")} /></div>

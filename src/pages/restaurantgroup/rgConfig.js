@@ -26,7 +26,11 @@ export const RG_MODULES = [
 ];
 
 // Editable in Settings; these are the seed defaults.
-export const DEFAULT_ROLES = ["Manager", "FOH Supervisor", "FOH In Charge", "FOH", "BOH In Charge", "BOH", "Chef"];
+export const DEFAULT_ROLES = ["Manager", "FOH Supervisor", "FOH In Charge", "FOH", "BOH In Charge", "BOH", "Chef", "Junior"];
+// Staff areas. Editable in Settings (group.areas[]); these are the seed defaults.
+// NB: "CK"/"Kitchen" is NOT an area — Central Kitchen is a VENUE; its staff carry
+// their real FOH/BOH area and are found via the venue filter.
+export const DEFAULT_AREAS = ["FOH", "BOH", "Mgmt"];
 export const SUGGESTED_STATIONS = {
   FOH: ["Counter", "Floor", "Barista", "Bar"],
   BOH: ["Grill", "Salad", "Food Prep", "Restock", "Fryer", "Dishwashing"],

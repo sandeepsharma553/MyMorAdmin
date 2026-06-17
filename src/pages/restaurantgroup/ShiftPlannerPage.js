@@ -3,6 +3,7 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/fir
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
+import { staffAreaBucket } from "./staffStructureUtils";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 import { checkAndCreateShiftAssignments } from "./checklistShiftUtils";
 
@@ -38,23 +39,12 @@ const shiftHours = (sh) => Math.max(0, parseTime(sh.end) - parseTime(sh.start));
 const cellClass = (type) =>
   type === "evening" ? "shift-evening" : type === "open" ? "shift-open" : type === "off" ? "shift-off" : "shift-morning";
 
-// group a staff member into an area bucket (for the categorized roster)
-const staffArea = (s) => {
-  if (s.area === "FOH" || s.area === "BOH" || s.area === "CK") return s.area;
-  const r = s.role || "";
-  if (/manager|owner|admin|supervisor|in charge/i.test(r)) return "Mgmt";
-  if (/central|\bck\b/i.test(r)) return "CK";
-  if (/foh|floor|\bbar\b|barista|counter|service/i.test(r)) return "FOH";
-  if (/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i.test(r)) return "BOH";
-  return s.area || "Other";
-};
-// area colours (#5): FOH green, BOH blue, CK purple, Mgmt black — station-specific
-// colour (set in Settings) wins when the shift has a station.
-const AREA_COLORS = { FOH: "#16a34a", BOH: "#2563eb", CK: "#8b5cf6", Mgmt: "#111111", Other: "#6b7280" };
+// area colours (#5): FOH green, BOH blue, Mgmt black — station-specific colour
+// (set in Settings) wins when the shift has a station.
+const AREA_COLORS = { FOH: "#16a34a", BOH: "#2563eb", Mgmt: "#111111", Other: "#6b7280" };
 const roleArea = (role) => {
   const r = role || "";
   if (/manager|owner|admin|supervisor|in charge/i.test(r)) return "Mgmt";
-  if (/central|\bck\b/i.test(r)) return "CK";
   if (/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i.test(r)) return "BOH";
   if (/foh|floor|\bbar\b|barista|counter|service/i.test(r)) return "FOH";
   return "Other";
@@ -64,7 +54,6 @@ const AREA_GROUPS = [
   { key: "Mgmt", label: "Management" },
   { key: "FOH", label: "Front of House" },
   { key: "BOH", label: "Back of House" },
-  { key: "CK", label: "Kitchen / Central" },
   { key: "Other", label: "Other" },
 ];
 
@@ -75,7 +64,7 @@ export default function ShiftPlannerPage() {
   const [modal, setModal] = useState(null); // { staffId, day } | true
   const [shiftDetail, setShiftDetail] = useState(null);
   const [capStaff, setCapStaff] = useState(null); // staff capability card
-  const [areaFilter, setAreaFilter] = useState("all"); // all | FOH | BOH | CK | Mgmt
+  const [areaFilter, setAreaFilter] = useState("all"); // all | FOH | BOH | Mgmt
   const [splitMode, setSplitMode] = useState(false);
   const [splitA, setSplitA] = useState("");
   const [splitB, setSplitB] = useState("");
@@ -131,11 +120,11 @@ export default function ShiftPlannerPage() {
   const labourCost = totalHours * hourly;
   const labourPct = ((labourCost / weeklyRev) * 100).toFixed(1);
 
-  // rows grouped into area sections (Management / FOH / BOH / Kitchen / Other),
+  // rows grouped into area sections (Management / FOH / BOH / Other),
   // honouring the area filter; empty groups are dropped.
   const groupedRows = useMemo(() =>
     AREA_GROUPS
-      .map((g) => ({ ...g, members: rows.filter((s) => staffArea(s) === g.key) }))
+      .map((g) => ({ ...g, members: rows.filter((s) => staffAreaBucket(s) === g.key) }))
       .filter((g) => g.members.length && (areaFilter === "all" || areaFilter === g.key)),
     [rows, areaFilter]);
 
@@ -326,7 +315,7 @@ export default function ShiftPlannerPage() {
       {/* Area filter */}
       {!splitMode && (
         <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-          {[["all", "All"], ["Mgmt", "Management"], ["FOH", "FOH"], ["BOH", "BOH"], ["CK", "Kitchen"]].map(([k, l]) => (
+          {[["all", "All"], ["Mgmt", "Management"], ["FOH", "FOH"], ["BOH", "BOH"]].map(([k, l]) => (
             <button key={k} className="btn btn-sm" onClick={() => setAreaFilter(k)}
               style={areaFilter === k ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
           ))}

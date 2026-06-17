@@ -19,7 +19,6 @@ const dayLabel = (days) => {
   const ordered = WEEKDAYS.filter(([k]) => days.includes(k)).map(([, l]) => l);
   return ordered.join(", ");
 };
-const AREAS = ["FOH", "BOH", "All"];
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const pushHist = (c) => {
   const done = (c.checked || []).filter(Boolean).length;
@@ -34,7 +33,9 @@ const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId
 const AUTO_STARTS = ["", "7:00am", "7:30am", "8:00am", "9:00am", "10:00am", "11:00am", "12:00pm", "3:00pm", "4:00pm", "5:00pm", "6:00pm"];
 
 export default function ChecklistsPage() {
-  const { groupId, venues, staff, checklists, checklistAssignments, stations, roles, shifts, selectedVenue, showToast, can, me } = useRG();
+  const { groupId, venues, staff, checklists, checklistAssignments, stations, roles, areas, shifts, selectedVenue, showToast, can, me } = useRG();
+  // checklist area options: configured staff areas + the universal "All"
+  const AREA_OPTS = useMemo(() => [...areas, "All"], [areas]);
   const canEdit = can("checklists", "edit");
   const [venueTab, setVenueTab] = useState(selectedVenue === "all" ? (venues[0]?.id || "") : selectedVenue);
   const [typeFilter, setTypeFilter] = useState("All checklists");
@@ -310,7 +311,7 @@ export default function ChecklistsPage() {
                 <select className="form-input" value={editor.type} onChange={setEd("type")}>{EDIT_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
               </div>
               <div className="form-group"><label className="form-label">Area (FOH / BOH / All)</label>
-                <select className="form-input" value={editor.area} onChange={setEd("area")}>{AREAS.map((a) => <option key={a}>{a}</option>)}</select>
+                <select className="form-input" value={editor.area} onChange={setEd("area")}>{AREA_OPTS.map((a) => <option key={a}>{a}</option>)}</select>
               </div>
               <div className="form-group"><label className="form-label">Station (optional)</label>
                 <select className="form-input" value={editor.stationId} onChange={setEd("stationId")}>
