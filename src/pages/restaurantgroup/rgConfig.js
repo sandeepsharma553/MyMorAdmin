@@ -12,7 +12,7 @@ export const RG_MODULES = [
   { key: "shifts", label: "Shift Planner", path: "/rg/shifts" },
   { key: "leave", label: "Leave Requests", path: "/rg/leave" },
   { key: "training", label: "Training", path: "/rg/training" },
-  { key: "checklists", label: "SOPs & Checklists", path: "/rg/checklists" },
+  { key: "checklists", label: "Checklists", path: "/rg/checklists" },
   { key: "temperature", label: "Temperature Log", path: "/rg/temperature" },
   { key: "performance", label: "Performance", path: "/rg/performance" },
   { key: "stock", label: "Stock", path: "/rg/stock" },
@@ -24,6 +24,14 @@ export const RG_MODULES = [
   { key: "usermgmt", label: "User Management", path: "/rg/users" },
   { key: "settings", label: "Settings", path: "/rg/settings" },
 ];
+
+// Phase 3b presentation split: SOPs and Checklists are now DISTINCT nav items.
+// SOPs are the training-module library, so the SOPs item reuses the `training`
+// permission + data (NO new permission module, NO data migration) — its route just
+// opens the Training page focused on the module/SOP library. Checklists keep their
+// own collection + the `checklists` permission, now plainly labelled "Checklists".
+export const SOPS_NAV = { key: "sops", path: "/rg/sops", permKey: "training", label: "SOPs", title: "SOPs — Procedures" };
+export const CHECKLISTS_NAV_LABEL = "Checklists";
 
 // Editable in Settings; these are the seed defaults.
 export const DEFAULT_ROLES = ["Manager", "FOH Supervisor", "FOH In Charge", "FOH", "BOH In Charge", "BOH", "Chef", "Junior"];

@@ -4,6 +4,7 @@ import { useRG } from "./RGContext";
 import { venueTrainingCol, venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, trainingStatusPill, trainingBarColor, progressColor, trainingPct, moduleForStaff, snapshotForAssign } from "./rgUtils";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
+import { orderItemsForStaff, orderStaffForItem, isSuggested } from "./assignmentUtils";
 import { sendNotification } from "./notify";
 import { RefImageViewer, RefImageEditor } from "./RefImages";
 import { RichItemList, RichText } from "./RichItems";
@@ -28,11 +29,9 @@ const editorToSteps = (steps) => (steps || [])
   .map((s) => ({ heading: (s.heading || "").trim(), items: (s.items || []).filter(hasText) }))
   .filter((s) => s.heading || s.items.length);
 
-export default function TrainingPage() {
+export default function TrainingPage({ initialTab }) {
   const { groupId, staff, scopedStaff: roleStaff, venues, modules, assignments, stations, roles, selectedVenue, matchVenue, showToast, can, me } = useRG();
   const canEdit = can("training", "edit");
-  const [tab, setTab] = useState("mine");
-  const [openAssign, setOpenAssign] = useState(null); // assignment id
 
   const myUid = me?.uid || me?.id;
   const myStaff = useMemo(() => staff.find((s) => (s.adminUid && s.adminUid === myUid) || (s.email && me?.email && s.email.toLowerCase() === me.email.toLowerCase())), [staff, myUid, me]);
@@ -40,6 +39,10 @@ export default function TrainingPage() {
   // staff (non-management) only get the "My Training" tab; managers/admins get all
   const isMgr = ["owner", "storeAdmin", "manager"].includes(me?.groupRole);
   const visibleTabs = isMgr ? TABS : TABS.filter((t) => t.id === "mine");
+  // initialTab (e.g. the SOPs nav opens to the module library) — clamped to a tab the
+  // user is actually allowed to see, so it can never widen visibility.
+  const [tab, setTab] = useState(() => (visibleTabs.some((t) => t.id === initialTab) ? initialTab : "mine"));
+  const [openAssign, setOpenAssign] = useState(null); // assignment id
   const openAssignment = useMemo(() => assignments.find((a) => a.id === openAssign) || null, [assignments, openAssign]);
   const [areaTab, setAreaTab] = useState("all"); // all | foh | boh
   const [detail, setDetail] = useState(null);
@@ -68,11 +71,18 @@ export default function TrainingPage() {
   const trained = scopedStaff.filter((s) => trainingPct(s.id, assignments) >= 90).length;
   const completionsDone = scopedAssign.filter((a) => a.status === "Complete").length;
 
-  // modules eligible for the staff selected in the assign form (area-aware)
+  // modules eligible for the staff selected in the assign form (area-aware), ordered
+  // by Area→Station→Role relevance (suggestion only — eligibility is unchanged).
   const assignStaff = staff.find((s) => s.id === form.staffId);
   const assignableModules = useMemo(
-    () => assignStaff ? modules.filter((m) => moduleForStaff(m, assignStaff)) : venueModules,
+    () => assignStaff ? orderItemsForStaff(modules.filter((m) => moduleForStaff(m, assignStaff)), assignStaff) : venueModules,
     [assignStaff, modules, venueModules]
+  );
+  // the picked module, used to ORDER the staff dropdown by who best matches it
+  const assignModule = useMemo(() => modules.find((m) => m.id === form.moduleId) || null, [modules, form.moduleId]);
+  const suggestedStaff = useMemo(
+    () => (assignModule ? orderStaffForItem(scopedStaff, assignModule) : scopedStaff),
+    [assignModule, scopedStaff]
   );
 
   const markDone = async (a) => {
@@ -237,16 +247,16 @@ export default function TrainingPage() {
           <div className="card">
             <div className="card-head"><span className="card-title">Assign training module</span></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div className="form-group"><label className="form-label">Staff member</label>
+              <div className="form-group"><label className="form-label">Staff member{assignModule ? " (suggested first)" : ""}</label>
                 <select className="form-input" value={form.staffId} onChange={setF("staffId")}>
                   <option value="">Select staff...</option>
-                  {scopedStaff.map((s) => <option key={s.id} value={s.id}>{fullName(s)}</option>)}
+                  {suggestedStaff.map((s) => <option key={s.id} value={s.id}>{assignModule && isSuggested(assignModule, s) ? "⭐ " : ""}{fullName(s)}</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Module</label>
                 <select className="form-input" value={form.moduleId} onChange={setF("moduleId")}>
                   <option value="">{assignStaff ? `Select module (${assignStaff.area} + universal)...` : "Select staff first..."}</option>
-                  {assignableModules.map((m) => <option key={`${m.venueId}-${m.id}`} value={m.id}>{m.title} — {m.venue} [{m.cat}]</option>)}
+                  {assignableModules.map((m) => <option key={`${m.venueId}-${m.id}`} value={m.id}>{assignStaff && isSuggested(m, assignStaff) ? "⭐ " : ""}{m.title} — {m.venue} [{m.cat}]</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Due date</label><input type="date" className="form-input" value={form.due} onChange={setF("due")} /></div>

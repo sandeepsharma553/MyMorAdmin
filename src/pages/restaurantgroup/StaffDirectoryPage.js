@@ -8,6 +8,7 @@ import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCo
 import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { isJuniorType } from "./staffMinorUtils";
+import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
@@ -423,15 +424,19 @@ export default function StaffDirectoryPage() {
       </div>
     );
   };
+  // Eligibility is unchanged (moduleForStaff/checklistForStaff); we only ORDER the
+  // eligible items by Area→Station→Role relevance to this staff member (suggestion).
   const eligibleModules = useMemo(() => {
     if (!profile) return [];
     const taken = new Set(myTraining.map((a) => `${a.venueId}:${a.moduleId}`));
-    return modules.filter((m) => moduleForStaff(m, profile) && !taken.has(`${m.venueId}:${m.id}`));
+    const list = modules.filter((m) => moduleForStaff(m, profile) && !taken.has(`${m.venueId}:${m.id}`));
+    return orderItemsForStaff(list, profile);
   }, [profile, modules, myTraining]);
   const eligibleChecklists = useMemo(() => {
     if (!profile) return [];
     const taken = new Set(myChecklists.map((a) => `${a.venueId}:${a.checklistId}`));
-    return checklists.filter((c) => checklistForStaff(c, profile) && !taken.has(`${c.venueId}:${c.id}`));
+    const list = checklists.filter((c) => checklistForStaff(c, profile) && !taken.has(`${c.venueId}:${c.id}`));
+    return orderItemsForStaff(list, profile);
   }, [profile, checklists, myChecklists]);
 
   const openAssign = (kind) => { setAssignKind(kind); setPicked([]); setAssignDue(""); setAssignPriority("normal"); };
@@ -892,6 +897,7 @@ export default function StaffDirectoryPage() {
                     <input type="checkbox" checked={picked.includes(key)} onChange={() => togglePick(key)} />
                     <span className="check-text">
                       {assignKind === "training" ? <>{m.icon} {m.title} <span className="pill pill-gray">{m.cat}</span></> : <>{m.title} <span className="pill pill-gray">{m.area || "All"}</span></>}
+                      {profile && isSuggested(m, profile) && <span className="pill pill-green" style={{ marginLeft: 4 }} title="Matches this staff member's area / station / role">Suggested</span>}
                       <span style={{ color: "var(--gray)" }}> · {m.venue}</span>
                     </span>
                   </label>

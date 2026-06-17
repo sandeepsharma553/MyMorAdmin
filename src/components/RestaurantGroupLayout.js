@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import {
-  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale,
+  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen,
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
+import { SOPS_NAV, CHECKLISTS_NAV_LABEL } from "../pages/restaurantgroup/rgConfig";
 import { markNotificationRead } from "../pages/restaurantgroup/notify";
 import VenueManager from "../pages/restaurantgroup/VenueManager";
 import { staffInVenue } from "../utils/restaurantGroupPaths";
@@ -16,7 +17,10 @@ const NAV = [
   { key: "shifts", path: "/rg/shifts", label: "Shift Planner", Icon: CalendarDays, title: "Shift Planner" },
   { key: "leave", path: "/rg/leave", label: "Leave Requests", Icon: FileText, title: "Leave Requests" },
   { key: "training", path: "/rg/training", label: "Training", Icon: GraduationCap, title: "Training & Development" },
-  { key: "checklists", path: "/rg/checklists", label: "SOPs & Checklists", Icon: CheckSquare, title: "SOPs & Checklists" },
+  // SOPs = the training-module library; distinct nav item, gated by the `training`
+  // permission (permKey) since it shares training's data — no new permission module.
+  { key: SOPS_NAV.key, path: SOPS_NAV.path, permKey: SOPS_NAV.permKey, label: SOPS_NAV.label, Icon: BookOpen, title: SOPS_NAV.title },
+  { key: "checklists", path: "/rg/checklists", label: CHECKLISTS_NAV_LABEL, Icon: CheckSquare, title: "Checklists" },
   { key: "temperature", path: "/rg/temperature", label: "Temperature Log", Icon: Thermometer, title: "Temperature Log" },
   { key: "stock", path: "/rg/stock", label: "Stock", Icon: Package, title: "Stock Management" },
   { key: "menus", path: "/rg/menus", label: "Menus", Icon: UtensilsCrossed, title: "Menus" },
@@ -124,7 +128,7 @@ function Shell({ children }) {
 
   const [venueMgrOpen, setVenueMgrOpen] = useState(false);
 
-  const visibleNav = useMemo(() => NAV.filter((n) => can(n.key, "view")), [can]);
+  const visibleNav = useMemo(() => NAV.filter((n) => can(n.permKey || n.key, "view")), [can]);
   const activeKey = NAV.find((n) => location.pathname.startsWith(n.path))?.key || visibleNav[0]?.key || "staff";
   const current = NAV.find((n) => n.key === activeKey) || NAV[0];
 

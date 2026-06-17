@@ -3,6 +3,7 @@ import { updateDoc, doc, serverTimestamp, arrayUnion } from "firebase/firestore"
 import { venueCol, staffCol } from "../../utils/restaurantGroupPaths";
 import { RichText } from "./RichItems";
 import { trainingStatusPill } from "./rgUtils";
+import { isAssignmentLocked } from "./assignmentUtils";
 import { sendNotification } from "./notify";
 
 /**
@@ -17,6 +18,14 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
   const [vNote, setVNote] = useState("");
   const [cmt, setCmt] = useState({ i: null, text: "", priv: false });
   if (!assignment) return null;
+  // Phase 3b: once Complete, the assignment is LOCKED — read-only in the UI. No
+  // tick/un-tick, no mark-all/reset, no verify/unverify, no comment edits. The only
+  // way to redo it is reassign (which archives the record via Phase 1). Effective
+  // capabilities below all fold in !locked; write()/verify()/saveComment() also bail.
+  const locked = isAssignmentLocked(assignment);
+  const tickable = canTick && !locked;
+  const verifiable = canVerify && !locked;
+  const commentable = canComment && !locked;
   const comments = assignment.comments || {}; // legacy single-comment map (read-only)
   const threads = assignment.threads || {}; // v2: threads.{i} = [{ text, by, at, private }]
   // merged thread per item; private entries are trainer-only
@@ -43,6 +52,7 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
   const ref = () => doc(venueCol(groupId, assignment.venueId, "trainingAssignments"), assignment.id);
 
   const write = async (next) => {
+    if (locked) return; // completed assignments are read-only (reassign to redo)
     const d = next.filter(Boolean).length;
     const progress = total ? Math.round((d / total) * 100) : 0;
     const allDone = total > 0 && d >= total;
@@ -62,6 +72,7 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
   const setCheck = (flatI, val) => { const next = [...checks]; next[flatI] = val; write(next); };
   const markAll = (val) => write(Array(total).fill(val));
   const saveComment = async (flatI) => {
+    if (locked) return; // read-only once complete
     const text = cmt.text.trim();
     if (!text) { setCmt({ i: null, text: "", priv: false }); return; }
     try {
@@ -72,6 +83,7 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
   };
 
   const verify = async () => {
+    if (locked) return;
     const note = vNote.trim();
     try {
       await updateDoc(ref(), {
@@ -94,6 +106,7 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
     } catch { showToast?.("Could not verify — please try again"); }
   };
   const unverify = async () => {
+    if (locked) return; // locked: un-verify is disabled — reassign to redo
     const allDone = total > 0 && done >= total;
     const status = done === 0 ? "Not started" : allDone ? "Awaiting sign-off" : "In progress";
     try { await updateDoc(ref(), { verified: false, verifiedBy: "", verifyNote: "", status }); showToast?.("Verification removed"); }
@@ -114,6 +127,11 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
           <span><span className={`pill ${trainingStatusPill(assignment.status)}`}>{assignment.status}</span> <strong style={{ marginLeft: 6 }}>{done}/{total}</strong></span>
         </div>
         <div className="progress-wrap" style={{ marginBottom: 14 }}><div className="progress-bar" style={{ width: `${pctNow}%`, background: "var(--green)" }} /></div>
+        {locked && (
+          <div style={{ marginBottom: 12, padding: "8px 10px", background: "rgba(34,197,94,0.08)", border: "0.5px solid var(--green)", borderRadius: 8, fontSize: 12 }}>
+            🔒 <strong>Completed &amp; locked.</strong> This record is read-only. To redo this training, reassign it from the staff profile — the completed record is archived first.
+          </div>
+        )}
         {link && <div style={{ marginBottom: 12 }}><button className="btn btn-sm btn-primary" onClick={() => window.open(link, "_blank", "noopener")}>Open external training ↗</button></div>}
 
         {withOffset.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>This module has no step items to tick.</div>}
@@ -128,9 +146,9 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
               return (
                 <div key={ii} style={{ marginBottom: 2 }}>
                   <div className="checklist-item">
-                    <div className={`check-box ${checked ? "checked" : ""}`} style={{ cursor: canTick ? "pointer" : "default" }} onClick={() => canTick && setCheck(flatI, !checked)} />
+                    <div className={`check-box ${checked ? "checked" : ""}`} style={{ cursor: tickable ? "pointer" : "default" }} onClick={() => tickable && setCheck(flatI, !checked)} />
                     <RichText html={it} className={`check-text ${checked ? "done" : ""}`} />
-                    {canComment && <button className="btn btn-sm" style={{ marginLeft: "auto" }} title="Add a comment on this step" onClick={() => setCmt({ i: flatI, text: "", priv: false })}>💬{thread.length ? ` ${thread.length}` : ""}</button>}
+                    {commentable && <button className="btn btn-sm" style={{ marginLeft: "auto" }} title="Add a comment on this step" onClick={() => setCmt({ i: flatI, text: "", priv: false })}>💬{thread.length ? ` ${thread.length}` : ""}</button>}
                   </div>
                   {thread.map((c, ci) => (
                     <div key={ci} style={{ fontSize: 11, color: "var(--gray)", margin: "1px 0 0 30px" }}>
@@ -162,9 +180,9 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
             <div>
               <span className="pill pill-green">✓ Verified by {assignment.verifiedBy || "trainer"}</span>
               {assignment.verifyNote && <div style={{ fontSize: 12, marginTop: 6 }}>“{assignment.verifyNote}”</div>}
-              {canVerify && <div style={{ marginTop: 8 }}><button className="btn btn-sm" onClick={unverify}>Remove sign-off</button></div>}
+              {verifiable && <div style={{ marginTop: 8 }}><button className="btn btn-sm" onClick={unverify}>Remove sign-off</button></div>}
             </div>
-          ) : canVerify ? (
+          ) : verifiable ? (
             <div>
               <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>Confirm this person has been observed and is competent{done < total ? " (not all steps ticked yet)" : ""}. Your note is saved to their record.</div>
               <div style={{ display: "flex", gap: 6 }}>
@@ -179,8 +197,8 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
 
         <div className="btn-row">
           {/* bulk shortcuts are a supervisor action — the assignee ticks items individually */}
-          {canVerify && total > 0 && <button className="btn btn-primary" onClick={() => markAll(true)}>Mark all done</button>}
-          {canVerify && done > 0 && <button className="btn" onClick={() => markAll(false)}>Reset</button>}
+          {verifiable && total > 0 && <button className="btn btn-primary" onClick={() => markAll(true)}>Mark all done</button>}
+          {verifiable && done > 0 && <button className="btn" onClick={() => markAll(false)}>Reset</button>}
           <button className="btn" onClick={onClose}>Close</button>
         </div>
       </div>

@@ -25,6 +25,9 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/shifts" element={P("shifts", <ShiftPlannerPage />)} />
       <Route path="/rg/leave" element={P("leave", <LeaveRequestsPage />)} />
       <Route path="/rg/training" element={P("training", <TrainingPage />)} />
+      {/* SOPs = the training-module library (same data + `training` permission); a
+          distinct nav item from Checklists, opened to the module library. */}
+      <Route path="/rg/sops" element={P("training", <TrainingPage initialTab="modules" />)} />
       <Route path="/rg/checklists" element={P("checklists", <ChecklistsPage />)} />
       <Route path="/rg/temperature" element={P("temperature", <TemperatureLogPage />)} />
       <Route path="/rg/performance" element={P("performance", <PerformancePage />)} />
