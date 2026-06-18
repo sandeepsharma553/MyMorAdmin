@@ -2,7 +2,7 @@
  * Covers: areas/roles read from config with fallback; Settings add/remove logic;
  * Junior present in defaults; no phantom CK anywhere; no staff mis-bucketed to CK;
  * config resolution never mutates the group doc (existing data untouched by the seed). */
-import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreaBucket } from "./staffStructureUtils";
+import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreaBucket, staffAreas, staffAreaBuckets } from "./staffStructureUtils";
 import { DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES } from "./rgConfig";
 
 describe("config resolution with fallback", () => {
@@ -95,5 +95,29 @@ describe("staffAreaBucket — phantom CK removed", () => {
     expect(staffAreaBucket({ area: "CK", role: "Chef" })).toBe("BOH");
     expect(staffAreaBucket({ area: "CK", role: "FOH" })).toBe("FOH");
     expect(staffAreaBucket({ area: "CK", role: "Manager" })).toBe("Mgmt");
+  });
+});
+
+describe("staffAreas — list with backward-compat fallback", () => {
+  test("prefers areas[], falls back to legacy [area], else []", () => {
+    expect(staffAreas({ areas: ["FOH", "BOH"] })).toEqual(["FOH", "BOH"]);
+    expect(staffAreas({ area: "FOH" })).toEqual(["FOH"]);          // un-migrated doc
+    expect(staffAreas({ areas: [], area: "BOH" })).toEqual(["BOH"]); // empty areas → fall back
+    expect(staffAreas({ role: "FOH" })).toEqual([]);               // neither set
+  });
+});
+
+describe("staffAreaBuckets — a multi-area person appears under EACH group", () => {
+  test("multi-area → one bucket per area", () => {
+    expect(staffAreaBuckets({ areas: ["FOH", "BOH"] }).sort()).toEqual(["BOH", "FOH"]);
+    expect(staffAreaBuckets({ areas: ["FOH", "BOH", "Mgmt"] }).sort()).toEqual(["BOH", "FOH", "Mgmt"]);
+  });
+  test("single area → single bucket; custom 'Kitchen' folds to BOH", () => {
+    expect(staffAreaBuckets({ areas: ["FOH"] })).toEqual(["FOH"]);
+    expect(staffAreaBuckets({ areas: ["Kitchen"] })).toEqual(["BOH"]); // custom area → known bucket
+  });
+  test("no areas → falls back to the single role-based bucket (never dropped)", () => {
+    expect(staffAreaBuckets({ role: "Chef" })).toEqual(["BOH"]);
+    expect(staffAreaBuckets({ area: "FOH" })).toEqual(["FOH"]); // legacy single still works
   });
 });

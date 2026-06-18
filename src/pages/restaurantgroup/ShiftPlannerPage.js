@@ -3,7 +3,7 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/fir
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
-import { staffAreaBucket } from "./staffStructureUtils";
+import { staffAreaBuckets } from "./staffStructureUtils";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 import { checkAndCreateShiftAssignments } from "./checklistShiftUtils";
 
@@ -120,11 +120,12 @@ export default function ShiftPlannerPage() {
   const labourCost = totalHours * hourly;
   const labourPct = ((labourCost / weeklyRev) * 100).toFixed(1);
 
-  // rows grouped into area sections (Management / FOH / BOH / Other),
-  // honouring the area filter; empty groups are dropped.
+  // rows grouped into area sections (Management / FOH / BOH / Other), honouring the
+  // area filter; empty groups are dropped. A MULTI-AREA person appears under EACH of
+  // their area groups (staffAreaBuckets), so e.g. a FOH+BOH person shows in both.
   const groupedRows = useMemo(() =>
     AREA_GROUPS
-      .map((g) => ({ ...g, members: rows.filter((s) => staffAreaBucket(s) === g.key) }))
+      .map((g) => ({ ...g, members: rows.filter((s) => staffAreaBuckets(s).includes(g.key)) }))
       .filter((g) => g.members.length && (areaFilter === "all" || areaFilter === g.key)),
     [rows, areaFilter]);
 

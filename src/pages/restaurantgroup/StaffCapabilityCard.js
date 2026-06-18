@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { fullName, certStatus, shiftHours, trainingStatusPill } from "./rgUtils";
+import { staffAreas } from "./staffStructureUtils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -46,7 +47,7 @@ export default function StaffCapabilityCard({ staff: s, assignments, shifts, per
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4 }}>
-          {s.role} · {(s.venueNames || []).join(", ") || s.venue || ""}{s.area ? ` · ${s.area}` : ""}
+          {s.role} · {(s.venueNames || []).join(", ") || s.venue || ""}{staffAreas(s).length ? ` · ${staffAreas(s).join(", ")}` : ""}
         </div>
         <div style={{ fontSize: 11, color: "var(--gray)" }}>Use this to decide what role to roster them into.</div>
 

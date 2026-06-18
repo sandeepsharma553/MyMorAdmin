@@ -1,4 +1,5 @@
 import { venueColor } from "../../utils/restaurantGroupPaths";
+import { staffAreas } from "./staffStructureUtils";
 
 export const fullName = (s) => s?.name || `${s?.first || ""} ${s?.last || ""}`.trim();
 
@@ -64,23 +65,24 @@ export const noteTypePill = (type) => {
   return "pill-gray";
 };
 
-// ── assignment eligibility (FOH/BOH relevance) ──
-// Managers/supervisors/admins see ALL modules & checklists; FOH/BOH staff see
-// only their area + universal ("All") items, scoped to the venues they work at.
+// ── assignment eligibility (area relevance) ──
+// Managerial ROLES see ALL modules & checklists; everyone else sees their areas +
+// universal ("All") items, scoped to the venues they work at. NB: area-based see-all
+// (area === "Mgmt") was DROPPED — visibility is now exactly the areas in the list.
 export const staffSeesAll = (s) =>
-  s?.area === "Mgmt" || /manager|supervisor|in charge|owner|admin/i.test(s?.role || "");
+  /manager|supervisor|in charge|owner|admin/i.test(s?.role || "");
 
 export const moduleForStaff = (m, s) => {
   if (!(s?.venueIds || []).includes(m?.venueId)) return false;
   if (staffSeesAll(s)) return true;
-  return m?.cat === s?.area || m?.cat === "All";
+  return m?.cat === "All" || staffAreas(s).includes(m?.cat);
 };
 
 export const checklistForStaff = (c, s) => {
   if (!(s?.venueIds || []).includes(c?.venueId)) return false;
   if (staffSeesAll(s)) return true;
   const a = c?.area || "All";
-  return a === s?.area || a === "All";
+  return a === "All" || staffAreas(s).includes(a);
 };
 
 // snapshot a module's step items onto an assignment so the assignee ticks each

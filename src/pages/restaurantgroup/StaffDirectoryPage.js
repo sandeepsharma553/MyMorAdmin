@@ -9,6 +9,7 @@ import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { isJuniorType } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
+import { staffAreas } from "./staffStructureUtils";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
@@ -115,7 +116,10 @@ export default function StaffDirectoryPage() {
   const venueScoped = useMemo(() => scopedStaff.filter((s) => staffInVenue(s, selectedVenue)), [scopedStaff, selectedVenue]);
   const filtered = useMemo(() => {
     let list = venueScoped;
-    if (roleFilter !== "all") list = list.filter((s) => (s.area || areaOf(s.role)).toLowerCase() === roleFilter || (roleFilter === "manager" && /manager|supervisor|in charge/i.test(s.role)));
+    if (roleFilter !== "all") list = list.filter((s) => {
+      const sa = staffAreas(s).length ? staffAreas(s) : [areaOf(s.role)];
+      return sa.some((a) => a.toLowerCase() === roleFilter) || (roleFilter === "manager" && /manager|supervisor|in charge/i.test(s.role));
+    });
     const t = search.trim().toLowerCase();
     if (t) list = list.filter((s) => `${s.displayName || s.name} ${s.role} ${(s.venueNames || []).join(" ")} ${s.email || ""} ${s.pin || ""}`.toLowerCase().includes(t));
     return list;
@@ -881,7 +885,7 @@ export default function StaffDirectoryPage() {
               <button className="modal-close" onClick={() => setAssignKind(null)}>✕</button>
             </div>
             <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>
-              {staffSeesAll(profile) ? "Manager/admin — all modules across their venues." : `Showing ${profile.area} + universal items for ${(profile.venueNames || []).join(", ")}.`}
+              {staffSeesAll(profile) ? "Manager/admin — all modules across their venues." : `Showing ${staffAreas(profile).join(", ") || "—"} + universal items for ${(profile.venueNames || []).join(", ")}.`}
             </div>
             {assignKind === "training" && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>

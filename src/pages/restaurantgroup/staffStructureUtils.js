@@ -18,9 +18,15 @@ export const addToList = (list, value) => {
 };
 export const removeFromList = (list, value) => (list || []).filter((x) => x !== value);
 
-// Bucket a staff member into an area for the categorized roster. There is NO
+// A staff member's areas as a LIST. Backward-compatible: prefer the new areas[],
+// else fall back to the legacy single `area` (so un-migrated docs still work).
+export const staffAreas = (s) =>
+  (Array.isArray(s?.areas) && s.areas.length) ? s.areas : (s?.area ? [s.area] : []);
+
+// Bucket a staff member into ONE area for the categorized roster. There is NO
 // "CK"/"Kitchen" bucket — Central Kitchen is a venue; its staff carry their real
-// FOH/BOH/Mgmt area and are reached via the venue filter.
+// FOH/BOH/Mgmt area and are reached via the venue filter. (Kept for callers that
+// need a single primary bucket; multi-area grouping uses staffAreaBuckets below.)
 export const staffAreaBucket = (s) => {
   if (s?.area === "FOH" || s?.area === "BOH" || s?.area === "Mgmt") return s.area;
   const r = s?.role || "";
@@ -28,4 +34,24 @@ export const staffAreaBucket = (s) => {
   if (/foh|floor|\bbar\b|barista|counter|service/i.test(r)) return "FOH";
   if (/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i.test(r)) return "BOH";
   return s?.area || "Other";
+};
+
+// Normalise one area value to a roster bucket (FOH/BOH/Mgmt/Other). Custom areas
+// (e.g. "Kitchen") fold to a known bucket by name (Kitchen → BOH), else "Other".
+const bucketOfArea = (area) => {
+  if (area === "FOH" || area === "BOH" || area === "Mgmt") return area;
+  const a = area || "";
+  if (/manager|owner|admin|supervisor|in charge/i.test(a)) return "Mgmt";
+  if (/foh|floor|\bbar\b|barista|counter|service/i.test(a)) return "FOH";
+  if (/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i.test(a)) return "BOH";
+  return "Other";
+};
+
+// ALL the roster buckets a staff member belongs to — a multi-area person appears
+// under EACH of their area groups. Falls back to the single role-based bucket when
+// no areas are set, so they're never dropped from the roster.
+export const staffAreaBuckets = (s) => {
+  const list = staffAreas(s);
+  if (!list.length) return [staffAreaBucket(s)];
+  return [...new Set(list.map(bucketOfArea))];
 };
