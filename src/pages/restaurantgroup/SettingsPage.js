@@ -8,7 +8,7 @@ import { addToList, removeFromList } from "./staffStructureUtils";
 const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
 export default function SettingsPage() {
-  const { groupId, group, venues, stations, equipment, roles, areas, can, showToast } = useRG();
+  const { groupId, group, venues, stations, equipment, roles, areas, empTypes, can, showToast } = useRG();
   const editable = can("settings", "edit");
   const [tab, setTab] = useState("structure");
   const [venueTab, setVenueTab] = useState(venues[0]?.id || "");
@@ -107,6 +107,20 @@ export default function SettingsPage() {
     await saveAreas(next); showToast("Area added");
   };
   const removeArea = async (a) => { await saveAreas(removeFromList(areas, a)); };
+
+  // ── Employment types ── (same shape as Areas/Roles: an editable group-doc list)
+  const [newEmpType, setNewEmpType] = useState("");
+  const saveEmpTypes = async (next) => {
+    try { await updateDoc(groupDoc(groupId), { empTypes: next }); }
+    catch { showToast("Could not save employment types"); }
+  };
+  const addEmpType = async () => {
+    const next = addToList(empTypes, newEmpType);
+    setNewEmpType("");
+    if (next === empTypes) return; // empty or duplicate — nothing to save
+    await saveEmpTypes(next); showToast("Employment type added");
+  };
+  const removeEmpType = async (t) => { await saveEmpTypes(removeFromList(empTypes, t)); };
 
   if (!can("settings", "view")) {
     return <div className="card" style={{ color: "var(--gray)", fontSize: 14 }}>You don’t have access to Settings. Ask an admin if you need it.</div>;
@@ -235,6 +249,22 @@ export default function SettingsPage() {
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <input className="form-input" value={newRole} onChange={(e) => setNewRole(e.target.value)} placeholder="New role (e.g. Waitress)" onKeyDown={(e) => e.key === "Enter" && addRole()} />
                   <button className="btn btn-primary" onClick={addRole}>Add</button>
+                </div>
+              )}
+            </div>
+            {/* EMPLOYMENT TYPES */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Employment types</span><span className="card-sub">Shown in the Add-staff &amp; profile employment picker</span></div></div>
+              {empTypes.map((t) => (
+                <div key={t} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <span style={{ fontSize: 13 }}>{t}</span>
+                  {editable && empTypes.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the picklist (existing staff keep their type)" onClick={() => removeEmpType(t)}>✕</button>}
+                </div>
+              ))}
+              {editable && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <input className="form-input" value={newEmpType} onChange={(e) => setNewEmpType(e.target.value)} placeholder="New type (e.g. Apprentice)" onKeyDown={(e) => e.key === "Enter" && addEmpType()} />
+                  <button className="btn btn-primary" onClick={addEmpType}>Add</button>
                 </div>
               )}
             </div>

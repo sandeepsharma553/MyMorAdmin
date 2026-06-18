@@ -2,8 +2,8 @@
  * Covers: areas/roles read from config with fallback; Settings add/remove logic;
  * Junior present in defaults; no phantom CK anywhere; no staff mis-bucketed to CK;
  * config resolution never mutates the group doc (existing data untouched by the seed). */
-import { resolveAreas, resolveRoles, addToList, removeFromList, staffAreaBucket } from "./staffStructureUtils";
-import { DEFAULT_AREAS, DEFAULT_ROLES } from "./rgConfig";
+import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreaBucket } from "./staffStructureUtils";
+import { DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES } from "./rgConfig";
 
 describe("config resolution with fallback", () => {
   test("falls back to defaults when the group has no areas/roles", () => {
@@ -51,6 +51,24 @@ describe("Settings add/remove list logic", () => {
     const live = ["Manager", "FOH", "BOH", "Chef"];
     expect(addToList(live, "Junior")).toEqual([...live, "Junior"]);
     expect(addToList([...live, "Junior"], "junior")).toEqual([...live, "Junior"]); // no dup
+  });
+});
+
+// Employment-types Settings editor — same addToList/removeFromList + resolveEmpTypes
+// pattern as Areas/Roles (the editor handlers call updateDoc(groupDoc, { empTypes })).
+describe("Settings: employment-types editor logic mirrors Areas/Roles", () => {
+  test("absent config falls back to the seeded defaults (incl. Junior)", () => {
+    expect(resolveEmpTypes(null)).toEqual(DEFAULT_EMP_TYPES);
+    expect(resolveEmpTypes({ empTypes: [] })).toEqual(DEFAULT_EMP_TYPES);
+    expect(DEFAULT_EMP_TYPES).toContain("Junior");
+  });
+  test("add appends (case-insensitively de-duped); remove drops; existing kept", () => {
+    expect(addToList(DEFAULT_EMP_TYPES, "Apprentice")).toEqual([...DEFAULT_EMP_TYPES, "Apprentice"]);
+    expect(addToList(DEFAULT_EMP_TYPES, "casual")).toBe(DEFAULT_EMP_TYPES); // dup → same ref, no write
+    expect(removeFromList(DEFAULT_EMP_TYPES, "Junior")).toEqual(["Casual", "Part-time", "Full-time"]);
+  });
+  test("present config overrides the defaults (what the Add-staff dropdown then shows)", () => {
+    expect(resolveEmpTypes({ empTypes: ["Casual", "Apprentice"] })).toEqual(["Casual", "Apprentice"]);
   });
 });
 

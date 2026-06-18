@@ -33,6 +33,10 @@ const NAV = [
   { key: "settings", path: "/rg/settings", label: "Settings", Icon: SlidersHorizontal, title: "Settings" },
 ];
 
+// Presentational sidebar grouping (keys only — items, routes, permissions unchanged).
+// Anything NOT listed here falls into the Operations group by default.
+const STAFF_NAV_KEYS = ["staff", "shifts", "leave", "training", "sops", "checklists", "compliance"];
+
 // ── Topbar notification bell: unread badge + feed dropdown + browser popups ──
 function NotificationsBell() {
   const { groupId, myNotifications, unreadNotifications, myStaff, me } = useRG();
@@ -129,6 +133,9 @@ function Shell({ children }) {
   const [venueMgrOpen, setVenueMgrOpen] = useState(false);
 
   const visibleNav = useMemo(() => NAV.filter((n) => can(n.permKey || n.key, "view")), [can]);
+  // presentational split into two labelled groups; unlisted keys default to Operations
+  const staffNav = useMemo(() => visibleNav.filter((n) => STAFF_NAV_KEYS.includes(n.key)), [visibleNav]);
+  const opsNav = useMemo(() => visibleNav.filter((n) => !STAFF_NAV_KEYS.includes(n.key)), [visibleNav]);
   const activeKey = NAV.find((n) => location.pathname.startsWith(n.path))?.key || visibleNav[0]?.key || "staff";
   const current = NAV.find((n) => n.key === activeKey) || NAV[0];
 
@@ -148,6 +155,18 @@ function Shell({ children }) {
 
   const subtitle = `${selectedVenueName} · ${venueStaffCount(selectedVenue)} staff`;
 
+  // one sidebar item — identical markup for both groups (badge logic unchanged)
+  const renderNavItem = ({ key, path, label, Icon }) => {
+    const badge = key === "leave" ? pendingLeave : key === "training" ? openTraining : key === "messages" ? unreadMessages : key === "stock" ? criticalStock : key === "supplier" ? draftPOs : 0;
+    return (
+      <button key={key} className={`nav-item ${activeKey === key ? "active" : ""}`} onClick={() => navigate(path)}>
+        <Icon className="nav-icon" />
+        <span>{label}</span>
+        {badge > 0 && <span className="nav-badge">{badge}</span>}
+      </button>
+    );
+  };
+
   return (
     <div className="rg-scope app">
       {/* ── SIDEBAR ── */}
@@ -160,23 +179,19 @@ function Shell({ children }) {
           </div>
         </div>
 
-        <div className="nav-section">
-          <div className="nav-label">Operations</div>
-          {visibleNav.map(({ key, path, label, Icon }) => {
-            const badge = key === "leave" ? pendingLeave : key === "training" ? openTraining : key === "messages" ? unreadMessages : key === "stock" ? criticalStock : key === "supplier" ? draftPOs : 0;
-            return (
-              <button
-                key={key}
-                className={`nav-item ${activeKey === key ? "active" : ""}`}
-                onClick={() => navigate(path)}
-              >
-                <Icon className="nav-icon" />
-                <span>{label}</span>
-                {badge > 0 && <span className="nav-badge">{badge}</span>}
-              </button>
-            );
-          })}
-        </div>
+        {staffNav.length > 0 && (
+          <div className="nav-section">
+            <div className="nav-label">Staff</div>
+            {staffNav.map(renderNavItem)}
+          </div>
+        )}
+
+        {opsNav.length > 0 && (
+          <div className="nav-section">
+            <div className="nav-label">Operations</div>
+            {opsNav.map(renderNavItem)}
+          </div>
+        )}
 
         <div className="nav-section">
           <div className="nav-label">Locations</div>
