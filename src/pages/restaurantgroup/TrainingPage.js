@@ -5,6 +5,7 @@ import { venueTrainingCol, venueCol, staffInVenue } from "../../utils/restaurant
 import { fullName, trainingStatusPill, trainingBarColor, progressColor, trainingPct, moduleForStaff, snapshotForAssign } from "./rgUtils";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { orderItemsForStaff, orderStaffForItem, isSuggested } from "./assignmentUtils";
+import { stationsForArea, groupItemsByStation, filterByStation, GENERAL_KEY } from "./itemDrilldown";
 import { sendNotification } from "./notify";
 import { RefImageViewer, RefImageEditor } from "./RefImages";
 import { RichItemList, RichText } from "./RichItems";
@@ -45,6 +46,7 @@ export default function TrainingPage({ initialTab }) {
   const [openAssign, setOpenAssign] = useState(null); // assignment id
   const openAssignment = useMemo(() => assignments.find((a) => a.id === openAssign) || null, [assignments, openAssign]);
   const [areaTab, setAreaTab] = useState("all"); // all | foh | boh
+  const [modStation, setModStation] = useState("all"); // drill-down: all | stationId | GENERAL_KEY
   const [detail, setDetail] = useState(null);
   const [form, setForm] = useState({ staffId: "", moduleId: "", due: "", priority: "normal", notes: "" });
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -64,6 +66,10 @@ export default function TrainingPage({ initialTab }) {
     || (areaTab === "foh" ? (m.cat === "FOH" || m.cat === "All")
       : (m.cat === "BOH" || m.cat === "All"));
   const areaModules = useMemo(() => venueModules.filter(areaMatch), [venueModules, areaTab]); // eslint-disable-line
+  // Area→Station drill-down (presentation only). Stations of the selected area for the
+  // station picker; null when "all" areas (no drill-down).
+  const areaForTab = areaTab === "foh" ? "FOH" : areaTab === "boh" ? "BOH" : null;
+  const drillStations = useMemo(() => (areaForTab ? stationsForArea(stations, areaForTab, selectedVenue) : []), [stations, areaForTab, selectedVenue]);
 
   const avgCompletion = scopedStaff.length
     ? Math.round(scopedStaff.reduce((a, s) => a + trainingPct(s.id, assignments), 0) / scopedStaff.length)
@@ -210,35 +216,61 @@ export default function TrainingPage({ initialTab }) {
         </>
       )}
 
-      {/* FOH / BOH relevance filter (Modules + Progress) */}
+      {/* FOH / BOH relevance filter (Modules + Progress) + Area→Station drill-down */}
       {(tab === "modules" || tab === "progress") && (
-        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
           {[["all", "All"], ["foh", "FOH"], ["boh", "BOH"]].map(([id, l]) => (
-            <button key={id} className="btn btn-sm" onClick={() => setAreaTab(id)}
+            <button key={id} className="btn btn-sm" onClick={() => { setAreaTab(id); setModStation("all"); }}
               style={areaTab === id ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
           ))}
+          {tab === "modules" && areaForTab && drillStations.length > 0 && (
+            <select className="form-input" style={{ width: 200, marginLeft: 6 }} value={modStation} onChange={(e) => setModStation(e.target.value)} title="Drill down to a station">
+              <option value="all">All stations</option>
+              {drillStations.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+              <option value={GENERAL_KEY}>General (no station)</option>
+            </select>
+          )}
         </div>
       )}
 
-      {/* Modules */}
-      {tab === "modules" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 12 }}>
-          {areaModules.map((m) => (
-            <div key={`${m.venueId}-${m.id}`} className="training-module" onClick={() => setDetail(m)}>
-              <div className="module-icon" style={{ background: m.color }}>{m.icon}</div>
-              <div className="module-title">{m.title}</div>
-              <div className="module-meta">{m.cat} · {m.venue} · {m.duration}</div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {m.mandatory && <span className="pill pill-red">Mandatory</span>}
-                <span className="pill pill-gray">{m.cat}</span>
-                {m.station && <span className="pill pill-blue">{m.station}</span>}
-                {m.link && <span className="pill pill-blue">↗ External</span>}
-              </div>
+      {/* Modules — grouped by station when an area is selected (declutter); flat otherwise */}
+      {tab === "modules" && (() => {
+        const card = (m) => (
+          <div key={`${m.venueId}-${m.id}`} className="training-module" onClick={() => setDetail(m)}>
+            <div className="module-icon" style={{ background: m.color }}>{m.icon}</div>
+            <div className="module-title">{m.title}</div>
+            <div className="module-meta">{m.cat} · {m.venue} · {m.duration}</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {m.mandatory && <span className="pill pill-red">Mandatory</span>}
+              <span className="pill pill-gray">{m.cat}</span>
+              {m.station && <span className="pill pill-blue">{m.station}</span>}
+              {m.link && <span className="pill pill-blue">↗ External</span>}
             </div>
-          ))}
-          {areaModules.length === 0 && <div style={{ color: "var(--gray)", fontSize: 13 }}>No training modules for this venue / area yet.</div>}
-        </div>
-      )}
+          </div>
+        );
+        const gridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 12 };
+        if (areaForTab && modStation === "all") {
+          const groups = groupItemsByStation(areaModules, drillStations);
+          return (
+            <div>
+              {groups.map((g) => (
+                <div key={g.key} style={{ marginBottom: 16 }}>
+                  <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">{g.label}</span><span className="card-sub">{g.items.length}</span></div>
+                  <div style={gridStyle}>{g.items.map(card)}</div>
+                </div>
+              ))}
+              {areaModules.length === 0 && <div style={{ color: "var(--gray)", fontSize: 13 }}>No training modules for this venue / area yet.</div>}
+            </div>
+          );
+        }
+        const shown = filterByStation(areaModules, modStation);
+        return (
+          <div style={gridStyle}>
+            {shown.map(card)}
+            {shown.length === 0 && <div style={{ color: "var(--gray)", fontSize: 13 }}>No training modules for this venue / area / station yet.</div>}
+          </div>
+        );
+      })()}
 
       {/* Assigned */}
       {tab === "assigned" && (

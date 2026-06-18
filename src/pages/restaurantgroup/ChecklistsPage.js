@@ -7,6 +7,7 @@ import { RichItemList, RichText } from "./RichItems";
 import PrepListPanel from "./PrepListPanel";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
 import { trainingStatusPill, progressColor } from "./rgUtils";
+import { stationsForArea, groupItemsByStation, filterByStation, GENERAL_KEY } from "./itemDrilldown";
 
 const hasText = (h) => (h || "").replace(/<[^>]*>/g, "").trim().length > 0;
 
@@ -41,6 +42,7 @@ export default function ChecklistsPage() {
   const [typeFilter, setTypeFilter] = useState("All checklists");
   const [dayFilter, setDayFilter] = useState("all"); // "all" | "today" | weekday key
   const [areaFilter, setAreaFilter] = useState("all"); // all | foh | boh
+  const [clStation, setClStation] = useState("all"); // drill-down: all | stationId | GENERAL_KEY
   const [openMyId, setOpenMyId] = useState(null);
 
   // identity → which staff doc is this login, and are they management?
@@ -71,6 +73,9 @@ export default function ChecklistsPage() {
   const shown = useMemo(() => checklists.filter(
     (c) => c.venueId === venueTab && (typeFilter === "All checklists" || c.type === typeFilter) && dayMatch(c) && areaMatch(c)
   ).sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99")), [checklists, venueTab, typeFilter, dayFilter, areaFilter]); // eslint-disable-line
+  // Area→Station drill-down (presentation only) — stations of the selected area in this venue.
+  const areaForFilter = areaFilter === "foh" ? "FOH" : areaFilter === "boh" ? "BOH" : null;
+  const clDrillStations = useMemo(() => (areaForFilter ? stationsForArea(stations, areaForFilter, venueTab) : []), [stations, areaForFilter, venueTab]);
 
   // checks belong to a date — if it's a new day, they auto-reset (and the prior day is archived to history)
   const effChecks = (c) => (c.checkedDate === todayStr() ? (c.checked || []) : []);
@@ -216,9 +221,16 @@ export default function ChecklistsPage() {
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {[["all", "All"], ["foh", "FOH"], ["boh", "BOH"]].map(([id, l]) => (
-            <button key={id} className="btn btn-sm" onClick={() => setAreaFilter(id)}
+            <button key={id} className="btn btn-sm" onClick={() => { setAreaFilter(id); setClStation("all"); }}
               style={areaFilter === id ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
           ))}
+          {areaForFilter && clDrillStations.length > 0 && (
+            <select className="form-input" style={{ width: 160 }} value={clStation} onChange={(e) => setClStation(e.target.value)} title="Drill down to a station">
+              <option value="all">All stations</option>
+              {clDrillStations.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+              <option value={GENERAL_KEY}>General (no station)</option>
+            </select>
+          )}
           <select className="form-input" style={{ width: 130 }} value={dayFilter} onChange={(e) => setDayFilter(e.target.value)}>
             <option value="all">All days</option>
             <option value="today">Today ({dayLabel([todayKey()])})</option>
@@ -235,8 +247,8 @@ export default function ChecklistsPage() {
         myStaffId={myStaff?.id}
         staffList={staff.filter((s) => (s.venueIds || []).includes(venueTab)).map((s) => ({ id: s.id, name: s.displayName || s.name }))} />
 
-      <div className="grid-2">
-        {shown.map((c) => {
+      {(() => {
+        const card = (c) => {
           const eff = effChecks(c);
           const done = eff.filter(Boolean).length;
           const total = c.items.length;
@@ -274,9 +286,30 @@ export default function ChecklistsPage() {
               <RefImageViewer images={c.images} />
             </div>
           );
-        })}
-        {shown.length === 0 && <div style={{ color: "var(--gray)", fontSize: 13 }}>No checklists for this venue / filter.</div>}
-      </div>
+        };
+        // grouped by station when an area is selected (declutter); flat otherwise
+        if (areaForFilter && clStation === "all") {
+          const groups = groupItemsByStation(shown, clDrillStations);
+          return (
+            <div>
+              {groups.map((g) => (
+                <div key={g.key} style={{ marginBottom: 14 }}>
+                  <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">{g.label}</span><span className="card-sub">{g.items.length}</span></div>
+                  <div className="grid-2">{g.items.map(card)}</div>
+                </div>
+              ))}
+              {shown.length === 0 && <div style={{ color: "var(--gray)", fontSize: 13 }}>No checklists for this venue / filter.</div>}
+            </div>
+          );
+        }
+        const list = filterByStation(shown, clStation);
+        return (
+          <div className="grid-2">
+            {list.map(card)}
+            {list.length === 0 && <div style={{ color: "var(--gray)", fontSize: 13 }}>No checklists for this venue / filter.</div>}
+          </div>
+        );
+      })()}
 
       {histFor && (
         <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setHistFor(null)}>
