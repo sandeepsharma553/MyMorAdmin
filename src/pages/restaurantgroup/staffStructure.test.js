@@ -2,7 +2,7 @@
  * Covers: areas/roles read from config with fallback; Settings add/remove logic;
  * Junior present in defaults; no phantom CK anywhere; no staff mis-bucketed to CK;
  * config resolution never mutates the group doc (existing data untouched by the seed). */
-import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreaBucket, staffAreas, staffAreaBuckets, stationsForVenue } from "./staffStructureUtils";
+import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreaBucket, staffAreas, staffAreaBuckets, stationsForVenue, stationsInVenueArea, orphanStationsInVenue, buildStationPayload } from "./staffStructureUtils";
 import { DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES } from "./rgConfig";
 
 describe("config resolution with fallback", () => {
@@ -141,5 +141,32 @@ describe("stationsForVenue — Add-staff cascade (area + venue filter, fixes the
   });
   test("no areas selected yet → all of that venue's stations (then they narrow as areas are picked)", () => {
     expect(stationsForVenue(stations, "v1", []).map((s) => s.id)).toEqual(["b1", "g1"]);
+  });
+});
+
+describe("Settings linked authoring — Venue → Area → Station", () => {
+  const stations = [
+    { id: "bar", name: "Bar", area: "FOH", venueId: "v1" },
+    { id: "grill", name: "Grill", area: "BOH", venueId: "v1" },
+    { id: "g2", name: "Grill", area: "BOH", venueId: "v2" },
+    { id: "old", name: "Pass", area: "Kitchen", venueId: "v1" }, // area no longer configured
+  ];
+  test("stationsInVenueArea groups existing stations by venue→area", () => {
+    expect(stationsInVenueArea(stations, "v1", "FOH").map((s) => s.id)).toEqual(["bar"]);
+    expect(stationsInVenueArea(stations, "v1", "BOH").map((s) => s.id)).toEqual(["grill"]); // not v2's g2
+    expect(stationsInVenueArea(stations, "v2", "BOH").map((s) => s.id)).toEqual(["g2"]);
+  });
+  test("orphanStationsInVenue surfaces stations whose area isn't in the configured list", () => {
+    expect(orphanStationsInVenue(stations, "v1", ["FOH", "BOH"]).map((s) => s.id)).toEqual(["old"]);
+    expect(orphanStationsInVenue(stations, "v1", ["FOH", "BOH", "Kitchen"])).toEqual([]); // configured → not orphan
+  });
+  test("buildStationPayload takes area + venueId FROM THE CONTEXT (not picked separately)", () => {
+    expect(buildStationPayload("  Salad  ", "BOH", "v1", "#2563eb", 3)).toEqual({
+      name: "Salad", area: "BOH", venueId: "v1", color: "#2563eb", order: 3,
+    });
+    // a station authored under (v2, FOH) carries exactly that venue + area
+    const p = buildStationPayload("Counter", "FOH", "v2", "", 0);
+    expect(p.venueId).toBe("v2");
+    expect(p.area).toBe("FOH");
   });
 });

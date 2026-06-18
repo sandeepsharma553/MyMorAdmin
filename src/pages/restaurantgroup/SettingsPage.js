@@ -3,7 +3,7 @@ import { updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from "firebase/fir
 import { useRG } from "./RGContext";
 import { venueCol, groupDoc } from "../../utils/restaurantGroupPaths";
 import { SUGGESTED_STATIONS } from "./rgConfig";
-import { addToList, removeFromList } from "./staffStructureUtils";
+import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload } from "./staffStructureUtils";
 
 const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
@@ -40,6 +40,27 @@ export default function SettingsPage() {
   };
   const removeStation = async (s) => {
     try { await deleteDoc(doc(venueCol(groupId, venueTab, "stations"), s.id)); showToast("Station removed"); }
+    catch { showToast("Could not remove"); }
+  };
+
+  // ── Venue → Area → Station linked authoring (Staff structure tab) ──
+  // Add a station IN CONTEXT: its area + venueId come from where the owner is authoring.
+  const [stnDraft, setStnDraft] = useState({}); // { "venueId::area": text }
+  const ctxKey = (vid, a) => `${vid}::${a}`;
+  const setDraft = (vid, a, val) => setStnDraft((p) => ({ ...p, [ctxKey(vid, a)]: val }));
+  const addStationCtx = async (vid, area) => {
+    const name = (stnDraft[ctxKey(vid, area)] || "").trim();
+    if (!name) return;
+    const venueStns = stations.filter((s) => s.venueId === vid);
+    const id = slug(name) || `st-${Date.now()}`;
+    if (venueStns.some((s) => s.id === id || s.name.toLowerCase() === name.toLowerCase())) return showToast("A station with a similar name already exists in this venue");
+    try {
+      await setDoc(doc(venueCol(groupId, vid, "stations"), id), { ...buildStationPayload(name, area, vid, AREA_COLOR_DEFAULT[area] || "#6b7280", venueStns.length), createdAt: serverTimestamp() });
+      setDraft(vid, area, ""); showToast("Station added");
+    } catch { showToast("Could not add station"); }
+  };
+  const delStation = async (vid, st) => {
+    try { await deleteDoc(doc(venueCol(groupId, vid, "stations"), st.id)); showToast("Station removed"); }
     catch { showToast("Could not remove"); }
   };
 
@@ -270,28 +291,54 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* STATIONS BY AREA — per venue, read-only overview (full editing in the Stations tab) */}
+          {/* STATIONS — linked authoring: Venue → Area → Station. Add happens within a
+              venue+area, so the station's area + venueId come from that context (mirrors
+              the Add-staff cascade). Colour/advanced editing remains on the Stations tab. */}
           <div className="card" style={{ marginTop: 12 }}>
             <div className="card-head">
-              <div><span className="card-title">Stations by area</span><span className="card-sub">Per venue — the stations within each area</span></div>
-              <button className="btn btn-sm" onClick={() => setTab("stations")}>Edit stations →</button>
+              <div><span className="card-title">Stations — by venue &amp; area</span><span className="card-sub">Add a station inside a venue + area; colour/advanced edits on the Stations tab</span></div>
+              <button className="btn btn-sm" onClick={() => setTab("stations")}>Stations tab →</button>
             </div>
             {venues.map((v) => {
-              const vs = stations.filter((s) => s.venueId === v.id);
-              const orphan = vs.filter((s) => !areas.includes(s.area));
+              const orphans = orphanStationsInVenue(stations, v.id, areas);
               return (
                 <div key={v.id} style={{ padding: "8px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{v.name}</div>
-                  {vs.length ? (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {areas.flatMap((a) => vs.filter((s) => s.area === a).map((s) => (
-                        <span key={s.id} className="pill" style={{ background: s.color || "var(--gray-light)", color: s.color ? "#fff" : "var(--ink)" }}>{s.name} · {s.area}</span>
-                      )))}
-                      {orphan.map((s) => (
-                        <span key={s.id} className="pill pill-amber" title="Station area is not in the current Areas list">{s.name} · {s.area || "—"}</span>
-                      ))}
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+                    <span className="nav-dot" style={{ background: v.color, marginRight: 5 }} />{v.name}
+                  </div>
+                  {areas.map((a) => {
+                    const list = stationsInVenueArea(stations, v.id, a);
+                    return (
+                      <div key={a} style={{ margin: "0 0 8px 14px" }}>
+                        <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 4 }}>{a}</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                          {list.map((s) => (
+                            <span key={s.id} className="pill" style={{ background: s.color || "var(--gray-light)", color: s.color ? "#fff" : "var(--ink)" }}>
+                              {s.name}{editable && <span style={{ cursor: "pointer", marginLeft: 4 }} onClick={() => delStation(v.id, s)}>✕</span>}
+                            </span>
+                          ))}
+                          {!list.length && <span style={{ fontSize: 11, color: "var(--gray)" }}>None yet</span>}
+                          {editable && (
+                            <span style={{ display: "inline-flex", gap: 4 }}>
+                              <input className="form-input" style={{ width: 140, height: 28, fontSize: 12 }} placeholder={`+ ${a} station`} value={stnDraft[ctxKey(v.id, a)] || ""} onChange={(e) => setDraft(v.id, a, e.target.value)} onKeyDown={(e) => e.key === "Enter" && addStationCtx(v.id, a)} />
+                              <button className="btn btn-sm" onClick={() => addStationCtx(v.id, a)}>Add</button>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {orphans.length > 0 && (
+                    <div style={{ margin: "4px 0 0 14px" }}>
+                      <div style={{ fontSize: 11, color: "var(--amber)", marginBottom: 4 }}>Other — area not in the current Areas list</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {orphans.map((s) => (
+                          <span key={s.id} className="pill pill-amber" title="Station area is not in the current Areas list">{s.name} · {s.area || "—"}{editable && <span style={{ cursor: "pointer", marginLeft: 4 }} onClick={() => delStation(v.id, s)}>✕</span>}</span>
+                        ))}
+                      </div>
                     </div>
-                  ) : <div style={{ fontSize: 11, color: "var(--gray)" }}>No stations yet for this venue.</div>}
+                  )}
+                  {!areas.length && <div style={{ fontSize: 11, color: "var(--gray)", marginLeft: 14 }}>Add areas above first.</div>}
                 </div>
               );
             })}

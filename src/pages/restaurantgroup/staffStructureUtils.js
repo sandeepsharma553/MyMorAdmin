@@ -47,6 +47,22 @@ const bucketOfArea = (area) => {
   return "Other";
 };
 
+// ── Venue → Area → Station authoring (Settings linked flow) ──
+// Stations of one venue within one area — for the in-context authoring lists.
+export const stationsInVenueArea = (stations, venueId, area) =>
+  (stations || []).filter((st) => st.venueId === venueId && st.area === area);
+
+// Stations in a venue whose area is NOT in the current configured areas list — surfaced
+// (amber) so nothing is hidden after an area is renamed/removed.
+export const orphanStationsInVenue = (stations, venueId, configuredAreas) =>
+  (stations || []).filter((st) => st.venueId === venueId && !(configuredAreas || []).includes(st.area));
+
+// Build a station document body from the Venue+Area context — so area/venueId come from
+// where the user is authoring, not picked separately. Same shape as the Stations tab.
+export const buildStationPayload = (name, area, venueId, color, order) => ({
+  name: (name || "").trim(), area, venueId, color: color || "", order: order || 0,
+});
+
 // Stations available for a venue given the selected areas — the Add-staff cascade.
 // Area-filtered when areas are chosen (fixes the all-stations bug), else all of the
 // venue's stations. Always scoped to the one venue (caller renders one block per venue).
