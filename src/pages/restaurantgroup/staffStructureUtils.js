@@ -47,6 +47,12 @@ const bucketOfArea = (area) => {
   return "Other";
 };
 
+// Stations available for a venue given the selected areas — the Add-staff cascade.
+// Area-filtered when areas are chosen (fixes the all-stations bug), else all of the
+// venue's stations. Always scoped to the one venue (caller renders one block per venue).
+export const stationsForVenue = (stations, venueId, selectedAreas) =>
+  (stations || []).filter((st) => st.venueId === venueId && (!(selectedAreas || []).length || selectedAreas.includes(st.area)));
+
 // ALL the roster buckets a staff member belongs to — a multi-area person appears
 // under EACH of their area groups. Falls back to the single role-based bucket when
 // no areas are set, so they're never dropped from the roster.

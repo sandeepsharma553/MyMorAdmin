@@ -2,7 +2,7 @@
  * Covers: areas/roles read from config with fallback; Settings add/remove logic;
  * Junior present in defaults; no phantom CK anywhere; no staff mis-bucketed to CK;
  * config resolution never mutates the group doc (existing data untouched by the seed). */
-import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreaBucket, staffAreas, staffAreaBuckets } from "./staffStructureUtils";
+import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreaBucket, staffAreas, staffAreaBuckets, stationsForVenue } from "./staffStructureUtils";
 import { DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES } from "./rgConfig";
 
 describe("config resolution with fallback", () => {
@@ -119,5 +119,27 @@ describe("staffAreaBuckets — a multi-area person appears under EACH group", ()
   test("no areas → falls back to the single role-based bucket (never dropped)", () => {
     expect(staffAreaBuckets({ role: "Chef" })).toEqual(["BOH"]);
     expect(staffAreaBuckets({ area: "FOH" })).toEqual(["FOH"]); // legacy single still works
+  });
+});
+
+describe("stationsForVenue — Add-staff cascade (area + venue filter, fixes the bugs)", () => {
+  const stations = [
+    { id: "b1", name: "Bar", area: "FOH", venueId: "v1" },
+    { id: "g1", name: "Grill", area: "BOH", venueId: "v1" },
+    { id: "g2", name: "Grill", area: "BOH", venueId: "v2" }, // same NAME, different venue
+    { id: "c2", name: "Counter", area: "FOH", venueId: "v2" },
+  ];
+  test("filters to ONLY the venue's stations whose area is in the selected areas", () => {
+    // a BOH-only person at v1 no longer sees the FOH 'Bar' (the all-stations bug)
+    expect(stationsForVenue(stations, "v1", ["BOH"]).map((s) => s.id)).toEqual(["g1"]);
+    expect(stationsForVenue(stations, "v1", ["FOH"]).map((s) => s.id)).toEqual(["b1"]);
+    expect(stationsForVenue(stations, "v1", ["FOH", "BOH"]).map((s) => s.id)).toEqual(["b1", "g1"]);
+  });
+  test("scopes to the one venue — the other venue's look-alike 'Grill' never leaks in", () => {
+    expect(stationsForVenue(stations, "v1", ["BOH"]).map((s) => s.venueId)).toEqual(["v1"]); // not v2's g2
+    expect(stationsForVenue(stations, "v2", ["BOH"]).map((s) => s.id)).toEqual(["g2"]);
+  });
+  test("no areas selected yet → all of that venue's stations (then they narrow as areas are picked)", () => {
+    expect(stationsForVenue(stations, "v1", []).map((s) => s.id)).toEqual(["b1", "g1"]);
   });
 });

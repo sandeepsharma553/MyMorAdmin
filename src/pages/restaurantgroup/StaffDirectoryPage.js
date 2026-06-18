@@ -9,7 +9,7 @@ import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { isJuniorType } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
-import { staffAreas } from "./staffStructureUtils";
+import { staffAreas, stationsForVenue } from "./staffStructureUtils";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
@@ -73,7 +73,7 @@ const payrollFrom = (s) => PAYROLL_FIELDS.reduce((o, f) => { o[f.key] = (s[f.key
 const payrollFromProfile = (p) => PAYROLL_FIELDS.reduce((o, f) => { o[f.key] = p[f.key] || ""; return o; }, {});
 
 const blankForm = (defaultVenue) => ({
-  name: "", role: "FOH", area: "FOH", venueIds: defaultVenue && defaultVenue !== "all" ? [defaultVenue] : [],
+  name: "", role: "FOH", areas: [], venueIds: defaultVenue && defaultVenue !== "all" ? [defaultVenue] : [],
   phone: "", start: "", endDate: "", type: "Casual", cert: "Not yet obtained", certs: [], status: "Active",
   stationIds: [], pin: "", hasAdminLogin: false, email: "", password: "", ...payrollBlank(),
 });
@@ -212,7 +212,9 @@ export default function StaffDirectoryPage() {
         adminUid = await createAdminLogin({ email: form.email.toLowerCase().trim(), password: pwd, name: displayName, role: form.role, venueIds: form.venueIds, permissions });
       }
       const created = await addDoc(staffCol(groupId), {
-        name: form.name.trim(), displayName, role: form.role, area: form.area || areaOf(form.role),
+        name: form.name.trim(), displayName, role: form.role,
+        areas: (form.areas && form.areas.length) ? form.areas : [areaOf(form.role)],
+        area: (form.areas && form.areas[0]) || areaOf(form.role), // legacy single — backward-compat
         groupRole: roleToGroupRole(form.role), permissions,
         venueIds: form.venueIds, venueNames: form.venueIds.map(venueName),
         stationIds: form.stationIds || [], stationNames: (form.stationIds || []).map(stationName),
@@ -236,7 +238,8 @@ export default function StaffDirectoryPage() {
   const openProfile = (s) => { setProfile(s); setEditing(false); setConfirmDel(false); setProfileTab("profile"); };
   const startEdit = () => {
     setEdit({
-      name: profile.name || profile.displayName, role: profile.role, area: profile.area || areaOf(profile.role),
+      name: profile.name || profile.displayName, role: profile.role,
+      areas: staffAreas(profile).length ? staffAreas(profile) : [areaOf(profile.role)],
       venueIds: profile.venueIds || (profile.venueId ? [profile.venueId] : []),
       phone: profile.phone || "", start: profile.start || "", endDate: profile.endDate || "", type: profile.type || "Casual",
       cert: profile.cert || "Not yet obtained", stationIds: profile.stationIds || [],
@@ -255,7 +258,7 @@ export default function StaffDirectoryPage() {
     const cmp = (label, a, b) => { if (String(a ?? "") !== String(b ?? "")) out.push(`${label}: ${a || "—"} → ${b || "—"}`); };
     cmp("Name", profile.displayName || profile.name, edit.name);
     cmp("Role", profile.role, edit.role);
-    cmp("Area", profile.area, edit.area);
+    cmp("Areas", staffAreas(profile).join(", "), (edit.areas || []).join(", "));
     cmp("Employment", profile.type, edit.type);
     cmp("Phone", profile.phone, edit.phone);
     cmp("Status", profile.status || "Active", edit.status);
@@ -287,7 +290,9 @@ export default function StaffDirectoryPage() {
         adminUid = await createAdminLogin({ email: edit.email.toLowerCase().trim(), password: newPwd, name: displayName, role: edit.role, venueIds: edit.venueIds, permissions: profile.permissions });
       }
       const patch = {
-        name: edit.name.trim(), displayName, role: edit.role, area: edit.area || areaOf(edit.role),
+        name: edit.name.trim(), displayName, role: edit.role,
+        areas: (edit.areas && edit.areas.length) ? edit.areas : [areaOf(edit.role)],
+        area: (edit.areas && edit.areas[0]) || areaOf(edit.role), // legacy single — backward-compat
         venueIds: edit.venueIds, venueNames: edit.venueIds.map(venueName),
         stationIds: edit.stationIds || [], stationNames: (edit.stationIds || []).map(stationName),
         phone: edit.phone.trim(), start: edit.start, endDate: edit.endDate || "", type: edit.type,
@@ -510,15 +515,43 @@ export default function StaffDirectoryPage() {
     </div>
   );
   const toggleStation = (sid, setter) => setter((p) => ({ ...p, stationIds: (p.stationIds || []).includes(sid) ? p.stationIds.filter((x) => x !== sid) : [...(p.stationIds || []), sid] }));
-  const StationPicker = ({ venueIds, value, setter }) => {
-    const opts = stations.filter((st) => (venueIds || []).includes(st.venueId));
-    if (!opts.length) return <div style={{ fontSize: 11, color: "var(--gray)" }}>No stations for the selected venue(s) — add them in Settings.</div>;
+  const toggleArea = (a, setter) => setter((p) => ({ ...p, areas: (p.areas || []).includes(a) ? p.areas.filter((x) => x !== a) : [...(p.areas || []), a] }));
+  // Multi-select Areas (the migration's areas[] shape).
+  const AreaPicker = ({ value, setter }) => (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {areas.map((a) => {
+        const on = (value || []).includes(a);
+        return <button key={a} type="button" className="btn btn-sm" onClick={() => toggleArea(a, setter)}
+          style={on ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{a}</button>;
+      })}
+      {!areas.length && <span style={{ fontSize: 11, color: "var(--gray)" }}>No areas configured — add them in Settings.</span>}
+    </div>
+  );
+  // Stations grouped into one block per selected venue, each filtered to stations whose
+  // area is in the selected areas (fixes the all-stations bug) and labelled with their
+  // venue (fixes look-alike duplicates across venues). Cascade: venues + areas → stations.
+  const StationsByVenue = ({ venueIds, selectedAreas, value, setter }) => {
+    if (!venueIds || !venueIds.length) return <div style={{ fontSize: 11, color: "var(--gray)" }}>Select at least one venue first.</div>;
     return (
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {opts.map((st) => {
-          const on = (value || []).includes(st.id);
-          return <button key={st.id} type="button" className="btn btn-sm" onClick={() => toggleStation(st.id, setter)}
-            style={on ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{st.name} <span style={{ color: on ? "#fff" : "var(--gray)" }}>· {st.area}</span></button>;
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {venueIds.map((vid) => {
+          const opts = stationsForVenue(stations, vid, selectedAreas);
+          return (
+            <div key={vid} style={{ border: "0.5px solid var(--border)", borderRadius: 8, padding: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6 }}>
+                <span className="nav-dot" style={{ background: venueColor(venueName(vid)), marginRight: 5 }} />{venueName(vid)}
+              </div>
+              {opts.length ? (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {opts.map((st) => {
+                    const on = (value || []).includes(st.id);
+                    return <button key={st.id} type="button" className="btn btn-sm" onClick={() => toggleStation(st.id, setter)}
+                      style={on ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{st.name} <span style={{ color: on ? "#fff" : "var(--gray)" }}>· {st.area}</span></button>;
+                  })}
+                </div>
+              ) : <div style={{ fontSize: 11, color: "var(--gray)" }}>{(selectedAreas || []).length ? "No stations in the selected areas for this venue." : "No stations for this venue — add them in Settings."}</div>}
+            </div>
+          );
         })}
       </div>
     );
@@ -589,10 +622,15 @@ export default function StaffDirectoryPage() {
         <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setAddOpen(false)}>
           <div className="rg-modal" style={{ maxWidth: 600 }}>
             <div className="modal-head"><span className="modal-title">Add staff member</span><button className="modal-close" onClick={() => setAddOpen(false)}>✕</button></div>
+            {/* Cascade: Name → Venue(s) → Role → Areas → Stations */}
+            <div className="form-group"><label className="form-label">Name *</label><input className="form-input" value={form.name} onChange={setF("name")} placeholder="First name" /></div>
+            <div className="form-group"><label className="form-label">Venues * (works at)</label><VenuePicker value={form.venueIds} onToggle={(vid) => toggleVenue(vid, form, setForm)} /></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div className="form-group"><label className="form-label">Name *</label><input className="form-input" value={form.name} onChange={setF("name")} placeholder="First name" /></div>
-              <div className="form-group"><label className="form-label">Role *</label><select className="form-input" value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value, area: areaOf(e.target.value) }))}>{roles.map((r) => <option key={r}>{r}</option>)}</select></div>
-              <div className="form-group"><label className="form-label">Area</label><select className="form-input" value={form.area} onChange={setF("area")}>{areas.map((a) => <option key={a}>{a}</option>)}</select></div>
+              <div className="form-group"><label className="form-label">Role *</label><select className="form-input" value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value, areas: (p.areas && p.areas.length) ? p.areas : [areaOf(e.target.value)] }))}>{roles.map((r) => <option key={r}>{r}</option>)}</select></div>
+              <div className="form-group"><label className="form-label">Areas (multi-select)</label><AreaPicker value={form.areas} setter={setForm} /></div>
+            </div>
+            <div className="form-group"><label className="form-label">Stations <span style={{ color: "var(--gray)", fontWeight: 400 }}>· filtered by selected area + venue</span></label><StationsByVenue venueIds={form.venueIds} selectedAreas={form.areas} value={form.stationIds} setter={setForm} /></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group"><label className="form-label">Employment</label><select className="form-input" value={form.type} onChange={setF("type")}>{empTypes.map((t) => <option key={t}>{t}</option>)}</select></div>
               <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={form.phone} onChange={setF("phone")} placeholder="04xx xxx xxx" /></div>
               <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={form.start} onChange={setF("start")} /></div>
@@ -605,8 +643,6 @@ export default function StaffDirectoryPage() {
                 </div>
               </div>
             </div>
-            <div className="form-group"><label className="form-label">Venues * (works at)</label><VenuePicker value={form.venueIds} onToggle={(vid) => toggleVenue(vid, form, setForm)} /></div>
-            <div className="form-group"><label className="form-label">Stations</label><StationPicker venueIds={form.venueIds} value={form.stationIds} setter={setForm} /></div>
             {canPayroll && renderPayroll(form, setF)}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
               <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -832,10 +868,15 @@ export default function StaffDirectoryPage() {
               </>
             ) : (
               <>
+                {/* Cascade: Name → Venue(s) → Role → Areas → Stations */}
+                <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={edit.name} onChange={setE("name")} /></div>
+                <div className="form-group"><label className="form-label">Venues (works at)</label><VenuePicker value={edit.venueIds} onToggle={(vid) => toggleVenue(vid, edit, setEdit)} /></div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={edit.name} onChange={setE("name")} /></div>
-                  <div className="form-group"><label className="form-label">Role</label><select className="form-input" value={edit.role} onChange={(e) => setEdit((p) => ({ ...p, role: e.target.value, area: areaOf(e.target.value) }))}>{roles.map((r) => <option key={r}>{r}</option>)}</select></div>
-                  <div className="form-group"><label className="form-label">Area</label><select className="form-input" value={edit.area} onChange={setE("area")}>{areas.map((a) => <option key={a}>{a}</option>)}</select></div>
+                  <div className="form-group"><label className="form-label">Role</label><select className="form-input" value={edit.role} onChange={(e) => setEdit((p) => ({ ...p, role: e.target.value, areas: (p.areas && p.areas.length) ? p.areas : [areaOf(e.target.value)] }))}>{roles.map((r) => <option key={r}>{r}</option>)}</select></div>
+                  <div className="form-group"><label className="form-label">Areas (multi-select)</label><AreaPicker value={edit.areas} setter={setEdit} /></div>
+                </div>
+                <div className="form-group"><label className="form-label">Stations <span style={{ color: "var(--gray)", fontWeight: 400 }}>· filtered by selected area + venue</span></label><StationsByVenue venueIds={edit.venueIds} selectedAreas={edit.areas} value={edit.stationIds} setter={setEdit} /></div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   <div className="form-group"><label className="form-label">Employment</label><select className="form-input" value={edit.type} onChange={setE("type")}>{empTypes.map((t) => <option key={t}>{t}</option>)}</select></div>
                   <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={edit.phone} onChange={setE("phone")} /></div>
                   <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={edit.start} onChange={setE("start")} /></div>
@@ -850,8 +891,6 @@ export default function StaffDirectoryPage() {
                   </div>
                 </div>
                 {renderCerts(edit, setEdit)}
-                <div className="form-group"><label className="form-label">Venues (works at)</label><VenuePicker value={edit.venueIds} onToggle={(vid) => toggleVenue(vid, edit, setEdit)} /></div>
-                <div className="form-group"><label className="form-label">Stations</label><StationPicker venueIds={edit.venueIds} value={edit.stationIds} setter={setEdit} /></div>
                 {canPayroll && renderPayroll(edit, setE)}
                 <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
                   <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
