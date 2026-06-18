@@ -2,17 +2,21 @@
  *   node scripts/importer/migrate-staff-areas.js           (DRY-RUN — no writes)
  *   node scripts/importer/migrate-staff-areas.js --apply   (writes staff.areas[])
  *
- * Rules:
- *   - Already has a non-empty `areas` array  → skip (idempotent).
- *   - Managerial ROLE (manager/supervisor/in charge/owner/admin) → seed `areas` with
- *     ALL of the group's CONFIGURED areas, so making visibility "exactly the ticked
- *     areas" (we drop area-based see-all) does NOT narrow a manager's current access.
- *   - Otherwise → areas = [area] (the existing single value); if `area` is missing,
- *     derive one from the role the same way the app does (areaFromRole); else [].
+ * Approach B (agreed): EVERY staff member — managers included — migrates to
+ *   areas: [their current area]   (a one-item list from the existing single value).
+ * No presuming all-areas for anyone; managers get their one area like everyone else
+ * and can be given more in the UI afterwards.
+ *
+ *   - Already has a non-empty `areas` array → skip (idempotent).
+ *   - area present → areas = [area]. If `area` is somehow missing, derive ONE area
+ *     from the role (areaFromRole) — still a one-item list, never all-areas; else [].
  *   - The old `area` field is LEFT IN PLACE (backward-compat reads fall back to it).
  *
- * Backup taken first: backups/staff-and-groups-mymor-australia-*.json
- * Held: do not --apply without sign-off. */
+ * Also REPORTS any staff whose migrated area is NOT in their group's configured
+ * areas list (e.g. area "Mgmt" when the group's areas are FOH/BOH/Kitchen) — those
+ * need their areas set in the UI afterwards.
+ *
+ * Backup already committed: backups/staff-and-groups-mymor-australia-*.json */
 const path = require("path");
 const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
@@ -25,8 +29,7 @@ const db = getFirestore(admin.app(), DB_ID);
 const APPLY = process.argv.includes("--apply");
 
 const DEFAULT_AREAS = ["FOH", "BOH", "Mgmt"];
-const MANAGERIAL = /manager|supervisor|in charge|owner|admin/i;
-// same derivation the app uses (assignmentUtils.areaFromRole), for staff with no area set
+// single-area fallback when a doc has no `area` (same derivation the app uses). NOT all-areas.
 const areaFromRole = (role) => {
   const r = role || "";
   if (/manager|owner|admin|supervisor|in charge/i.test(r)) return "Mgmt";
@@ -36,9 +39,10 @@ const areaFromRole = (role) => {
 };
 
 (async () => {
-  console.log(`Migrate staff.area → staff.areas[] — ${APPLY ? "APPLY" : "DRY-RUN"} — db=${DB_ID}\n`);
+  console.log(`Migrate staff.area → staff.areas[] (approach B) — ${APPLY ? "APPLY" : "DRY-RUN"} — db=${DB_ID}\n`);
   const groups = await db.collection("restaurantGroups").get();
-  let total = 0, toChange = 0, skipped = 0, mgr = 0;
+  let total = 0, toChange = 0, skipped = 0;
+  const flagged = []; // { name, group, areas, configured }
   for (const g of groups.docs) {
     const gd = g.data();
     const configuredAreas = (Array.isArray(gd.areas) && gd.areas.length) ? gd.areas : DEFAULT_AREAS;
@@ -48,17 +52,25 @@ const areaFromRole = (role) => {
       total++;
       const x = s.data();
       if (Array.isArray(x.areas) && x.areas.length) { skipped++; continue; }
-      const isMgr = MANAGERIAL.test(x.role || "");
       let areas;
-      if (isMgr) { areas = [...configuredAreas]; mgr++; }
-      else if (x.area) areas = [x.area];
+      if (x.area) areas = [x.area];
       else { const d = areaFromRole(x.role); areas = d ? [d] : []; }
       toChange++;
-      console.log(`   ${s.id}  ${(x.displayName || x.name || "?").padEnd(16)} role=${(x.role || "—").padEnd(16)} area=${String(x.area || "—").padEnd(5)} ${isMgr ? "[MGR]" : "     "} → areas=${JSON.stringify(areas)}`);
+      const offConfig = areas.filter((a) => !configuredAreas.includes(a));
+      const mark = offConfig.length ? " ⚑ not in configured areas" : "";
+      console.log(`   ${s.id}  ${(x.displayName || x.name || "?").padEnd(16)} role=${(x.role || "—").padEnd(16)} area=${String(x.area || "—").padEnd(5)} → areas=${JSON.stringify(areas)}${mark}`);
+      if (offConfig.length) flagged.push({ name: x.displayName || x.name || s.id, group: gd.name || g.id, areas, configured: configuredAreas });
       if (APPLY) await s.ref.set({ areas, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     }
   }
-  console.log(`\n===== ${APPLY ? "APPLIED" : "DRY-RUN"}: ${total} staff — ${toChange} to set (${mgr} managerial → all areas), ${skipped} already migrated =====`);
-  console.log(APPLY ? "✅ Written (area left intact for backward-compat)." : "(DRY-RUN — nothing written.)");
+
+  console.log(`\n===== ${APPLY ? "APPLIED" : "DRY-RUN"}: ${total} staff — ${toChange} set to a one-item list, ${skipped} already migrated =====`);
+  if (flagged.length) {
+    console.log(`\n⚑ ${flagged.length} staff whose migrated area is NOT in their group's configured areas — set these in the UI:`);
+    flagged.forEach((f) => console.log(`   - ${f.name} (${f.group}): areas=${JSON.stringify(f.areas)}, configured=${JSON.stringify(f.configured)}`));
+  } else {
+    console.log("\n✅ Every migrated area is within its group's configured areas — none need follow-up.");
+  }
+  console.log(APPLY ? "\n✅ Written (area left intact for backward-compat)." : "\n(DRY-RUN — nothing written.)");
   process.exit(0);
 })().catch((e) => { console.error("FAILED:", e.message); process.exit(1); });
