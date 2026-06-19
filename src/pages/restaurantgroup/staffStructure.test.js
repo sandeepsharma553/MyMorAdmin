@@ -2,7 +2,7 @@
  * Covers: areas/roles read from config with fallback; Settings add/remove logic;
  * Junior present in defaults; no phantom CK anywhere; no staff mis-bucketed to CK;
  * config resolution never mutates the group doc (existing data untouched by the seed). */
-import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreaBucket, staffAreas, staffAreaBuckets, stationsForVenue, stationsInVenueArea, orphanStationsInVenue, buildStationPayload } from "./staffStructureUtils";
+import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreaBucket, staffAreas, staffAreaBuckets, stationsForVenue, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, staffAtStation } from "./staffStructureUtils";
 import { DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES } from "./rgConfig";
 
 describe("config resolution with fallback", () => {
@@ -168,5 +168,28 @@ describe("Settings linked authoring — Venue → Area → Station", () => {
     const p = buildStationPayload("Counter", "FOH", "v2", "", 0);
     expect(p.venueId).toBe("v2");
     expect(p.area).toBe("FOH");
+  });
+});
+
+describe("staffAtStation — Shift Planner station drill-down (rostered OR tagged)", () => {
+  const weekShifts = [
+    { staffId: "s1", stationId: "bar" },   // rostered at bar
+    { staffId: "s2", stationId: "" },      // rostered, no station
+    { staffId: "s3", stationId: "grill" },
+  ];
+  test("'all' / empty / null → everyone (no filter)", () => {
+    expect(staffAtStation({ id: "x" }, "all", weekShifts)).toBe(true);
+    expect(staffAtStation({ id: "x" }, "", weekShifts)).toBe(true);
+    expect(staffAtStation({ id: "x" }, null, weekShifts)).toBe(true);
+  });
+  test("tagged the station → true (even if not rostered there this week)", () => {
+    expect(staffAtStation({ id: "z", stationIds: ["bar"] }, "bar", [])).toBe(true);
+  });
+  test("ROSTERED at the station but NOT tagged → still true (not hidden — the flagged edge)", () => {
+    expect(staffAtStation({ id: "s1", stationIds: [] }, "bar", weekShifts)).toBe(true);
+  });
+  test("neither rostered nor tagged → false", () => {
+    expect(staffAtStation({ id: "nobody", stationIds: ["counter"] }, "bar", weekShifts)).toBe(false);
+    expect(staffAtStation({ id: "s3", stationIds: ["grill"] }, "bar", weekShifts)).toBe(false); // grill person, not bar
   });
 });

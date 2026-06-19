@@ -63,6 +63,17 @@ export const buildStationPayload = (name, area, venueId, color, order) => ({
   name: (name || "").trim(), area, venueId, color: color || "", order: order || 0,
 });
 
+// Shift Planner station drill-down: is a staff member "at" a station? True if they're
+// ROSTERED there this week (a shift with that stationId) OR TAGGED that station in
+// stationIds[]. "all"/empty → everyone (no filter). The shift-match arm means a person
+// rostered at the station but not tagged it is NOT hidden; a tagged person not rostered
+// there still shows (a coverage candidate). `weekShifts` = the week's shifts to scan.
+export const staffAtStation = (s, stationId, weekShifts) => {
+  if (!stationId || stationId === "all") return true;
+  if (Array.isArray(s?.stationIds) && s.stationIds.includes(stationId)) return true;
+  return (weekShifts || []).some((sh) => sh.staffId === s?.id && sh.stationId === stationId);
+};
+
 // Stations available for a venue given the selected areas — the Add-staff cascade.
 // Area-filtered when areas are chosen (fixes the all-stations bug), else all of the
 // venue's stations. Always scoped to the one venue (caller renders one block per venue).

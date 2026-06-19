@@ -3,7 +3,8 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/fir
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
-import { staffAreaBuckets } from "./staffStructureUtils";
+import { staffAreaBuckets, staffAtStation } from "./staffStructureUtils";
+import { stationsForArea } from "./itemDrilldown";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 import { checkAndCreateShiftAssignments } from "./checklistShiftUtils";
 
@@ -65,6 +66,7 @@ export default function ShiftPlannerPage() {
   const [shiftDetail, setShiftDetail] = useState(null);
   const [capStaff, setCapStaff] = useState(null); // staff capability card
   const [areaFilter, setAreaFilter] = useState("all"); // all | FOH | BOH | Mgmt
+  const [planStation, setPlanStation] = useState("all"); // Area→Station drill-down: all | stationId
   const [splitMode, setSplitMode] = useState(false);
   const [splitA, setSplitA] = useState("");
   const [splitB, setSplitB] = useState("");
@@ -120,14 +122,23 @@ export default function ShiftPlannerPage() {
   const labourCost = totalHours * hourly;
   const labourPct = ((labourCost / weeklyRev) * 100).toFixed(1);
 
+  // Area→Station drill-down: stations of the SELECTED area scoped to the selected venue
+  // (respects "All venues"). Only meaningful once a specific area is picked.
+  const drillStations = useMemo(() => (areaFilter !== "all" ? stationsForArea(stations, areaFilter, selectedVenue) : []), [stations, areaFilter, selectedVenue]);
+  // effective station: revert to "all" if the current pick isn't in the area+venue list
+  // (e.g. after switching venue/area), so a stale selection can't silently filter wrongly.
+  const effStation = drillStations.some((st) => st.id === planStation) ? planStation : "all";
+
   // rows grouped into area sections (Management / FOH / BOH / Other), honouring the
   // area filter; empty groups are dropped. A MULTI-AREA person appears under EACH of
   // their area groups (staffAreaBuckets), so e.g. a FOH+BOH person shows in both.
+  // When a station is selected, rows narrow to staff AT that station (rostered there
+  // this week OR tagged it) — see staffAtStation.
   const groupedRows = useMemo(() =>
     AREA_GROUPS
-      .map((g) => ({ ...g, members: rows.filter((s) => staffAreaBuckets(s).includes(g.key)) }))
+      .map((g) => ({ ...g, members: rows.filter((s) => staffAreaBuckets(s).includes(g.key) && staffAtStation(s, effStation, weekShifts)) }))
       .filter((g) => g.members.length && (areaFilter === "all" || areaFilter === g.key)),
-    [rows, areaFilter]);
+    [rows, areaFilter, effStation, weekShifts]);
 
   const [form, setForm] = useState({ staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: (roles && roles[0]) || ROLES[0], venueId: "", stationId: "", notes: "" });
   const formStations = useMemo(() => stations.filter((s) => s.venueId === form.venueId), [stations, form.venueId]);
@@ -254,7 +265,7 @@ export default function ShiftPlannerPage() {
           <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {shs.map((sh) => (
-                <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} style={{ borderLeft: `3px solid ${shiftColor(sh)}` }} title="Click to view" onClick={() => setShiftDetail(sh)}>
+                <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} style={{ borderLeft: `3px solid ${shiftColor(sh)}`, boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title="Click to view" onClick={() => setShiftDetail(sh)}>
                   <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                   <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
                 </div>
@@ -313,13 +324,20 @@ export default function ShiftPlannerPage() {
         ))}
       </div>
 
-      {/* Area filter */}
+      {/* Area filter + Area→Station drill-down */}
       {!splitMode && (
-        <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
           {[["all", "All"], ["Mgmt", "Management"], ["FOH", "FOH"], ["BOH", "BOH"]].map(([k, l]) => (
-            <button key={k} className="btn btn-sm" onClick={() => setAreaFilter(k)}
+            <button key={k} className="btn btn-sm" onClick={() => { setAreaFilter(k); setPlanStation("all"); }}
               style={areaFilter === k ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
           ))}
+          {areaFilter !== "all" && drillStations.length > 0 && (
+            <select className="form-input" style={{ width: 190, marginLeft: 6 }} value={effStation} onChange={(e) => setPlanStation(e.target.value)} title="Narrow the roster to a station">
+              <option value="all">All stations</option>
+              {drillStations.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+            </select>
+          )}
+          {effStation !== "all" && <span style={{ fontSize: 11, color: "var(--gray)" }}>roster narrowed to staff on this station (rostered or tagged)</span>}
         </div>
       )}
 
