@@ -6,7 +6,9 @@ import { staffCol, auditLogCol } from "../../utils/restaurantGroupPaths";
 import { RG_MODULES, RG_ROLES, DEFAULT_PERMISSIONS, defaultPermsForStaffRole, roleToGroupRole, roleMeta, levelMeta } from "./rgConfig";
 import { initials } from "./rgUtils";
 
-const LEVEL_OPTS = [["none", "✕ None"], ["view", "👁 View"], ["edit", "✏ Edit"]];
+// approve ranks above edit; used today for leave approval. Selectable per-person/module
+// in the matrix; on modules that don't check it, approve simply acts as edit-or-higher.
+const LEVEL_OPTS = [["none", "✕ None"], ["view", "👁 View"], ["edit", "✏ Edit"], ["approve", "✓ Approve"]];
 
 export default function UserManagementPage() {
   const { groupId, group, staff, venues, can, showToast, me } = useRG();

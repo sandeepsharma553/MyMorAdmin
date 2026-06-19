@@ -23,8 +23,10 @@ const daysBetween = (s, e) => {
 
 export default function LeaveRequestsPage() {
   const { groupId, staff, venues, leave, selectedVenue, matchVenue, showToast, can, me, myStaff, myScope, scopedStaff } = useRG();
-  // employees can't approve; only venue-managers / owners can.
-  const canApprove = can("leave", "edit") && myScope !== "staff";
+  // Approving others' requests now requires the explicit `approve` permission (granted
+  // per-person in User Management; owner/storeAdmin have it by default). No longer tied
+  // to the groupRole tier. Submitting stays scoped (see submit() — your own team only).
+  const canApprove = can("leave", "approve");
   const isEmployee = myScope === "staff";
   const actorName = me?.displayName || me?.name || me?.email || "Manager";
   const [form, setForm] = useState({ staffId: isEmployee ? (myStaff?.id || "") : "", type: TYPES[0], start: "", end: "", reason: "" });
