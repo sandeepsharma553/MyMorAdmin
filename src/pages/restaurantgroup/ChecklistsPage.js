@@ -9,6 +9,7 @@ import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
 import { trainingStatusPill, progressColor } from "./rgUtils";
 import { stationsForArea, groupItemsByStation, filterByStation, stationOptionsForItem, GENERAL_KEY } from "./itemDrilldown";
 import { showInActiveList } from "./completionWindow";
+import { SLOT_DAYS, slotMinutes, isSlotLinked, toggleSlotLink, buildSlotGrid } from "./shiftSlotPicker";
 
 const hasText = (h) => (h || "").replace(/<[^>]*>/g, "").trim().length > 0;
 
@@ -111,13 +112,9 @@ export default function ChecklistsPage() {
   const openEdit = (c) => setEditor({ id: c.id, title: c.title, sub: c.sub || "", venueId: c.venueId, type: c.type, area: areaOf(c), stationId: c.stationId || "", time: c.time || "", items: c.items || [], days: c.days || [], images: c.images || [], frequency: c.frequency || "daily", scheduleDay: c.scheduleDay || "mon", scheduleDate: c.scheduleDate || 1, autoRoles: c.autoAssign?.roles || [], autoShiftStart: c.autoAssign?.shiftStart || "", shiftLinks: c.shiftLinks || [], recurring: c.recurring !== false });
   const toggleAutoRole = (r) => setEditor((p) => ({ ...p, autoRoles: p.autoRoles.includes(r) ? p.autoRoles.filter((x) => x !== r) : [...p.autoRoles, r] }));
   const toggleDay = (d) => setEditor((p) => ({ ...p, days: p.days.includes(d) ? p.days.filter((x) => x !== d) : [...p.days, d] }));
-  const toggleShiftLink = (slot) => setEditor((p) => {
-    const has = (p.shiftLinks || []).some((l) => l.day === slot.day && l.start === slot.start);
-    return { ...p, shiftLinks: has ? p.shiftLinks.filter((l) => !(l.day === slot.day && l.start === slot.start)) : [...(p.shiftLinks || []), slot] };
-  });
-  // unique day+start slots that exist in this venue's roster, sorted Mon→Sun then by start time
-  const SLOT_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const slot24 = (t) => { const m = /(\d+):(\d+)(am|pm)/i.exec(t || ""); if (!m) return 0; let h = parseInt(m[1], 10) % 12; if (/pm/i.test(m[3])) h += 12; return h * 60 + parseInt(m[2], 10); };
+  // toggle a recurring {day,start,label} slot — same stored shape, no one-off binding
+  const toggleShiftLink = (slot) => setEditor((p) => ({ ...p, shiftLinks: toggleSlotLink(p.shiftLinks, slot) }));
+  // unique day+start slots that exist in this venue's REAL roster, sorted Mon→Sun then by start time
   const venueShiftSlots = useMemo(() => {
     if (!editor) return [];
     const seen = new Map();
@@ -126,8 +123,10 @@ export default function ChecklistsPage() {
       const key = `${day}|${sh.start}`;
       if (day && !seen.has(key)) seen.set(key, { day, start: sh.start, label: sh.role || "" });
     });
-    return [...seen.values()].sort((a, b) => (SLOT_DAYS.indexOf(a.day) - SLOT_DAYS.indexOf(b.day)) || (slot24(a.start) - slot24(b.start)));
+    return [...seen.values()].sort((a, b) => (SLOT_DAYS.indexOf(a.day) - SLOT_DAYS.indexOf(b.day)) || (slotMinutes(a.start) - slotMinutes(b.start)));
   }, [shifts, editor]); // eslint-disable-line react-hooks/exhaustive-deps
+  // weekly Day×Start grid built from the same real slots the Shift Planner shows
+  const slotGrid = useMemo(() => buildSlotGrid(venueShiftSlots), [venueShiftSlots]);
 
   const saveChecklist = async () => {
     if (!editor.title.trim()) return showToast("Title required");
@@ -421,18 +420,55 @@ export default function ChecklistsPage() {
             {/* Slot links — assignment follows the shift slot, not the person */}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 12 }}>
               <label className="form-label">LINK TO SHIFTS — CHECKLIST APPEARS WHEN THIS SHIFT IS PUBLISHED</label>
-              {venueShiftSlots.length === 0 ? (
+              {slotGrid.isEmpty ? (
                 <div style={{ fontSize: 11, color: "var(--gray)" }}>No shifts found for this venue. Add shifts in the Shift Planner first.</div>
               ) : (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                  {venueShiftSlots.map((slot) => {
-                    const on = (editor.shiftLinks || []).some((l) => l.day === slot.day && l.start === slot.start);
-                    return (
-                      <button key={`${slot.day}|${slot.start}`} type="button" className="btn btn-sm" title={slot.label} onClick={() => toggleShiftLink(slot)}
-                        style={on ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{slot.day} {slot.start}</button>
-                    );
-                  })}
-                </div>
+                <>
+                  <div style={{ fontSize: 10, color: "var(--gray)", marginBottom: 6 }}>Pick the recurring slots from this venue's roster — tap a shift to link or unlink it.</div>
+                  <div style={{ overflowX: "auto", marginBottom: 8 }}>
+                    <table style={{ borderCollapse: "separate", borderSpacing: 4, fontSize: 11 }}>
+                      <thead>
+                        <tr>
+                          <th />
+                          {slotGrid.days.map((day) => (
+                            <th key={day} style={{ padding: "2px 6px", color: "var(--gray)", fontWeight: 600 }}>{day}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {slotGrid.starts.map((start) => (
+                          <tr key={start}>
+                            <td style={{ padding: "2px 6px", color: "var(--gray)", whiteSpace: "nowrap", textAlign: "right" }}>{start}</td>
+                            {slotGrid.days.map((day) => {
+                              const slot = slotGrid.slotAt(day, start);
+                              if (!slot) return <td key={day} style={{ textAlign: "center", color: "var(--border)" }}>·</td>;
+                              const on = isSlotLinked(editor.shiftLinks, slot);
+                              return (
+                                <td key={day} style={{ textAlign: "center" }}>
+                                  <button type="button" className="btn btn-sm" title={`${day} ${start}${slot.label ? " · " + slot.label : ""}`} onClick={() => toggleShiftLink(slot)}
+                                    style={{ minWidth: 56, ...(on ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined) }}>
+                                    {on ? "✓ Linked" : (slot.label || "Link")}
+                                  </button>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {(editor.shiftLinks || []).length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                      {(editor.shiftLinks || []).map((slot) => (
+                        <button key={`${slot.day}|${slot.start}`} type="button" className="btn btn-sm" title="Unlink"
+                          onClick={() => toggleShiftLink(slot)}
+                          style={{ background: "var(--red)", color: "#fff", borderColor: "var(--red)" }}>
+                          {slot.day} {slot.start} ✕
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginTop: 4 }}>
                 <input type="checkbox" checked={editor.recurring !== false} onChange={(e) => setEditor((p) => ({ ...p, recurring: e.target.checked }))} />
