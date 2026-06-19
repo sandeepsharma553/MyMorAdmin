@@ -8,6 +8,7 @@ import PrepListPanel from "./PrepListPanel";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
 import { trainingStatusPill, progressColor } from "./rgUtils";
 import { stationsForArea, groupItemsByStation, filterByStation, stationOptionsForItem, GENERAL_KEY } from "./itemDrilldown";
+import { showInActiveList } from "./completionWindow";
 
 const hasText = (h) => (h || "").replace(/<[^>]*>/g, "").trim().length > 0;
 
@@ -50,6 +51,8 @@ export default function ChecklistsPage() {
   const myStaff = useMemo(() => staff.find((s) => (s.adminUid && s.adminUid === myUid) || (s.email && me?.email && s.email.toLowerCase() === me.email.toLowerCase())), [staff, myUid, me]);
   const isMgr = ["owner", "storeAdmin", "manager"].includes(me?.groupRole);
   const myChecklistAssignments = useMemo(() => myStaff ? checklistAssignments.filter((a) => a.staffId === myStaff.id) : [], [myStaff, checklistAssignments]);
+  // active "My checklists": hide Complete items older than 48h (record kept in the archive)
+  const myChecklistAssignmentsActive = useMemo(() => myChecklistAssignments.filter((a) => showInActiveList(a)), [myChecklistAssignments]);
   const openMyAssignment = useMemo(() => checklistAssignments.find((a) => a.id === openMyId) || null, [checklistAssignments, openMyId]);
 
   useEffect(() => {
@@ -176,9 +179,9 @@ export default function ChecklistsPage() {
             <span className="card-title">My checklists</span>
             <span className="card-sub">{myStaff ? "Tick off the checklists assigned to you" : "No staff profile is linked to your login yet"}</span>
           </div>
-          {myStaff && myChecklistAssignments.length === 0 && <div style={{ fontSize: 13, color: "var(--gray)" }}>No checklists assigned to you yet.</div>}
+          {myStaff && myChecklistAssignmentsActive.length === 0 && <div style={{ fontSize: 13, color: "var(--gray)" }}>No checklists assigned to you yet.</div>}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
-            {myChecklistAssignments.map((a) => {
+            {myChecklistAssignmentsActive.map((a) => {
               const total = a.itemsTotal || (a.checks || []).length;
               const done = (a.checks || []).filter(Boolean).length;
               const pct = total ? Math.round((done / total) * 100) : 0;

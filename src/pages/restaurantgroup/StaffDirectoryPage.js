@@ -8,6 +8,7 @@ import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCo
 import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
+import { showInActiveList } from "./completionWindow";
 import { isJuniorType } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
 import { staffAreas, stationsForVenue } from "./staffStructureUtils";
@@ -392,6 +393,9 @@ export default function StaffDirectoryPage() {
 
   const myTraining = useMemo(() => profile ? assignments.filter((a) => a.staffId === profile.id) : [], [profile, assignments]);
   const myChecklists = useMemo(() => profile ? checklistAssignments.filter((a) => a.staffId === profile.id) : [], [profile, checklistAssignments]);
+  // active-list views: hide Complete items older than 48h (stats/dedup keep the full lists)
+  const myTrainingActive = useMemo(() => myTraining.filter((a) => showInActiveList(a)), [myTraining]);
+  const myChecklistsActive = useMemo(() => myChecklists.filter((a) => showInActiveList(a)), [myChecklists]);
 
   // ── Activity & history tab ──
   const renderHistory = () => {
@@ -761,7 +765,7 @@ export default function StaffDirectoryPage() {
                     <span className="card-title">Assigned training</span>
                     {canEdit && <button className="btn btn-sm btn-primary" onClick={() => openAssign("training")}>+ Assign training</button>}
                   </div>
-                  {myTraining.map((a) => (
+                  {myTrainingActive.map((a) => (
                     <div key={a.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                       <span style={{ fontSize: 12 }}>{a.moduleTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span></span>
                       <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
@@ -773,7 +777,7 @@ export default function StaffDirectoryPage() {
                       </span>
                     </div>
                   ))}
-                  {myTraining.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No training assigned.</div>}
+                  {myTrainingActive.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No training assigned.</div>}
                 </div>
 
                 {/* Past / archived training — preserved when a training was removed or reassigned */}
@@ -813,7 +817,7 @@ export default function StaffDirectoryPage() {
                     <span className="card-title">Assigned checklists</span>
                     {canEdit && <button className="btn btn-sm btn-primary" onClick={() => openAssign("checklist")}>+ Assign checklist</button>}
                   </div>
-                  {myChecklists.map((a) => (
+                  {myChecklistsActive.map((a) => (
                     <div key={a.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                       <span style={{ fontSize: 12 }}>{a.checklistTitle} <span className="pill pill-gray" style={{ marginLeft: 4 }}>{a.area}</span> <span style={{ color: "var(--gray)" }}>· {a.venue}</span></span>
                       <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
@@ -824,7 +828,7 @@ export default function StaffDirectoryPage() {
                       </span>
                     </div>
                   ))}
-                  {myChecklists.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No checklists assigned.</div>}
+                  {myChecklistsActive.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No checklists assigned.</div>}
                 </div>
 
                 {/* Coaching & mistake records */}

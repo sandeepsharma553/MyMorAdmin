@@ -5,6 +5,7 @@ import { venueTrainingCol, venueCol, staffInVenue } from "../../utils/restaurant
 import { fullName, trainingStatusPill, trainingBarColor, progressColor, trainingPct, moduleForStaff, snapshotForAssign } from "./rgUtils";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
+import { showInActiveList } from "./completionWindow";
 import { orderItemsForStaff, orderStaffForItem, isSuggested } from "./assignmentUtils";
 import { stationsForArea, groupItemsByStation, filterByStation, stationOptionsForItem, GENERAL_KEY } from "./itemDrilldown";
 import { sendNotification } from "./notify";
@@ -57,6 +58,8 @@ export default function TrainingPage({ initialTab }) {
     [roleStaff, selectedVenue]
   );
   const scopedAssign = useMemo(() => assignments.filter(matchVenue), [assignments, matchVenue]);
+  // active table: hide Complete items older than 48h (counts/metrics keep full scopedAssign)
+  const scopedAssignActive = useMemo(() => scopedAssign.filter((a) => showInActiveList(a)), [scopedAssign]);
   // training is per-venue: show the selected venue's modules (or all when "All venues")
   const venueModules = useMemo(
     () => modules.filter((m) => selectedVenue === "all" || m.venueId === selectedVenue),
@@ -311,7 +314,7 @@ export default function TrainingPage({ initialTab }) {
               <table className="data-table">
                 <thead><tr><th>Staff</th><th>Module</th><th>Venue</th><th>Due</th><th>Status</th><th>Progress</th><th>Action</th></tr></thead>
                 <tbody>
-                  {scopedAssign.map((a) => (
+                  {scopedAssignActive.map((a) => (
                     <tr key={a.id}>
                       <td>{a.staffName}</td><td>{a.moduleTitle}</td><td>{a.venue}</td><td>{a.due || "—"}</td>
                       <td><span className={`pill ${trainingStatusPill(a.status)}`}>{a.status}</span></td>
@@ -324,7 +327,7 @@ export default function TrainingPage({ initialTab }) {
                       </td>
                     </tr>
                   ))}
-                  {scopedAssign.length === 0 && <tr><td colSpan={7} style={{ color: "var(--gray)" }}>No assignments.</td></tr>}
+                  {scopedAssignActive.length === 0 && <tr><td colSpan={7} style={{ color: "var(--gray)" }}>No assignments.</td></tr>}
                 </tbody>
               </table>
             </div>
