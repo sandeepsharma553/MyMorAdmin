@@ -33,7 +33,7 @@ const editorToSteps = (steps) => (steps || [])
   .filter((s) => s.heading || s.items.length);
 
 export default function TrainingPage({ initialTab }) {
-  const { groupId, staff, scopedStaff: roleStaff, venues, modules, assignments, stations, roles, selectedVenue, matchVenue, showToast, can, me } = useRG();
+  const { groupId, staff, scopedStaff: roleStaff, venues, modules, assignments, stations, roles, areas, selectedVenue, matchVenue, showToast, can, me } = useRG();
   const canEdit = can("training", "edit");
 
   const myUid = me?.uid || me?.id;
@@ -47,7 +47,7 @@ export default function TrainingPage({ initialTab }) {
   const [tab, setTab] = useState(() => (visibleTabs.some((t) => t.id === initialTab) ? initialTab : "mine"));
   const [openAssign, setOpenAssign] = useState(null); // assignment id
   const openAssignment = useMemo(() => assignments.find((a) => a.id === openAssign) || null, [assignments, openAssign]);
-  const [areaTab, setAreaTab] = useState("all"); // all | foh | boh
+  const [areaTab, setAreaTab] = useState("all"); // "all" | a configured area name (FOH/BOH/Kitchen/…)
   const [modStation, setModStation] = useState("all"); // drill-down: all | stationId | GENERAL_KEY
   const [detail, setDetail] = useState(null);
   const [form, setForm] = useState({ staffId: "", moduleId: "", due: "", priority: "normal", notes: "" });
@@ -65,14 +65,12 @@ export default function TrainingPage({ initialTab }) {
     () => modules.filter((m) => selectedVenue === "all" || m.venueId === selectedVenue),
     [modules, selectedVenue]
   );
-  // FOH / BOH relevance filter — universal ("All") modules show under both
-  const areaMatch = (m) => areaTab === "all"
-    || (areaTab === "foh" ? (m.cat === "FOH" || m.cat === "All")
-      : (m.cat === "BOH" || m.cat === "All"));
+  // Area relevance filter — driven by the group's configured areas; universal ("All") modules show under every area
+  const areaMatch = (m) => areaTab === "all" || m.cat === areaTab || m.cat === "All";
   const areaModules = useMemo(() => venueModules.filter(areaMatch), [venueModules, areaTab]); // eslint-disable-line
   // Area→Station drill-down (presentation only). Stations of the selected area for the
   // station picker; null when "all" areas (no drill-down).
-  const areaForTab = areaTab === "foh" ? "FOH" : areaTab === "boh" ? "BOH" : null;
+  const areaForTab = areaTab === "all" ? null : areaTab;
   const drillStations = useMemo(() => (areaForTab ? stationsForArea(stations, areaForTab, selectedVenue) : []), [stations, areaForTab, selectedVenue]);
 
   const avgCompletion = scopedStaff.length
@@ -226,7 +224,7 @@ export default function TrainingPage({ initialTab }) {
       {/* FOH / BOH relevance filter (Modules + Progress) + Area→Station drill-down */}
       {(tab === "modules" || tab === "progress") && (
         <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
-          {[["all", "All"], ["foh", "FOH"], ["boh", "BOH"]].map(([id, l]) => (
+          {[["all", "All"], ...areas.map((a) => [a, a])].map(([id, l]) => (
             <button key={id} className="btn btn-sm" onClick={() => { setAreaTab(id); setModStation("all"); }}
               style={areaTab === id ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
           ))}

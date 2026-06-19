@@ -43,7 +43,7 @@ export default function ChecklistsPage() {
   const [venueTab, setVenueTab] = useState(selectedVenue === "all" ? (venues[0]?.id || "") : selectedVenue);
   const [typeFilter, setTypeFilter] = useState("All checklists");
   const [dayFilter, setDayFilter] = useState("all"); // "all" | "today" | weekday key
-  const [areaFilter, setAreaFilter] = useState("all"); // all | foh | boh
+  const [areaFilter, setAreaFilter] = useState("all"); // "all" | a configured area name (FOH/BOH/Kitchen/…)
   const [clStation, setClStation] = useState("all"); // drill-down: all | stationId | GENERAL_KEY
   const [openMyId, setOpenMyId] = useState(null);
 
@@ -71,14 +71,14 @@ export default function ChecklistsPage() {
   const areaMatch = (c) => {
     if (areaFilter === "all") return true;
     const a = areaOf(c);
-    return areaFilter === "foh" ? (a === "FOH" || a === "All") : (a === "BOH" || a === "All");
+    return a === areaFilter || a === "All";
   };
 
   const shown = useMemo(() => checklists.filter(
     (c) => c.venueId === venueTab && (typeFilter === "All checklists" || c.type === typeFilter) && dayMatch(c) && areaMatch(c)
   ).sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99")), [checklists, venueTab, typeFilter, dayFilter, areaFilter]); // eslint-disable-line
   // Area→Station drill-down (presentation only) — stations of the selected area in this venue.
-  const areaForFilter = areaFilter === "foh" ? "FOH" : areaFilter === "boh" ? "BOH" : null;
+  const areaForFilter = areaFilter === "all" ? null : areaFilter;
   const clDrillStations = useMemo(() => (areaForFilter ? stationsForArea(stations, areaForFilter, venueTab) : []), [stations, areaForFilter, venueTab]);
 
   // checks belong to a date — if it's a new day, they auto-reset (and the prior day is archived to history)
@@ -222,7 +222,7 @@ export default function ChecklistsPage() {
           ))}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {[["all", "All"], ["foh", "FOH"], ["boh", "BOH"]].map(([id, l]) => (
+          {[["all", "All"], ...areas.map((a) => [a, a])].map(([id, l]) => (
             <button key={id} className="btn btn-sm" onClick={() => { setAreaFilter(id); setClStation("all"); }}
               style={areaFilter === id ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
           ))}
