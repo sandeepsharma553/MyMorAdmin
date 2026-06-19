@@ -15,11 +15,11 @@ import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
 import Turning18Alert from "./Turning18Alert";
+import { fmtDate } from "./dateFmt";
 
 const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent", "Urgent — today"]];
 const REC_TYPES = ["Coaching", "Mistake", "Commendation", "Incident"];
 const recPill = (t) => t === "Mistake" ? "pill-red" : t === "Incident" ? "pill-amber" : t === "Commendation" ? "pill-green" : "pill-blue";
-const fmtDate = (iso) => { try { const d = new Date(iso); return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); } catch { return iso; } };
 // Firestore Timestamp | {seconds} | ISO string → short date label
 const tsLabel = (t) => {
   if (!t) return "";
