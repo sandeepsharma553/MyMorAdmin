@@ -7,7 +7,7 @@ import { RichItemList, RichText } from "./RichItems";
 import PrepListPanel from "./PrepListPanel";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
 import { trainingStatusPill, progressColor } from "./rgUtils";
-import { stationsForArea, groupItemsByStation, filterByStation, GENERAL_KEY } from "./itemDrilldown";
+import { stationsForArea, groupItemsByStation, filterByStation, stationOptionsForItem, GENERAL_KEY } from "./itemDrilldown";
 
 const hasText = (h) => (h || "").replace(/<[^>]*>/g, "").trim().length > 0;
 
@@ -349,7 +349,7 @@ export default function ChecklistsPage() {
               <div className="form-group"><label className="form-label">Station (optional)</label>
                 <select className="form-input" value={editor.stationId} onChange={setEd("stationId")}>
                   <option value="">— None —</option>
-                  {stations.filter((s) => s.venueId === editor.venueId).map((s) => <option key={s.id} value={s.id}>{s.name} · {s.area}</option>)}
+                  {stationOptionsForItem(stations, editor.venueId, editor.area, editor.stationId).map((s) => <option key={s.id} value={s.id}>{s.name} · {s.area}</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Scheduled time (optional)</label>

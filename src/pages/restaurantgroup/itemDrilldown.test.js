@@ -1,5 +1,5 @@
 /* Build 2a — Area→Station drill-down (presentation organisation). Pure helpers. */
-import { stationsForArea, groupItemsByStation, filterByStation, GENERAL_KEY } from "./itemDrilldown";
+import { stationsForArea, groupItemsByStation, filterByStation, stationOptionsForItem, GENERAL_KEY } from "./itemDrilldown";
 
 const stations = [
   { id: "bar", name: "Bar", area: "FOH", venueId: "v1" },
@@ -52,5 +52,28 @@ describe("filterByStation — narrow to one station / General / all", () => {
     const checklists = [{ id: "c1", area: "BOH", stationId: "grill" }, { id: "c2", area: "BOH", stationId: "" }];
     expect(filterByStation(checklists, "grill").map((c) => c.id)).toEqual(["c1"]);
     expect(filterByStation(checklists, GENERAL_KEY).map((c) => c.id)).toEqual(["c2"]);
+  });
+});
+
+describe("stationOptionsForItem — editor 'Station (optional)' dropdown (FIX 1)", () => {
+  // bar/counter are FOH in v1; grill is BOH in v1; barV2 is FOH in v2
+  test("offers ONLY stations of the item's area in the item's venue", () => {
+    expect(stationOptionsForItem(stations, "v1", "FOH").map((s) => s.id)).toEqual(["bar", "counter"]);
+    expect(stationOptionsForItem(stations, "v1", "BOH").map((s) => s.id)).toEqual(["grill"]); // no FOH bar/counter
+    expect(stationOptionsForItem(stations, "v2", "FOH").map((s) => s.id)).toEqual(["barV2"]); // not v1's stations
+  });
+  test("area 'All' offers every station in the venue (no area restriction)", () => {
+    expect(stationOptionsForItem(stations, "v1", "All").map((s) => s.id)).toEqual(["bar", "counter", "grill"]);
+  });
+  test("an already-set OUT-OF-AREA station is KEPT (prepended) so editing never drops it", () => {
+    // FOH item currently has the BOH 'grill' station set → grill stays selectable, plus the FOH options
+    const opts = stationOptionsForItem(stations, "v1", "FOH", "grill");
+    expect(opts.map((s) => s.id)).toEqual(["grill", "bar", "counter"]);
+  });
+  test("an already-set in-area station is NOT duplicated", () => {
+    expect(stationOptionsForItem(stations, "v1", "FOH", "bar").map((s) => s.id)).toEqual(["bar", "counter"]);
+  });
+  test("no current station → just the area+venue options", () => {
+    expect(stationOptionsForItem(stations, "v1", "FOH", "").map((s) => s.id)).toEqual(["bar", "counter"]);
   });
 });

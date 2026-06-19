@@ -9,6 +9,19 @@
 export const stationsForArea = (stations, area, venueId) =>
   (stations || []).filter((st) => st.area === area && (!venueId || venueId === "all" || st.venueId === venueId));
 
+// Options for the module/checklist EDITOR "Station (optional)" dropdown: stations in this
+// venue whose area matches the item's area (area === "All" → any), using the SAME
+// area comparison as stationsForArea. An already-set station whose area no longer matches
+// is kept (prepended) so editing never silently drops it — only the selectable set is scoped.
+export const stationOptionsForItem = (stations, venueId, area, currentStationId) => {
+  const opts = (stations || []).filter((st) => st.venueId === venueId && (area === "All" || st.area === area));
+  if (currentStationId && !opts.some((st) => st.id === currentStationId)) {
+    const cur = (stations || []).find((st) => st.id === currentStationId);
+    if (cur) return [cur, ...opts];
+  }
+  return opts;
+};
+
 // Group items by station within an already-area-filtered list. Returns ordered groups:
 // one per station that has items (in areaStations order), then a "General" group for
 // items with no station (or a station not in this area). Empty station groups are dropped.

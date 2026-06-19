@@ -5,7 +5,7 @@ import { venueTrainingCol, venueCol, staffInVenue } from "../../utils/restaurant
 import { fullName, trainingStatusPill, trainingBarColor, progressColor, trainingPct, moduleForStaff, snapshotForAssign } from "./rgUtils";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { orderItemsForStaff, orderStaffForItem, isSuggested } from "./assignmentUtils";
-import { stationsForArea, groupItemsByStation, filterByStation, GENERAL_KEY } from "./itemDrilldown";
+import { stationsForArea, groupItemsByStation, filterByStation, stationOptionsForItem, GENERAL_KEY } from "./itemDrilldown";
 import { sendNotification } from "./notify";
 import { RefImageViewer, RefImageEditor } from "./RefImages";
 import { RichItemList, RichText } from "./RichItems";
@@ -396,7 +396,7 @@ export default function TrainingPage({ initialTab }) {
               <div className="form-group"><label className="form-label">Station (optional)</label>
                 <select className="form-input" value={modEditor.stationId} onChange={setM("stationId")}>
                   <option value="">— None —</option>
-                  {stations.filter((s) => s.venueId === modEditor.venueId).map((s) => <option key={s.id} value={s.id}>{s.name} · {s.area}</option>)}
+                  {stationOptionsForItem(stations, modEditor.venueId, modEditor.cat, modEditor.stationId).map((s) => <option key={s.id} value={s.id}>{s.name} · {s.area}</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Duration</label><input className="form-input" value={modEditor.duration} onChange={setM("duration")} placeholder="30 min" /></div>
