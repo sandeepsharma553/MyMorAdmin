@@ -4,6 +4,7 @@ import { venueCol, staffCol } from "../../utils/restaurantGroupPaths";
 import { RichText } from "./RichItems";
 import { trainingStatusPill } from "./rgUtils";
 import { isAssignmentLocked } from "./assignmentUtils";
+import { archiveCompletion } from "./completionArchive";
 import { sendNotification } from "./notify";
 
 /**
@@ -60,7 +61,7 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
     // self-heal: if the snapshot was empty, persist the resolved sections so it sticks
     const heal = snapSections.length ? {} : { sections, itemsTotal: total, link };
     // if a verified assignment drops below complete, clear the sign-off — never "verified" + incomplete
-    const clearVerify = (!allDone && assignment.verified) ? { verified: false, verifiedBy: "", verifyNote: "" } : {};
+    const clearVerify = (!allDone && assignment.verified) ? { verified: false, verifiedBy: "", verifyNote: "", completedAt: null } : {};
     try {
       await updateDoc(ref(), { checks: next, progress, status, ...heal, ...clearVerify });
       // tell the managers when someone finishes all steps (ready to sign off)
@@ -85,13 +86,21 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
   const verify = async () => {
     if (locked) return;
     const note = vNote.trim();
+    const ms = Date.now();
+    const pct = total ? Math.round((done / total) * 100) : 100;
     try {
       await updateDoc(ref(), {
         verified: true, verifiedBy: actorName || "Trainer", verifiedAt: serverTimestamp(),
-        verifyNote: note, status: "Complete", progress: total ? Math.round((done / total) * 100) : 100,
+        verifyNote: note, status: "Complete", progress: pct,
+        completedAt: serverTimestamp(), // drives the 48h active window + completion archive
       });
-      // log a record on the staff profile — only on the not-verified → verified transition,
-      // and surfaced (no silent .catch) so a failed log doesn't falsely report success
+      // on the not-verified → verified transition: write a dated completion archive entry
+      // (additive, fire-and-forget) and log a record on the staff profile
+      if (!assignment.verified) {
+        archiveCompletion(groupId, "training", assignment, {
+          status: "Complete", verified: true, verifiedBy: actorName || "Trainer", verifyNote: note, checks, progress: pct,
+        }, ms).catch(() => {});
+      }
       if (assignment.staffId && !assignment.verified) {
         await updateDoc(doc(staffCol(groupId), assignment.staffId), {
           records: arrayUnion({
@@ -109,7 +118,7 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
     if (locked) return; // locked: un-verify is disabled — reassign to redo
     const allDone = total > 0 && done >= total;
     const status = done === 0 ? "Not started" : allDone ? "Awaiting sign-off" : "In progress";
-    try { await updateDoc(ref(), { verified: false, verifiedBy: "", verifyNote: "", status }); showToast?.("Verification removed"); }
+    try { await updateDoc(ref(), { verified: false, verifiedBy: "", verifyNote: "", status, completedAt: null }); showToast?.("Verification removed"); }
     catch { showToast?.("Could not update"); }
   };
 

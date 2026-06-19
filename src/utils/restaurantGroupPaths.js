@@ -41,6 +41,11 @@ export const venueTrainingCol = (groupId, venueId) => venueCol(groupId, venueId,
 // Grows over time → fetched on-demand per staff profile, NOT in PER_VENUE_COLLECTIONS.
 export const trainingArchiveCol = (groupId, venueId) => venueCol(groupId, venueId, "trainingArchive");
 export const trainingArchiveDoc = (groupId, venueId, id) => doc(trainingArchiveCol(groupId, venueId), String(id));
+// Checklist archive — mirrors trainingArchive (same per-venue location, so the existing
+// venues/{venueId}/{coll}/{docId=**} group-member rule covers it). On-demand, NOT in
+// PER_VENUE_COLLECTIONS.
+export const checklistArchiveCol = (groupId, venueId) => venueCol(groupId, venueId, "checklistArchive");
+export const checklistArchiveDoc = (groupId, venueId, id) => doc(checklistArchiveCol(groupId, venueId), String(id));
 
 // Collections stored per-venue (subscribed & merged by the context).
 // NB: `staff` is GROUP-LEVEL (a staff member can belong to multiple venues via

@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { updateDoc, doc, arrayUnion } from "firebase/firestore";
+import { updateDoc, doc, arrayUnion, serverTimestamp } from "firebase/firestore";
 import { venueCol } from "../../utils/restaurantGroupPaths";
 import { RichText } from "./RichItems";
 import { trainingStatusPill } from "./rgUtils";
+import { archiveCompletion } from "./completionArchive";
 import { sendNotification } from "./notify";
 
 /**
@@ -33,9 +34,14 @@ export default function ChecklistAssignmentDetail({ assignment, liveChecklist, g
     const progress = total ? Math.round((d / total) * 100) : 0;
     const status = d === 0 ? "Not started" : d >= total ? "Complete" : "In progress";
     const heal = (assignment.items && assignment.items.length) ? {} : { items, itemsTotal: total };
+    const becameComplete = status === "Complete" && assignment.status !== "Complete";
+    const droppedFromComplete = status !== "Complete" && assignment.status === "Complete";
+    // completedAt drives the 48h active window + completion archive
+    const tsPatch = becameComplete ? { completedAt: serverTimestamp() } : droppedFromComplete ? { completedAt: null } : {};
     try {
-      await updateDoc(ref(), { checks: next, progress, status, ...heal });
-      if (status === "Complete" && assignment.status !== "Complete") {
+      await updateDoc(ref(), { checks: next, progress, status, ...heal, ...tsPatch });
+      if (becameComplete) {
+        archiveCompletion(groupId, "checklist", assignment, { status: "Complete", checks: next, progress }).catch(() => {}); // dated completion archive (additive)
         sendNotification(groupId, { to: "managers", type: "checklist", title: "Checklist completed", body: `${assignment.staffName} completed "${assignment.checklistTitle}"`, venueId: assignment.venueId, by: assignment.staffName });
       }
     } catch { showToast?.("Could not save"); }

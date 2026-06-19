@@ -4,6 +4,7 @@ import { useRG } from "./RGContext";
 import { venueTrainingCol, venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, trainingStatusPill, trainingBarColor, progressColor, trainingPct, moduleForStaff, snapshotForAssign } from "./rgUtils";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
+import { archiveCompletion } from "./completionArchive";
 import { orderItemsForStaff, orderStaffForItem, isSuggested } from "./assignmentUtils";
 import { stationsForArea, groupItemsByStation, filterByStation, stationOptionsForItem, GENERAL_KEY } from "./itemDrilldown";
 import { sendNotification } from "./notify";
@@ -92,8 +93,11 @@ export default function TrainingPage({ initialTab }) {
   );
 
   const markDone = async (a) => {
-    try { await updateDoc(doc(venueCol(groupId, a.venueId, "trainingAssignments"), a.id), { status: "Complete", progress: 100 }); showToast(`Marked complete for ${a.staffName}`); }
-    catch { showToast("Could not update"); }
+    try {
+      await updateDoc(doc(venueCol(groupId, a.venueId, "trainingAssignments"), a.id), { status: "Complete", progress: 100, completedAt: serverTimestamp() });
+      if (a.status !== "Complete") archiveCompletion(groupId, "training", a, { status: "Complete", progress: 100 }).catch(() => {}); // dated completion archive (additive)
+      showToast(`Marked complete for ${a.staffName}`);
+    } catch { showToast("Could not update"); }
   };
   const removeAssign = async (a) => {
     try {

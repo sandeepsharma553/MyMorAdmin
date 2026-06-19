@@ -7,6 +7,7 @@ import { useRG } from "./RGContext";
 import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
+import { archiveCompletion } from "./completionArchive";
 import { isJuniorType } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
 import { staffAreas, stationsForVenue } from "./staffStructureUtils";
@@ -494,8 +495,15 @@ export default function StaffDirectoryPage() {
     } catch { showToast("Could not remove"); }
   };
   const toggleAssignDone = async (a) => {
-    try { await updateDoc(doc(venueCol(groupId, a.venueId, "trainingAssignments"), a.id), a.status === "Complete" ? { status: "Not started", progress: 0 } : { status: "Complete", progress: 100 }); }
-    catch { showToast("Could not update"); }
+    try {
+      const ref = doc(venueCol(groupId, a.venueId, "trainingAssignments"), a.id);
+      if (a.status === "Complete") {
+        await updateDoc(ref, { status: "Not started", progress: 0, completedAt: null });
+      } else {
+        await updateDoc(ref, { status: "Complete", progress: 100, completedAt: serverTimestamp() });
+        archiveCompletion(groupId, "training", a, { status: "Complete", progress: 100 }).catch(() => {}); // dated completion archive (additive)
+      }
+    } catch { showToast("Could not update"); }
   };
 
   const Metric = ({ label, value, change, down, bar }) => (
