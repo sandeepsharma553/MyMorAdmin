@@ -48,8 +48,11 @@ export const SUGGESTED_STATIONS = {
 
 export const RG_MODULE_KEYS = RG_MODULES.map((m) => m.key);
 
-export const LEVELS = { NONE: "none", VIEW: "view", EDIT: "edit" };
-const order = { none: 0, view: 1, edit: 2 };
+export const LEVELS = { NONE: "none", VIEW: "view", EDIT: "edit", APPROVE: "approve" };
+// Ranked, monotonic. `approve` sits ABOVE `edit`: because hasLevel() is "has AT LEAST
+// this level" (order[have] >= order[required]), anyone with approve (3) automatically
+// passes edit (2)/view (1) checks, while can(key,"approve") admits only approve.
+const order = { none: 0, view: 1, edit: 2, approve: 3 };
 
 // Four roles mirroring the prototype hierarchy.
 export const RG_ROLES = [
@@ -61,8 +64,8 @@ export const RG_ROLES = [
 
 // Default permission matrix per role (per module → level).
 export const DEFAULT_PERMISSIONS = {
-  owner: { staff: "edit", shifts: "edit", leave: "edit", training: "edit", checklists: "edit", temperature: "edit", performance: "edit", messages: "edit", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", supplier: "edit", compliance: "edit" },
-  storeAdmin: { staff: "edit", shifts: "edit", leave: "edit", training: "edit", checklists: "edit", temperature: "edit", performance: "view", messages: "edit", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", supplier: "edit", compliance: "edit" },
+  owner: { staff: "edit", shifts: "edit", leave: "approve", training: "edit", checklists: "edit", temperature: "edit", performance: "edit", messages: "edit", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", supplier: "edit", compliance: "edit" },
+  storeAdmin: { staff: "edit", shifts: "edit", leave: "approve", training: "edit", checklists: "edit", temperature: "edit", performance: "view", messages: "edit", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", supplier: "edit", compliance: "edit" },
   manager: { staff: "view", shifts: "edit", leave: "edit", training: "edit", checklists: "edit", temperature: "edit", performance: "view", messages: "edit", calendar: "view", usermgmt: "none", settings: "none", stock: "edit", menus: "edit", supplier: "view", compliance: "edit" },
   staff: { staff: "none", shifts: "view", leave: "view", training: "view", checklists: "edit", temperature: "edit", performance: "none", messages: "view", calendar: "view", usermgmt: "none", settings: "none", stock: "none", menus: "none", supplier: "none", compliance: "view" },
 };
@@ -87,6 +90,7 @@ export const hasLevel = (perms, moduleKey, required = "view") => {
 };
 
 export const levelMeta = (lvl) => {
+  if (lvl === "approve") return { label: "✓ Approve", color: "var(--red)" };
   if (lvl === "edit") return { label: "✏ Edit", color: "var(--green)" };
   if (lvl === "view") return { label: "👁 View", color: "var(--blue)" };
   return { label: "✕ None", color: "var(--gray)" };
