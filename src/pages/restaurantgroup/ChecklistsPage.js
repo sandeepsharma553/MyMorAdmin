@@ -227,9 +227,9 @@ export default function ChecklistsPage() {
               style={areaFilter === id ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
           ))}
           {areaForFilter && clDrillStations.length > 0 && (
-            <select className="form-input" style={{ width: 160 }} value={clStation} onChange={(e) => setClStation(e.target.value)} title="Drill down to a station">
+            <select key={`${venueTab}-${areaForFilter}`} className="form-input" style={{ width: 160 }} value={clStation} onChange={(e) => setClStation(e.target.value)} title="Drill down to a station">
               <option value="all">All stations</option>
-              {clDrillStations.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+              {clDrillStations.map((st) => <option key={`${st.venueId}-${st.id}`} value={st.id}>{st.name}</option>)}
               <option value={GENERAL_KEY}>General (no station)</option>
             </select>
           )}
@@ -349,9 +349,9 @@ export default function ChecklistsPage() {
                 <select className="form-input" value={editor.area} onChange={setEd("area")}>{AREA_OPTS.map((a) => <option key={a}>{a}</option>)}</select>
               </div>
               <div className="form-group"><label className="form-label">Station (optional)</label>
-                <select className="form-input" value={editor.stationId} onChange={setEd("stationId")}>
+                <select key={`${editor.venueId}-${editor.area}`} className="form-input" value={editor.stationId} onChange={setEd("stationId")}>
                   <option value="">— None —</option>
-                  {stationOptionsForItem(stations, editor.venueId, editor.area, editor.stationId).map((s) => <option key={s.id} value={s.id}>{s.name} · {s.area}</option>)}
+                  {stationOptionsForItem(stations, editor.venueId, editor.area, editor.stationId).map((s) => <option key={`${s.venueId}-${s.id}`} value={s.id}>{s.name} · {s.area}</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Scheduled time (optional)</label>

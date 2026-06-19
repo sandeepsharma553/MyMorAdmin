@@ -229,9 +229,9 @@ export default function TrainingPage({ initialTab }) {
               style={areaTab === id ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
           ))}
           {tab === "modules" && areaForTab && drillStations.length > 0 && (
-            <select className="form-input" style={{ width: 200, marginLeft: 6 }} value={modStation} onChange={(e) => setModStation(e.target.value)} title="Drill down to a station">
+            <select key={`${selectedVenue}-${areaForTab}`} className="form-input" style={{ width: 200, marginLeft: 6 }} value={modStation} onChange={(e) => setModStation(e.target.value)} title="Drill down to a station">
               <option value="all">All stations</option>
-              {drillStations.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+              {drillStations.map((st) => <option key={`${st.venueId}-${st.id}`} value={st.id}>{st.name}</option>)}
               <option value={GENERAL_KEY}>General (no station)</option>
             </select>
           )}
@@ -399,9 +399,9 @@ export default function TrainingPage({ initialTab }) {
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Station (optional)</label>
-                <select className="form-input" value={modEditor.stationId} onChange={setM("stationId")}>
+                <select key={`${modEditor.venueId}-${modEditor.cat}`} className="form-input" value={modEditor.stationId} onChange={setM("stationId")}>
                   <option value="">— None —</option>
-                  {stationOptionsForItem(stations, modEditor.venueId, modEditor.cat, modEditor.stationId).map((s) => <option key={s.id} value={s.id}>{s.name} · {s.area}</option>)}
+                  {stationOptionsForItem(stations, modEditor.venueId, modEditor.cat, modEditor.stationId).map((s) => <option key={`${s.venueId}-${s.id}`} value={s.id}>{s.name} · {s.area}</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Duration</label><input className="form-input" value={modEditor.duration} onChange={setM("duration")} placeholder="30 min" /></div>
