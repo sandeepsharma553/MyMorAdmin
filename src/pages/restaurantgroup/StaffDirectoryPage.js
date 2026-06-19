@@ -4,7 +4,7 @@ import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol } from "../../utils/restaurantGroupPaths";
+import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol } from "../../utils/restaurantGroupPaths";
 import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
@@ -356,6 +356,7 @@ export default function StaffDirectoryPage() {
   const openChecklistAssignment = useMemo(() => checklistAssignments.find((a) => a.id === openChecklistId) || null, [checklistAssignments, openChecklistId]);
   // archived (past) training for the open profile — fetched on demand (grows over time)
   const [archivedTraining, setArchivedTraining] = useState(null); // null = loading, [] = none
+  const [archivedChecklists, setArchivedChecklists] = useState(null);
   const [openArchiveId, setOpenArchiveId] = useState(null);
   const openArchiveRecord = useMemo(() => (archivedTraining || []).find((a) => a.id === openArchiveId) || null, [archivedTraining, openArchiveId]);
 
@@ -370,24 +371,23 @@ export default function StaffDirectoryPage() {
     return () => { alive = false; };
   }, [profile, groupId, canPayroll]);
 
-  // fetch archived training across the staff member's venues when a profile opens
+  // fetch archived training + checklists across the staff member's venues when a profile
+  // opens. Both archives now also receive a dated entry on EACH completion (completionArchive),
+  // so a training/checklist completed N times shows N dated entries here.
   useEffect(() => {
-    setArchivedTraining(null);
-    setOpenArchiveId(null);
+    setArchivedTraining(null); setArchivedChecklists(null); setOpenArchiveId(null);
     if (!profile || !groupId) return;
     let alive = true;
     const vids = profile.venueIds || (profile.venueId ? [profile.venueId] : []);
-    Promise.all(vids.map((vid) =>
-      getDocs(query(trainingArchiveCol(groupId, vid), where("staffId", "==", profile.id)))
+    const sortByDate = (a, b) => (b.completedAtMillis || (b.archivedAt?.seconds || 0) * 1000) - (a.completedAtMillis || (a.archivedAt?.seconds || 0) * 1000);
+    const load = (colFn, setter) => Promise.all(vids.map((vid) =>
+      getDocs(query(colFn(groupId, vid), where("staffId", "==", profile.id)))
         .then((snap) => snap.docs.map((d) => ({ id: d.id, venueId: vid, ...d.data() })))
         .catch(() => [])
-    ))
-      .then((lists) => {
-        if (!alive) return;
-        const all = lists.flat().sort((a, b) => (b.archivedAt?.seconds || 0) - (a.archivedAt?.seconds || 0));
-        setArchivedTraining(all);
-      })
-      .catch(() => { if (alive) setArchivedTraining([]); });
+    )).then((lists) => { if (alive) setter(lists.flat().sort(sortByDate)); })
+      .catch(() => { if (alive) setter([]); });
+    load(trainingArchiveCol, setArchivedTraining);
+    load(checklistArchiveCol, setArchivedChecklists);
     return () => { alive = false; };
   }, [profile, groupId]);
 
@@ -802,11 +802,31 @@ export default function StaffDirectoryPage() {
                         </span>
                       </div>
                       <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 2 }}>
-                        {a.verifiedBy ? `Signed off by ${a.verifiedBy}` : ""}
-                        {a.verifiedAt ? `${a.verifiedBy ? " · " : ""}${tsLabel(a.verifiedAt)}` : ""}
-                        {a.archivedAt ? `${(a.verifiedBy || a.verifiedAt) ? " · " : ""}archived ${tsLabel(a.archivedAt)}` : ""}
+                        {a.completedAt ? `completed ${tsLabel(a.completedAt)}` : ""}
+                        {a.verifiedBy ? `${a.completedAt ? " · " : ""}Signed off by ${a.verifiedBy}` : ""}
+                        {a.verifiedAt ? `${(a.completedAt || a.verifiedBy) ? " · " : ""}${tsLabel(a.verifiedAt)}` : ""}
+                        {a.archivedAt ? `${(a.completedAt || a.verifiedBy || a.verifiedAt) ? " · " : ""}archived ${tsLabel(a.archivedAt)}` : ""}
                         {a.verifyNote ? <span style={{ display: "block", color: "var(--ink)" }}>“{a.verifyNote}”</span> : null}
                       </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Past / archived checklists — a dated entry per completion (+ reassign/remove) */}
+                <div style={{ marginTop: 16 }}>
+                  <div className="card-head" style={{ marginBottom: 8 }}>
+                    <span className="card-title">Past / archived checklists</span>
+                    {archivedChecklists && archivedChecklists.length > 0 && <span className="pill pill-gray">{archivedChecklists.length}</span>}
+                  </div>
+                  {archivedChecklists === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
+                  {archivedChecklists && archivedChecklists.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No archived checklists.</div>}
+                  {(archivedChecklists || []).map((a) => (
+                    <div key={a.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                      <span style={{ fontSize: 12 }}>
+                        {a.checklistTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span>
+                        {a.archivedReason && <span className="pill pill-gray" style={{ marginLeft: 6 }}>{a.archivedReason}</span>}
+                      </span>
+                      <span style={{ fontSize: 10, color: "var(--gray)" }}>{a.completedAt ? `completed ${tsLabel(a.completedAt)}` : (a.archivedAt ? `archived ${tsLabel(a.archivedAt)}` : "")}</span>
                     </div>
                   ))}
                 </div>
