@@ -2,8 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
-import { fullName, csvText, weekKeyOf } from "./rgUtils";
-import { encryptText, decryptText, downloadText } from "./cryptoExport";
+import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
 import { staffAreaBuckets, staffAtStation } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import StaffCapabilityCard from "./StaffCapabilityCard";
@@ -20,8 +19,8 @@ const mkTimes = (fromMin, toMin) => {
   }
   return out;
 };
-const STARTS = mkTimes(6 * 60, 18 * 60);        // 6:00am … 6:00pm
-const ENDS = mkTimes(12 * 60, 23 * 60 + 45);    // 12:00pm … 11:45pm
+const STARTS = mkTimes(0, 23 * 60 + 45);        // 12:00am … 11:45pm (full day, 15-min)
+const ENDS = mkTimes(0, 23 * 60 + 45);          // 12:00am … 11:45pm
 const ROLES = ["FOH — Bar", "FOH — Floor", "FOH — Barista", "BOH — Kitchen", "BOH — Fryer", "BOH — Washing", "Store Manager", "Central Kitchen"];
 const HOURLY = 32;
 const WEEKLY_REVENUE = 42000;
@@ -338,28 +337,18 @@ export default function ShiftPlannerPage() {
       {/* Week nav */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button className="btn btn-sm" onClick={() => setOffset((o) => o - 1)}>← Prev</button>
+          {/* staff are limited to the current + next week (2-week window) */}
+          <button className="btn btn-sm" disabled={myScope === "staff" && offset <= 0} onClick={() => setOffset((o) => (myScope === "staff" ? Math.max(0, o - 1) : o - 1))}>← Prev</button>
           <span style={{ fontSize: 13, fontWeight: 600, minWidth: 200, textAlign: "center" }}>{weekLabel}</span>
-          <button className="btn btn-sm" onClick={() => setOffset((o) => o + 1)}>Next →</button>
+          <button className="btn btn-sm" disabled={myScope === "staff" && offset >= 1} onClick={() => setOffset((o) => (myScope === "staff" ? Math.min(1, o + 1) : o + 1))}>Next →</button>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-sm" onClick={() => setSplitMode((s) => !s)} style={splitMode ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>⊟ Split view</button>
           {canEdit && <button className="btn btn-sm btn-primary" onClick={() => openAdd("", 0)}>+ Add shift</button>}
-          <button className="btn btn-sm" onClick={async () => {
-            const pass = window.prompt("Set a passphrase to encrypt the roster export (you'll need it to open the file):");
-            if (!pass) return;
+          <button className="btn btn-sm" onClick={() => {
             const rows = [["Staff", "Day", "Start", "End", "Role", "Station", "Venue", "Hours"], ...weekShifts.slice().sort((a, b) => (a.day - b.day) || a.start.localeCompare(b.start)).map((sh) => [sh.staffName, FULL_DAYS[sh.day] || "", sh.start, sh.end, sh.role, sh.station || "", sh.venue, shiftHours(sh).toFixed(1)])];
-            try { downloadText(`roster-${wk}.csv.enc`, await encryptText(csvText(rows), pass)); showToast("Roster exported (encrypted)"); }
-            catch { showToast("Could not encrypt export"); }
-          }}>Export 🔒</button>
-          <label className="btn btn-sm" style={{ cursor: "pointer" }} title="Decrypt a .csv.enc roster file">Decrypt
-            <input type="file" accept=".enc" style={{ display: "none" }} onChange={async (e) => {
-              const file = e.target.files?.[0]; e.target.value = ""; if (!file) return;
-              const pass = window.prompt("Enter the passphrase for this encrypted file:"); if (!pass) return;
-              try { const csv = await decryptText(await file.text(), pass); downloadText(file.name.replace(/\.enc$/, "") || "roster.csv", csv, "text/csv;charset=utf-8;"); showToast("Decrypted"); }
-              catch { showToast("Wrong passphrase or not a MyMor file"); }
-            }} />
-          </label>
+            downloadCsv(`roster-${wk}.csv`, rows); showToast("Roster exported");
+          }}>Export</button>
         </div>
       </div>
 

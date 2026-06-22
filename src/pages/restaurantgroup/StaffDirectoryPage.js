@@ -97,7 +97,6 @@ export default function StaffDirectoryPage() {
     } catch { /* non-blocking */ }
   };
   const [roleFilter, setRoleFilter] = useState("all");
-  const [showLeft, setShowLeft] = useState(false); // archive view: hide Left staff by default, toggle to see only them
   const [hoursPeriod, setHoursPeriod] = useState("week"); // history hours summary window
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -136,17 +135,21 @@ export default function StaffDirectoryPage() {
   const venueScoped = useMemo(() => scopedStaff.filter((s) => staffInVenue(s, selectedVenue)), [scopedStaff, selectedVenue]);
   const filtered = useMemo(() => {
     let list = venueScoped;
-    if (roleFilter !== "all") list = list.filter((s) => {
-      const sa = staffAreas(s).length ? staffAreas(s) : [areaOf(s.role)];
-      // area buttons carry the configured area value (case-insensitive match); "manager" is special
-      return sa.some((a) => a.toLowerCase() === roleFilter.toLowerCase()) || (roleFilter === "manager" && /manager|supervisor|in charge/i.test(s.role));
-    });
-    // archive: Left staff are hidden from the active grid; the "Left" toggle shows only them
-    list = showLeft ? list.filter((s) => s.status === "Left") : list.filter((s) => s.status !== "Left");
+    // "Left" is one of the mutually-exclusive filter buttons: show ONLY left staff; every
+    // other filter hides left staff (so clicking FOH/BOH/All from Left switches cleanly).
+    if (roleFilter === "left") {
+      list = list.filter((s) => s.status === "Left");
+    } else {
+      list = list.filter((s) => s.status !== "Left");
+      if (roleFilter !== "all") list = list.filter((s) => {
+        const sa = staffAreas(s).length ? staffAreas(s) : [areaOf(s.role)];
+        return sa.some((a) => a.toLowerCase() === roleFilter.toLowerCase()) || (roleFilter === "manager" && /manager|supervisor|in charge/i.test(s.role));
+      });
+    }
     const t = search.trim().toLowerCase();
     if (t) list = list.filter((s) => `${s.displayName || s.name} ${s.role} ${(s.venueNames || []).join(" ")} ${s.email || ""} ${s.pin || ""}`.toLowerCase().includes(t));
     return list;
-  }, [venueScoped, roleFilter, search, showLeft]);
+  }, [venueScoped, roleFilter, search]);
   const leftCount = useMemo(() => venueScoped.filter((s) => s.status === "Left").length, [venueScoped]);
 
   const onShiftToday = useMemo(() => {
@@ -669,9 +672,8 @@ export default function StaffDirectoryPage() {
         <FilterBtn id="manager">Managers</FilterBtn>
         {/* area filters from the group's configured areas (mirrors training/sop/checklist filters) */}
         {areas.map((a) => <FilterBtn key={a} id={a}>{a}</FilterBtn>)}
-        {/* archive view — Left staff are hidden by default; toggle to review them */}
-        <button className="btn btn-sm" onClick={() => setShowLeft((v) => !v)} title="Archived / left staff"
-          style={showLeft ? { background: "var(--gray)", color: "#fff", borderColor: "var(--gray)" } : undefined}>🗄 Left{leftCount ? ` (${leftCount})` : ""}</button>
+        {/* archive view — one of the mutually-exclusive filters (clicking another clears it) */}
+        <FilterBtn id="left">🗄 Left{leftCount ? ` (${leftCount})` : ""}</FilterBtn>
         <input className="form-input" style={{ width: 200, marginLeft: "auto" }} placeholder="🔍 Search staff / PIN..." value={search} onChange={(e) => setSearch(e.target.value)} />
         {canEdit && <button className="btn btn-sm btn-primary" onClick={() => { setForm(blankForm(selectedVenue)); setAddOpen(true); }}>+ Add Staff</button>}
       </div>
