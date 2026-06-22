@@ -7,7 +7,7 @@ import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
 import { orderItemsForStaff, orderStaffForItem, isSuggested } from "./assignmentUtils";
-import { stationsForArea, groupItemsByStation, filterByStation, stationOptionsForItem, GENERAL_KEY } from "./itemDrilldown";
+import { stationsForArea, groupItemsByStation, filterByStation, GENERAL_KEY } from "./itemDrilldown";
 import { sendNotification } from "./notify";
 import { RefImageViewer, RefImageEditor } from "./RefImages";
 import { RichItemList, RichText } from "./RichItems";
@@ -23,10 +23,9 @@ const TABS = [
   { id: "progress", label: "Progress" },
 ];
 const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent", "Urgent — today"]];
-const CATS = ["FOH", "BOH", "All", "Management"];
 const ICONS = ["🌅", "🌙", "⭐", "🤝", "🍔", "🥗", "🍳", "🔥", "🛡️", "☕", "🏭", "👑", "📋", "🧂"];
 const MOD_COLORS = [["Amber", "#fef3c7"], ["Purple", "#ede9fe"], ["Yellow", "#fef9c3"], ["Green", "#dcfce7"], ["Red", "#fee2e2"], ["Blue", "#e0f2fe"], ["Cyan", "#cffafe"], ["Pink", "#fce7f3"]];
-const blankModule = () => ({ id: null, venueId: "", title: "", cat: "FOH", stationId: "", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", link: "", mandatory: false, steps: [{ heading: "Procedure", items: [] }], images: [], autoRoles: [] });
+const blankModule = () => ({ id: null, venueId: "", title: "", cat: "All", stationId: "", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", link: "", mandatory: false, steps: [{ heading: "Procedure", items: [] }], images: [], autoRoles: [] });
 const stepsToEditor = (steps) => (Array.isArray(steps) && steps.length ? steps.map((s) => ({ heading: s.heading || "", items: s.items || [] })) : [{ heading: "Procedure", items: [] }]);
 const editorToSteps = (steps) => (steps || [])
   .map((s) => ({ heading: (s.heading || "").trim(), items: (s.items || []).filter(hasText) }))
@@ -142,7 +141,9 @@ export default function TrainingPage({ initialTab }) {
     const venueNameStr = venues.find((v) => v.id === vid)?.name || "";
     const steps = editorToSteps(modEditor.steps);
     const stn = stations.find((s) => s.id === modEditor.stationId && s.venueId === vid);
-    const payload = { title: modEditor.title.trim(), cat: modEditor.cat, stationId: stn?.id || "", station: stn?.name || "", venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), link: (modEditor.link || "").trim(), mandatory: modEditor.mandatory, steps, images: modEditor.images || [], autoAssign: { roles: modEditor.autoRoles || [] } };
+    // category removed from the UI — a module's area now follows its station (universal "All" if none)
+    const cat = stn?.area || "All";
+    const payload = { title: modEditor.title.trim(), cat, stationId: stn?.id || "", station: stn?.name || "", venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), link: (modEditor.link || "").trim(), mandatory: modEditor.mandatory, steps, images: modEditor.images || [], autoAssign: { roles: modEditor.autoRoles || [] } };
     try {
       if (modEditor.id) { await updateDoc(doc(venueTrainingCol(groupId, vid), modEditor.id), payload); showToast("Module updated"); }
       else { await addDoc(venueTrainingCol(groupId, vid), payload); showToast("Module created"); }
@@ -389,19 +390,16 @@ export default function TrainingPage({ initialTab }) {
             <div className="modal-head"><span className="modal-title">{modEditor.id ? "Edit module" : "New training module"}</span><button className="modal-close" onClick={() => setModEditor(null)}>✕</button></div>
             <div className="form-group"><label className="form-label">Title</label><input className="form-input" value={modEditor.title} onChange={setM("title")} placeholder="FOH Opening Procedure" /></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div className="form-group"><label className="form-label">Category</label>
-                <select className="form-input" value={modEditor.cat} onChange={setM("cat")}>{CATS.map((c) => <option key={c}>{c}</option>)}</select>
-              </div>
               <div className="form-group"><label className="form-label">Venue</label>
                 <select className="form-input" value={modEditor.venueId} onChange={setM("venueId")} disabled={!!modEditor.id} title={modEditor.id ? "Venue can't be changed after creation" : ""}>
                   <option value="">Select venue...</option>
                   {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
               </div>
-              <div className="form-group"><label className="form-label">Station (optional)</label>
-                <select key={`${modEditor.venueId}-${modEditor.cat}`} className="form-input" value={modEditor.stationId} onChange={setM("stationId")}>
-                  <option value="">— None —</option>
-                  {stationOptionsForItem(stations, modEditor.venueId, modEditor.cat, modEditor.stationId).map((s) => <option key={`${s.venueId}-${s.id}`} value={s.id}>{s.name} · {s.area}</option>)}
+              <div className="form-group"><label className="form-label">Station (optional) <span style={{ color: "var(--gray)", fontWeight: 400 }}>· sets the module's area; none = universal</span></label>
+                <select key={modEditor.venueId} className="form-input" value={modEditor.stationId} onChange={setM("stationId")}>
+                  <option value="">— None (all areas) —</option>
+                  {stations.filter((s) => s.venueId === modEditor.venueId).map((s) => <option key={`${s.venueId}-${s.id}`} value={s.id}>{s.name} · {s.area}</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Duration</label><input className="form-input" value={modEditor.duration} onChange={setM("duration")} placeholder="30 min" /></div>
