@@ -107,11 +107,23 @@ export default function ShiftPlannerPage() {
     () => (myStaff ? shifts.filter((sh) => sh.staffId === myStaff.id && (sh.weekKey || curWk) === curWk && sh.day === todayIdx) : []),
     [shifts, myStaff, curWk, todayIdx]
   );
+  const CLOCK_LABELS = { clockInAt: "Clocked in — have a good shift!", breakStartAt: "Break started", breakEndAt: "Back from break", clockOutAt: "Clocked out — see you next time!" };
   const clock = async (sh, field) => {
     try {
       await updateDoc(doc(venueCol(groupId, sh.venueId, "shifts"), sh.id), { [field]: new Date().toISOString() });
-      showToast(field === "clockInAt" ? "Clocked in — have a good shift!" : "Clocked out — see you next time!");
+      showToast(CLOCK_LABELS[field] || "Time recorded");
     } catch { showToast("Could not record time"); }
+  };
+  // admin punch edit: set a clock field to a time-of-day on the shift's own date, or clear it
+  const shiftDateObj = (sh) => { const d = new Date(`${sh.weekKey || curWk}T00:00:00`); d.setDate(d.getDate() + (sh.day || 0)); return d; };
+  const hhmm = (iso) => { if (!iso) return ""; const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+  const setClock = async (sh, field, timeStr) => {
+    try {
+      let val = null;
+      if (timeStr) { const [h, m] = timeStr.split(":").map(Number); const d = shiftDateObj(sh); d.setHours(h || 0, m || 0, 0, 0); val = d.toISOString(); }
+      await updateDoc(doc(venueCol(groupId, sh.venueId, "shifts"), sh.id), { [field]: val });
+      setShiftDetail((p) => (p && p.id === sh.id ? { ...p, [field]: val } : p));
+    } catch { showToast("Could not update time"); }
   };
 
   const weekShifts = useMemo(() => shifts.filter((sh) => (sh.weekKey || wk) === wk), [shifts, wk]);
@@ -359,12 +371,12 @@ export default function ShiftPlannerPage() {
             <div key={sh.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
               <span>{sh.start}–{sh.end} · {sh.venue}{sh.station ? ` · ${sh.station}` : ""}</span>
               {sh.clockInAt && <span className="pill pill-green">In {fmtClock(sh.clockInAt)}</span>}
+              {sh.breakStartAt && <span className="pill pill-amber">Break {fmtClock(sh.breakStartAt)}{sh.breakEndAt ? `–${fmtClock(sh.breakEndAt)}` : ""}</span>}
               {sh.clockOutAt && <span className="pill pill-gray">Out {fmtClock(sh.clockOutAt)}</span>}
-              {!sh.clockInAt
-                ? <button className="btn btn-sm btn-primary" onClick={() => clock(sh, "clockInAt")}>Clock in</button>
-                : !sh.clockOutAt
-                  ? <button className="btn btn-sm" onClick={() => clock(sh, "clockOutAt")}>Clock out</button>
-                  : null}
+              {!sh.clockInAt && <button className="btn btn-sm btn-primary" onClick={() => clock(sh, "clockInAt")}>Clock in</button>}
+              {sh.clockInAt && !sh.clockOutAt && !sh.breakStartAt && <button className="btn btn-sm" onClick={() => clock(sh, "breakStartAt")}>Start break</button>}
+              {sh.breakStartAt && !sh.breakEndAt && !sh.clockOutAt && <button className="btn btn-sm" onClick={() => clock(sh, "breakEndAt")}>End break</button>}
+              {sh.clockInAt && !sh.clockOutAt && (!sh.breakStartAt || sh.breakEndAt) && <button className="btn btn-sm" onClick={() => clock(sh, "clockOutAt")}>Clock out</button>}
             </div>
           ))}
         </div>
@@ -497,9 +509,23 @@ export default function ShiftPlannerPage() {
           <div className="rg-modal" style={{ maxWidth: 440 }}>
             <div className="modal-head"><span className="modal-title">Shift — {shiftDetail.staffName}</span><button className="modal-close" onClick={() => setShiftDetail(null)}>✕</button></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {[["Day", FULL_DAYS[shiftDetail.day]], ["Rostered", `${shiftDetail.start} – ${shiftDetail.end}`], ["Role", shiftDetail.role], ["Venue", shiftDetail.venue], ["Station", shiftDetail.station], ["Clocked in", shiftDetail.clockInAt ? fmtClock(shiftDetail.clockInAt) : "—"], ["Clocked out", shiftDetail.clockOutAt ? fmtClock(shiftDetail.clockOutAt) : "—"]].map(([k, v]) => (
+              {[["Day", FULL_DAYS[shiftDetail.day]], ["Rostered", `${shiftDetail.start} – ${shiftDetail.end}`], ["Role", shiftDetail.role], ["Venue", shiftDetail.venue], ["Station", shiftDetail.station]].map(([k, v]) => (
                 <div key={k}><div className="form-label">{k}</div><div style={{ fontSize: 13 }}>{v || "—"}</div></div>
               ))}
+            </div>
+            {/* Punch — clock in / break / clock out; admins can edit the times */}
+            <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10, marginTop: 12 }}>
+              <div className="form-label" style={{ marginBottom: 6 }}>Punch{canEdit ? " · admin can edit" : ""}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[["Clock in", "clockInAt"], ["Break start", "breakStartAt"], ["Break end", "breakEndAt"], ["Clock out", "clockOutAt"]].map(([lbl, field]) => (
+                  <div key={field}>
+                    <div className="form-label">{lbl}</div>
+                    {canEdit
+                      ? <input type="time" className="form-input" value={hhmm(shiftDetail[field])} onChange={(e) => setClock(shiftDetail, field, e.target.value)} />
+                      : <div style={{ fontSize: 13 }}>{shiftDetail[field] ? fmtClock(shiftDetail[field]) : "—"}</div>}
+                  </div>
+                ))}
+              </div>
             </div>
             <div style={{ marginTop: 12 }}><div className="form-label">Notes</div><div style={{ fontSize: 13, color: shiftDetail.notes ? "var(--ink)" : "var(--gray)" }}>{shiftDetail.notes || "No notes"}</div></div>
             <div className="btn-row">
