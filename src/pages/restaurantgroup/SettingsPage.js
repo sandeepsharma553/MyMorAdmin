@@ -4,6 +4,9 @@ import { useRG } from "./RGContext";
 import { venueCol, groupDoc } from "../../utils/restaurantGroupPaths";
 import { SUGGESTED_STATIONS } from "./rgConfig";
 import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload } from "./staffStructureUtils";
+import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS } from "./rgStockUtils";
+
+const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
 
 const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
@@ -143,6 +146,26 @@ export default function SettingsPage() {
   };
   const removeEmpType = async (t) => { await saveEmpTypes(removeFromList(empTypes, t)); };
 
+  // ── Stock master-lists ── (group-doc lists, same add/remove pattern; consumed by Stock)
+  const stockCategories = group?.stockCategories?.length ? group.stockCategories : DEFAULT_STOCK_CATEGORIES;
+  const stockUnits = group?.stockUnits?.length ? group.stockUnits : DEFAULT_STOCK_UNITS;
+  const stockItemTypes = group?.stockItemTypes?.length ? group.stockItemTypes : DEFAULT_ITEM_TYPES;
+  const purchaseUnits = group?.purchaseUnits?.length ? group.purchaseUnits : stockUnits;
+  const recipeUnits = group?.recipeUnits?.length ? group.recipeUnits : stockUnits;
+  const [stockDraft, setStockDraft] = useState({});
+  const setSD = (field, v) => setStockDraft((p) => ({ ...p, [field]: v }));
+  const saveGroupList = async (field, next) => {
+    try { await updateDoc(groupDoc(groupId), { [field]: next }); }
+    catch { showToast("Could not save list"); }
+  };
+  const addStockItem = async (field, list) => {
+    const next = addToList(list, stockDraft[field] || "");
+    setSD(field, "");
+    if (next === list) return; // empty or duplicate
+    await saveGroupList(field, next); showToast("Added");
+  };
+  const removeStockItem = (field, list, val) => saveGroupList(field, removeFromList(list, val));
+
   if (!can("settings", "view")) {
     return <div className="card" style={{ color: "var(--gray)", fontSize: 14 }}>You don’t have access to Settings. Ask an admin if you need it.</div>;
   }
@@ -150,10 +173,45 @@ export default function SettingsPage() {
   return (
     <>
       <div className="tabs" style={{ marginBottom: 16 }}>
-        {[["structure", "Staff structure"], ["stations", "Stations"], ["units", "Temperature units"]].map(([id, l]) => (
+        {[["structure", "Staff structure"], ["stations", "Stations"], ["units", "Temperature units"], ["stock", "Stock lists"]].map(([id, l]) => (
           <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
+
+      {/* STOCK MASTER-LISTS */}
+      {tab === "stock" && (() => {
+        const StockList = ({ title, sub, field, list, ph }) => (
+          <div className="card">
+            <div className="card-head"><div><span className="card-title">{title}</span><span className="card-sub">{sub}</span></div></div>
+            {list.map((v) => (
+              <div key={v} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                <span style={{ fontSize: 13 }}>{v}</span>
+                {editable && list.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the list (existing items keep their value)" onClick={() => removeStockItem(field, list, v)}>✕</button>}
+              </div>
+            ))}
+            {editable && (
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <input className="form-input" value={stockDraft[field] || ""} onChange={(e) => setSD(field, e.target.value)} placeholder={ph} onKeyDown={(e) => e.key === "Enter" && addStockItem(field, list)} />
+                <button className="btn btn-primary" onClick={() => addStockItem(field, list)}>Add</button>
+              </div>
+            )}
+          </div>
+        );
+        return (
+          <>
+            <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 12 }}>
+              Master-lists used by the <strong>Stock</strong> module item editor. Suppliers are managed on the Stock → Suppliers tab.
+            </div>
+            <div className="grid-2">
+              {StockList({ title: "Categories", sub: "Item category picker", field: "stockCategories", list: stockCategories, ph: "New category (e.g. Dairy)" })}
+              {StockList({ title: "Stock units", sub: "Counted / on-hand unit", field: "stockUnits", list: stockUnits, ph: "New unit (e.g. tray)" })}
+              {StockList({ title: "Item types", sub: "Ingredient / product / both — drives costing", field: "stockItemTypes", list: stockItemTypes, ph: "New item type" })}
+              {StockList({ title: "Purchase units", sub: "Unit you buy in", field: "purchaseUnits", list: purchaseUnits, ph: "New purchase unit (e.g. case)" })}
+              {StockList({ title: "Recipe units", sub: "Unit used in recipes", field: "recipeUnits", list: recipeUnits, ph: "New recipe unit (e.g. portion)" })}
+            </div>
+          </>
+        );
+      })()}
 
       {/* STATIONS */}
       {tab === "stations" && (

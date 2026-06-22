@@ -34,6 +34,11 @@ export default function StockPage() {
   const categories = group?.stockCategories?.length ? group.stockCategories : DEFAULT_STOCK_CATEGORIES;
   const units = group?.stockUnits?.length ? group.stockUnits : DEFAULT_STOCK_UNITS;
   const locations = group?.storageLocations?.length ? group.storageLocations : DEFAULT_STORAGE_LOCATIONS;
+  // master-lists authored in Settings → Stock lists (fall back to stock units / the semantic 3)
+  const itemTypes = group?.stockItemTypes?.length ? group.stockItemTypes : ["ingredient", "product", "both"];
+  const purchaseUnits = group?.purchaseUnits?.length ? group.purchaseUnits : units;
+  const recipeUnits = group?.recipeUnits?.length ? group.recipeUnits : units;
+  const itLabel = (t) => ({ ingredient: "Ingredient (used in recipes, not sold as-is)", product: "Product (sold as-is, not a recipe ingredient)", both: "Both (sold as-is and used as an ingredient)" }[t] || t);
 
   const [tab, setTab] = useState("library"); // library | overview | movements
   const [q, setQ] = useState("");
@@ -366,7 +371,7 @@ export default function StockPage() {
       {tab === "overview" && (
         <div className="grid-3">
           {rows.map((i) => (
-            <div key={i.id} className="card" style={{ borderColor: i.stock.status === "critical" ? "var(--red)" : undefined }}>
+            <div key={i.id} className="card" onClick={() => openEdit(i)} title="Open item" style={{ cursor: "pointer", borderColor: i.stock.status === "critical" ? "var(--red)" : undefined }}>
               <div className="card-head">
                 <div><span className="card-title" style={{ fontSize: 13 }}>{i.name}</span><span className="card-sub">{i.category} · {supplierById[i.supplierId]?.company || "—"}</span></div>
                 {statusPill(i.stock.status)}
@@ -466,9 +471,7 @@ export default function StockPage() {
                 </select></div>
               <div><div className="form-label">Item type</div>
                 <select className="form-input" value={editor.itemType} onChange={(e) => setF("itemType", e.target.value)}>
-                  <option value="ingredient">Ingredient (used in recipes, not sold as-is)</option>
-                  <option value="product">Product (sold as-is, not a recipe ingredient)</option>
-                  <option value="both">Both (sold as-is and used as an ingredient)</option>
+                  {itemTypes.map((t) => <option key={t} value={t}>{itLabel(t)}</option>)}
                 </select></div>
               <div><div className="form-label">Cost ex-GST ($)</div><input className="form-input" type="number" step="0.01" value={editor.cost} onChange={(e) => setF("cost", e.target.value)} /></div>
               {editor.itemType !== "ingredient" && (
@@ -487,11 +490,11 @@ export default function StockPage() {
               <div className="grid-3" style={{ gap: 10 }}>
                 <div><div className="form-label">Purchase unit</div>
                   <select className="form-input" value={editor.purchaseUnit} onChange={(e) => setF("purchaseUnit", e.target.value)}>
-                    {units.map((u) => <option key={u} value={u}>{u}</option>)}
+                    {purchaseUnits.map((u) => <option key={u} value={u}>{u}</option>)}
                   </select></div>
                 <div><div className="form-label">Recipe unit</div>
                   <select className="form-input" value={editor.recipeUnit} onChange={(e) => setF("recipeUnit", e.target.value)}>
-                    {units.map((u) => <option key={u} value={u}>{u}</option>)}
+                    {recipeUnits.map((u) => <option key={u} value={u}>{u}</option>)}
                   </select></div>
                 <div><div className="form-label">Yield %</div><input className="form-input" type="number" step="1" value={editor.yieldPercent} onChange={(e) => setF("yieldPercent", e.target.value)} /></div>
                 <div><div className="form-label">1 purchase unit = N stock units</div><input className="form-input" type="number" step="0.0001" value={editor.purchaseToStock} onChange={(e) => setF("purchaseToStock", e.target.value)} /></div>
