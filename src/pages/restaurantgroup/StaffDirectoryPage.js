@@ -593,7 +593,7 @@ export default function StaffDirectoryPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 12 }}>
         {filtered.map((s) => (
-          <div key={s.id} className="staff-card" onClick={() => openProfile(s)} style={s.status === "Left" ? { opacity: 0.55 } : undefined}>
+          <div key={s.id} className="staff-card" onClick={() => openProfile(s)} style={{ ...(s.status === "Left" ? { opacity: 0.55 } : {}), ...(isJuniorType(s.type) ? { borderLeft: "4px solid var(--amber)" } : {}) }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 4 }}>
               <div className="staff-avatar" style={{ background: avatarColor(s) }}>{initials(s)}</div>
               <span style={{ display: "inline-flex", gap: 4 }}>

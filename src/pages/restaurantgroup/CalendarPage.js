@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useRG } from "./RGContext";
 import { fullName, weekKeyOf, weekDayIndex } from "./rgUtils";
+import { isJuniorType } from "./staffMinorUtils";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -12,10 +13,13 @@ const shortRole = (r) => (r || "").replace(/^(FOH|BOH) — /, "");
 
 export default function CalendarPage() {
   const { shifts, leave, assignments, venues, staff, scopedStaff, myStaff, myScope, selectedVenue, can } = useRG();
+  const isStaff = myScope === "staff";
   const [monthOffset, setMonthOffset] = useState(0);
-  const [view, setView] = useState("month"); // "month" | "week"
+  const [view, setView] = useState(isStaff ? "week" : "month"); // staff: 2-week window only → week view
   const [weekOffset, setWeekOffset] = useState(0);
   const [dayOpen, setDayOpen] = useState(null); // a Date
+  // category filters (dropdown of what to show); birthdays of under-18 (Junior) staff get a "turning 18" highlight
+  const [cats, setCats] = useState({ shift: true, leave: true, train: true, bday: true });
 
   const today = new Date();
   const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
@@ -74,7 +78,6 @@ export default function CalendarPage() {
   }, [weekOffset]);
   const weekLabel = `${weekDays[0].getDate()} ${MONTHS[weekDays[0].getMonth()]} – ${weekDays[6].getDate()} ${MONTHS[weekDays[6].getMonth()]} ${weekDays[6].getFullYear()}`;
 
-  const isStaff = myScope === "staff";
   const Chip = ({ bg, color, children, title }) => (
     <div title={title} style={{ background: bg, color, fontSize: 10, borderRadius: 4, padding: "1px 4px", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{children}</div>
   );
@@ -89,17 +92,32 @@ export default function CalendarPage() {
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button className="btn btn-sm" onClick={() => (view === "month" ? setMonthOffset((o) => o - 1) : setWeekOffset((o) => o - 1))}>← Prev</button>
+          {/* staff are limited to the current + next week (2-week window) */}
+          <button className="btn btn-sm" disabled={isStaff && view === "week" && weekOffset <= 0} onClick={() => (view === "month" ? setMonthOffset((o) => o - 1) : setWeekOffset((o) => isStaff ? Math.max(0, o - 1) : o - 1))}>← Prev</button>
           <span style={{ fontSize: 15, fontWeight: 700, minWidth: 190, textAlign: "center" }}>{view === "month" ? `${MONTHS[month]} ${year}` : weekLabel}</span>
-          <button className="btn btn-sm" onClick={() => (view === "month" ? setMonthOffset((o) => o + 1) : setWeekOffset((o) => o + 1))}>Next →</button>
+          <button className="btn btn-sm" disabled={isStaff && view === "week" && weekOffset >= 1} onClick={() => (view === "month" ? setMonthOffset((o) => o + 1) : setWeekOffset((o) => isStaff ? Math.min(1, o + 1) : o + 1))}>Next →</button>
           {(monthOffset !== 0 || weekOffset !== 0) && <button className="btn btn-sm" onClick={() => { setMonthOffset(0); setWeekOffset(0); }}>Today</button>}
-          <div className="tabs" style={{ marginLeft: 6 }}>
-            {[["week", "Week"], ["month", "Month"]].map(([v, l]) => (
-              <button key={v} className={`tab ${view === v ? "active" : ""}`} onClick={() => setView(v)}>{l}</button>
-            ))}
-          </div>
+          {!isStaff && (
+            <div className="tabs" style={{ marginLeft: 6 }}>
+              {[["week", "Week"], ["month", "Month"]].map(([v, l]) => (
+                <button key={v} className={`tab ${view === v ? "active" : ""}`} onClick={() => setView(v)}>{l}</button>
+              ))}
+            </div>
+          )}
         </div>
-        <div style={{ fontSize: 12, color: "var(--gray)" }}>{isStaff ? "Your schedule" : "Team schedule"} · shifts, approved leave & training due</div>
+        <div style={{ fontSize: 12, color: "var(--gray)" }}>{isStaff ? "Your schedule · current + next week" : "Team schedule"} · shifts, approved leave & training due</div>
+      </div>
+
+      {/* category filters */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        {[["shift", "Shifts", "var(--blue-light)"], ["leave", "Approved leave", "var(--amber-light)"], ["train", "Training due", "#fee2e2"], ["bday", "Birthday 🎂", "#fce7f3"]].map(([key, l, bg]) => (
+          <button key={key} className="btn btn-sm" onClick={() => setCats((c) => ({ ...c, [key]: !c[key] }))} style={cats[key] ? undefined : { opacity: 0.45 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: bg, display: "inline-block", marginRight: 6, border: "1px solid var(--border)", verticalAlign: "middle" }} />{cats[key] ? "" : "Show "}{l}
+          </button>
+        ))}
+        <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--gray)", marginLeft: 4 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: "#dcfce7", border: "1px solid var(--border)" }} />🎉 Turning 18
+        </span>
       </div>
 
       {view === "week" && (
@@ -117,10 +135,10 @@ export default function CalendarPage() {
               const k = dayKey(d);
               const { sh, lv, tr, bd } = eventsFor(d);
               const items = [
-                ...bd.map((s) => ({ t: `🎂 ${nameOf(s.id)}`, bg: "#fce7f3", color: "#9d174d" })),
-                ...sh.sort((a, b) => (a.start || "").localeCompare(b.start || "")).map((s) => ({ t: `${s.start}–${s.end} ${isStaff ? "" : nameOf(s.staffId)}${s.station ? ` · ${s.station}` : ""}`, bg: "var(--blue-light)", color: "var(--ink)" })),
-                ...lv.map((l) => ({ t: `${isStaff ? "" : nameOf(l.staffId) + " "}${l.type}`, bg: "var(--amber-light)", color: "var(--ink)" })),
-                ...tr.map((a) => ({ t: `${a.moduleTitle} due${isStaff ? "" : ` · ${nameOf(a.staffId)}`}`, bg: "#fee2e2", color: "#991b1b" })),
+                ...(cats.bday ? bd.map((s) => { const j = isJuniorType(s.type); return { t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }; }) : []),
+                ...(cats.shift ? sh.sort((a, b) => (a.start || "").localeCompare(b.start || "")).map((s) => ({ t: `${s.start}–${s.end} ${isStaff ? "" : nameOf(s.staffId)}${s.station ? ` · ${s.station}` : ""}`, bg: "var(--blue-light)", color: "var(--ink)" })) : []),
+                ...(cats.leave ? lv.map((l) => ({ t: `${isStaff ? "" : nameOf(l.staffId) + " "}${l.type}`, bg: "var(--amber-light)", color: "var(--ink)" })) : []),
+                ...(cats.train ? tr.map((a) => ({ t: `${a.moduleTitle} due${isStaff ? "" : ` · ${nameOf(a.staffId)}`}`, bg: "#fee2e2", color: "#991b1b" })) : []),
               ];
               return (
                 <div key={k} onClick={() => setDayOpen(d)} style={{ minHeight: 260, padding: 6, borderRight: "0.5px solid var(--gray-light)", cursor: "pointer", background: k === todayKey ? "rgba(192,57,43,0.05)" : "#fff" }}>
@@ -142,10 +160,10 @@ export default function CalendarPage() {
             const k = dayKey(d);
             const { sh, lv, tr, bd } = eventsFor(d);
             const items = [
-              ...bd.map((s) => ({ type: "bday", t: `🎂 ${nameOf(s.id)}`, bg: "#fce7f3", color: "#9d174d", title: `${nameOf(s.id)}'s birthday` })),
-              ...sh.map((s) => ({ type: "shift", t: `${isStaff ? "" : nameOf(s.staffId) + " "}${s.start}–${s.end}`, bg: "var(--blue-light)", color: "var(--ink)", title: `${nameOf(s.staffId)} · ${shortRole(s.role)} · ${s.venue}` })),
-              ...lv.map((l) => ({ type: "leave", t: `${isStaff ? "" : nameOf(l.staffId) + " "}${l.type}`, bg: "var(--amber-light)", color: "var(--ink)", title: `${nameOf(l.staffId)} · ${l.type}` })),
-              ...tr.map((a) => ({ type: "train", t: `${isStaff ? "" : nameOf(a.staffId) + " "}${a.moduleTitle} due`, bg: "#fee2e2", color: "#991b1b", title: `Training due: ${a.moduleTitle}` })),
+              ...(cats.bday ? bd.map((s) => { const j = isJuniorType(s.type); return { type: "bday", t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d", title: j ? `${nameOf(s.id)} — turning 18` : `${nameOf(s.id)}'s birthday` }; }) : []),
+              ...(cats.shift ? sh.map((s) => ({ type: "shift", t: `${isStaff ? "" : nameOf(s.staffId) + " "}${s.start}–${s.end}`, bg: "var(--blue-light)", color: "var(--ink)", title: `${nameOf(s.staffId)} · ${shortRole(s.role)} · ${s.venue}` })) : []),
+              ...(cats.leave ? lv.map((l) => ({ type: "leave", t: `${isStaff ? "" : nameOf(l.staffId) + " "}${l.type}`, bg: "var(--amber-light)", color: "var(--ink)", title: `${nameOf(l.staffId)} · ${l.type}` })) : []),
+              ...(cats.train ? tr.map((a) => ({ type: "train", t: `${isStaff ? "" : nameOf(a.staffId) + " "}${a.moduleTitle} due`, bg: "#fee2e2", color: "#991b1b", title: `Training due: ${a.moduleTitle}` })) : []),
             ];
             return (
               <div key={i} onClick={() => setDayOpen(d)} style={{ minHeight: 96, padding: 4, borderBottom: "0.5px solid var(--gray-light)", borderRight: "0.5px solid var(--gray-light)", cursor: "pointer", background: k === todayKey ? "rgba(192,57,43,0.05)" : "#fff" }}>
@@ -158,14 +176,6 @@ export default function CalendarPage() {
         </div>
       </div>
       )}
-
-      <div style={{ display: "flex", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
-        {[["var(--blue-light)", "Shift"], ["var(--amber-light)", "Approved leave"], ["#fee2e2", "Training due"], ["#fce7f3", "Birthday 🎂"]].map(([bg, l]) => (
-          <span key={l} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-            <span style={{ width: 12, height: 12, borderRadius: 3, background: bg, border: "1px solid var(--border)" }} />{l}
-          </span>
-        ))}
-      </div>
 
       {/* Day detail */}
       {dayOpen && detail && (
