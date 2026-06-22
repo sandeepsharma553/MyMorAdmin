@@ -97,6 +97,7 @@ export default function StaffDirectoryPage() {
   };
   const [roleFilter, setRoleFilter] = useState("all");
   const [showLeft, setShowLeft] = useState(false); // archive view: hide Left staff by default, toggle to see only them
+  const [hoursPeriod, setHoursPeriod] = useState("week"); // history hours summary window
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState(blankForm(selectedVenue));
@@ -423,6 +424,21 @@ export default function StaffDirectoryPage() {
       ...notes.map((n) => ({ at: n.createdAt || n.at, by: n.by, tag: n.type || "Note", text: n.note || n.text })),
     ].filter((t) => t.text).sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
     const Stat = ({ n, l }) => <div style={{ flex: 1, textAlign: "center", padding: "8px 4px", background: "var(--gray-light)", borderRadius: 8 }}><div style={{ fontSize: 18, fontWeight: 700 }}>{n}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{l}</div></div>;
+    // hours worked by period, split Mon–Fri vs Sat/Sun (shift date = weekKey + day index)
+    const now = new Date();
+    const startOfWeek = (() => { const d = new Date(now); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
+    const shiftDateOf = (x) => { if (!x.weekKey) return null; const d = new Date(`${x.weekKey}T00:00:00`); d.setDate(d.getDate() + (x.day || 0)); return d; };
+    const inPeriod = (d) => {
+      if (!d) return false;
+      if (hoursPeriod === "week") return d >= startOfWeek;
+      if (hoursPeriod === "fortnight") { const c = new Date(startOfWeek); c.setDate(c.getDate() - 7); return d >= c; }
+      if (hoursPeriod === "month") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      if (hoursPeriod === "year") return d.getFullYear() === now.getFullYear();
+      return true; // total
+    };
+    let wkday = 0, wkend = 0;
+    sh.forEach((x) => { const d = shiftDateOf(x); if (!inPeriod(d)) return; const h = shiftHours(x); if ((x.day || 0) >= 5) wkend += h; else wkday += h; });
+    const PERIODS = [["week", "This week"], ["fortnight", "Fortnight"], ["month", "This month"], ["year", "This year"], ["total", "Total"]];
     const Head = ({ t, top }) => <div className="card-head" style={{ margin: top ? "14px 0 6px" : "0 0 6px" }}><span className="card-title">{t}</span></div>;
     return (
       <div>
@@ -430,6 +446,18 @@ export default function StaffDirectoryPage() {
           <Stat n={sh.length} l="Shifts worked" />
           <Stat n={`${tDone.length}/${myTraining.length}`} l="Training done" />
           <Stat n={`${cDone.length}/${myChecklists.length}`} l="Checklists done" />
+        </div>
+        {/* hours worked summary — period dropdown + Mon-Fri / Sat-Sun split */}
+        <div className="card-head" style={{ margin: "0 0 6px", alignItems: "center" }}>
+          <span className="card-title">Hours worked</span>
+          <select className="form-input" style={{ width: 150 }} value={hoursPeriod} onChange={(e) => setHoursPeriod(e.target.value)}>
+            {PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <Stat n={`${(wkday + wkend).toFixed(1)}h`} l="Total" />
+          <Stat n={`${wkday.toFixed(1)}h`} l="Mon–Fri" />
+          <Stat n={`${wkend.toFixed(1)}h`} l="Sat–Sun" />
         </div>
         <Head t="Shift history" />
         {sh.length ? sh.slice(0, 40).map((x) => (
