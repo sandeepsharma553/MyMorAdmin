@@ -12,6 +12,7 @@ import { showInActiveList } from "./completionWindow";
 import { isJuniorType } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
 import { staffAreas, stationsForVenue } from "./staffStructureUtils";
+import { uploadRefImage } from "./RefImages";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
@@ -110,7 +111,8 @@ export default function StaffDirectoryPage() {
   const [showPayroll, setShowPayroll] = useState(false);
   const [payroll, setPayroll] = useState(null); // private payroll doc for the open profile
   const [profileTab, setProfileTab] = useState("profile"); // profile | history
-  const [certDraft, setCertDraft] = useState({ name: "RSA", other: "", expiry: "" });
+  const [certDraft, setCertDraft] = useState({ name: "RSA", other: "", expiry: "", file: null });
+  const [docFile, setDocFile] = useState(null); // a document to upload for the staff to sign
   const [recForm, setRecForm] = useState({ type: "Coaching", note: "" });
 
   const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
@@ -157,11 +159,16 @@ export default function StaffDirectoryPage() {
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
 
   // ── Certificates (multiple, each with optional expiry) ──
-  const addCert = (setter) => {
+  const addCert = async (setter) => {
     const name = certDraft.name === "Other" ? certDraft.other.trim() : certDraft.name;
     if (!name) return;
-    setter((p) => ({ ...p, certs: [...(p.certs || []), { name, expiry: certDraft.expiry }] }));
-    setCertDraft({ name: "RSA", other: "", expiry: "" });
+    let fileUrl = "", filePath = "";
+    if (certDraft.file) {
+      try { const up = await uploadRefImage(certDraft.file, `restaurantGroups/${groupId}/staffCerts`); fileUrl = up.url; filePath = up.path; }
+      catch { showToast("Certificate file upload failed — saved without the document"); }
+    }
+    setter((p) => ({ ...p, certs: [...(p.certs || []), { name, expiry: certDraft.expiry, fileUrl, filePath }] }));
+    setCertDraft({ name: "RSA", other: "", expiry: "", file: null });
   };
   const removeCert = (setter, idx) => setter((p) => ({ ...p, certs: (p.certs || []).filter((_, i) => i !== idx) }));
   const renderCerts = (state, setter) => (
@@ -170,7 +177,7 @@ export default function StaffDirectoryPage() {
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
         {(state.certs || []).map((c, i) => {
           const st = certStatus(c.expiry);
-          return <span key={i} className={`pill ${st.pill}`}>{c.name}{c.expiry ? ` · ${c.expiry}` : ""}{st.note ? ` (${st.note})` : ""} <span style={{ cursor: "pointer" }} onClick={() => removeCert(setter, i)}>✕</span></span>;
+          return <span key={i} className={`pill ${st.pill}`}>{c.name}{c.expiry ? ` · ${c.expiry}` : ""}{st.note ? ` (${st.note})` : ""}{c.fileUrl && <> <a href={c.fileUrl} target="_blank" rel="noreferrer" title="View document" style={{ textDecoration: "none" }}>📎</a></>} <span style={{ cursor: "pointer" }} onClick={() => removeCert(setter, i)}>✕</span></span>;
         })}
         {!(state.certs || []).length && <span style={{ fontSize: 12, color: "var(--gray)" }}>None added yet</span>}
       </div>
@@ -178,6 +185,7 @@ export default function StaffDirectoryPage() {
         <select className="form-input" style={{ width: 170 }} value={certDraft.name} onChange={(e) => setCertDraft((p) => ({ ...p, name: e.target.value }))}>{CERT_OPTIONS.map((c) => <option key={c}>{c}</option>)}</select>
         {certDraft.name === "Other" && <input className="form-input" style={{ width: 150 }} value={certDraft.other} onChange={(e) => setCertDraft((p) => ({ ...p, other: e.target.value }))} placeholder="Certificate name" />}
         <input type="date" className="form-input" style={{ width: 150 }} value={certDraft.expiry} onChange={(e) => setCertDraft((p) => ({ ...p, expiry: e.target.value }))} title="Expiry date (optional)" />
+        <input type="file" accept="image/*,application/pdf" style={{ fontSize: 12, maxWidth: 180 }} onChange={(e) => setCertDraft((p) => ({ ...p, file: e.target.files?.[0] || null }))} title="Attach the certificate document (optional)" />
         <button type="button" className="btn btn-sm" onClick={() => addCert(setter)}>+ Add</button>
       </div>
     </div>
@@ -372,6 +380,26 @@ export default function StaffDirectoryPage() {
       setProfile((p) => ({ ...p, records: (p.records || []).filter((r) => r.id !== entry.id) }));
     } catch { showToast("Could not remove record"); }
   };
+  // ── documents to sign (#8): owner uploads → staff e-acknowledges ──
+  const uploadSignDoc = async () => {
+    if (!docFile || !profile) return;
+    try {
+      const up = await uploadRefImage(docFile, `restaurantGroups/${groupId}/staffDocs/${profile.id}`);
+      const entry = { id: `doc${Date.now()}`, name: docFile.name, fileUrl: up.url, filePath: up.path, uploadedAt: new Date().toISOString(), uploadedBy: actorName };
+      await updateDoc(staffDoc(groupId, profile.id), { signDocs: arrayUnion(entry) });
+      setProfile((p) => ({ ...p, signDocs: [...(p.signDocs || []), entry] }));
+      setDocFile(null); showToast("Document uploaded for signing");
+    } catch { showToast("Could not upload document"); }
+  };
+  const signSignDoc = async (d) => {
+    const next = (profile.signDocs || []).map((x) => x.id === d.id ? { ...x, signedAt: new Date().toISOString(), signedBy: actorName } : x);
+    try {
+      await updateDoc(staffDoc(groupId, profile.id), { signDocs: next });
+      setProfile((p) => ({ ...p, signDocs: next }));
+      showToast("Document acknowledged & signed");
+    } catch { showToast("Could not record signature"); }
+  };
+  const canSignOwn = (p) => !!(me?.email && p?.email && me.email.toLowerCase() === p.email.toLowerCase());
 
   // ── assign training / checklists (from the profile, multi-select, area-aware) ──
   const [assignKind, setAssignKind] = useState(null); // "training" | "checklist" | null
@@ -775,6 +803,26 @@ export default function StaffDirectoryPage() {
                   })().map(([k, v]) => (
                     <div key={k}><div className="form-label">{k}</div><div style={{ fontSize: 13 }}>{v}</div></div>
                   ))}
+                </div>
+
+                {/* Documents to sign (#8): owner uploads, staff e-acknowledges */}
+                <div style={{ marginTop: 16 }}>
+                  <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">Documents to sign</span></div>
+                  {(profile.signDocs || []).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No documents uploaded.</div>}
+                  {(profile.signDocs || []).map((d) => (
+                    <div key={d.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                      <span><a href={d.fileUrl} target="_blank" rel="noreferrer">📄 {d.name}</a>{d.signedAt
+                        ? <span className="pill pill-green" style={{ marginLeft: 6 }}>Signed {fmtDate(d.signedAt)}{d.signedBy ? ` · ${d.signedBy}` : ""}</span>
+                        : <span className="pill pill-amber" style={{ marginLeft: 6 }}>Awaiting signature</span>}</span>
+                      {!d.signedAt && (canEdit || canSignOwn(profile)) && <button className="btn btn-sm btn-primary" onClick={() => signSignDoc(d)}>Acknowledge &amp; sign</button>}
+                    </div>
+                  ))}
+                  {canEdit && (
+                    <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <input type="file" accept="image/*,application/pdf" style={{ fontSize: 12 }} onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
+                      <button className="btn btn-sm" disabled={!docFile} onClick={uploadSignDoc}>Upload document</button>
+                    </div>
+                  )}
                 </div>
 
                 {canPayroll && (
