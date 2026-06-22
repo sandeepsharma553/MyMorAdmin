@@ -36,6 +36,7 @@ const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId
 // 15-minute time options for linking checklists to shift slots (start/end), full day
 const mkTimes = (from, to) => { const out = []; for (let m = from; m <= to; m += 15) { const h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? "pm" : "am", h12 = (h % 12) || 12; out.push(`${h12}:${String(mm).padStart(2, "0")}${ap}`); } return out; };
 const TIMES = mkTimes(0, 23 * 60 + 45);
+const GRID_TIMES = mkTimes(6 * 60, 22 * 60); // 6:00am … 10:00pm (15-min) for the link-to-shift time grid
 // shift start times offered for auto-assign linking (mirrors ShiftPlanner STARTS)
 const AUTO_STARTS = ["", "7:00am", "7:30am", "8:00am", "9:00am", "10:00am", "11:00am", "12:00pm", "3:00pm", "4:00pm", "5:00pm", "6:00pm"];
 
@@ -418,6 +419,34 @@ export default function ChecklistsPage() {
                 <span style={{ color: "var(--gray)" }}>–</span>
                 <select className="form-input" style={{ width: 110 }} value={slotDraft.end} onChange={(e) => setSlotDraft((p) => ({ ...p, end: e.target.value }))}>{TIMES.map((t) => <option key={t} value={t}>{t}</option>)}</select>
                 <button type="button" className="btn btn-sm btn-primary" onClick={addSlot}>+ Add slot</button>
+              </div>
+              {/* …or pick from the time grid — left = time (6am–10pm, 15-min), columns = days */}
+              <div style={{ fontSize: 10, color: "var(--gray)", margin: "2px 0 4px" }}>…or tap a time slot below (left = time, columns = days):</div>
+              <div style={{ overflow: "auto", maxHeight: 240, border: "0.5px solid var(--border)", borderRadius: 8, marginBottom: 8 }}>
+                <table style={{ borderCollapse: "separate", borderSpacing: 3, fontSize: 10 }}>
+                  <thead>
+                    <tr>
+                      <th />
+                      {SLOT_DAYS.map((d) => <th key={d} style={{ padding: "2px 6px", color: "var(--gray)", fontWeight: 600 }}>{d}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {GRID_TIMES.map((t) => (
+                      <tr key={t}>
+                        <td style={{ padding: "2px 6px", color: "var(--gray)", whiteSpace: "nowrap", textAlign: "right" }}>{t}</td>
+                        {SLOT_DAYS.map((d) => {
+                          const on = (editor.shiftLinks || []).some((l) => l.day === d && l.start === t);
+                          return (
+                            <td key={d} style={{ textAlign: "center" }}>
+                              <button type="button" title={`${d} ${t}`} onClick={() => toggleShiftLink({ day: d, start: t, end: "" })}
+                                style={{ width: 22, height: 22, borderRadius: 5, border: "1px solid var(--border)", cursor: "pointer", background: on ? "var(--red)" : "#fff", color: on ? "#fff" : "var(--gray)", fontSize: 11, lineHeight: 1 }}>{on ? "✓" : ""}</button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
               {(editor.shiftLinks || []).length > 0 ? (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
