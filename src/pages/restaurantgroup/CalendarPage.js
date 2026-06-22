@@ -19,7 +19,7 @@ export default function CalendarPage() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [dayOpen, setDayOpen] = useState(null); // a Date
   // category filters (dropdown of what to show); birthdays of under-18 (Junior) staff get a "turning 18" highlight
-  const [cats, setCats] = useState({ shift: true, leave: true, train: true, bday: true });
+  const [cats, setCats] = useState({ shift: true, leave: true, train: true, bday: true, u18: true });
 
   const today = new Date();
   const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
@@ -44,6 +44,18 @@ export default function CalendarPage() {
     const mv = myStaff?.venueIds?.length ? myStaff.venueIds : (myStaff?.venueId ? [myStaff.venueId] : []);
     return staff.filter((s) => mv.some((v) => inVenue(s, v)));
   }, [myScope, myStaff, staff, selectedVenue]);
+
+  // under-18 (Junior) staff with an upcoming birthday — they're turning 18 on it. Sorted soonest-first.
+  const turning18 = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return teamStaff.filter((s) => isJuniorType(s.type) && s.birthday).map((s) => {
+      const [mm, dd] = s.birthday.split("-").map(Number);
+      let next = new Date(today.getFullYear(), (mm || 1) - 1, dd || 1);
+      if (next < today) next = new Date(today.getFullYear() + 1, (mm || 1) - 1, dd || 1);
+      const days = Math.round((next - today) / 86400000);
+      return { s, days, when: `${dd} ${MONTHS[(mm || 1) - 1]}` };
+    }).sort((a, b) => a.days - b.days);
+  }, [teamStaff]);
 
   const eventsFor = (d) => {
     if (!d) return { sh: [], lv: [], tr: [], bd: [] };
@@ -115,9 +127,9 @@ export default function CalendarPage() {
             <span style={{ width: 10, height: 10, borderRadius: 2, background: bg, display: "inline-block", marginRight: 6, border: "1px solid var(--border)", verticalAlign: "middle" }} />{cats[key] ? "" : "Show "}{l}
           </button>
         ))}
-        <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--gray)", marginLeft: 4 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: "#dcfce7", border: "1px solid var(--border)" }} />🎉 Turning 18
-        </span>
+        <button className="btn btn-sm" onClick={() => setCats((c) => ({ ...c, u18: !c.u18 }))} style={cats.u18 ? undefined : { opacity: 0.45 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: "#dcfce7", display: "inline-block", marginRight: 6, border: "1px solid var(--border)", verticalAlign: "middle" }} />{cats.u18 ? "" : "Show "}🎉 Under-18 birthday
+        </button>
       </div>
 
       {view === "week" && (
@@ -135,7 +147,7 @@ export default function CalendarPage() {
               const k = dayKey(d);
               const { sh, lv, tr, bd } = eventsFor(d);
               const items = [
-                ...(cats.bday ? bd.map((s) => { const j = isJuniorType(s.type); return { t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }; }) : []),
+                ...bd.filter((s) => (isJuniorType(s.type) ? cats.u18 : cats.bday)).map((s) => { const j = isJuniorType(s.type); return { t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }; }),
                 ...(cats.shift ? sh.sort((a, b) => (a.start || "").localeCompare(b.start || "")).map((s) => ({ t: `${s.start}–${s.end} ${isStaff ? "" : nameOf(s.staffId)}${s.station ? ` · ${s.station}` : ""}`, bg: "var(--blue-light)", color: "var(--ink)" })) : []),
                 ...(cats.leave ? lv.map((l) => ({ t: `${isStaff ? "" : nameOf(l.staffId) + " "}${l.type}`, bg: "var(--amber-light)", color: "var(--ink)" })) : []),
                 ...(cats.train ? tr.map((a) => ({ t: `${a.moduleTitle} due${isStaff ? "" : ` · ${nameOf(a.staffId)}`}`, bg: "#fee2e2", color: "#991b1b" })) : []),
@@ -160,7 +172,7 @@ export default function CalendarPage() {
             const k = dayKey(d);
             const { sh, lv, tr, bd } = eventsFor(d);
             const items = [
-              ...(cats.bday ? bd.map((s) => { const j = isJuniorType(s.type); return { type: "bday", t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d", title: j ? `${nameOf(s.id)} — turning 18` : `${nameOf(s.id)}'s birthday` }; }) : []),
+              ...bd.filter((s) => (isJuniorType(s.type) ? cats.u18 : cats.bday)).map((s) => { const j = isJuniorType(s.type); return { type: "bday", t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d", title: j ? `${nameOf(s.id)} — turning 18` : `${nameOf(s.id)}'s birthday` }; }),
               ...(cats.shift ? sh.map((s) => ({ type: "shift", t: `${isStaff ? "" : nameOf(s.staffId) + " "}${s.start}–${s.end}`, bg: "var(--blue-light)", color: "var(--ink)", title: `${nameOf(s.staffId)} · ${shortRole(s.role)} · ${s.venue}` })) : []),
               ...(cats.leave ? lv.map((l) => ({ type: "leave", t: `${isStaff ? "" : nameOf(l.staffId) + " "}${l.type}`, bg: "var(--amber-light)", color: "var(--ink)", title: `${nameOf(l.staffId)} · ${l.type}` })) : []),
               ...(cats.train ? tr.map((a) => ({ type: "train", t: `${isStaff ? "" : nameOf(a.staffId) + " "}${a.moduleTitle} due`, bg: "#fee2e2", color: "#991b1b", title: `Training due: ${a.moduleTitle}` })) : []),
@@ -177,6 +189,19 @@ export default function CalendarPage() {
       </div>
       )}
 
+      {/* Turning 18 — who's coming up (so it's never missed) */}
+      {!isStaff && cats.u18 && turning18.length > 0 && (
+        <div className="card" style={{ marginTop: 12, borderLeft: "4px solid #16a34a" }}>
+          <div className="card-head" style={{ marginBottom: 6 }}><span className="card-title">🎉 Turning 18</span><span className="card-sub">under-18 staff with an upcoming birthday</span></div>
+          {turning18.map(({ s, days, when }) => (
+            <div key={s.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+              <span><strong>{nameOf(s.id)}</strong> turns 18 on {when}</span>
+              <span className="pill" style={{ background: days <= 1 ? "#fee2e2" : "#dcfce7", color: days <= 1 ? "#991b1b" : "#166534" }}>{days === 0 ? "today 🎂" : days === 1 ? "tomorrow" : `in ${days} days`}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Day detail */}
       {dayOpen && detail && (
         <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setDayOpen(null)}>
@@ -184,7 +209,7 @@ export default function CalendarPage() {
             <div className="modal-head"><span className="modal-title">{DOW[(dayOpen.getDay() + 6) % 7]} {dayOpen.getDate()} {MONTHS[dayOpen.getMonth()]}</span><button className="modal-close" onClick={() => setDayOpen(null)}>✕</button></div>
             {detail.sh.length + detail.lv.length + detail.tr.length + detail.bd.length === 0 && <div style={{ fontSize: 13, color: "var(--gray)" }}>Nothing scheduled.</div>}
             {detail.bd.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Birthdays 🎂</div>
-              {detail.bd.map((s) => <div key={s.id} style={{ fontSize: 13, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill" style={{ background: "#fce7f3", color: "#9d174d" }}>🎂 Happy birthday</span> {nameOf(s.id)}</div>)}</>}
+              {detail.bd.map((s) => { const j = isJuniorType(s.type); return <div key={s.id} style={{ fontSize: 13, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill" style={{ background: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }}>{j ? "🎉 Turning 18" : "🎂 Happy birthday"}</span> {nameOf(s.id)}{j ? " — turning 18 today" : ""}</div>; })}</>}
             {detail.sh.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Shifts</div>
               {detail.sh.map((s) => <div key={s.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span><strong>{s.start}–{s.end}</strong> · {nameOf(s.staffId)}</span><span style={{ color: "var(--gray)" }}>{shortRole(s.role)}{s.station ? ` · ${s.station}` : ""} · {s.venue}</span></div>)}</>}
             {detail.lv.length > 0 && <><div className="form-label" style={{ marginTop: 10 }}>Approved leave</div>
