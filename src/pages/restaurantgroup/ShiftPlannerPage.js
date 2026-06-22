@@ -10,8 +10,17 @@ import { checkAndCreateShiftAssignments } from "./checklistShiftUtils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const FULL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const STARTS = ["7:00am", "7:30am", "8:00am", "9:00am", "10:00am", "11:00am", "12:00pm", "3:00pm", "4:00pm", "5:00pm", "6:00pm"];
-const ENDS = ["3:00pm", "3:30pm", "4:00pm", "5:00pm", "6:00pm", "8:00pm", "9:00pm", "10:00pm", "10:30pm"];
+// 15-minute time options across the trading day (incl. 6:30am opening, 7:15am second arrival)
+const mkTimes = (fromMin, toMin) => {
+  const out = [];
+  for (let m = fromMin; m <= toMin; m += 15) {
+    const h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? "pm" : "am", h12 = (h % 12) || 12;
+    out.push(`${h12}:${String(mm).padStart(2, "0")}${ap}`);
+  }
+  return out;
+};
+const STARTS = mkTimes(6 * 60, 18 * 60);        // 6:00am … 6:00pm
+const ENDS = mkTimes(12 * 60, 23 * 60 + 45);    // 12:00pm … 11:45pm
 const ROLES = ["FOH — Bar", "FOH — Floor", "FOH — Barista", "BOH — Kitchen", "BOH — Fryer", "BOH — Washing", "Store Manager", "Central Kitchen"];
 const HOURLY = 32;
 const WEEKLY_REVENUE = 42000;
@@ -148,8 +157,8 @@ export default function ShiftPlannerPage() {
       ...p,
       staffId: staffId || rows[0]?.id || "",
       day: typeof day === "number" ? FULL_DAYS[day] : "Monday",
-      // default to a role that actually exists in this group (custom roles drive auto-assign matching)
-      role: (roles && roles.includes(p.role)) ? p.role : ((roles && roles[0]) || ROLES[0]),
+      // auto-fill the shift role from the staff member's assigned role (Staff Directory); fall back to a group role
+      role: st?.role || (roles && roles.includes(p.role) ? p.role : ((roles && roles[0]) || ROLES[0])),
       // venueOverride wins (e.g. the split-view column you clicked); else the staff's venue, else selected/first
       venueId: venueOverride || st?.venueIds?.[0] || st?.venueId || (selectedVenue !== "all" ? selectedVenue : venues[0]?.id || ""),
       stationId: "",
@@ -413,7 +422,7 @@ export default function ShiftPlannerPage() {
                 <select className="form-input" value={form.end} onChange={setF("end")}>{ENDS.map((t) => <option key={t}>{t}</option>)}</select>
               </div>
               <div className="form-group"><label className="form-label">Role for this shift</label>
-                <select className="form-input" value={form.role} onChange={setF("role")}>{(roles?.length ? roles : ROLES).map((r) => <option key={r}>{r}</option>)}</select>
+                <select className="form-input" value={form.role} onChange={setF("role")}>{[...new Set([form.role, ...(roles?.length ? roles : ROLES)].filter(Boolean))].map((r) => <option key={r}>{r}</option>)}</select>
               </div>
               <div className="form-group"><label className="form-label">Venue</label>
                 <select className="form-input" value={form.venueId} onChange={setF("venueId")}>
