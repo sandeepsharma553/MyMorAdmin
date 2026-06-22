@@ -97,7 +97,8 @@ export default function StaffDirectoryPage() {
     } catch { /* non-blocking */ }
   };
   const [roleFilter, setRoleFilter] = useState("all");
-  const [hoursPeriod, setHoursPeriod] = useState("week"); // history hours summary window
+  const [hoursPeriod, setHoursPeriod] = useState("week"); // history hours summary window (quick period)
+  const [hoursRange, setHoursRange] = useState({ from: "", to: "" }); // custom date range (overrides period)
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState(blankForm(selectedVenue));
@@ -112,6 +113,8 @@ export default function StaffDirectoryPage() {
   const [profileTab, setProfileTab] = useState("profile"); // profile | history
   const [certDraft, setCertDraft] = useState({ name: "RSA", other: "", expiry: "", file: null });
   const [docFile, setDocFile] = useState(null); // a document to upload for the staff to sign
+  const [certFileKey, setCertFileKey] = useState(0); // bump to clear the cert file input after each add
+  const certOpts = (() => { const base = group?.certOptions?.length ? group.certOptions : CERT_OPTIONS; return base.includes("Other") ? base : [...base, "Other"]; })(); // owner-editable in Settings; always keep "Other"
   const [recForm, setRecForm] = useState({ type: "Coaching", note: "" });
 
   const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
@@ -172,6 +175,7 @@ export default function StaffDirectoryPage() {
     }
     setter((p) => ({ ...p, certs: [...(p.certs || []), { name, expiry: certDraft.expiry, fileUrl, filePath }] }));
     setCertDraft({ name: "RSA", other: "", expiry: "", file: null });
+    setCertFileKey((k) => k + 1); // remount the file input so it visually clears, ready for the next cert
   };
   const removeCert = (setter, idx) => setter((p) => ({ ...p, certs: (p.certs || []).filter((_, i) => i !== idx) }));
   const renderCerts = (state, setter) => (
@@ -185,10 +189,10 @@ export default function StaffDirectoryPage() {
         {!(state.certs || []).length && <span style={{ fontSize: 12, color: "var(--gray)" }}>None added yet</span>}
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        <select className="form-input" style={{ width: 170 }} value={certDraft.name} onChange={(e) => setCertDraft((p) => ({ ...p, name: e.target.value }))}>{CERT_OPTIONS.map((c) => <option key={c}>{c}</option>)}</select>
+        <select className="form-input" style={{ width: 170 }} value={certDraft.name} onChange={(e) => setCertDraft((p) => ({ ...p, name: e.target.value }))}>{certOpts.map((c) => <option key={c}>{c}</option>)}</select>
         {certDraft.name === "Other" && <input className="form-input" style={{ width: 150 }} value={certDraft.other} onChange={(e) => setCertDraft((p) => ({ ...p, other: e.target.value }))} placeholder="Certificate name" />}
         <input type="date" className="form-input" style={{ width: 150 }} value={certDraft.expiry} onChange={(e) => setCertDraft((p) => ({ ...p, expiry: e.target.value }))} title="Expiry date (optional)" />
-        <input type="file" accept="image/*,application/pdf" style={{ fontSize: 12, maxWidth: 180 }} onChange={(e) => setCertDraft((p) => ({ ...p, file: e.target.files?.[0] || null }))} title="Attach the certificate document (optional)" />
+        <input key={certFileKey} type="file" accept="image/*,application/pdf" style={{ fontSize: 12, maxWidth: 180 }} onChange={(e) => setCertDraft((p) => ({ ...p, file: e.target.files?.[0] || null }))} title="Attach the certificate document (optional)" />
         <button type="button" className="btn btn-sm" onClick={() => addCert(setter)}>+ Add</button>
       </div>
     </div>
@@ -474,16 +478,20 @@ export default function StaffDirectoryPage() {
     const now = new Date();
     const startOfWeek = (() => { const d = new Date(now); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
     const shiftDateOf = (x) => { if (!x.weekKey) return null; const d = new Date(`${x.weekKey}T00:00:00`); d.setDate(d.getDate() + (x.day || 0)); return d; };
+    const dkey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const useRange = !!(hoursRange.from && hoursRange.to);
     const inPeriod = (d) => {
       if (!d) return false;
+      if (useRange) { const k = dkey(d); return k >= hoursRange.from && k <= hoursRange.to; }
       if (hoursPeriod === "week") return d >= startOfWeek;
       if (hoursPeriod === "fortnight") { const c = new Date(startOfWeek); c.setDate(c.getDate() - 7); return d >= c; }
       if (hoursPeriod === "month") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       if (hoursPeriod === "year") return d.getFullYear() === now.getFullYear();
       return true; // total
     };
-    let wkday = 0, wkend = 0;
-    sh.forEach((x) => { const d = shiftDateOf(x); if (!inPeriod(d)) return; const h = shiftHours(x); if ((x.day || 0) >= 5) wkend += h; else wkday += h; });
+    // three separate pays: Mon–Fri, Saturday, Sunday
+    let mf = 0, sat = 0, sun = 0;
+    sh.forEach((x) => { const d = shiftDateOf(x); if (!inPeriod(d)) return; const h = shiftHours(x); const dd = x.day || 0; if (dd === 6) sun += h; else if (dd === 5) sat += h; else mf += h; });
     const PERIODS = [["week", "This week"], ["fortnight", "Fortnight"], ["month", "This month"], ["year", "This year"], ["total", "Total"]];
     const Head = ({ t, top }) => <div className="card-head" style={{ margin: top ? "14px 0 6px" : "0 0 6px" }}><span className="card-title">{t}</span></div>;
     return (
@@ -493,17 +501,24 @@ export default function StaffDirectoryPage() {
           <Stat n={`${tDone.length}/${myTraining.length}`} l="Training done" />
           <Stat n={`${cDone.length}/${myChecklists.length}`} l="Checklists done" />
         </div>
-        {/* hours worked summary — period dropdown + Mon-Fri / Sat-Sun split */}
-        <div className="card-head" style={{ margin: "0 0 6px", alignItems: "center" }}>
+        {/* hours worked — quick period OR a custom date range; split into 3 pays (Mon-Fri / Sat / Sun) */}
+        <div className="card-head" style={{ margin: "0 0 6px", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <span className="card-title">Hours worked</span>
-          <select className="form-input" style={{ width: 150 }} value={hoursPeriod} onChange={(e) => setHoursPeriod(e.target.value)}>
-            {PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <select className="form-input" style={{ width: 130 }} value={hoursPeriod} disabled={useRange} onChange={(e) => setHoursPeriod(e.target.value)}>
+              {PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <span style={{ fontSize: 11, color: "var(--gray)" }}>or</span>
+            <input type="date" className="form-input" style={{ width: 140 }} value={hoursRange.from} onChange={(e) => setHoursRange((r) => ({ ...r, from: e.target.value }))} title="From date" />
+            <input type="date" className="form-input" style={{ width: 140 }} value={hoursRange.to} onChange={(e) => setHoursRange((r) => ({ ...r, to: e.target.value }))} title="To date" />
+            {useRange && <button className="btn btn-sm" onClick={() => setHoursRange({ from: "", to: "" })}>Clear range</button>}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          <Stat n={`${(wkday + wkend).toFixed(1)}h`} l="Total" />
-          <Stat n={`${wkday.toFixed(1)}h`} l="Mon–Fri" />
-          <Stat n={`${wkend.toFixed(1)}h`} l="Sat–Sun" />
+          <Stat n={`${(mf + sat + sun).toFixed(1)}h`} l="Total" />
+          <Stat n={`${mf.toFixed(1)}h`} l="Mon–Fri" />
+          <Stat n={`${sat.toFixed(1)}h`} l="Saturday" />
+          <Stat n={`${sun.toFixed(1)}h`} l="Sunday" />
         </div>
         <Head t="Shift history" />
         {sh.length ? sh.slice(0, 40).map((x) => (

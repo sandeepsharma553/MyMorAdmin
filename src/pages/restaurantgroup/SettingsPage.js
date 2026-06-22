@@ -146,6 +146,14 @@ export default function SettingsPage() {
   };
   const removeEmpType = async (t) => { await saveEmpTypes(removeFromList(empTypes, t)); };
 
+  // ── Certificates ── (owner-editable list; consumed by the Staff cert picker)
+  const CERT_DEFAULTS = ["RSA", "Food Safety Supervisor", "Food Handler", "First Aid / CPR", "Working with Children", "Barista Certificate", "Allergen Awareness"];
+  const certOptions = group?.certOptions?.length ? group.certOptions : CERT_DEFAULTS;
+  const [newCert, setNewCert] = useState("");
+  const saveCertOptions = async (next) => { try { await updateDoc(groupDoc(groupId), { certOptions: next }); } catch { showToast("Could not save certificates"); } };
+  const addCertOption = async () => { const next = addToList(certOptions, newCert); setNewCert(""); if (next === certOptions) return; await saveCertOptions(next); showToast("Certificate added"); };
+  const removeCertOption = async (c) => { await saveCertOptions(removeFromList(certOptions, c)); };
+
   // ── Stock master-lists ── (group-doc lists, same add/remove pattern; consumed by Stock)
   const stockCategories = group?.stockCategories?.length ? group.stockCategories : DEFAULT_STOCK_CATEGORIES;
   const stockUnits = group?.stockUnits?.length ? group.stockUnits : DEFAULT_STOCK_UNITS;
@@ -344,6 +352,22 @@ export default function SettingsPage() {
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <input className="form-input" value={newEmpType} onChange={(e) => setNewEmpType(e.target.value)} placeholder="New type (e.g. Apprentice)" onKeyDown={(e) => e.key === "Enter" && addEmpType()} />
                   <button className="btn btn-primary" onClick={addEmpType}>Add</button>
+                </div>
+              )}
+            </div>
+            {/* CERTIFICATES */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Certificates</span><span className="card-sub">Shown in the Staff certificate picker</span></div></div>
+              {certOptions.map((c) => (
+                <div key={c} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <span style={{ fontSize: 13 }}>{c}</span>
+                  {editable && certOptions.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the picklist (existing staff keep theirs)" onClick={() => removeCertOption(c)}>✕</button>}
+                </div>
+              ))}
+              {editable && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <input className="form-input" value={newCert} onChange={(e) => setNewCert(e.target.value)} placeholder="New certificate (e.g. Forklift Licence)" onKeyDown={(e) => e.key === "Enter" && addCertOption()} />
+                  <button className="btn btn-primary" onClick={addCertOption}>Add</button>
                 </div>
               )}
             </div>
