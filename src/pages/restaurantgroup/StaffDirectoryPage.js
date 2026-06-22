@@ -13,6 +13,7 @@ import { isJuniorType } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
 import { staffAreas, stationsForVenue } from "./staffStructureUtils";
 import { uploadRefImage } from "./RefImages";
+import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
@@ -97,6 +98,7 @@ export default function StaffDirectoryPage() {
     } catch { /* non-blocking */ }
   };
   const [roleFilter, setRoleFilter] = useState("all");
+  const [stationFilter, setStationFilter] = useState("all"); // area→station drill-down (like Training)
   const [hoursPeriod, setHoursPeriod] = useState("week"); // history hours summary window (quick period)
   const [hoursRange, setHoursRange] = useState({ from: "", to: "" }); // custom date range (overrides period)
   const [search, setSearch] = useState("");
@@ -136,6 +138,9 @@ export default function StaffDirectoryPage() {
   const avatarColor = (s) => venueColor(s?.venueNames?.[0] || venueName(s?.venueIds?.[0]) || s?.venue);
 
   const venueScoped = useMemo(() => scopedStaff.filter((s) => staffInVenue(s, selectedVenue)), [scopedStaff, selectedVenue]);
+  // area→station drill-down: when an actual area is selected (not All/Managers/Left), show its stations
+  const areaForFilter = (roleFilter !== "all" && roleFilter !== "manager" && roleFilter !== "left") ? roleFilter : null;
+  const drillStations = useMemo(() => (areaForFilter ? stationsForArea(stations, areaForFilter, selectedVenue) : []), [areaForFilter, stations, selectedVenue]);
   const filtered = useMemo(() => {
     let list = venueScoped;
     // "Left" is one of the mutually-exclusive filter buttons: show ONLY left staff; every
@@ -148,11 +153,18 @@ export default function StaffDirectoryPage() {
         const sa = staffAreas(s).length ? staffAreas(s) : [areaOf(s.role)];
         return sa.some((a) => a.toLowerCase() === roleFilter.toLowerCase()) || (roleFilter === "manager" && /manager|supervisor|in charge/i.test(s.role));
       });
+      // station drill-down within the selected area (mirrors Training's station filter)
+      if (areaForFilter && stationFilter !== "all") {
+        const areaIds = drillStations.map((st) => st.id);
+        list = stationFilter === GENERAL_KEY
+          ? list.filter((s) => !(s.stationIds || []).some((id) => areaIds.includes(id)))  // no station in this area
+          : list.filter((s) => (s.stationIds || []).includes(stationFilter));
+      }
     }
     const t = search.trim().toLowerCase();
     if (t) list = list.filter((s) => `${s.displayName || s.name} ${s.role} ${(s.venueNames || []).join(" ")} ${s.email || ""} ${s.pin || ""}`.toLowerCase().includes(t));
     return list;
-  }, [venueScoped, roleFilter, search]);
+  }, [venueScoped, roleFilter, search, stationFilter, areaForFilter, drillStations]);
   const leftCount = useMemo(() => venueScoped.filter((s) => s.status === "Left").length, [venueScoped]);
 
   const onShiftToday = useMemo(() => {
@@ -618,7 +630,7 @@ export default function StaffDirectoryPage() {
       <div className="metric-bar" style={{ background: bar }} /></div>
   );
   const FilterBtn = ({ id, children }) => (
-    <button className="btn btn-sm" onClick={() => setRoleFilter(id)} style={roleFilter === id ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{children}</button>
+    <button className="btn btn-sm" onClick={() => { setRoleFilter(id); setStationFilter("all"); }} style={roleFilter === id ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{children}</button>
   );
   const VenuePicker = ({ value, onToggle }) => (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -689,6 +701,14 @@ export default function StaffDirectoryPage() {
         {areas.map((a) => <FilterBtn key={a} id={a}>{a}</FilterBtn>)}
         {/* archive view — one of the mutually-exclusive filters (clicking another clears it) */}
         <FilterBtn id="left">🗄 Left{leftCount ? ` (${leftCount})` : ""}</FilterBtn>
+        {/* area → station drill-down (same as Training) */}
+        {areaForFilter && drillStations.length > 0 && (
+          <select className="form-input" style={{ width: 190 }} value={stationFilter} onChange={(e) => setStationFilter(e.target.value)} title="Filter by station">
+            <option value="all">All stations</option>
+            {drillStations.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+            <option value={GENERAL_KEY}>General (no station)</option>
+          </select>
+        )}
         <input className="form-input" style={{ width: 200, marginLeft: "auto" }} placeholder="🔍 Search staff / PIN..." value={search} onChange={(e) => setSearch(e.target.value)} />
         {canEdit && <button className="btn btn-sm btn-primary" onClick={() => { setForm(blankForm(selectedVenue)); setAddOpen(true); }}>+ Add Staff</button>}
       </div>
