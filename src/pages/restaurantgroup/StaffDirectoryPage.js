@@ -120,7 +120,8 @@ export default function StaffDirectoryPage() {
     let list = venueScoped;
     if (roleFilter !== "all") list = list.filter((s) => {
       const sa = staffAreas(s).length ? staffAreas(s) : [areaOf(s.role)];
-      return sa.some((a) => a.toLowerCase() === roleFilter) || (roleFilter === "manager" && /manager|supervisor|in charge/i.test(s.role));
+      // area buttons carry the configured area value (case-insensitive match); "manager" is special
+      return sa.some((a) => a.toLowerCase() === roleFilter.toLowerCase()) || (roleFilter === "manager" && /manager|supervisor|in charge/i.test(s.role));
     });
     const t = search.trim().toLowerCase();
     if (t) list = list.filter((s) => `${s.displayName || s.name} ${s.role} ${(s.venueNames || []).join(" ")} ${s.email || ""} ${s.pin || ""}`.toLowerCase().includes(t));
@@ -350,6 +351,7 @@ export default function StaffDirectoryPage() {
   const [picked, setPicked] = useState([]);
   const [assignDue, setAssignDue] = useState("");
   const [assignPriority, setAssignPriority] = useState("normal");
+  const [assignNotes, setAssignNotes] = useState("");
   const [openAssignId, setOpenAssignId] = useState(null);
   const openAssignment = useMemo(() => assignments.find((a) => a.id === openAssignId) || null, [assignments, openAssignId]);
   const [openChecklistId, setOpenChecklistId] = useState(null);
@@ -453,7 +455,7 @@ export default function StaffDirectoryPage() {
     return orderItemsForStaff(list, profile);
   }, [profile, checklists, myChecklists]);
 
-  const openAssign = (kind) => { setAssignKind(kind); setPicked([]); setAssignDue(""); setAssignPriority("normal"); };
+  const openAssign = (kind) => { setAssignKind(kind); setPicked([]); setAssignDue(""); setAssignPriority("normal"); setAssignNotes(""); };
   const togglePick = (key) => setPicked((p) => p.includes(key) ? p.filter((x) => x !== key) : [...p, key]);
   const submitAssign = async () => {
     if (!picked.length) return showToast("Pick at least one");
@@ -464,7 +466,7 @@ export default function StaffDirectoryPage() {
           if (!m) continue;
           await addDoc(venueCol(groupId, m.venueId, "trainingAssignments"), {
             staffId: profile.id, staffName: profile.displayName || profile.name, venue: m.venue, venueId: m.venueId,
-            moduleId: m.id, moduleTitle: m.title, due: assignDue, priority: assignPriority,
+            moduleId: m.id, moduleTitle: m.title, due: assignDue, priority: assignPriority, notes: assignNotes.trim(),
             ...snapshotForAssign(m), status: "Not started", progress: 0, createdAt: serverTimestamp(),
           });
         }
@@ -583,8 +585,8 @@ export default function StaffDirectoryPage() {
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
         <FilterBtn id="all">All</FilterBtn>
         <FilterBtn id="manager">Managers</FilterBtn>
-        <FilterBtn id="foh">FOH</FilterBtn>
-        <FilterBtn id="boh">BOH</FilterBtn>
+        {/* area filters from the group's configured areas (mirrors training/sop/checklist filters) */}
+        {areas.map((a) => <FilterBtn key={a} id={a}>{a}</FilterBtn>)}
         <input className="form-input" style={{ width: 200, marginLeft: "auto" }} placeholder="🔍 Search staff / PIN..." value={search} onChange={(e) => setSearch(e.target.value)} />
         {canEdit && <button className="btn btn-sm btn-primary" onClick={() => { setForm(blankForm(selectedVenue)); setAddOpen(true); }}>+ Add Staff</button>}
       </div>
@@ -962,6 +964,7 @@ export default function StaffDirectoryPage() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
                 <div className="form-group" style={{ margin: 0 }}><label className="form-label">Due date</label><input type="date" className="form-input" value={assignDue} onChange={(e) => setAssignDue(e.target.value)} /></div>
                 <div className="form-group" style={{ margin: 0 }}><label className="form-label">Priority</label><select className="form-input" value={assignPriority} onChange={(e) => setAssignPriority(e.target.value)}>{PRIORITIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+                <div className="form-group" style={{ margin: 0, gridColumn: "1 / -1" }}><label className="form-label">Notes for staff member (optional)</label><textarea className="form-input" rows={2} value={assignNotes} onChange={(e) => setAssignNotes(e.target.value)} placeholder="e.g. focus on espresso dial-in before your next close" /></div>
               </div>
             )}
             <div style={{ maxHeight: "45vh", overflowY: "auto", border: "0.5px solid var(--border)", borderRadius: 8 }}>
