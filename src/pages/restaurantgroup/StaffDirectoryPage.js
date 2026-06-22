@@ -9,7 +9,7 @@ import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
-import { isJuniorType } from "./staffMinorUtils";
+import { isJuniorType, isMinorDob } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
 import { staffAreas, stationsForVenue } from "./staffStructureUtils";
 import { uploadRefImage } from "./RefImages";
@@ -136,6 +136,20 @@ export default function StaffDirectoryPage() {
     return out;
   };
   const avatarColor = (s) => venueColor(s?.venueNames?.[0] || venueName(s?.venueIds?.[0]) || s?.venue);
+
+  // under-18 by DOB (private — owner/storeAdmin only): bulk-load DOBs and flag minors so the
+  // card colours change automatically when a DOB under 18 is entered (falls back to Junior type).
+  const [minorIds, setMinorIds] = useState(() => new Set());
+  const staffIdsKey = scopedStaff.map((s) => s.id).join(",");
+  useEffect(() => {
+    if (!canPayroll || !groupId || !scopedStaff.length) { setMinorIds(new Set()); return; }
+    let alive = true;
+    Promise.all(scopedStaff.map((s) => getDoc(staffPrivateDoc(groupId, s.id))
+      .then((d) => ({ id: s.id, dob: d.exists() ? d.data().dob : "" })).catch(() => ({ id: s.id, dob: "" }))))
+      .then((rows) => { if (!alive) return; const set = new Set(); rows.forEach((r) => { if (isMinorDob(r.dob)) set.add(r.id); }); setMinorIds(set); });
+    return () => { alive = false; };
+  }, [canPayroll, groupId, staffIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const isUnder18 = (s) => minorIds.has(s.id) || isJuniorType(s.type);
 
   const venueScoped = useMemo(() => scopedStaff.filter((s) => staffInVenue(s, selectedVenue)), [scopedStaff, selectedVenue]);
   // area→station drill-down: when an actual area is selected (not All/Managers/Left), show its stations
@@ -715,11 +729,11 @@ export default function StaffDirectoryPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 12 }}>
         {filtered.map((s) => (
-          <div key={s.id} className="staff-card" onClick={() => openProfile(s)} style={{ ...(s.status === "Left" ? { opacity: 0.55 } : {}), ...(isJuniorType(s.type) ? { background: "#fff7ed", border: "1.5px solid var(--amber)" } : {}) }}>
+          <div key={s.id} className="staff-card" onClick={() => openProfile(s)} style={{ ...(s.status === "Left" ? { opacity: 0.55 } : {}), ...(isUnder18(s) ? { background: "#fff7ed", border: "1.5px solid var(--amber)" } : {}) }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 4 }}>
               <div className="staff-avatar" style={{ background: avatarColor(s) }}>{initials(s)}</div>
               <span style={{ display: "inline-flex", gap: 4 }}>
-                {isJuniorType(s.type) && <span className="pill pill-amber" title="Junior employment type">Junior</span>}
+                {isUnder18(s) && <span className="pill pill-amber" title="Under 18">Under 18</span>}
                 {s.status === "Left" && <span className="pill pill-gray" title={s.endDate ? `Left ${s.endDate}` : "Left"}>Left</span>}
                 {s.hasAdminLogin && <span className="pill pill-purple" title="Has admin website login">🔑 Admin</span>}
               </span>
