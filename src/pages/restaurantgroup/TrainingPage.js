@@ -25,7 +25,7 @@ const TABS = [
 const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent", "Urgent — today"]];
 const ICONS = ["🌅", "🌙", "⭐", "🤝", "🍔", "🥗", "🍳", "🔥", "🛡️", "☕", "🏭", "👑", "📋", "🧂"];
 const MOD_COLORS = [["Amber", "#fef3c7"], ["Purple", "#ede9fe"], ["Yellow", "#fef9c3"], ["Green", "#dcfce7"], ["Red", "#fee2e2"], ["Blue", "#e0f2fe"], ["Cyan", "#cffafe"], ["Pink", "#fce7f3"]];
-const blankModule = () => ({ id: null, venueId: "", title: "", cat: "All", stationId: "", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", link: "", mandatory: false, steps: [{ heading: "Procedure", items: [] }], images: [], autoRoles: [] });
+const blankModule = () => ({ id: null, venueId: "", title: "", cat: "All", stationId: "", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", link: "", mandatory: false, steps: [{ heading: "Procedure", items: [] }], images: [], autoRoles: [], autoStations: [] });
 const stepsToEditor = (steps) => (Array.isArray(steps) && steps.length ? steps.map((s) => ({ heading: s.heading || "", items: s.items || [] })) : [{ heading: "Procedure", items: [] }]);
 const editorToSteps = (steps) => (steps || [])
   .map((s) => ({ heading: (s.heading || "").trim(), items: (s.items || []).filter(hasText) }))
@@ -128,7 +128,7 @@ export default function TrainingPage({ initialTab }) {
   const [modEditor, setModEditor] = useState(null);
   const setM = (k) => (e) => setModEditor((p) => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
   const openNewModule = () => setModEditor({ ...blankModule(), venueId: selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || "") });
-  const openEditModule = (m) => { setDetail(null); setModEditor({ id: m.id, venueId: m.venueId || "", title: m.title, cat: m.cat, stationId: m.stationId || "", duration: m.duration, icon: m.icon, color: m.color, desc: m.desc || "", link: m.link || "", mandatory: !!m.mandatory, steps: stepsToEditor(m.steps), images: m.images || [], autoRoles: m.autoAssign?.roles || [] }); };
+  const openEditModule = (m) => { setDetail(null); setModEditor({ id: m.id, venueId: m.venueId || "", title: m.title, cat: m.cat || "All", stationId: m.stationId || "", duration: m.duration, icon: m.icon, color: m.color, desc: m.desc || "", link: m.link || "", mandatory: !!m.mandatory, steps: stepsToEditor(m.steps), images: m.images || [], autoRoles: m.autoAssign?.roles || [], autoStations: m.autoAssign?.stations || (m.stationId ? [m.stationId] : []) }); };
   // step-section editing
   const setStep = (i, k) => (e) => setModEditor((p) => ({ ...p, steps: p.steps.map((s, idx) => idx === i ? { ...s, [k]: e.target.value } : s) }));
   const setStepItems = (i) => (items) => setModEditor((p) => ({ ...p, steps: p.steps.map((s, idx) => idx === i ? { ...s, items } : s) }));
@@ -140,10 +140,10 @@ export default function TrainingPage({ initialTab }) {
     if (!vid) return showToast("Pick a venue for this module");
     const venueNameStr = venues.find((v) => v.id === vid)?.name || "";
     const steps = editorToSteps(modEditor.steps);
-    const stn = stations.find((s) => s.id === modEditor.stationId && s.venueId === vid);
-    // category removed from the UI — a module's area now follows its station (universal "All" if none)
-    const cat = stn?.area || "All";
-    const payload = { title: modEditor.title.trim(), cat, stationId: stn?.id || "", station: stn?.name || "", venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), link: (modEditor.link || "").trim(), mandatory: modEditor.mandatory, steps, images: modEditor.images || [], autoAssign: { roles: [] } };
+    // Area is chosen directly; auto-assign targets one or more stations within that area+venue
+    const cat = modEditor.cat || "All";
+    const autoStations = (modEditor.autoStations || []).filter((id) => stations.some((s) => s.id === id && s.venueId === vid && s.area === cat));
+    const payload = { title: modEditor.title.trim(), cat, stationId: "", station: "", venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), link: (modEditor.link || "").trim(), mandatory: modEditor.mandatory, steps, images: modEditor.images || [], autoAssign: { roles: [], stations: autoStations } };
     try {
       if (modEditor.id) { await updateDoc(doc(venueTrainingCol(groupId, vid), modEditor.id), payload); showToast("Module updated"); }
       else { await addDoc(venueTrainingCol(groupId, vid), payload); showToast("Module created"); }
@@ -396,10 +396,10 @@ export default function TrainingPage({ initialTab }) {
                   {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
               </div>
-              <div className="form-group"><label className="form-label">Station (optional) <span style={{ color: "var(--gray)", fontWeight: 400 }}>· sets the module's area; none = universal</span></label>
-                <select key={modEditor.venueId} className="form-input" value={modEditor.stationId} onChange={setM("stationId")}>
-                  <option value="">— None (all areas) —</option>
-                  {stations.filter((s) => s.venueId === modEditor.venueId).map((s) => <option key={`${s.venueId}-${s.id}`} value={s.id}>{s.name} · {s.area}</option>)}
+              <div className="form-group"><label className="form-label">Area <span style={{ color: "var(--gray)", fontWeight: 400 }}>· who it's for; none = universal</span></label>
+                <select className="form-input" value={modEditor.cat || "All"} onChange={(e) => setModEditor((p) => { const cat = e.target.value; const valid = stations.filter((s) => s.venueId === p.venueId && s.area === cat).map((s) => s.id); return { ...p, cat, autoStations: (p.autoStations || []).filter((id) => valid.includes(id)) }; })}>
+                  <option value="All">— None (all areas) —</option>
+                  {areas.map((a) => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Duration</label><input className="form-input" value={modEditor.duration} onChange={setM("duration")} placeholder="30 min" /></div>
@@ -417,14 +417,20 @@ export default function TrainingPage({ initialTab }) {
             <div className="form-group"><label className="form-label">Description</label><textarea className="form-input" rows={2} value={modEditor.desc} onChange={setM("desc")} /></div>
             <div className="form-group"><label className="form-label">External training link (optional — redirect to another platform)</label><input className="form-input" value={modEditor.link} onChange={setM("link")} placeholder="https://... (course on another platform)" /></div>
 
-            {/* Auto-assign BY STATION — categorisation is the station now (category removed) */}
+            {/* Auto-assign to STATIONS within the chosen area (multi-select) */}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 12 }}>
-              <label className="form-label">Auto-assign</label>
-              <div style={{ fontSize: 12, color: "var(--gray)" }}>
-                {modEditor.stationId
-                  ? `Auto-assigns to staff at the “${stations.find((s) => s.id === modEditor.stationId)?.name || "selected"}” station when they're rostered there.`
-                  : "No station selected — this module stays universal and won't auto-assign by station. Pick a Station above to drive auto-assign."}
-              </div>
+              <label className="form-label">Auto-assign to stations</label>
+              {(modEditor.cat && modEditor.cat !== "All") ? (() => {
+                const opts = stations.filter((s) => s.venueId === modEditor.venueId && s.area === modEditor.cat);
+                return opts.length ? (
+                  <>
+                    <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>Staff in {modEditor.cat} tagged any selected station get this module automatically.</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {opts.map((st) => { const on = (modEditor.autoStations || []).includes(st.id); return <button key={st.id} type="button" className="btn btn-sm" onClick={() => setModEditor((p) => ({ ...p, autoStations: on ? (p.autoStations || []).filter((x) => x !== st.id) : [...(p.autoStations || []), st.id] }))} style={on ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{st.name}</button>; })}
+                    </div>
+                  </>
+                ) : <div style={{ fontSize: 12, color: "var(--gray)" }}>No stations in {modEditor.cat} for this venue — add them in Settings.</div>;
+              })() : <div style={{ fontSize: 12, color: "var(--gray)" }}>Universal module (no area) — won't auto-assign by station. Pick an Area above to choose stations.</div>}
             </div>
 
             {/* Step sections — matches the module detail layout */}
