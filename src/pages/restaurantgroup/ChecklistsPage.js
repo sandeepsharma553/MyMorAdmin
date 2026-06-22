@@ -32,7 +32,7 @@ const pushHist = (c) => {
 const areaOf = (c) => c.area || (/\bboh\b|kitchen|grill|fry|wash|prep|cook|dressing/i.test(c.title || "") ? "BOH" : /\bfoh\b|floor|barista|bar|counter|service|opening|closing/i.test(c.title || "") ? "FOH" : "All");
 const nowHHMM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const fmt12 = (t) => { if (!t) return ""; const [h, m] = t.split(":").map(Number); const ap = h >= 12 ? "pm" : "am"; const h12 = h % 12 || 12; return `${h12}:${String(m).padStart(2, "0")}${ap}`; };
-const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "Opening", area: "FOH", stationId: "", time: "", items: [], days: [], images: [], frequency: "daily", scheduleDay: "mon", scheduleDate: 1, autoRoles: [], autoShiftStart: "", shiftLinks: [], recurring: true });
+const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "", area: "FOH", stationId: "", time: "", items: [], days: [], images: [], frequency: "daily", scheduleDay: "mon", scheduleDate: 1, autoRoles: [], autoShiftStart: "", shiftLinks: [], recurring: true });
 // shift start times offered for auto-assign linking (mirrors ShiftPlanner STARTS)
 const AUTO_STARTS = ["", "7:00am", "7:30am", "8:00am", "9:00am", "10:00am", "11:00am", "12:00pm", "3:00pm", "4:00pm", "5:00pm", "6:00pm"];
 
@@ -143,7 +143,7 @@ export default function ChecklistsPage() {
       frequency: editor.frequency || "daily",
       scheduleDay: editor.scheduleDay || "mon",
       scheduleDate: Math.max(1, Math.min(28, Number(editor.scheduleDate) || 1)),
-      autoAssign: { roles: editor.autoRoles || [], shiftStart: editor.autoShiftStart || "" },
+      autoAssign: { roles: [], shiftStart: "" }, // station-driven now (category/roles removed)
       // slot links (#shiftLinks): the single source of truth for shift-triggered assignment
       shiftLinks: editor.shiftLinks || [],
       recurring: editor.recurring !== false,
@@ -344,9 +344,7 @@ export default function ChecklistsPage() {
               <div className="form-group"><label className="form-label">Venue</label>
                 <select className="form-input" value={editor.venueId} onChange={setEd("venueId")}>{venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select>
               </div>
-              <div className="form-group"><label className="form-label">Type</label>
-                <select className="form-input" value={editor.type} onChange={setEd("type")}>{EDIT_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
-              </div>
+              {/* "Type" removed — area + station categorise the checklist now */}
               <div className="form-group"><label className="form-label">Area (FOH / BOH / All)</label>
                 <select className="form-input" value={editor.area} onChange={setEd("area")}>{AREA_OPTS.map((a) => <option key={a}>{a}</option>)}</select>
               </div>
@@ -378,12 +376,13 @@ export default function ChecklistsPage() {
                   <select className="form-input" value={editor.frequency} onChange={setEd("frequency")}>
                     <option value="daily">Daily (resets each day)</option>
                     <option value="weekly">Weekly</option>
+                    <option value="fortnightly">Fortnightly</option>
                     <option value="monthly">Monthly</option>
                   </select>
                 </div>
-                {editor.frequency === "weekly" && (
+                {(editor.frequency === "weekly" || editor.frequency === "fortnightly") && (
                   <div>
-                    <label className="form-label" style={{ fontSize: 10 }}>Assigned every</label>
+                    <label className="form-label" style={{ fontSize: 10 }}>Assigned every {editor.frequency === "fortnightly" ? "other " : ""}</label>
                     <select className="form-input" value={editor.scheduleDay} onChange={setEd("scheduleDay")}>
                       {WEEKDAYS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                     </select>
@@ -398,26 +397,12 @@ export default function ChecklistsPage() {
                   </div>
                 )}
               </div>
-              <label className="form-label" style={{ fontSize: 10 }}>Auto-assign to roles — anyone rostered with these roles gets this checklist automatically</label>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {(roles || []).map((r) => (
-                  <button key={r} type="button" className="btn btn-sm" onClick={() => toggleAutoRole(r)}
-                    style={editor.autoRoles.includes(r) ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{r}</button>
-                ))}
+              {/* Auto-assign BY STATION (category removed) — the checklist's Station drives who gets it */}
+              <div style={{ fontSize: 11, color: "var(--gray)" }}>
+                {editor.stationId
+                  ? `Auto-assigns to staff at the “${stations.find((s) => s.id === editor.stationId)?.name || "selected"}” station on the schedule above. You can also assign manually anytime.`
+                  : "No station selected — pick a Station above to auto-assign this checklist by station; otherwise assign it manually."}
               </div>
-              {editor.frequency === "daily" && editor.autoRoles.length > 0 && (
-                <div>
-                  <label className="form-label" style={{ fontSize: 10 }}>Only for shifts starting at (optional — e.g. opening checklist → 7:00am shift)</label>
-                  <select className="form-input" value={editor.autoShiftStart} onChange={setEd("autoShiftStart")}>
-                    {AUTO_STARTS.map((t) => <option key={t || "any"} value={t}>{t || "Any start time"}</option>)}
-                  </select>
-                </div>
-              )}
-              {editor.frequency !== "daily" && (
-                <div style={{ fontSize: 10, color: "var(--gray)" }}>
-                  {editor.autoRoles.length ? "Assigned automatically to matching staff on the scheduled day (3am Sydney). You can also assign manually anytime to override." : "Pick at least one role, or it will default to managers on the scheduled day."}
-                </div>
-              )}
             </div>
             {/* Slot links — assignment follows the shift slot, not the person */}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 12 }}>

@@ -143,7 +143,7 @@ export default function TrainingPage({ initialTab }) {
     const stn = stations.find((s) => s.id === modEditor.stationId && s.venueId === vid);
     // category removed from the UI — a module's area now follows its station (universal "All" if none)
     const cat = stn?.area || "All";
-    const payload = { title: modEditor.title.trim(), cat, stationId: stn?.id || "", station: stn?.name || "", venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), link: (modEditor.link || "").trim(), mandatory: modEditor.mandatory, steps, images: modEditor.images || [], autoAssign: { roles: modEditor.autoRoles || [] } };
+    const payload = { title: modEditor.title.trim(), cat, stationId: stn?.id || "", station: stn?.name || "", venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), link: (modEditor.link || "").trim(), mandatory: modEditor.mandatory, steps, images: modEditor.images || [], autoAssign: { roles: [] } };
     try {
       if (modEditor.id) { await updateDoc(doc(venueTrainingCol(groupId, vid), modEditor.id), payload); showToast("Module updated"); }
       else { await addDoc(venueTrainingCol(groupId, vid), payload); showToast("Module created"); }
@@ -417,15 +417,13 @@ export default function TrainingPage({ initialTab }) {
             <div className="form-group"><label className="form-label">Description</label><textarea className="form-input" rows={2} value={modEditor.desc} onChange={setM("desc")} /></div>
             <div className="form-group"><label className="form-label">External training link (optional — redirect to another platform)</label><input className="form-input" value={modEditor.link} onChange={setM("link")} placeholder="https://... (course on another platform)" /></div>
 
-            {/* Auto-assign by role — anyone rostered with one of these roles gets this module (once) */}
+            {/* Auto-assign BY STATION — categorisation is the station now (category removed) */}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 12 }}>
-              <label className="form-label">Auto-assign to roles (optional) — staff rostered with these roles get this module automatically</label>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {(roles || []).map((r) => (
-                  <button key={r} type="button" className="btn btn-sm"
-                    onClick={() => setModEditor((p) => ({ ...p, autoRoles: p.autoRoles.includes(r) ? p.autoRoles.filter((x) => x !== r) : [...p.autoRoles, r] }))}
-                    style={modEditor.autoRoles.includes(r) ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{r}</button>
-                ))}
+              <label className="form-label">Auto-assign</label>
+              <div style={{ fontSize: 12, color: "var(--gray)" }}>
+                {modEditor.stationId
+                  ? `Auto-assigns to staff at the “${stations.find((s) => s.id === modEditor.stationId)?.name || "selected"}” station when they're rostered there.`
+                  : "No station selected — this module stays universal and won't auto-assign by station. Pick a Station above to drive auto-assign."}
               </div>
             </div>
 
