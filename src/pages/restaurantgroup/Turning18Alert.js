@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getDoc, setDoc, doc, serverTimestamp } from "firebase/firestore";
-import { staffPrivateDoc, auditLogCol } from "../../utils/restaurantGroupPaths";
+import { staffPrivateDoc, auditLogCol, notificationsCol } from "../../utils/restaurantGroupPaths";
 import { parseDob, nthBirthday, daysToEighteen, isMinorDob, isJuniorType } from "./staffMinorUtils";
 
 const fmt = (d) => d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const whenLbl = (days, t18) => (days < 0 ? "has turned 18" : days === 0 ? "turns 18 today" : days === 1 ? "turns 18 tomorrow" : `turns 18 on ${fmt(t18)}`);
 
 /**
  * Admin-only (owner/storeAdmin) compliance card.
@@ -54,7 +55,7 @@ export default function Turning18Alert({ groupId, staff, actorName }) {
         // browser notification — once per session per person
         if (typeof Notification !== "undefined" && Notification.permission === "granted" && !notified.current.has(f.id)) {
           notified.current.add(f.id);
-          try { new Notification("Staff turning 18", { body: `${f.name} ${f.days >= 0 ? `turns 18 on ${fmt(f.t18)}` : "has turned 18"} — review pay & compliance.` }); } catch { /* */ }
+          try { new Notification("Staff turning 18", { body: `${f.name} ${whenLbl(f.days, f.t18)} — review pay & compliance.` }); } catch { /* */ }
         }
         // super-admin activity log — written once (deterministic id)
         try {
@@ -64,6 +65,18 @@ export default function Turning18Alert({ groupId, staff, actorName }) {
             action: "compliance.turn18",
             summary: `${f.name} is turning 18 (${fmt(f.t18)}) — pay rate & compliance review`,
             staffId: f.id, notifySuperAdmin: true, seenBySuper: false, by: actorName || "System", at: serverTimestamp(),
+          });
+        } catch { /* */ }
+        // in-app bell notification for managers/owner — written once (deterministic id) so it's
+        // visible without needing browser-notification permission or being on this page.
+        try {
+          const nref = doc(notificationsCol(groupId), `turn18-${f.id}-${f.t18.getFullYear()}`);
+          const nex = await getDoc(nref);
+          if (!nex.exists()) await setDoc(nref, {
+            to: "managers", type: "compliance",
+            title: "Staff turning 18",
+            body: `${f.name} ${whenLbl(f.days, f.t18)} — review pay & compliance.`,
+            venueId: "", by: actorName || "System", readBy: [], at: serverTimestamp(),
           });
         } catch { /* */ }
       }
