@@ -2,7 +2,8 @@ import React, { useMemo, useState, useEffect } from "react";
 import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
-import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
+import { fullName, csvText, weekKeyOf } from "./rgUtils";
+import { encryptText, decryptText, downloadText } from "./cryptoExport";
 import { staffAreaBuckets, staffAtStation } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import StaffCapabilityCard from "./StaffCapabilityCard";
@@ -149,7 +150,7 @@ export default function ShiftPlannerPage() {
       .filter((g) => g.members.length && (areaFilter === "all" || areaFilter === g.key)),
     [rows, areaFilter, effStation, weekShifts]);
 
-  const [form, setForm] = useState({ staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: (roles && roles[0]) || ROLES[0], venueId: "", stationId: "", notes: "" });
+  const [form, setForm] = useState({ editId: null, staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: (roles && roles[0]) || ROLES[0], venueId: "", stationId: "", notes: "" });
   const formStations = useMemo(() => stations.filter((s) => s.venueId === form.venueId), [stations, form.venueId]);
   const openAdd = (staffId, day, venueOverride) => {
     const st = staff.find((s) => s.id === staffId);
@@ -162,7 +163,18 @@ export default function ShiftPlannerPage() {
       // venueOverride wins (e.g. the split-view column you clicked); else the staff's venue, else selected/first
       venueId: venueOverride || st?.venueIds?.[0] || st?.venueId || (selectedVenue !== "all" ? selectedVenue : venues[0]?.id || ""),
       stationId: "",
+      editId: null,
     }));
+    setModal(true);
+  };
+  // Edit an existing shift — load its values into the same modal.
+  const openEdit = (sh) => {
+    setForm({
+      editId: sh.id, staffId: sh.staffId, day: FULL_DAYS[sh.day] || "Monday",
+      start: sh.start, end: sh.end, role: sh.role || ((roles && roles[0]) || ROLES[0]),
+      venueId: sh.venueId, stationId: sh.stationId || "", notes: sh.notes || "",
+    });
+    setShiftDetail(null);
     setModal(true);
   };
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -177,11 +189,13 @@ export default function ShiftPlannerPage() {
     if (ne <= ns) return showToast("End time must be after start time");
     // Hard block: no overlapping shift for this person that day, across ANY venue.
     // (7am–3pm + 3pm–9pm is fine — they only touch; strict overlap = ns < end && start < ne.)
-    const clash = weekShifts.find((sh) => sh.staffId === form.staffId && sh.day === dayIdx
+    // overlap check excludes the shift being edited (so re-saving its own times is allowed)
+    const clash = weekShifts.find((sh) => sh.id !== form.editId && sh.staffId === form.staffId && sh.day === dayIdx
       && ns < parseTime(sh.end) && parseTime(sh.start) < ne);
     if (clash) return showToast(`Already rostered ${clash.start}–${clash.end} at ${clash.venue} that day — can't double-book.`);
     const type = parseTime(form.start) >= 15 ? "evening" : "morning";
     const station = stations.find((s) => s.id === form.stationId && s.venueId === venue.id);
+    const editing = form.editId ? shifts.find((s) => s.id === form.editId) : null;
     try {
       const shiftData = {
         staffId: form.staffId, staffName: fullName(st),
@@ -190,10 +204,23 @@ export default function ShiftPlannerPage() {
         stationId: station?.id || "", station: station?.name || "",
         type, notes: form.notes.trim(), weekKey: wk, published: true,
       };
-      const created = await addDoc(venueCol(groupId, venue.id, "shifts"), { ...shiftData, createdAt: serverTimestamp() });
-      showToast("Shift saved");
+      let shiftId;
+      if (editing && editing.venueId === venue.id) {
+        // edit in place (same venue subcollection)
+        await updateDoc(doc(venueCol(groupId, venue.id, "shifts"), form.editId), shiftData);
+        shiftId = form.editId;
+      } else if (editing) {
+        // venue changed → move: delete the old doc, create under the new venue
+        await deleteDoc(doc(venueCol(groupId, editing.venueId, "shifts"), form.editId));
+        const created = await addDoc(venueCol(groupId, venue.id, "shifts"), { ...shiftData, createdAt: serverTimestamp() });
+        shiftId = created.id;
+      } else {
+        const created = await addDoc(venueCol(groupId, venue.id, "shifts"), { ...shiftData, createdAt: serverTimestamp() });
+        shiftId = created.id;
+      }
+      showToast(editing ? "Shift updated" : "Shift saved");
       // slot-linked checklist auto-assignment — separate async op, NEVER blocks the shift save
-      checkAndCreateShiftAssignments(shiftData, created.id, groupId, checklists)
+      checkAndCreateShiftAssignments(shiftData, shiftId, groupId, checklists)
         .then((r) => {
           if (r.created) showToast(`${r.created} checklist(s) auto-assigned for this shift`);
           else if (r.errors.length) showToast("Shift saved — checklist auto-assign failed");
@@ -301,7 +328,21 @@ export default function ShiftPlannerPage() {
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-sm" onClick={() => setSplitMode((s) => !s)} style={splitMode ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>⊟ Split view</button>
           {canEdit && <button className="btn btn-sm btn-primary" onClick={() => openAdd("", 0)}>+ Add shift</button>}
-          <button className="btn btn-sm" onClick={() => { downloadCsv(`roster-${wk}.csv`, [["Staff", "Day", "Start", "End", "Role", "Station", "Venue", "Hours"], ...weekShifts.slice().sort((a, b) => (a.day - b.day) || a.start.localeCompare(b.start)).map((sh) => [sh.staffName, FULL_DAYS[sh.day] || "", sh.start, sh.end, sh.role, sh.station || "", sh.venue, shiftHours(sh).toFixed(1)])]); showToast("Roster exported (CSV)"); }}>Export</button>
+          <button className="btn btn-sm" onClick={async () => {
+            const pass = window.prompt("Set a passphrase to encrypt the roster export (you'll need it to open the file):");
+            if (!pass) return;
+            const rows = [["Staff", "Day", "Start", "End", "Role", "Station", "Venue", "Hours"], ...weekShifts.slice().sort((a, b) => (a.day - b.day) || a.start.localeCompare(b.start)).map((sh) => [sh.staffName, FULL_DAYS[sh.day] || "", sh.start, sh.end, sh.role, sh.station || "", sh.venue, shiftHours(sh).toFixed(1)])];
+            try { downloadText(`roster-${wk}.csv.enc`, await encryptText(csvText(rows), pass)); showToast("Roster exported (encrypted)"); }
+            catch { showToast("Could not encrypt export"); }
+          }}>Export 🔒</button>
+          <label className="btn btn-sm" style={{ cursor: "pointer" }} title="Decrypt a .csv.enc roster file">Decrypt
+            <input type="file" accept=".enc" style={{ display: "none" }} onChange={async (e) => {
+              const file = e.target.files?.[0]; e.target.value = ""; if (!file) return;
+              const pass = window.prompt("Enter the passphrase for this encrypted file:"); if (!pass) return;
+              try { const csv = await decryptText(await file.text(), pass); downloadText(file.name.replace(/\.enc$/, "") || "roster.csv", csv, "text/csv;charset=utf-8;"); showToast("Decrypted"); }
+              catch { showToast("Wrong passphrase or not a MyMor file"); }
+            }} />
+          </label>
         </div>
       </div>
 
@@ -402,7 +443,7 @@ export default function ShiftPlannerPage() {
         <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setModal(null)}>
           <div className="rg-modal">
             <div className="modal-head">
-              <span className="modal-title">Add / edit shift</span>
+              <span className="modal-title">{form.editId ? "Edit shift" : "Add shift"}</span>
               <button className="modal-close" onClick={() => setModal(null)}>✕</button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -457,6 +498,7 @@ export default function ShiftPlannerPage() {
             </div>
             <div style={{ marginTop: 12 }}><div className="form-label">Notes</div><div style={{ fontSize: 13, color: shiftDetail.notes ? "var(--ink)" : "var(--gray)" }}>{shiftDetail.notes || "No notes"}</div></div>
             <div className="btn-row">
+              {canEdit && <button className="btn btn-primary" onClick={() => openEdit(shiftDetail)}>Edit shift</button>}
               {canEdit && <button className="btn btn-danger" onClick={async () => { await removeShift(shiftDetail); setShiftDetail(null); }}>Remove shift</button>}
               <button className="btn" onClick={() => setShiftDetail(null)}>Close</button>
             </div>

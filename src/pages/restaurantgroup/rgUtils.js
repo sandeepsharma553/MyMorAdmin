@@ -158,9 +158,13 @@ export const checklistPct = (staffId, checklistAssignments) => {
 };
 
 // Download an array-of-rows as a CSV file (rows[0] is the header row).
-export const downloadCsv = (filename, rows) => {
+// CSV string from rows (shared by plain + encrypted export).
+export const csvText = (rows) => {
   const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const csv = (rows || []).map((r) => r.map(esc).join(",")).join("\r\n");
+  return (rows || []).map((r) => r.map(esc).join(",")).join("\r\n");
+};
+export const downloadCsv = (filename, rows) => {
+  const csv = csvText(rows);
   const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
