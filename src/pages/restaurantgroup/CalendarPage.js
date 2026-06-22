@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { getDoc } from "firebase/firestore";
 import { useRG } from "./RGContext";
+import { staffPrivateDoc } from "../../utils/restaurantGroupPaths";
 import { fullName, weekKeyOf, weekDayIndex } from "./rgUtils";
-import { isJuniorType } from "./staffMinorUtils";
+import { isJuniorType, isMinorDob } from "./staffMinorUtils";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -12,8 +14,21 @@ const cellWeekInfo = (d) => ({ weekKey: weekKeyOf(d), dayIdx: weekDayIndex(d) })
 const shortRole = (r) => (r || "").replace(/^(FOH|BOH) — /, "");
 
 export default function CalendarPage() {
-  const { shifts, leave, assignments, venues, staff, scopedStaff, myStaff, myScope, selectedVenue, can } = useRG();
+  const { groupId, shifts, leave, assignments, venues, staff, scopedStaff, myStaff, myScope, selectedVenue, can } = useRG();
   const isStaff = myScope === "staff";
+  // under-18 by DOB (private — owner/storeAdmin/managers; rules gate the read). Mirrors Staff
+  // Directory so a DOB-under-18 staffer counts as "under-18 birthday" even if type isn't "Junior".
+  const [minorIds, setMinorIds] = useState(() => new Set());
+  const idsKey = staff.map((s) => s.id).join(",");
+  useEffect(() => {
+    if (isStaff || !groupId || !staff.length) { setMinorIds(new Set()); return; }
+    let alive = true;
+    Promise.all(staff.map((s) => getDoc(staffPrivateDoc(groupId, s.id))
+      .then((d) => ({ id: s.id, dob: d.exists() ? d.data().dob : "" })).catch(() => ({ id: s.id, dob: "" }))))
+      .then((rows) => { if (!alive) return; const set = new Set(); rows.forEach((r) => { if (isMinorDob(r.dob)) set.add(r.id); }); setMinorIds(set); });
+    return () => { alive = false; };
+  }, [groupId, idsKey, isStaff]); // eslint-disable-line react-hooks/exhaustive-deps
+  const isUnder18 = (s) => minorIds.has(s.id) || isJuniorType(s.type);
   const [monthOffset, setMonthOffset] = useState(0);
   const [view, setView] = useState(isStaff ? "week" : "month"); // staff: 2-week window only → week view
   const [weekOffset, setWeekOffset] = useState(0);
@@ -48,7 +63,7 @@ export default function CalendarPage() {
   // under-18 (Junior) staff with an upcoming birthday — they're turning 18 on it. Sorted soonest-first.
   const turning18 = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    return teamStaff.filter((s) => isJuniorType(s.type) && s.birthday).map((s) => {
+    return teamStaff.filter((s) => isUnder18(s) && s.birthday).map((s) => {
       const [mm, dd] = s.birthday.split("-").map(Number);
       let next = new Date(today.getFullYear(), (mm || 1) - 1, dd || 1);
       if (next < today) next = new Date(today.getFullYear() + 1, (mm || 1) - 1, dd || 1);
@@ -147,7 +162,7 @@ export default function CalendarPage() {
               const k = dayKey(d);
               const { sh, lv, tr, bd } = eventsFor(d);
               const items = [
-                ...bd.filter((s) => (isJuniorType(s.type) ? cats.u18 : cats.bday)).map((s) => { const j = isJuniorType(s.type); return { t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }; }),
+                ...bd.filter((s) => (isUnder18(s) ? cats.u18 : cats.bday)).map((s) => { const j = isUnder18(s); return { t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }; }),
                 ...(cats.shift ? sh.sort((a, b) => (a.start || "").localeCompare(b.start || "")).map((s) => ({ t: `${s.start}–${s.end} ${isStaff ? "" : nameOf(s.staffId)}${s.station ? ` · ${s.station}` : ""}`, bg: "var(--blue-light)", color: "var(--ink)" })) : []),
                 ...(cats.leave ? lv.map((l) => ({ t: `${isStaff ? "" : nameOf(l.staffId) + " "}${l.type}`, bg: "var(--amber-light)", color: "var(--ink)" })) : []),
                 ...(cats.train ? tr.map((a) => ({ t: `${a.moduleTitle} due${isStaff ? "" : ` · ${nameOf(a.staffId)}`}`, bg: "#fee2e2", color: "#991b1b" })) : []),
@@ -172,7 +187,7 @@ export default function CalendarPage() {
             const k = dayKey(d);
             const { sh, lv, tr, bd } = eventsFor(d);
             const items = [
-              ...bd.filter((s) => (isJuniorType(s.type) ? cats.u18 : cats.bday)).map((s) => { const j = isJuniorType(s.type); return { type: "bday", t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d", title: j ? `${nameOf(s.id)} — turning 18` : `${nameOf(s.id)}'s birthday` }; }),
+              ...bd.filter((s) => (isUnder18(s) ? cats.u18 : cats.bday)).map((s) => { const j = isUnder18(s); return { type: "bday", t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d", title: j ? `${nameOf(s.id)} — turning 18` : `${nameOf(s.id)}'s birthday` }; }),
               ...(cats.shift ? sh.map((s) => ({ type: "shift", t: `${isStaff ? "" : nameOf(s.staffId) + " "}${s.start}–${s.end}`, bg: "var(--blue-light)", color: "var(--ink)", title: `${nameOf(s.staffId)} · ${shortRole(s.role)} · ${s.venue}` })) : []),
               ...(cats.leave ? lv.map((l) => ({ type: "leave", t: `${isStaff ? "" : nameOf(l.staffId) + " "}${l.type}`, bg: "var(--amber-light)", color: "var(--ink)", title: `${nameOf(l.staffId)} · ${l.type}` })) : []),
               ...(cats.train ? tr.map((a) => ({ type: "train", t: `${isStaff ? "" : nameOf(a.staffId) + " "}${a.moduleTitle} due`, bg: "#fee2e2", color: "#991b1b", title: `Training due: ${a.moduleTitle}` })) : []),
@@ -209,7 +224,7 @@ export default function CalendarPage() {
             <div className="modal-head"><span className="modal-title">{DOW[(dayOpen.getDay() + 6) % 7]} {dayOpen.getDate()} {MONTHS[dayOpen.getMonth()]}</span><button className="modal-close" onClick={() => setDayOpen(null)}>✕</button></div>
             {detail.sh.length + detail.lv.length + detail.tr.length + detail.bd.length === 0 && <div style={{ fontSize: 13, color: "var(--gray)" }}>Nothing scheduled.</div>}
             {detail.bd.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Birthdays 🎂</div>
-              {detail.bd.map((s) => { const j = isJuniorType(s.type); return <div key={s.id} style={{ fontSize: 13, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill" style={{ background: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }}>{j ? "🎉 Turning 18" : "🎂 Happy birthday"}</span> {nameOf(s.id)}{j ? " — turning 18 today" : ""}</div>; })}</>}
+              {detail.bd.map((s) => { const j = isUnder18(s); return <div key={s.id} style={{ fontSize: 13, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill" style={{ background: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }}>{j ? "🎉 Turning 18" : "🎂 Happy birthday"}</span> {nameOf(s.id)}{j ? " — turning 18 today" : ""}</div>; })}</>}
             {detail.sh.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Shifts</div>
               {detail.sh.map((s) => <div key={s.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span><strong>{s.start}–{s.end}</strong> · {nameOf(s.staffId)}</span><span style={{ color: "var(--gray)" }}>{shortRole(s.role)}{s.station ? ` · ${s.station}` : ""} · {s.venue}</span></div>)}</>}
             {detail.lv.length > 0 && <><div className="form-label" style={{ marginTop: 10 }}>Approved leave</div>
