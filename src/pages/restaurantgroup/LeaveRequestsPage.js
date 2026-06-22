@@ -29,8 +29,13 @@ export default function LeaveRequestsPage() {
   const canApprove = can("leave", "approve");
   const isEmployee = myScope === "staff";
   const actorName = me?.displayName || me?.name || me?.email || "Manager";
-  const [form, setForm] = useState({ staffId: isEmployee ? (myStaff?.id || "") : "", type: TYPES[0], start: "", end: "", reason: "" });
+  const [form, setForm] = useState({ venueId: "", staffId: isEmployee ? (myStaff?.id || "") : "", type: TYPES[0], start: "", end: "", reason: "" });
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  // venue → staff: staff options narrow to the chosen venue (managers/owners submit for their team)
+  const venueStaffOptions = useMemo(
+    () => scopedStaff.filter((s) => !form.venueId || (s.venueIds || []).includes(form.venueId) || s.venueId === form.venueId),
+    [scopedStaff, form.venueId]
+  );
 
   // who this user is allowed to submit-for / see leave of
   const scopedIds = useMemo(() => new Set(scopedStaff.map((s) => s.id)), [scopedStaff]);
@@ -58,7 +63,9 @@ export default function LeaveRequestsPage() {
     // file the request under a venue the staff member actually belongs to; derive the
     // venue NAME from the same id so the doc location and the displayed name never disagree.
     const stVenues = st?.venueIds?.length ? st.venueIds : (st?.venueId ? [st.venueId] : []);
-    const vid = (selectedVenue !== "all" && stVenues.includes(selectedVenue)) ? selectedVenue : stVenues[0];
+    // prefer the venue chosen in the form, else the selected venue, else the staff's first venue
+    const vid = (form.venueId && stVenues.includes(form.venueId)) ? form.venueId
+      : (selectedVenue !== "all" && stVenues.includes(selectedVenue)) ? selectedVenue : stVenues[0];
     if (!vid) return showToast("This staff member has no venue assigned");
     const venueName = venues.find((v) => v.id === vid)?.name || st?.venueNames?.[0] || "";
     try {
@@ -71,7 +78,7 @@ export default function LeaveRequestsPage() {
       });
       showToast("Leave request submitted — manager notified");
       sendNotification(groupId, { to: "managers", type: "leave", title: "New leave request", body: `${st?.displayName || fullName(st)} · ${form.type} ${fmtRange(form.start, form.end)}`, venueId: vid, by: st?.displayName || fullName(st) });
-      setForm({ staffId: "", type: TYPES[0], start: "", end: "", reason: "" });
+      setForm({ venueId: "", staffId: "", type: TYPES[0], start: "", end: "", reason: "" });
     } catch { showToast("Could not submit request"); }
   };
 
@@ -116,14 +123,23 @@ export default function LeaveRequestsPage() {
         {/* Submit */}
         <div className="card">
           <div className="card-head"><span className="card-title">Submit leave request</span></div>
+          {!isEmployee && (
+            <div className="form-group">
+              <label className="form-label">Venue</label>
+              <select className="form-input" value={form.venueId} onChange={(e) => setForm((p) => ({ ...p, venueId: e.target.value, staffId: "" }))}>
+                <option value="">All my venues</option>
+                {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            </div>
+          )}
           <div className="form-group">
             <label className="form-label">Staff member {isEmployee && <span style={{ color: "var(--gray)", fontWeight: 400 }}>(you)</span>}</label>
             {isEmployee ? (
               <input className="form-input" value={myStaff ? fullName(myStaff) : "—"} disabled style={{ background: "var(--gray-light)", color: "var(--gray)" }} />
             ) : (
               <select className="form-input" value={form.staffId} onChange={setF("staffId")}>
-                <option value="">Select staff member...</option>
-                {scopedStaff.map((s) => <option key={s.id} value={s.id}>{fullName(s)}</option>)}
+                <option value="">{form.venueId ? "Select staff in this venue..." : "Select staff member..."}</option>
+                {venueStaffOptions.map((s) => <option key={s.id} value={s.id}>{fullName(s)}</option>)}
               </select>
             )}
             {myScope === "manager" && <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>You can submit for staff at your venue(s).</div>}

@@ -69,7 +69,7 @@ const AREA_GROUPS = [
 ];
 
 export default function ShiftPlannerPage() {
-  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope } = useRG();
   const canEdit = can("shifts", "edit");
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
@@ -193,6 +193,11 @@ export default function ShiftPlannerPage() {
     const clash = weekShifts.find((sh) => sh.id !== form.editId && sh.staffId === form.staffId && sh.day === dayIdx
       && ns < parseTime(sh.end) && parseTime(sh.start) < ne);
     if (clash) return showToast(`Already rostered ${clash.start}–${clash.end} at ${clash.venue} that day — can't double-book.`);
+    // approved leave blocks rostering across ALL venues (leave is group-wide for the person)
+    const sd = new Date(`${wk}T00:00:00`); sd.setDate(sd.getDate() + dayIdx);
+    const shiftDate = `${sd.getFullYear()}-${String(sd.getMonth() + 1).padStart(2, "0")}-${String(sd.getDate()).padStart(2, "0")}`;
+    const onLeave = (leave || []).find((l) => l.status === "Approved" && l.staffId === form.staffId && (l.startDate || "") <= shiftDate && (l.endDate || l.startDate || "") >= shiftDate);
+    if (onLeave) return showToast(`${fullName(st)} is on approved ${onLeave.type} that day (${onLeave.dates}) — on leave across all venues.`);
     const type = parseTime(form.start) >= 15 ? "evening" : "morning";
     const station = stations.find((s) => s.id === form.stationId && s.venueId === venue.id);
     const editing = form.editId ? shifts.find((s) => s.id === form.editId) : null;
