@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, query, where, setDoc, serverTimestamp, arrayUnion, arrayRemove } from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from "firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
 import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol } from "../../utils/restaurantGroupPaths";
@@ -96,6 +96,7 @@ export default function StaffDirectoryPage() {
     } catch { /* non-blocking */ }
   };
   const [roleFilter, setRoleFilter] = useState("all");
+  const [showLeft, setShowLeft] = useState(false); // archive view: hide Left staff by default, toggle to see only them
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState(blankForm(selectedVenue));
@@ -123,10 +124,13 @@ export default function StaffDirectoryPage() {
       // area buttons carry the configured area value (case-insensitive match); "manager" is special
       return sa.some((a) => a.toLowerCase() === roleFilter.toLowerCase()) || (roleFilter === "manager" && /manager|supervisor|in charge/i.test(s.role));
     });
+    // archive: Left staff are hidden from the active grid; the "Left" toggle shows only them
+    list = showLeft ? list.filter((s) => s.status === "Left") : list.filter((s) => s.status !== "Left");
     const t = search.trim().toLowerCase();
     if (t) list = list.filter((s) => `${s.displayName || s.name} ${s.role} ${(s.venueNames || []).join(" ")} ${s.email || ""} ${s.pin || ""}`.toLowerCase().includes(t));
     return list;
-  }, [venueScoped, roleFilter, search]);
+  }, [venueScoped, roleFilter, search, showLeft]);
+  const leftCount = useMemo(() => venueScoped.filter((s) => s.status === "Left").length, [venueScoped]);
 
   const onShiftToday = useMemo(() => {
     const ids = new Set(shifts.filter((sh) => sh.day === DAY_IDX).map((sh) => sh.staffId));
@@ -181,6 +185,13 @@ export default function StaffDirectoryPage() {
   );
   const toggleVenue = (vid, target, setter) => setter((p) => ({ ...p, venueIds: p.venueIds.includes(vid) ? p.venueIds.filter((x) => x !== vid) : [...p.venueIds, vid] }));
 
+  // send a Firebase password-reset email to an existing login (client-doable; setting a
+  // new password directly for another user needs the Admin SDK / a Cloud Function).
+  const resetPassword = async (email) => {
+    if (!email) return showToast("No login email on file");
+    try { await sendPasswordResetEmail(getAuth(), email); showToast(`Password reset email sent to ${email}`); }
+    catch { showToast("Could not send reset email"); }
+  };
   // create the linked Firebase Auth (email+password) admin account + permissions
   const createAdminLogin = async ({ email, password, name, role, venueIds, permissions }) => {
     const tempApp = initializeApp(firebaseConfig, `staffCreator_${Date.now()}`);
@@ -587,6 +598,9 @@ export default function StaffDirectoryPage() {
         <FilterBtn id="manager">Managers</FilterBtn>
         {/* area filters from the group's configured areas (mirrors training/sop/checklist filters) */}
         {areas.map((a) => <FilterBtn key={a} id={a}>{a}</FilterBtn>)}
+        {/* archive view — Left staff are hidden by default; toggle to review them */}
+        <button className="btn btn-sm" onClick={() => setShowLeft((v) => !v)} title="Archived / left staff"
+          style={showLeft ? { background: "var(--gray)", color: "#fff", borderColor: "var(--gray)" } : undefined}>🗄 Left{leftCount ? ` (${leftCount})` : ""}</button>
         <input className="form-input" style={{ width: 200, marginLeft: "auto" }} placeholder="🔍 Search staff / PIN..." value={search} onChange={(e) => setSearch(e.target.value)} />
         {canEdit && <button className="btn btn-sm btn-primary" onClick={() => { setForm(blankForm(selectedVenue)); setAddOpen(true); }}>+ Add Staff</button>}
       </div>
@@ -936,7 +950,12 @@ export default function StaffDirectoryPage() {
                       <div className="form-group" style={{ margin: 0 }}><label className="form-label">Password</label><input className="form-input" value={edit.password} onChange={setE("password")} placeholder="auto if blank" /></div>
                     </div>
                   )}
-                  {profile.adminUid && <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>Login exists ({profile.email}) — manage permissions in User Management.</div>}
+                  {profile.adminUid && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: "var(--gray)" }}>Login exists ({profile.email}) — manage permissions in User Management.</div>
+                      <button type="button" className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => resetPassword(profile.email)}>Send password reset email</button>
+                    </div>
+                  )}
                 </div>
                 {confirmSave && <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 8, padding: "8px 10px", background: "var(--gray-light)", borderRadius: 8 }}>⚠ These changes will be logged and the super admin notified. Click <strong>Confirm &amp; save</strong> to proceed.</div>}
                 <div className="btn-row">
