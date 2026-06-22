@@ -422,7 +422,7 @@ export default function StaffDirectoryPage() {
   const [archivedTraining, setArchivedTraining] = useState(null); // null = loading, [] = none
   const [archivedChecklists, setArchivedChecklists] = useState(null);
   const [openArchiveId, setOpenArchiveId] = useState(null);
-  const openArchiveRecord = useMemo(() => (archivedTraining || []).find((a) => a.id === openArchiveId) || null, [archivedTraining, openArchiveId]);
+  const openArchiveRecord = useMemo(() => (archivedTraining || []).find((a) => a.id === openArchiveId) || (archivedChecklists || []).find((a) => a.id === openArchiveId) || null, [archivedTraining, archivedChecklists, openArchiveId]);
 
   // fetch the private payroll doc when a profile opens (only managers/admins can read it)
   useEffect(() => {
@@ -949,8 +949,9 @@ export default function StaffDirectoryPage() {
                       <span style={{ fontSize: 12 }}>
                         {a.checklistTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span>
                         {a.archivedReason && <span className="pill pill-gray" style={{ marginLeft: 6 }}>{a.archivedReason}</span>}
+                        <span style={{ color: "var(--gray)", marginLeft: 6 }}>{a.completedAt ? `· completed ${tsLabel(a.completedAt)}` : (a.archivedAt ? `· archived ${tsLabel(a.archivedAt)}` : "")}</span>
                       </span>
-                      <span style={{ fontSize: 10, color: "var(--gray)" }}>{a.completedAt ? `completed ${tsLabel(a.completedAt)}` : (a.archivedAt ? `archived ${tsLabel(a.archivedAt)}` : "")}</span>
+                      <button className="btn btn-sm" onClick={() => setOpenArchiveId(a.id)}>View</button>
                     </div>
                   ))}
                 </div>
@@ -1127,7 +1128,10 @@ export default function StaffDirectoryPage() {
         <ChecklistAssignmentDetail assignment={openChecklistAssignment} liveChecklist={checklists.find((c) => c.id === openChecklistAssignment.checklistId) || checklists.find((c) => c.title === openChecklistAssignment.checklistTitle && c.venueId === openChecklistAssignment.venueId)} groupId={groupId} canTick={canEdit} canComment={canEdit} actorName={actorName} showToast={showToast} onClose={() => setOpenChecklistId(null)} />
       )}
       {/* Archived training — strictly read-only (all caps disabled, so no writes can occur) */}
-      {openArchiveRecord && (
+      {openArchiveRecord && (openArchiveRecord.kind === "checklist" || openArchiveRecord.checklistTitle) && (
+        <ChecklistAssignmentDetail assignment={openArchiveRecord} liveChecklist={checklists.find((c) => c.id === openArchiveRecord.checklistId) || checklists.find((c) => c.title === openArchiveRecord.checklistTitle && c.venueId === openArchiveRecord.venueId)} groupId={groupId} canTick={false} canComment={false} actorName={actorName} showToast={showToast} onClose={() => setOpenArchiveId(null)} />
+      )}
+      {openArchiveRecord && !(openArchiveRecord.kind === "checklist" || openArchiveRecord.checklistTitle) && (
         <AssignmentDetail assignment={openArchiveRecord} liveModule={modules.find((m) => m.id === openArchiveRecord.moduleId)} groupId={groupId} canTick={false} canVerify={false} canComment={false} actorName={actorName} showToast={showToast} onClose={() => setOpenArchiveId(null)} />
       )}
     </>
