@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { updateDoc, addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol } from "../../utils/restaurantGroupPaths";
@@ -37,6 +38,7 @@ const AUTO_STARTS = ["", "7:00am", "7:30am", "8:00am", "9:00am", "10:00am", "11:
 
 export default function ChecklistsPage() {
   const { groupId, venues, staff, checklists, checklistAssignments, stations, roles, areas, shifts, selectedVenue, showToast, can, me } = useRG();
+  const navigate = useNavigate();
   // checklist area options: configured staff areas + the universal "All"
   const AREA_OPTS = useMemo(() => [...areas, "All"], [areas]);
   const canEdit = can("checklists", "edit");
@@ -419,7 +421,10 @@ export default function ChecklistsPage() {
             </div>
             {/* Slot links — assignment follows the shift slot, not the person */}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 12 }}>
-              <label className="form-label">LINK TO SHIFTS — CHECKLIST APPEARS WHEN THIS SHIFT IS PUBLISHED</label>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <label className="form-label" style={{ margin: 0 }}>LINK TO SHIFTS — CHECKLIST APPEARS WHEN THIS SHIFT IS PUBLISHED</label>
+                <button type="button" className="btn btn-sm" title="Open the Shift Planner to review/roster shifts" onClick={() => navigate("/rg/shifts")}>Open Shift Planner ↗</button>
+              </div>
               {slotGrid.isEmpty ? (
                 <div style={{ fontSize: 11, color: "var(--gray)" }}>No shifts found for this venue. Add shifts in the Shift Planner first.</div>
               ) : (
