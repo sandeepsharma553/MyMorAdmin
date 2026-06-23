@@ -3,7 +3,7 @@ import { getDoc } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { staffPrivateDoc } from "../../utils/restaurantGroupPaths";
 import { fullName, weekKeyOf, weekDayIndex } from "./rgUtils";
-import { isJuniorType, isMinorDob } from "./staffMinorUtils";
+import { isJuniorType, isMinorDob, parseDob } from "./staffMinorUtils";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -19,16 +19,19 @@ export default function CalendarPage() {
   // under-18 by DOB (private — owner/storeAdmin/managers; rules gate the read). Mirrors Staff
   // Directory so a DOB-under-18 staffer counts as "under-18 birthday" even if type isn't "Junior".
   const [minorIds, setMinorIds] = useState(() => new Set());
+  const [dobMap, setDobMap] = useState(() => ({})); // id → dob string (for ages)
   const idsKey = staff.map((s) => s.id).join(",");
   useEffect(() => {
-    if (isStaff || !groupId || !staff.length) { setMinorIds(new Set()); return; }
+    if (isStaff || !groupId || !staff.length) { setMinorIds(new Set()); setDobMap({}); return; }
     let alive = true;
     Promise.all(staff.map((s) => getDoc(staffPrivateDoc(groupId, s.id))
       .then((d) => ({ id: s.id, dob: d.exists() ? d.data().dob : "" })).catch(() => ({ id: s.id, dob: "" }))))
-      .then((rows) => { if (!alive) return; const set = new Set(); rows.forEach((r) => { if (isMinorDob(r.dob)) set.add(r.id); }); setMinorIds(set); });
+      .then((rows) => { if (!alive) return; const set = new Set(); const map = {}; rows.forEach((r) => { if (r.dob) map[r.id] = r.dob; if (isMinorDob(r.dob)) set.add(r.id); }); setMinorIds(set); setDobMap(map); });
     return () => { alive = false; };
   }, [groupId, idsKey, isStaff]); // eslint-disable-line react-hooks/exhaustive-deps
   const isUnder18 = (s) => minorIds.has(s.id) || isJuniorType(s.type);
+  // age a staffer turns on a given date (their birthday) — needs DOB (owner/storeAdmin/manager)
+  const ageTurningOn = (id, date) => { const d = parseDob(dobMap[id]); return d ? date.getFullYear() - d.getFullYear() : null; };
   const [monthOffset, setMonthOffset] = useState(0);
   const [view, setView] = useState(isStaff ? "week" : "month"); // staff: 2-week window only → week view
   const [weekOffset, setWeekOffset] = useState(0);
@@ -224,7 +227,7 @@ export default function CalendarPage() {
             <div className="modal-head"><span className="modal-title">{DOW[(dayOpen.getDay() + 6) % 7]} {dayOpen.getDate()} {MONTHS[dayOpen.getMonth()]}</span><button className="modal-close" onClick={() => setDayOpen(null)}>✕</button></div>
             {detail.sh.length + detail.lv.length + detail.tr.length + detail.bd.length === 0 && <div style={{ fontSize: 13, color: "var(--gray)" }}>Nothing scheduled.</div>}
             {detail.bd.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Birthdays 🎂</div>
-              {detail.bd.map((s) => { const j = isUnder18(s); return <div key={s.id} style={{ fontSize: 13, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill" style={{ background: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }}>{j ? "🎉 Turning 18" : "🎂 Happy birthday"}</span> {nameOf(s.id)}{j ? " — turning 18 today" : ""}</div>; })}</>}
+              {detail.bd.map((s) => { const j = isUnder18(s); const age = ageTurningOn(s.id, dayOpen); return <div key={s.id} style={{ fontSize: 13, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill" style={{ background: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }}>{j ? "🎉 Turning 18" : "🎂 Happy birthday"}</span> {nameOf(s.id)}{age != null ? ` — turning ${age} (${age - 1} → ${age})` : (j ? " — turning 18 today" : "")}</div>; })}</>}
             {detail.sh.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Shifts</div>
               {detail.sh.map((s) => <div key={s.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span><strong>{s.start}–{s.end}</strong> · {nameOf(s.staffId)}</span><span style={{ color: "var(--gray)" }}>{shortRole(s.role)}{s.station ? ` · ${s.station}` : ""} · {s.venue}</span></div>)}</>}
             {detail.lv.length > 0 && <><div className="form-label" style={{ marginTop: 10 }}>Approved leave</div>
