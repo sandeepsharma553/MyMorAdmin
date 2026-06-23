@@ -499,6 +499,29 @@ export default function StaffDirectoryPage() {
   const myTrainingActive = useMemo(() => myTraining.filter((a) => showInActiveList(a)), [myTraining]);
   // an assignment is an SOP if its module is flagged sop (SOPs share the module library)
   const isSopAssign = (a) => { const m = modules.find((x) => x.id === a.moduleId); return !!(m && m.sop); };
+  // one archived training/SOP row (shared by the Past/archived training + SOPs sections)
+  const ArchivedTrainingRow = ({ a }) => (
+    <div style={{ padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+      <div className="staff-meta-row" style={{ justifyContent: "space-between" }}>
+        <span style={{ fontSize: 12 }}>
+          {a.moduleTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span>
+          {a.archivedReason && <span className="pill pill-gray" style={{ marginLeft: 6 }}>{a.archivedReason}</span>}
+        </span>
+        <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+          {a.verified && <span className="pill pill-green">✓ Verified</span>}
+          <span className={`pill ${trainingStatusPill(a.status)}`}>{a.status}</span>
+          <button className="btn btn-sm" onClick={() => setOpenArchiveId(a.id)}>View</button>
+        </span>
+      </div>
+      <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 2 }}>
+        {a.completedAt ? `completed ${tsLabel(a.completedAt)}` : ""}
+        {a.verifiedBy ? `${a.completedAt ? " · " : ""}Signed off by ${a.verifiedBy}` : ""}
+        {a.verifiedAt ? `${(a.completedAt || a.verifiedBy) ? " · " : ""}${tsLabel(a.verifiedAt)}` : ""}
+        {a.archivedAt ? `${(a.completedAt || a.verifiedBy || a.verifiedAt) ? " · " : ""}archived ${tsLabel(a.archivedAt)}` : ""}
+        {a.verifyNote ? <span style={{ display: "block", color: "var(--ink)" }}>“{a.verifyNote}”</span> : null}
+      </div>
+    </div>
+  );
   const myChecklistsActive = useMemo(() => myChecklists.filter((a) => showInActiveList(a)), [myChecklists]);
 
   // ── Activity & history tab ──
@@ -979,37 +1002,31 @@ export default function StaffDirectoryPage() {
                   {myTrainingActive.filter((a) => isSopAssign(a)).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No SOPs assigned.</div>}
                 </div>
 
-                {/* Past / archived training — preserved when a training was removed or reassigned */}
-                <div style={{ marginTop: 16 }}>
-                  <div className="card-head" style={{ marginBottom: 8 }}>
-                    <span className="card-title">Past / archived training</span>
-                    {archivedTraining && archivedTraining.length > 0 && <span className="pill pill-gray">{archivedTraining.length}</span>}
-                  </div>
-                  {archivedTraining === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
-                  {archivedTraining && archivedTraining.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No archived training.</div>}
-                  {(archivedTraining || []).map((a) => (
-                    <div key={a.id} style={{ padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
-                      <div className="staff-meta-row" style={{ justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 12 }}>
-                          {a.moduleTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span>
-                          {a.archivedReason && <span className="pill pill-gray" style={{ marginLeft: 6 }}>{a.archivedReason}</span>}
-                        </span>
-                        <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                          {a.verified && <span className="pill pill-green">✓ Verified</span>}
-                          <span className={`pill ${trainingStatusPill(a.status)}`}>{a.status}</span>
-                          <button className="btn btn-sm" onClick={() => setOpenArchiveId(a.id)}>View</button>
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 2 }}>
-                        {a.completedAt ? `completed ${tsLabel(a.completedAt)}` : ""}
-                        {a.verifiedBy ? `${a.completedAt ? " · " : ""}Signed off by ${a.verifiedBy}` : ""}
-                        {a.verifiedAt ? `${(a.completedAt || a.verifiedBy) ? " · " : ""}${tsLabel(a.verifiedAt)}` : ""}
-                        {a.archivedAt ? `${(a.completedAt || a.verifiedBy || a.verifiedAt) ? " · " : ""}archived ${tsLabel(a.archivedAt)}` : ""}
-                        {a.verifyNote ? <span style={{ display: "block", color: "var(--ink)" }}>“{a.verifyNote}”</span> : null}
-                      </div>
+                {/* Past / archived training (non-SOP) */}
+                {(() => { const rows = (archivedTraining || []).filter((a) => !isSopAssign(a)); return (
+                  <div style={{ marginTop: 16 }}>
+                    <div className="card-head" style={{ marginBottom: 8 }}>
+                      <span className="card-title">Past / archived training</span>
+                      {rows.length > 0 && <span className="pill pill-gray">{rows.length}</span>}
                     </div>
-                  ))}
-                </div>
+                    {archivedTraining === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
+                    {archivedTraining && rows.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No archived training.</div>}
+                    {rows.map((a) => <ArchivedTrainingRow key={a.id} a={a} />)}
+                  </div>
+                ); })()}
+
+                {/* Past / archived SOPs */}
+                {(() => { const rows = (archivedTraining || []).filter((a) => isSopAssign(a)); return (
+                  <div style={{ marginTop: 16 }}>
+                    <div className="card-head" style={{ marginBottom: 8 }}>
+                      <span className="card-title">Past / archived SOPs</span>
+                      {rows.length > 0 && <span className="pill pill-gray">{rows.length}</span>}
+                    </div>
+                    {archivedTraining === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
+                    {archivedTraining && rows.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No archived SOPs.</div>}
+                    {rows.map((a) => <ArchivedTrainingRow key={a.id} a={a} />)}
+                  </div>
+                ); })()}
 
                 {/* Past / archived checklists — a dated entry per completion (+ reassign/remove) */}
                 <div style={{ marginTop: 16 }}>
