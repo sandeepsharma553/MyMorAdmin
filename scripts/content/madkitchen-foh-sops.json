@@ -1,0 +1,224 @@
+{
+  "sourceTitle": "Mad Kitchen FOH SOPs (Bar / Barista / Floor on duty)",
+  "venues": ["mad-benji"],
+  "modules": [
+    {
+      "key": "sop-bar-on-duty",
+      "title": "Bar On Duty — SOP",
+      "cat": "FOH",
+      "sop": true,
+      "mandatory": true,
+      "duration": "30 min",
+      "icon": "🍸",
+      "color": "#dcfce7",
+      "desc": "Standard operating procedure for the bar / counter station on duty.",
+      "steps": [
+        {
+          "heading": "Rules",
+          "items": [
+            "Greet customers at all times unless you are serving someone at the counter.",
+            "Keep bench & ice cream freezer clear — remove dirty dishes immediately.",
+            "Keep ice cream freezer sliding doors clear at all times."
+          ]
+        },
+        {
+          "heading": "1. Counter service",
+          "items": [
+            "Greet customers with a smile.",
+            "Ask customers: dine-in / takeaway / phone order / online order.",
+            "Phone order: needs to pay at counter.",
+            "Online order: already paid.",
+            "Dine-in: when floor staff is busy, seat them and provide menu and water, then assign them to floor staff.",
+            "Dine-in order at counter: record name as “Dine in”.",
+            "Takeaway: always take names — record as “TA Cassie / TA Cassie with food / TA Cassie with toasties”.",
+            "Phone order: always take names — record as “PU Imogen / PU Imogen with food / PU Imogen with benji roll”."
+          ]
+        },
+        {
+          "heading": "3. Completed order handover",
+          "items": [
+            "Hand over drinks / food / combined.",
+            "Uber & DoorDash: confirm driver app name and order details."
+          ]
+        },
+        {
+          "heading": "4. Ready orders & heat lamp",
+          "items": [
+            "Put ready orders under the heat lamp.",
+            "Heat lamp OFF for: poke bowl / açai / pancake / French toast.",
+            "Make cold drinks while balancing the counter and waiting / to-be-seated customers."
+          ]
+        },
+        {
+          "heading": "Prioritise orders",
+          "items": [
+            "1. Takeaway, no food",
+            "2. Dine in",
+            "3. Takeaway with food",
+            "4. Pick up orders",
+            "5. Uber / DoorDash"
+          ]
+        },
+        {
+          "heading": "Group orders",
+          "items": [
+            "Check dine in / takeaway.",
+            "Batch the same drinks together.",
+            "E.g. 3 iced latte base / 2 berry madness / 4 chocolate milkshake."
+          ]
+        },
+        {
+          "heading": "When drinks are under control (fewer than 2–3 fresh orders)",
+          "items": [
+            "Remove dirty dishes on the bench immediately.",
+            "Help running food and drinks.",
+            "Help floor staff.",
+            "Sort out Uber / DoorDash orders.",
+            "Load dirty dishes onto a tray and take them to the dishwasher before returning to fresh orders.",
+            "Polish and put away clean dishes before returning to fresh orders.",
+            "Bring dirty dishes to the kitchen.",
+            "Wash cutlery if the kitchen is busy.",
+            "Empty juicer basket, milk crate and bins.",
+            "Make retail coffee bags.",
+            "Help barista ONLY when busy: pull shots, top up coffee beans, top up milk, top up takeaway cups & lids, empty knock tube."
+          ]
+        }
+      ]
+    },
+    {
+      "key": "sop-barista-on-duty",
+      "title": "Barista On Duty — SOP",
+      "cat": "FOH",
+      "sop": true,
+      "mandatory": true,
+      "duration": "30 min",
+      "icon": "☕",
+      "color": "#fef3c7",
+      "desc": "Standard operating procedure for the barista station on duty.",
+      "steps": [
+        {
+          "heading": "Rule",
+          "items": [
+            "Your job is not just making coffee.",
+            "Greet customers while you are making coffee or doing other tasks.",
+            "Clean your station as you go."
+          ]
+        },
+        {
+          "heading": "1. Coffee orders",
+          "items": [
+            "Prioritise coffee orders by food-prep time and order type: 1. Takeaway no food, 2. Dine in, 3. Takeaway with food, 4. Pick ups, 5. Uber & DoorDash.",
+            "Takeaway — make immediately for all rolls (Benji Roll, Hash Brown Roll, Egg & Bacon Roll).",
+            "Delay slightly or ask the kitchen for: Croissants (5 min), Toasties (6–8 min), Bagels (6–8 min), Burgers (6–8 min), Wings (10–15 min), Breakfast (15 min)."
+          ]
+        },
+        {
+          "heading": "2. Call out orders",
+          "items": [
+            "Clearly call out when orders are ready for handing out or pickup (drinks only, or combined drinks and food)."
+          ]
+        },
+        {
+          "heading": "3. When coffee orders are under control (fewer than 2–3 fresh orders)",
+          "items": [
+            "Restock the coffee station for the next rush.",
+            "Rinse all cloths & the group handle.",
+            "Serve counter customers.",
+            "Assign tables and provide menus and water to waiting / to-be-seated customers.",
+            "Help running food and drinks.",
+            "Sort out Uber and DoorDash orders.",
+            "Make or assist with cold drinks to free up bar staff.",
+            "Put away dirty dishes on the bench.",
+            "Load dirty dishes onto a tray and take them to the dishwasher before returning to fresh coffee orders.",
+            "Polish and put away clean dishes before returning to fresh coffee orders.",
+            "Bring dirty dishes to the kitchen.",
+            "Wash cutlery if the kitchen is busy.",
+            "Empty bins, milk crates, knock tube.",
+            "Make retail coffee bags."
+          ]
+        },
+        {
+          "heading": "Before break",
+          "items": [
+            "Restock the coffee station.",
+            "Restock any milk if running very low.",
+            "Empty bins, milk crates, and knock tube."
+          ]
+        }
+      ]
+    },
+    {
+      "key": "sop-floor-on-duty",
+      "title": "Floor On Duty — SOP",
+      "cat": "FOH",
+      "sop": true,
+      "mandatory": true,
+      "duration": "30 min",
+      "icon": "🍽️",
+      "color": "#e0f2fe",
+      "desc": "Standard operating procedure for the floor station on duty.",
+      "steps": [
+        {
+          "heading": "Rules",
+          "items": [
+            "Full floor scan at all times (who is waiting, who has ordered, who needs attention, who has waited too long for food/drinks).",
+            "Check table layout at all times (ensure orders are correctly put through).",
+            "Your floor must be 100% under control before helping any other station."
+          ]
+        },
+        {
+          "heading": "1. Queue management",
+          "items": [
+            "Manage the full queue first — do not serve customers individually out of sequence.",
+            "Greet with a smile.",
+            "Identify dine-in / takeaway / phone orders / Uber or DoorDash.",
+            "Takeaway / phone / Uber / DoorDash: direct customers to the counter.",
+            "Dine-in: seat all dine-in customers first; menus and water come second. E.g. if there are 3 groups, seat all three groups first."
+          ]
+        },
+        {
+          "heading": "2. Taking orders (do not forget to put orders through)",
+          "items": [
+            "Repeat the order with eye contact and enter it immediately.",
+            "Check dietary requirements with the kitchen or manager if unsure.",
+            "Set up cutlery."
+          ]
+        },
+        {
+          "heading": "4. Run food & drinks",
+          "items": [
+            "Run food and drinks promptly.",
+            "Clear tables as soon as customers finish — do not wait for them to leave."
+          ]
+        },
+        {
+          "heading": "5. Water service",
+          "items": [
+            "All dining tables must have water.",
+            "Replace water bottles when they are running low."
+          ]
+        },
+        {
+          "heading": "6. Customer departure",
+          "items": [
+            "Thank customers when they leave and ask: “How was everything today?”",
+            "Report all feedback, suggestions, complaints, compliments and special occasions (birthday, newborn, etc)."
+          ]
+        },
+        {
+          "heading": "When the floor is under control",
+          "items": [
+            "Support bar / barista — take orders or make drinks.",
+            "When the floor needs support again (new customers / run food & drinks / cleaning): finish the current task, inform bar/barista staff, then return to floor immediately.",
+            "Maintain full floor scan (every 1–2 min): check all tables — finished plates, empty glasses, water level, customer signals.",
+            "Reset and prepare tables — always keep them “ready to sit”.",
+            "Stock check & refill (do not wait till empty): napkins / cutlery / water / water cups / dog water; top up banana bread / cookies / takeaway menus / loyalty cards.",
+            "Polish and put away clean dishes & cutlery.",
+            "Sort out Uber and DoorDash orders.",
+            "Put ready orders under the heat lamp (heat lamp OFF for poke bowl / açai / pancake / French toast)."
+          ]
+        }
+      ]
+    }
+  ]
+}
