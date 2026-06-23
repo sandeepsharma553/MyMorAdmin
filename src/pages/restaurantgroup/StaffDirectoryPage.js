@@ -497,6 +497,8 @@ export default function StaffDirectoryPage() {
   const myChecklists = useMemo(() => profile ? checklistAssignments.filter((a) => a.staffId === profile.id) : [], [profile, checklistAssignments]);
   // active-list views: hide Complete items older than 48h (stats/dedup keep the full lists)
   const myTrainingActive = useMemo(() => myTraining.filter((a) => showInActiveList(a)), [myTraining]);
+  // an assignment is an SOP if its module is flagged sop (SOPs share the module library)
+  const isSopAssign = (a) => { const m = modules.find((x) => x.id === a.moduleId); return !!(m && m.sop); };
   const myChecklistsActive = useMemo(() => myChecklists.filter((a) => showInActiveList(a)), [myChecklists]);
 
   // ── Activity & history tab ──
@@ -935,13 +937,13 @@ export default function StaffDirectoryPage() {
                   </div>
                 )}
 
-                {/* Assigned training */}
+                {/* Assigned training (non-SOP modules) */}
                 <div style={{ marginTop: 16 }}>
                   <div className="card-head" style={{ marginBottom: 8 }}>
                     <span className="card-title">Assigned training</span>
                     {canEdit && <button className="btn btn-sm btn-primary" onClick={() => openAssign("training")}>+ Assign training</button>}
                   </div>
-                  {myTrainingActive.map((a) => (
+                  {myTrainingActive.filter((a) => !isSopAssign(a)).map((a) => (
                     <div key={a.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                       <span style={{ fontSize: 12 }}>{a.moduleTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span></span>
                       <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
@@ -953,7 +955,25 @@ export default function StaffDirectoryPage() {
                       </span>
                     </div>
                   ))}
-                  {myTrainingActive.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No training assigned.</div>}
+                  {myTrainingActive.filter((a) => !isSopAssign(a)).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No training assigned.</div>}
+                </div>
+
+                {/* Assigned SOPs (modules flagged as SOP) */}
+                <div style={{ marginTop: 16 }}>
+                  <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">Assigned SOPs</span></div>
+                  {myTrainingActive.filter((a) => isSopAssign(a)).map((a) => (
+                    <div key={a.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                      <span style={{ fontSize: 12 }}>{a.moduleTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span></span>
+                      <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                        <span style={{ fontSize: 11, color: "var(--gray)" }}>{(a.checks || []).filter(Boolean).length}/{a.itemsTotal || (a.checks || []).length}</span>
+                        {a.verified && <span className="pill pill-green" title={`Verified by ${a.verifiedBy || "trainer"}`}>✓ Verified</span>}
+                        <span className={`pill ${trainingStatusPill(a.status)}`}>{a.status}</span>
+                        <button className="btn btn-sm" onClick={() => setOpenAssignId(a.id)}>Open</button>
+                        {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeAssignment(a, "training")}>✕</button>}
+                      </span>
+                    </div>
+                  ))}
+                  {myTrainingActive.filter((a) => isSopAssign(a)).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No SOPs assigned.</div>}
                 </div>
 
                 {/* Past / archived training — preserved when a training was removed or reassigned */}

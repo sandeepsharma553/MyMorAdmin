@@ -6,7 +6,7 @@ import { fullName, trainingStatusPill, trainingBarColor, progressColor, training
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
-import { orderItemsForStaff, orderStaffForItem, isSuggested } from "./assignmentUtils";
+import { orderItemsForStaff, orderStaffForItem, isSuggested, shouldAutoAssign } from "./assignmentUtils";
 import { stationsForArea, groupItemsByStation, filterByStation, GENERAL_KEY } from "./itemDrilldown";
 import { sendNotification } from "./notify";
 import { RefImageViewer, RefImageEditor } from "./RefImages";
@@ -25,7 +25,7 @@ const TABS = [
 const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent", "Urgent — today"]];
 const ICONS = ["🌅", "🌙", "⭐", "🤝", "🍔", "🥗", "🍳", "🔥", "🛡️", "☕", "🏭", "👑", "📋", "🧂"];
 const MOD_COLORS = [["Amber", "#fef3c7"], ["Purple", "#ede9fe"], ["Yellow", "#fef9c3"], ["Green", "#dcfce7"], ["Red", "#fee2e2"], ["Blue", "#e0f2fe"], ["Cyan", "#cffafe"], ["Pink", "#fce7f3"]];
-const blankModule = () => ({ id: null, venueId: "", title: "", cat: "All", stationId: "", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", link: "", mandatory: false, steps: [{ heading: "Procedure", items: [] }], images: [], autoRoles: [], autoStations: [] });
+const blankModule = () => ({ id: null, venueId: "", title: "", cat: "All", stationId: "", duration: "30 min", icon: "📋", color: "#e0f2fe", desc: "", link: "", mandatory: false, sop: false, steps: [{ heading: "Procedure", items: [] }], images: [], autoRoles: [], autoStations: [] });
 const stepsToEditor = (steps) => (Array.isArray(steps) && steps.length ? steps.map((s) => ({ heading: s.heading || "", items: s.items || [] })) : [{ heading: "Procedure", items: [] }]);
 const editorToSteps = (steps) => (steps || [])
   .map((s) => ({ heading: (s.heading || "").trim(), items: (s.items || []).filter(hasText) }))
@@ -128,7 +128,7 @@ export default function TrainingPage({ initialTab }) {
   const [modEditor, setModEditor] = useState(null);
   const setM = (k) => (e) => setModEditor((p) => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
   const openNewModule = () => setModEditor({ ...blankModule(), venueId: selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || "") });
-  const openEditModule = (m) => { setDetail(null); setModEditor({ id: m.id, venueId: m.venueId || "", title: m.title, cat: m.cat || "All", stationId: m.stationId || "", duration: m.duration, icon: m.icon, color: m.color, desc: m.desc || "", link: m.link || "", mandatory: !!m.mandatory, steps: stepsToEditor(m.steps), images: m.images || [], autoRoles: m.autoAssign?.roles || [], autoStations: m.autoAssign?.stations || (m.stationId ? [m.stationId] : []) }); };
+  const openEditModule = (m) => { setDetail(null); setModEditor({ id: m.id, venueId: m.venueId || "", title: m.title, cat: m.cat || "All", stationId: m.stationId || "", duration: m.duration, icon: m.icon, color: m.color, desc: m.desc || "", link: m.link || "", mandatory: !!m.mandatory, sop: !!m.sop, steps: stepsToEditor(m.steps), images: m.images || [], autoRoles: m.autoAssign?.roles || [], autoStations: m.autoAssign?.stations || (m.stationId ? [m.stationId] : []) }); };
   // step-section editing
   const setStep = (i, k) => (e) => setModEditor((p) => ({ ...p, steps: p.steps.map((s, idx) => idx === i ? { ...s, [k]: e.target.value } : s) }));
   const setStepItems = (i) => (items) => setModEditor((p) => ({ ...p, steps: p.steps.map((s, idx) => idx === i ? { ...s, items } : s) }));
@@ -143,10 +143,29 @@ export default function TrainingPage({ initialTab }) {
     // Area is chosen directly; auto-assign targets one or more stations within that area+venue
     const cat = modEditor.cat || "All";
     const autoStations = (modEditor.autoStations || []).filter((id) => stations.some((s) => s.id === id && s.venueId === vid && s.area === cat));
-    const payload = { title: modEditor.title.trim(), cat, stationId: "", station: "", venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), link: (modEditor.link || "").trim(), mandatory: modEditor.mandatory, steps, images: modEditor.images || [], autoAssign: { roles: [], stations: autoStations } };
+    const payload = { title: modEditor.title.trim(), cat, stationId: "", station: "", venueId: vid, venue: venueNameStr, duration: modEditor.duration, icon: modEditor.icon, color: modEditor.color, desc: modEditor.desc.trim(), link: (modEditor.link || "").trim(), mandatory: modEditor.mandatory, sop: !!modEditor.sop, steps, images: modEditor.images || [], autoAssign: { roles: [], stations: autoStations } };
     try {
-      if (modEditor.id) { await updateDoc(doc(venueTrainingCol(groupId, vid), modEditor.id), payload); showToast("Module updated"); }
-      else { await addDoc(venueTrainingCol(groupId, vid), payload); showToast("Module created"); }
+      let modId = modEditor.id;
+      if (modEditor.id) { await updateDoc(doc(venueTrainingCol(groupId, vid), modEditor.id), payload); }
+      else { const created = await addDoc(venueTrainingCol(groupId, vid), payload); modId = created.id; }
+      // immediate auto-assign: every staff in this venue matching the area + selected stations
+      // (by their Staff Directory profile) gets it now — shows in their "Assigned" list.
+      const saved = { ...payload, id: modId };
+      let assigned = 0;
+      if (autoStations.length) {
+        const targets = staff.filter((s) => shouldAutoAssign(saved, s) && !assignments.some((a) => a.staffId === s.id && a.moduleId === modId));
+        for (const s of targets) {
+          try {
+            await addDoc(venueCol(groupId, vid, "trainingAssignments"), {
+              staffId: s.id, staffName: s.displayName || fullName(s), venue: venueNameStr, venueId: vid,
+              moduleId: modId, moduleTitle: saved.title, due: "", priority: "normal", notes: "",
+              ...snapshotForAssign(saved), status: "Not started", progress: 0, createdAt: serverTimestamp(),
+            });
+            assigned++;
+          } catch { /* skip one, keep going */ }
+        }
+      }
+      showToast(`${modEditor.id ? "Module updated" : "Module created"}${assigned ? ` · auto-assigned to ${assigned} staff` : ""}`);
       setModEditor(null);
     } catch { showToast("Could not save module"); }
   };
@@ -409,9 +428,9 @@ export default function TrainingPage({ initialTab }) {
               <div className="form-group"><label className="form-label">Colour</label>
                 <select className="form-input" value={modEditor.color} onChange={setM("color")}>{MOD_COLORS.map(([l, v]) => <option key={v} value={v}>{l}</option>)}</select>
               </div>
-              <div className="form-group" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 22 }}>
-                <input type="checkbox" checked={modEditor.mandatory} onChange={setM("mandatory")} id="modMand" />
-                <label htmlFor="modMand" className="form-label" style={{ margin: 0 }}>Mandatory</label>
+              <div className="form-group" style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 22, flexWrap: "wrap" }}>
+                <label className="form-label" style={{ margin: 0, display: "flex", alignItems: "center", gap: 6 }}><input type="checkbox" checked={modEditor.mandatory} onChange={setM("mandatory")} /> Mandatory</label>
+                <label className="form-label" style={{ margin: 0, display: "flex", alignItems: "center", gap: 6 }}><input type="checkbox" checked={!!modEditor.sop} onChange={setM("sop")} /> SOP</label>
               </div>
             </div>
             <div className="form-group"><label className="form-label">Description</label><textarea className="form-input" rows={2} value={modEditor.desc} onChange={setM("desc")} /></div>
