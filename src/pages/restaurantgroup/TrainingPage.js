@@ -153,7 +153,7 @@ export default function TrainingPage({ initialTab }) {
       const saved = { ...payload, id: modId };
       let assigned = 0;
       if (autoStations.length) {
-        const targets = staff.filter((s) => shouldAutoAssign(saved, s) && !assignments.some((a) => a.staffId === s.id && a.moduleId === modId));
+        const targets = staff.filter((s) => shouldAutoAssign(saved, s, vid) && !assignments.some((a) => a.staffId === s.id && a.moduleId === modId));
         for (const s of targets) {
           try {
             await addDoc(venueCol(groupId, vid, "trainingAssignments"), {
