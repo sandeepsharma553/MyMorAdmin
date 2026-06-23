@@ -600,7 +600,7 @@ export default function StaffDirectoryPage() {
   const submitAssign = async () => {
     if (!picked.length) return showToast("Pick at least one");
     try {
-      if (assignKind === "training") {
+      if (assignKind === "training" || assignKind === "sop") {
         for (const key of picked) {
           const m = eligibleModules.find((x) => `${x.venueId}:${x.id}` === key);
           if (!m) continue;
@@ -610,7 +610,7 @@ export default function StaffDirectoryPage() {
             ...snapshotForAssign(m), status: "Not started", progress: 0, createdAt: serverTimestamp(),
           });
         }
-        showToast(`Assigned ${picked.length} module(s)`);
+        showToast(`Assigned ${picked.length} ${assignKind === "sop" ? "SOP" : "module"}(s)`);
         sendNotification(groupId, { to: profile.id, type: "training", title: "Training assigned", body: `${picked.length} module(s) assigned to you${assignDue ? ` · due ${assignDue}` : ""}`, by: actorName });
       } else {
         for (const key of picked) {
@@ -960,7 +960,10 @@ export default function StaffDirectoryPage() {
 
                 {/* Assigned SOPs (modules flagged as SOP) */}
                 <div style={{ marginTop: 16 }}>
-                  <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">Assigned SOPs</span></div>
+                  <div className="card-head" style={{ marginBottom: 8 }}>
+                    <span className="card-title">Assigned SOPs</span>
+                    {canEdit && <button className="btn btn-sm btn-primary" onClick={() => openAssign("sop")}>+ Assign SOP</button>}
+                  </div>
                   {myTrainingActive.filter((a) => isSopAssign(a)).map((a) => (
                     <div key={a.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                       <span style={{ fontSize: 12 }}>{a.moduleTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span></span>
@@ -1150,37 +1153,43 @@ export default function StaffDirectoryPage() {
         <div className="rg-modal-overlay" style={{ zIndex: 1100 }} onClick={(e) => e.target === e.currentTarget && setAssignKind(null)}>
           <div className="rg-modal">
             <div className="modal-head">
-              <span className="modal-title">Assign {assignKind === "training" ? "training" : "checklists"} — {profile.displayName || profile.name}</span>
+              <span className="modal-title">Assign {assignKind === "checklist" ? "checklists" : assignKind === "sop" ? "SOPs" : "training"} — {profile.displayName || profile.name}</span>
               <button className="modal-close" onClick={() => setAssignKind(null)}>✕</button>
             </div>
             <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>
               {staffSeesAll(profile) ? "Manager/admin — all modules across their venues." : `Showing ${staffAreas(profile).join(", ") || "—"} + universal items for ${(profile.venueNames || []).join(", ")}.`}
             </div>
-            {assignKind === "training" && (
+            {(assignKind === "training" || assignKind === "sop") && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
                 <div className="form-group" style={{ margin: 0 }}><label className="form-label">Due date</label><input type="date" className="form-input" value={assignDue} onChange={(e) => setAssignDue(e.target.value)} /></div>
                 <div className="form-group" style={{ margin: 0 }}><label className="form-label">Priority</label><select className="form-input" value={assignPriority} onChange={(e) => setAssignPriority(e.target.value)}>{PRIORITIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
                 <div className="form-group" style={{ margin: 0, gridColumn: "1 / -1" }}><label className="form-label">Notes for staff member (optional)</label><textarea className="form-input" rows={2} value={assignNotes} onChange={(e) => setAssignNotes(e.target.value)} placeholder="e.g. focus on espresso dial-in before your next close" /></div>
               </div>
             )}
-            <div style={{ maxHeight: "45vh", overflowY: "auto", border: "0.5px solid var(--border)", borderRadius: 8 }}>
-              {(assignKind === "training" ? eligibleModules : eligibleChecklists).map((m) => {
-                const key = `${m.venueId}:${m.id}`;
-                return (
-                  <label key={key} className="checklist-item" style={{ padding: "8px 10px", cursor: "pointer", margin: 0 }}>
-                    <input type="checkbox" checked={picked.includes(key)} onChange={() => togglePick(key)} />
-                    <span className="check-text">
-                      {assignKind === "training" ? <>{m.icon} {m.title} <span className="pill pill-gray">{m.cat}</span></> : <>{m.title} <span className="pill pill-gray">{m.area || "All"}</span></>}
-                      {profile && isSuggested(m, profile) && <span className="pill pill-green" style={{ marginLeft: 4 }} title="Matches this staff member's area / station / role">Suggested</span>}
-                      <span style={{ color: "var(--gray)" }}> · {m.venue}</span>
-                    </span>
-                  </label>
-                );
-              })}
-              {(assignKind === "training" ? eligibleModules : eligibleChecklists).length === 0 && (
-                <div style={{ fontSize: 12, color: "var(--gray)", padding: 12 }}>Nothing left to assign — all relevant {assignKind === "training" ? "modules" : "checklists"} are already assigned.</div>
-              )}
-            </div>
+            {(() => {
+              const isMod = assignKind !== "checklist";
+              const pool = assignKind === "checklist" ? eligibleChecklists : assignKind === "sop" ? eligibleModules.filter((x) => x.sop) : eligibleModules.filter((x) => !x.sop);
+              return (
+                <div style={{ maxHeight: "45vh", overflowY: "auto", border: "0.5px solid var(--border)", borderRadius: 8 }}>
+                  {pool.map((m) => {
+                    const key = `${m.venueId}:${m.id}`;
+                    return (
+                      <label key={key} className="checklist-item" style={{ padding: "8px 10px", cursor: "pointer", margin: 0 }}>
+                        <input type="checkbox" checked={picked.includes(key)} onChange={() => togglePick(key)} />
+                        <span className="check-text">
+                          {isMod ? <>{m.icon} {m.title} <span className="pill pill-gray">{m.cat}</span></> : <>{m.title} <span className="pill pill-gray">{m.area || "All"}</span></>}
+                          {profile && isSuggested(m, profile) && <span className="pill pill-green" style={{ marginLeft: 4 }} title="Matches this staff member's area / station / role">Suggested</span>}
+                          <span style={{ color: "var(--gray)" }}> · {m.venue}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                  {pool.length === 0 && (
+                    <div style={{ fontSize: 12, color: "var(--gray)", padding: 12 }}>Nothing left to assign — all relevant {assignKind === "checklist" ? "checklists" : assignKind === "sop" ? "SOPs" : "modules"} are already assigned.</div>
+                  )}
+                </div>
+              );
+            })()}
             <div className="btn-row">
               <button className="btn btn-primary" onClick={submitAssign} disabled={!picked.length}>Assign {picked.length || ""}</button>
               <button className="btn" onClick={() => setAssignKind(null)}>Cancel</button>
