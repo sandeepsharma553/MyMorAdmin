@@ -47,6 +47,9 @@ export default function MenusPage() {
 
   const foodCostOf = (m) => menuItemFoodCost(m, recipeByMenuItemId, itemById);
   const marginOf = (m) => marginPct(m.sellPrice, foodCostOf(m));
+  // Takeaway price is null = "same as dine-in sellPrice" (back-compat: items saved
+  // before takeawayPrice existed have no field). Variants carry their own takeawayPrice.
+  const effectiveTakeaway = (m) => (m.takeawayPrice == null ? Number(m.sellPrice) || 0 : Number(m.takeawayPrice) || 0);
 
   const patchItem = async (m, patch, okMsg) => {
     try {
@@ -84,20 +87,81 @@ export default function MenusPage() {
     id: m.id, displayName: m.displayName || "", kitchenName: m.kitchenName || "", category: m.category || categories[0],
     sellPrice: m.sellPrice ?? "", cost: m.cost ?? "", gstApplicable: m.gstApplicable !== false,
     venueIds: m.venueIds || [], posId: m.posId || "", modifierGroupIds: m.modifierGroupIds || [], available: m.available !== false,
+    // Takeaway / variants / combo — form uses "" for "null/blank" numbers; normalised on save.
+    takeawayPrice: m.takeawayPrice ?? "",
+    hasVariants: m.hasVariants === true, variantGroupName: m.variantGroupName || "",
+    variants: (m.variants || []).map((v) => ({
+      label: v.label || "", sellPrice: v.sellPrice ?? "", takeawayPrice: v.takeawayPrice ?? "",
+      posId: v.posId || "", isDefault: !!v.isDefault, available: v.available !== false,
+    })),
+    isCombo: m.isCombo === true,
+    comboGroups: (m.comboGroups || []).map((g) => ({
+      name: g.name || "", maxChoice: g.maxChoice ?? "", optional: !!g.optional,
+      options: (g.options || []).map((o) => ({ menuItemId: o.menuItemId || "", priceDelta: o.priceDelta ?? 0 })),
+    })),
   } : {
     id: null, displayName: "", kitchenName: "", category: categories[0], sellPrice: "", cost: "",
     gstApplicable: true, venueIds: selectedVenue !== "all" ? [selectedVenue] : venues.map((v) => v.id),
     posId: "", modifierGroupIds: [], available: true,
+    takeawayPrice: "", hasVariants: false, variantGroupName: "", variants: [], isCombo: false, comboGroups: [],
   });
   const saveItem = async () => {
     if (!canEdit || !editor) return;
     if (!editor.displayName.trim()) return showToast("Display name is required");
     if (!editor.venueIds.length) return showToast("Pick at least one venue");
+
+    // ── Variants (sizes) — normalise, ensure exactly one default ──
+    const hasVariants = !!editor.hasVariants;
+    let variants = [];
+    if (hasVariants) {
+      variants = (editor.variants || [])
+        .filter((v) => (v.label || "").trim())
+        .map((v) => ({
+          label: v.label.trim(),
+          sellPrice: Number(v.sellPrice) || 0,
+          takeawayPrice: v.takeawayPrice === "" || v.takeawayPrice == null ? null : Number(v.takeawayPrice),
+          posId: v.posId || "",
+          isDefault: !!v.isDefault,
+          available: v.available !== false,
+        }));
+      if (!variants.length) return showToast("Add at least one variant, or turn variants off");
+      // exactly one default: keep the first flagged, else default the first row
+      const firstDefault = variants.findIndex((v) => v.isDefault);
+      variants = variants.map((v, i) => ({ ...v, isDefault: i === (firstDefault === -1 ? 0 : firstDefault) }));
+    }
+    // Top-level sellPrice tracks the default variant when variants are on (handoff rule).
+    const defaultVariant = variants.find((v) => v.isDefault);
+    const sellPrice = hasVariants ? (Number(defaultVariant?.sellPrice) || 0) : (Number(editor.sellPrice) || 0);
+
+    // ── Takeaway price (item level) — null = use sellPrice ──
+    const takeawayPrice = editor.takeawayPrice === "" || editor.takeawayPrice == null ? null : Number(editor.takeawayPrice);
+
+    // ── Combos — only 2 in the demo set; keep simple ──
+    const isCombo = !!editor.isCombo;
+    const comboGroups = isCombo
+      ? (editor.comboGroups || [])
+          .filter((g) => (g.name || "").trim())
+          .map((g) => ({
+            name: g.name.trim(),
+            maxChoice: g.maxChoice === "" || g.maxChoice == null ? null : Number(g.maxChoice),
+            optional: !!g.optional,
+            options: (g.options || [])
+              .filter((o) => o.menuItemId)
+              .map((o) => ({ menuItemId: o.menuItemId, priceDelta: Number(o.priceDelta) || 0 })),
+          }))
+      : [];
+    if (isCombo && !comboGroups.length) return showToast("Add at least one combo group, or turn combo off");
+
     const data = {
       displayName: editor.displayName.trim(), kitchenName: editor.kitchenName || "", category: editor.category,
-      sellPrice: Number(editor.sellPrice) || 0, cost: Number(editor.cost) || 0, gstApplicable: !!editor.gstApplicable,
+      sellPrice, cost: Number(editor.cost) || 0, gstApplicable: !!editor.gstApplicable,
       venueIds: editor.venueIds, posId: editor.posId || "", modifierGroupIds: editor.modifierGroupIds,
-      available: !!editor.available, updatedAt: serverTimestamp(),
+      available: !!editor.available,
+      // New, all optional/back-compatible (default-off): existing items save unchanged in behaviour.
+      takeawayPrice,
+      hasVariants, variantGroupName: hasVariants ? (editor.variantGroupName || "") : "", variants,
+      isCombo, comboGroups,
+      updatedAt: serverTimestamp(),
     };
     try {
       if (editor.id) await setDoc(menuItemDoc(groupId, editor.id), data, { merge: true });
@@ -254,10 +318,13 @@ export default function MenusPage() {
               <tbody>
                 {vItems.map((m) => (
                   <tr key={m.id} style={{ opacity: m.e86 ? 0.55 : 1 }}>
-                    <td><strong style={{ textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</strong>{m.kitchenName && <div style={{ fontSize: 11, color: "var(--gray)" }}>{m.kitchenName}</div>}</td>
+                    <td><strong style={{ textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</strong>
+                      {m.hasVariants && <span className="pill" style={{ marginLeft: 6, background: "#eef2ff", color: "#4338ca" }}>{(m.variants || []).length} sizes</span>}
+                      {m.isCombo && <span className="pill" style={{ marginLeft: 6, background: "#ecfeff", color: "#0e7490" }}>Combo</span>}
+                      {m.kitchenName && <div style={{ fontSize: 11, color: "var(--gray)" }}>{m.kitchenName}</div>}</td>
                     <td><span className="pill pill-blue">{m.category}</span></td>
                     <td style={{ fontSize: 12, color: "var(--gray)" }}>{m.posId || "—"}</td>
-                    <td><strong>{money(incGst(m.sellPrice, m.gstApplicable !== false))}</strong><div style={{ fontSize: 11, color: "var(--gray)" }}>{money(m.sellPrice)} ex</div></td>
+                    <td><strong>{money(incGst(m.sellPrice, m.gstApplicable !== false))}</strong><div style={{ fontSize: 11, color: "var(--gray)" }}>{money(m.sellPrice)} ex</div>{m.takeawayPrice != null && <div style={{ fontSize: 11, color: "var(--gray)" }}>TA {money(incGst(effectiveTakeaway(m), m.gstApplicable !== false))}</div>}</td>
                     <td>{money(foodCostOf(m))}</td>
                     <td>{marginPill(m)}</td>
                     <td>{recipePill(m)}</td>
@@ -477,8 +544,13 @@ export default function MenusPage() {
               <div><div className="form-label">POS ID</div><input className="form-input" value={editor.posId} onChange={(e) => setEditor((p) => ({ ...p, posId: e.target.value }))} /></div>
               <div>
                 <div className="form-label">Sell price ex-GST ($)</div>
-                <input className="form-input" type="number" step="0.01" value={editor.sellPrice} onChange={(e) => setEditor((p) => ({ ...p, sellPrice: e.target.value }))} />
-                <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}>= {money(incGst(Number(editor.sellPrice) || 0, editor.gstApplicable))} inc-GST on the menu</div>
+                <input className="form-input" type="number" step="0.01" value={editor.sellPrice} disabled={editor.hasVariants} onChange={(e) => setEditor((p) => ({ ...p, sellPrice: e.target.value }))} />
+                <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}>{editor.hasVariants ? "Set by the default variant below" : `= ${money(incGst(Number(editor.sellPrice) || 0, editor.gstApplicable))} inc-GST on the menu`}</div>
+              </div>
+              <div>
+                <div className="form-label">Takeaway price ex-GST ($, blank = same)</div>
+                <input className="form-input" type="number" step="0.01" placeholder="same as dine-in" value={editor.takeawayPrice} disabled={editor.hasVariants} onChange={(e) => setEditor((p) => ({ ...p, takeawayPrice: e.target.value }))} />
+                <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}>{editor.hasVariants ? "Set per variant below" : (editor.takeawayPrice === "" || editor.takeawayPrice == null ? "Uses the dine-in price" : `= ${money(incGst(Number(editor.takeawayPrice) || 0, editor.gstApplicable))} inc-GST takeaway`)}</div>
               </div>
               <div>
                 <div className="form-label">Fallback food cost ex-GST ($)</div>
@@ -510,7 +582,107 @@ export default function MenusPage() {
               ))}
               {modifierGroups.length === 0 && <span style={{ fontSize: 12, color: "var(--gray)" }}>None yet.</span>}
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+
+            {/* Variants (sizes) */}
+            <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 10, marginTop: 4 }}>
+              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={!!editor.hasVariants}
+                  onChange={(e) => setEditor((p) => ({
+                    ...p, hasVariants: e.target.checked,
+                    variants: e.target.checked && !(p.variants || []).length
+                      ? [{ label: "", sellPrice: p.sellPrice ?? "", takeawayPrice: "", posId: p.posId || "", isDefault: true, available: true }]
+                      : p.variants,
+                  }))} />
+                This item has size variants (e.g. Regular / Large / Jumbo)
+              </label>
+              {editor.hasVariants && (
+                <div style={{ marginTop: 8 }}>
+                  <div className="form-label">Variant group name</div>
+                  <input className="form-input" style={{ maxWidth: 260 }} placeholder="e.g. Coffee Size" value={editor.variantGroupName}
+                    onChange={(e) => setEditor((p) => ({ ...p, variantGroupName: e.target.value }))} />
+                  <div style={{ overflowX: "auto", marginTop: 8 }}>
+                    <table className="data-table">
+                      <thead><tr><th>Default</th><th>Label</th><th>Sell ex-GST</th><th>Takeaway ex-GST</th><th>POS ID</th><th>Avail</th><th></th></tr></thead>
+                      <tbody>
+                        {(editor.variants || []).map((v, i) => (
+                          <tr key={i}>
+                            <td><input type="radio" name="rg-variant-default" checked={!!v.isDefault}
+                              onChange={() => setEditor((p) => ({ ...p, variants: p.variants.map((x, j) => ({ ...x, isDefault: j === i })) }))} /></td>
+                            <td><input className="form-input" style={{ width: 120 }} value={v.label}
+                              onChange={(e) => setEditor((p) => ({ ...p, variants: p.variants.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) }))} /></td>
+                            <td><input className="form-input" style={{ width: 90 }} type="number" step="0.01" value={v.sellPrice}
+                              onChange={(e) => setEditor((p) => ({ ...p, variants: p.variants.map((x, j) => (j === i ? { ...x, sellPrice: e.target.value } : x)) }))} /></td>
+                            <td><input className="form-input" style={{ width: 90 }} type="number" step="0.01" placeholder="same" value={v.takeawayPrice}
+                              onChange={(e) => setEditor((p) => ({ ...p, variants: p.variants.map((x, j) => (j === i ? { ...x, takeawayPrice: e.target.value } : x)) }))} /></td>
+                            <td><input className="form-input" style={{ width: 72 }} value={v.posId}
+                              onChange={(e) => setEditor((p) => ({ ...p, variants: p.variants.map((x, j) => (j === i ? { ...x, posId: e.target.value } : x)) }))} /></td>
+                            <td><input type="checkbox" checked={v.available !== false}
+                              onChange={(e) => setEditor((p) => ({ ...p, variants: p.variants.map((x, j) => (j === i ? { ...x, available: e.target.checked } : x)) }))} /></td>
+                            <td><button className="btn btn-sm" onClick={() => setEditor((p) => {
+                              let variants = p.variants.filter((_, j) => j !== i);
+                              if (variants.length && !variants.some((x) => x.isDefault)) variants = variants.map((x, j) => ({ ...x, isDefault: j === 0 }));
+                              return { ...p, variants };
+                            })}>✕</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => setEditor((p) => ({ ...p, variants: [...(p.variants || []), { label: "", sellPrice: "", takeawayPrice: "", posId: "", isDefault: !(p.variants || []).length, available: true }] }))}>+ Add variant</button>
+                  <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 4 }}>The <strong>default</strong> variant sets the item's headline price. Takeaway blank = same as that variant's dine-in price.</div>
+                </div>
+              )}
+            </div>
+
+            {/* Combo / set meal */}
+            <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 10, marginTop: 10 }}>
+              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={!!editor.isCombo}
+                  onChange={(e) => setEditor((p) => ({
+                    ...p, isCombo: e.target.checked,
+                    comboGroups: e.target.checked && !(p.comboGroups || []).length
+                      ? [{ name: "", maxChoice: 1, optional: false, options: [] }]
+                      : p.comboGroups,
+                  }))} />
+                This item is a combo / set meal (pick components from other items)
+              </label>
+              {editor.isCombo && (
+                <div style={{ marginTop: 8 }}>
+                  {(editor.comboGroups || []).map((g, gi) => (
+                    <div key={gi} className="card" style={{ marginBottom: 8 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+                        <input className="form-input" style={{ flex: 1, minWidth: 160 }} placeholder="Group name (e.g. Choose a drink)" value={g.name}
+                          onChange={(e) => setEditor((p) => ({ ...p, comboGroups: p.comboGroups.map((x, j) => (j === gi ? { ...x, name: e.target.value } : x)) }))} />
+                        <label style={{ fontSize: 11, color: "var(--gray)", display: "flex", alignItems: "center", gap: 4 }}>max
+                          <input className="form-input" style={{ width: 60 }} type="number" step="1" placeholder="∞" value={g.maxChoice ?? ""}
+                            onChange={(e) => setEditor((p) => ({ ...p, comboGroups: p.comboGroups.map((x, j) => (j === gi ? { ...x, maxChoice: e.target.value } : x)) }))} /></label>
+                        <label style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+                          <input type="checkbox" checked={!!g.optional}
+                            onChange={(e) => setEditor((p) => ({ ...p, comboGroups: p.comboGroups.map((x, j) => (j === gi ? { ...x, optional: e.target.checked } : x)) }))} /> optional</label>
+                        <button className="btn btn-sm" onClick={() => setEditor((p) => ({ ...p, comboGroups: p.comboGroups.filter((_, j) => j !== gi) }))}>✕ group</button>
+                      </div>
+                      {(g.options || []).map((o, oi) => (
+                        <div key={oi} style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+                          <select className="form-input" style={{ flex: 1 }} value={o.menuItemId}
+                            onChange={(e) => setEditor((p) => ({ ...p, comboGroups: p.comboGroups.map((x, j) => (j === gi ? { ...x, options: x.options.map((y, k) => (k === oi ? { ...y, menuItemId: e.target.value } : y)) } : x)) }))}>
+                            <option value="">Choose item…</option>
+                            {menuItems.filter((mi) => mi.id !== editor.id && !mi.isCombo).map((mi) => <option key={mi.id} value={mi.id}>{mi.displayName}</option>)}
+                          </select>
+                          <input className="form-input" style={{ width: 90 }} type="number" step="0.01" placeholder="+$ ex" value={o.priceDelta}
+                            onChange={(e) => setEditor((p) => ({ ...p, comboGroups: p.comboGroups.map((x, j) => (j === gi ? { ...x, options: x.options.map((y, k) => (k === oi ? { ...y, priceDelta: e.target.value } : y)) } : x)) }))} />
+                          <button className="btn btn-sm" onClick={() => setEditor((p) => ({ ...p, comboGroups: p.comboGroups.map((x, j) => (j === gi ? { ...x, options: x.options.filter((_, k) => k !== oi) } : x)) }))}>✕</button>
+                        </div>
+                      ))}
+                      <button className="btn btn-sm" onClick={() => setEditor((p) => ({ ...p, comboGroups: p.comboGroups.map((x, j) => (j === gi ? { ...x, options: [...(x.options || []), { menuItemId: "", priceDelta: 0 }] } : x)) }))}>+ Add option</button>
+                    </div>
+                  ))}
+                  <button className="btn btn-sm" onClick={() => setEditor((p) => ({ ...p, comboGroups: [...(p.comboGroups || []), { name: "", maxChoice: 1, optional: false, options: [] }] }))}>+ Add combo group</button>
+                  <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 4 }}>Component price deltas are ex-GST and add to the combo's base sell price.</div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
               <button className="btn btn-sm" onClick={() => setEditor(null)}>Cancel</button>
               <button className="btn btn-primary btn-sm" onClick={saveItem}>Save</button>
             </div>
