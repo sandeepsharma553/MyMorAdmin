@@ -1,0 +1,236 @@
+[
+ {
+  "name": "Beef brisket",
+  "cost": 20,
+  "unit": "kg",
+  "category": "Protein"
+ },
+ {
+  "name": "Chicken thigh (trimmed)",
+  "cost": 9.09,
+  "unit": "kg",
+  "category": "Protein"
+ },
+ {
+  "name": "Pork belly (cured)",
+  "cost": 10.91,
+  "unit": "kg",
+  "category": "Protein"
+ },
+ {
+  "name": "Pulled pork",
+  "cost": 12,
+  "unit": "kg",
+  "category": "Protein"
+ },
+ {
+  "name": "Pulled beef",
+  "cost": 16,
+  "unit": "kg",
+  "category": "Protein"
+ },
+ {
+  "name": "White fish fillet",
+  "cost": 14,
+  "unit": "kg",
+  "category": "Protein"
+ },
+ {
+  "name": "Frozen beef roll",
+  "cost": 22,
+  "unit": "kg",
+  "category": "Frozen"
+ },
+ {
+  "name": "Frozen pork roll",
+  "cost": 18,
+  "unit": "kg",
+  "category": "Frozen"
+ },
+ {
+  "name": "Frozen lamb roll",
+  "cost": 26,
+  "unit": "kg",
+  "category": "Frozen"
+ },
+ {
+  "name": "Lettuce",
+  "cost": 3.5,
+  "unit": "kg",
+  "category": "Produce"
+ },
+ {
+  "name": "Tomato",
+  "cost": 4,
+  "unit": "kg",
+  "category": "Produce"
+ },
+ {
+  "name": "Red onion",
+  "cost": 2.5,
+  "unit": "kg",
+  "category": "Produce"
+ },
+ {
+  "name": "Avocado",
+  "cost": 1.8,
+  "unit": "units",
+  "category": "Produce"
+ },
+ {
+  "name": "Shiitake mushroom",
+  "cost": 12,
+  "unit": "kg",
+  "category": "Produce"
+ },
+ {
+  "name": "Caramelised onion",
+  "cost": 5,
+  "unit": "kg",
+  "category": "Produce"
+ },
+ {
+  "name": "Pickles",
+  "cost": 4.5,
+  "unit": "kg",
+  "category": "Produce"
+ },
+ {
+  "name": "Jalapeno",
+  "cost": 6,
+  "unit": "kg",
+  "category": "Produce"
+ },
+ {
+  "name": "Spring onion (bunches)",
+  "cost": 1.36,
+  "unit": "bunch",
+  "category": "Produce"
+ },
+ {
+  "name": "Coleslaw mix",
+  "cost": 4,
+  "unit": "kg",
+  "category": "Produce"
+ },
+ {
+  "name": "Cheese slices",
+  "cost": 10,
+  "unit": "kg",
+  "category": "Dairy"
+ },
+ {
+  "name": "Butter (unsalted)",
+  "cost": 7.27,
+  "unit": "kg",
+  "category": "Dairy"
+ },
+ {
+  "name": "Thickened cream 35%",
+  "cost": 4.09,
+  "unit": "L",
+  "category": "Dairy"
+ },
+ {
+  "name": "Egg",
+  "cost": 0.4,
+  "unit": "units",
+  "category": "Dairy"
+ },
+ {
+  "name": "Brioche bun",
+  "cost": 0.8,
+  "unit": "units",
+  "category": "Dry goods"
+ },
+ {
+  "name": "Jasmine rice",
+  "cost": 1.82,
+  "unit": "kg",
+  "category": "Dry goods"
+ },
+ {
+  "name": "Coconut milk (400ml)",
+  "cost": 2.27,
+  "unit": "can",
+  "category": "Dry goods"
+ },
+ {
+  "name": "Potato noodle",
+  "cost": 2.5,
+  "unit": "pack",
+  "category": "Asian grocery"
+ },
+ {
+  "name": "Sesame oil",
+  "cost": 9.09,
+  "unit": "L",
+  "category": "Sauces"
+ },
+ {
+  "name": "Chilli paste",
+  "cost": 8,
+  "unit": "kg",
+  "category": "Sauces"
+ },
+ {
+  "name": "BBQ sauce",
+  "cost": 6,
+  "unit": "L",
+  "category": "Sauces"
+ },
+ {
+  "name": "Ketchup",
+  "cost": 4,
+  "unit": "L",
+  "category": "Sauces"
+ },
+ {
+  "name": "Aioli",
+  "cost": 7,
+  "unit": "L",
+  "category": "Sauces"
+ },
+ {
+  "name": "Sweet chilli mayo",
+  "cost": 7.5,
+  "unit": "L",
+  "category": "Sauces"
+ },
+ {
+  "name": "Hot mayo",
+  "cost": 7.5,
+  "unit": "L",
+  "category": "Sauces"
+ },
+ {
+  "name": "Sriracha mayo",
+  "cost": 7.5,
+  "unit": "L",
+  "category": "Sauces"
+ },
+ {
+  "name": "Paper bag small",
+  "cost": 15,
+  "unit": "carton",
+  "category": "Packaging"
+ },
+ {
+  "name": "Coffee cup 6oz",
+  "cost": 6,
+  "unit": "pack",
+  "category": "Packaging"
+ },
+ {
+  "name": "Prawn 26/30",
+  "cost": 18,
+  "unit": "pack",
+  "category": "Seafood"
+ },
+ {
+  "name": "Squid ring",
+  "cost": 12,
+  "unit": "pack",
+  "category": "Seafood"
+ }
+]
