@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getDocs, getDoc, addDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { useRG } from "./RGContext";
 import { contractTemplatesCol, contractDefaultsDoc, contractsCol, staffPrivateDoc } from "../../utils/restaurantGroupPaths";
 import { isManager } from "./rgConfig";
@@ -42,6 +43,11 @@ const SOURCE_GROUPS = [
   ["derived", "Derived"],
   ["typed", "This contract"],
 ];
+// ROLLOUT GATE (Step 6): the employee-facing Send stays locked until the test-send PDF is
+// reviewed + approved. Flip to true ONLY after that sign-off. The send function exists and is
+// wired (handles EMPTY_FIELDS / ALREADY_SENT / testTo); this flag just gates the employee button.
+const EMPLOYEE_SEND_ENABLED = false;
+
 // Private tokens the "also update staff record" toggle may write back → private/details field.
 // Anything NOT here (dob/tfn/bank/super, contract-defaults, derived) is never written to the staff record.
 const WRITEBACK_MAP = {
@@ -124,6 +130,7 @@ export default function ContractGeneratorPage() {
 
   const [templatesById, setTemplatesById] = useState(null); // null = loading
   const [saving, setSaving] = useState(false);
+  const [lastDraft, setLastDraft] = useState(null); // { id } of the just-saved draft (enables Send)
   const [defaults, setDefaults] = useState(null);
   const [loadErr, setLoadErr] = useState("");
   const [search, setSearch] = useState("");
@@ -157,7 +164,7 @@ export default function ContractGeneratorPage() {
   }, [groupId]);
 
   const selectStaff = async (s) => {
-    setSelStaff(s); setAreaChoice(null); setOverrides({}); setWriteBack({}); setExtraClauses(""); setPriv(null);
+    setSelStaff(s); setAreaChoice(null); setOverrides({}); setWriteBack({}); setExtraClauses(""); setPriv(null); setLastDraft(null);
     try {
       const d = await getDoc(staffPrivateDoc(groupId, s.id));
       setPriv(d.exists() ? d.data() : {});
@@ -222,12 +229,34 @@ export default function ContractGeneratorPage() {
     }
     setSaving(true);
     try {
-      await addDoc(contractsCol(groupId), buildContractDoc(r.templateId, templatesById[r.templateId]));
+      const ref = await addDoc(contractsCol(groupId), buildContractDoc(r.templateId, templatesById[r.templateId]));
       await applyWriteBack();              // isolated; only ticked private fields
+      setLastDraft({ id: ref.id });        // enables the (flag-gated) Send button
       showToast("Draft contract saved");
     } catch (e) {
       showToast("Could not save contract");
     } finally { setSaving(false); }
+  };
+
+  // Email the saved draft via the sendContract callable. Handles all three server signals:
+  // EMPTY_FIELDS:n (confirm gaps), ALREADY_SENT (confirm resend), and testTo (dry rollout send).
+  const onSend = async ({ resend = false, confirmEmpty = false, testTo } = {}) => {
+    if (!lastDraft) return;
+    const fn = httpsCallable(getFunctions(undefined, "us-central1"), "sendContract");
+    try {
+      await fn({ groupId, contractId: lastDraft.id, resend, confirmEmpty, testTo });
+      showToast(testTo ? "Test email sent" : "Contract sent");
+    } catch (e) {
+      const msg = String(e?.message || "");
+      if (msg.includes("EMPTY_FIELDS:")) {
+        const n = (msg.split("EMPTY_FIELDS:")[1] || "").replace(/\D.*$/, "");
+        if (window.confirm(`${n} field(s) still empty (‹…› will show in the PDF). Send anyway?`))
+          return onSend({ resend, confirmEmpty: true, testTo });
+      } else if (msg.includes("ALREADY_SENT")) {
+        if (window.confirm("This contract was already sent. Resend anyway?"))
+          return onSend({ resend: true, confirmEmpty, testTo });
+      } else showToast("Could not send contract");
+    }
   };
 
   if (!can("contracts", "view")) {
@@ -322,10 +351,19 @@ export default function ContractGeneratorPage() {
                 )}
                 {!uid && <span style={{ fontSize: 11, color: "var(--red)" }}>No login id — author won’t be recorded</span>}
               </div>
-              {/* TODO Step 6: a "send anyway?" confirm should use emptyCount before emailing.
-                  PDF is built server-side at SEND time via renderContractPdf (NOT generate), using the
-                  SAME template.sections + values as this preview. Add the golden test then:
-                  client fill(template, values) === server fill(template, values). */}
+              {lastDraft && (
+                <div className="btn-row" style={{ alignItems: "center", gap: 10, marginTop: 6 }}>
+                  <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 600 }}>Draft saved.</span>
+                  <button
+                    className="btn btn-sm"
+                    disabled={!EMPLOYEE_SEND_ENABLED}
+                    title={EMPLOYEE_SEND_ENABLED ? "Email the contract (PDF) to the employee" : "Locked until the test-send PDF is approved (Step 6 rollout gate)"}
+                    onClick={() => onSend()}
+                  >
+                    {EMPLOYEE_SEND_ENABLED ? "Send to employee" : "Send to employee (locked)"}
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
