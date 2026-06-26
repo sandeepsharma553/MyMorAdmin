@@ -128,6 +128,9 @@ export const acknowledgementDoc = (groupId, staffId, version) => doc(acknowledge
 export const contractTemplatesCol = (groupId) => groupCol(groupId, "contractTemplates");
 export const contractTemplateDoc = (groupId, id) => doc(contractTemplatesCol(groupId), String(id));
 export const contractDefaultsDoc = (groupId) => doc(db, "restaurantGroups", String(groupId), "settings", "contractDefaults");
+// Generated contracts (draft → sent → signed). Owner/storeAdmin gated in rules.
+export const contractsCol = (groupId) => groupCol(groupId, "contracts");
+export const contractDoc = (groupId, id) => doc(contractsCol(groupId), String(id));
 
 // Brand colours for the first client's venues; any other venue gets a stable colour
 // derived from its name (so new/renamed venues aren't all grey).

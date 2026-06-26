@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { getDocs, getDoc } from "firebase/firestore";
+import { getDocs, getDoc, addDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { contractTemplatesCol, contractDefaultsDoc, staffPrivateDoc } from "../../utils/restaurantGroupPaths";
+import { contractTemplatesCol, contractDefaultsDoc, contractsCol, staffPrivateDoc } from "../../utils/restaurantGroupPaths";
 import { isManager } from "./rgConfig";
 import { isMinorDob } from "./staffMinorUtils";
 
@@ -41,6 +41,14 @@ const SOURCE_GROUPS = [
   ["derived", "Derived"],
   ["typed", "This contract"],
 ];
+// Private tokens the "also update staff record" toggle may write back → private/details field.
+// Anything NOT here (dob/tfn/bank/super, contract-defaults, derived) is never written to the staff record.
+const WRITEBACK_MAP = {
+  employee_address: "address",
+  classification_level: "classificationLevel",
+  hourly_rate: "rate",
+  contracted_min_hours: "contractedMinHours",
+};
 
 // §4 — resolve the template id from the staff record; never guess silently.
 function resolveTemplate(staff, templatesById, forcedArea) {
@@ -110,9 +118,11 @@ function renderLine(line, values) {
 }
 
 export default function ContractGeneratorPage() {
-  const { groupId, scopedStaff, can } = useRG();
+  const { groupId, scopedStaff, can, me, showToast } = useRG();
+  const uid = me?.uid || me?.id || null;
 
   const [templatesById, setTemplatesById] = useState(null); // null = loading
+  const [saving, setSaving] = useState(false);
   const [defaults, setDefaults] = useState(null);
   const [loadErr, setLoadErr] = useState("");
   const [search, setSearch] = useState("");
@@ -171,6 +181,53 @@ export default function ContractGeneratorPage() {
   );
   const isMinor = !!(priv && priv.dob && isMinorDob(priv.dob));
   const sendTarget = (priv && priv.contactEmail) || selStaff?.email || "";
+
+  // Count of empty (‹token›) fields for the resolved template — surfaced, never hard-blocks.
+  // TODO Step 6: a "send anyway?" confirm should use emptyCount before emailing.
+  const emptyCount = template ? (template.tokenKeys || []).filter((t) => !(values[t] && String(values[t]).trim())).length : 0;
+  const canGenerate = resolved.status === "OK" && can("contracts", "edit");
+
+  const buildContractDoc = (templateId, tmpl) => ({
+    staffId: selStaff.id,
+    staffName: selStaff.displayName || selStaff.name || "",
+    templateId,
+    area: tmpl.area, basis: tmpl.basis, templateVersion: tmpl.version || 1,
+    values: { ...values },                 // ALL filled token values — the render source of truth (preview ≡ PDF)
+    extraClauses: extraClauses.trim(),
+    employeeContactEmail: sendTarget,
+    isMinor,
+    status: "draft",                       // draft → sent → signed
+    createdBy: uid,                        // soft-warned in the UI if null — never silently relied on
+    createdAt: serverTimestamp(),
+  });
+
+  // Write-back: ONLY toggled-on private fields → private/details (merge). Never dob/tfn/bank.
+  const applyWriteBack = async () => {
+    const patch = {};
+    for (const [token, field] of Object.entries(WRITEBACK_MAP)) {
+      if (writeBack[token]) patch[field] = values[token] ?? "";
+    }
+    if (!Object.keys(patch).length) return;
+    patch.updatedAt = serverTimestamp();
+    await setDoc(staffPrivateDoc(groupId, selStaff.id), patch, { merge: true });
+  };
+
+  const onGenerate = async () => {
+    // Re-resolve §4 at click — never trust the last render.
+    const r = resolveTemplate(selStaff, templatesById, areaChoice);
+    if (r.status !== "OK") {
+      return showToast(r.status === "NEEDS_CHOICE" ? "Choose FOH or BOH before generating."
+        : r.status === "BLOCK" ? r.reason : "Select a staff member first.");
+    }
+    setSaving(true);
+    try {
+      await addDoc(contractsCol(groupId), buildContractDoc(r.templateId, templatesById[r.templateId]));
+      await applyWriteBack();              // isolated; only ticked private fields
+      showToast("Draft contract saved");
+    } catch (e) {
+      showToast("Could not save contract");
+    } finally { setSaving(false); }
+  };
 
   if (!can("contracts", "view")) {
     return <div className="card" style={{ margin: 24, color: "var(--gray)", fontSize: 14 }}>You don’t have access to Contract Generator.</div>;
@@ -255,9 +312,19 @@ export default function ContractGeneratorPage() {
                 <textarea className="form-input" rows={3} value={extraClauses} onChange={(e) => setExtraClauses(e.target.value)} placeholder="One-off clauses for this contract only…" />
               </div>
 
-              <div className="btn-row">
-                <button className="btn btn-primary" disabled title="Generate + PDF lands in Step 5">Generate PDF (next step)</button>
+              <div className="btn-row" style={{ alignItems: "center", gap: 10 }}>
+                <button className="btn btn-primary" disabled={!canGenerate || saving} onClick={onGenerate}>
+                  {saving ? "Saving…" : "Generate draft contract"}
+                </button>
+                {emptyCount > 0 && (
+                  <span style={{ fontSize: 11, color: "#b45309", fontWeight: 600 }}>{emptyCount} field{emptyCount > 1 ? "s" : ""} still empty</span>
+                )}
+                {!uid && <span style={{ fontSize: 11, color: "var(--red)" }}>No login id — author won’t be recorded</span>}
               </div>
+              {/* TODO Step 6: a "send anyway?" confirm should use emptyCount before emailing.
+                  PDF is built server-side at SEND time via renderContractPdf (NOT generate), using the
+                  SAME template.sections + values as this preview. Add the golden test then:
+                  client fill(template, values) === server fill(template, values). */}
             </>
           )}
         </div>
