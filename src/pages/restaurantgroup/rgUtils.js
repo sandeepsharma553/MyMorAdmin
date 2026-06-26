@@ -13,10 +13,6 @@ export const initials = (s) => {
 
 export const avatarColor = (s) => venueColor(s?.venue);
 
-export const isManager = (s) => /manager/i.test(s?.role || "");
-export const isFOH = (s) => /foh/i.test(s?.role || "");
-export const isBOH = (s) => /boh|kitchen|fryer|washing/i.test(s?.role || "");
-
 export const certPill = (cert) => {
   if (cert === "Food Safety Supervisor") return "pill-green";
   if (cert === "Food Handler" || cert === "RSA") return "pill-blue";
