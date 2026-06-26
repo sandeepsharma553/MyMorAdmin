@@ -120,6 +120,15 @@ export const complianceManualDoc = (groupId) => doc(complianceCol(groupId), "man
 export const acknowledgementsCol = (groupId, staffId) => collection(staffDoc(groupId, staffId), "acknowledgements");
 export const acknowledgementDoc = (groupId, staffId, version) => doc(acknowledgementsCol(groupId, staffId), String(version));
 
+/* ── Contract Generator (Documents module) ────────────────────────────
+ * Templates are group-level master docs (seeded out-of-band); contract
+ * defaults live in a gated settings/ subcollection (NOT the group doc,
+ * which is group-readable). Both are owner/storeAdmin-gated in rules.
+ * `contracts/{id}` (generated contracts) is added with Step 5.            */
+export const contractTemplatesCol = (groupId) => groupCol(groupId, "contractTemplates");
+export const contractTemplateDoc = (groupId, id) => doc(contractTemplatesCol(groupId), String(id));
+export const contractDefaultsDoc = (groupId) => doc(db, "restaurantGroups", String(groupId), "settings", "contractDefaults");
+
 // Brand colours for the first client's venues; any other venue gets a stable colour
 // derived from its name (so new/renamed venues aren't all grey).
 export const VENUE_COLORS = {

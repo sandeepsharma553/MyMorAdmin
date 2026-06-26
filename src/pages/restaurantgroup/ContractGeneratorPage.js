@@ -1,26 +1,293 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { getDocs, getDoc } from "firebase/firestore";
 import { useRG } from "./RGContext";
+import { contractTemplatesCol, contractDefaultsDoc, staffPrivateDoc } from "../../utils/restaurantGroupPaths";
+import { isManager } from "./rgConfig";
+import { isMinorDob } from "./staffMinorUtils";
 
-// Phase 1 — Step 1 stub. Real generator UI lands in Step 4.
-// Route is already guarded by ProtectedRoute("contracts"); this page also
-// re-checks so a direct render can never leak the section.
-export default function ContractGeneratorPage() {
-  const { can } = useRG();
-  if (!can("contracts", "view")) {
-    return <div className="card" style={{ margin: 24, color: "var(--gray)", fontSize: 14 }}>
-      You don’t have access to Contract Generator.
-    </div>;
+/* ============================================================================
+   Contract Generator (Phase 1, Step 4) — READ + RENDER ONLY.
+   Owner/storeAdmin pick a staff member → the correct template auto-selects (§4,
+   shared exact isManager + areas[]) → fields prefill from the staff record +
+   gated private/details employment-terms + contractDefaults (§5) → live HTML
+   preview with {{tokens}} filled (empty tokens flagged amber). NO contract
+   write, NO PDF, NO send, NO write-back — those are Steps 5/6. The Generate
+   button is intentionally disabled here.
+   ========================================================================== */
+
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+// Which source each token prefills from — drives the grouped review form + labels.
+const TOKEN_SOURCE = {
+  employee_name: "staff", employee_first_name: "staff", employment_type: "staff", commence_date: "staff", location_basis: "derived",
+  employee_address: "private", classification_level: "private", hourly_rate: "private", contracted_min_hours: "private",
+  employer_name: "defaults", owner_name: "defaults", discount_during: "defaults", discount_outside: "defaults", family_discount: "defaults",
+  probation_shifts: "defaults", probation_months: "defaults", notice_weeks: "defaults", min_days: "defaults",
+  offer_date: "typed",
+};
+const TOKEN_LABEL = {
+  employee_name: "Employee name", employee_first_name: "First name", employment_type: "Employment type",
+  commence_date: "Commence date", location_basis: "Location basis", employee_address: "Address",
+  classification_level: "Classification level", hourly_rate: "Rate", contracted_min_hours: "Contracted min hours",
+  employer_name: "Employer name", owner_name: "Owner (counter-sign)", discount_during: "Discount (during shift)",
+  discount_outside: "Discount (outside shift)", family_discount: "Family discount", probation_shifts: "Probation (shifts)",
+  probation_months: "Probation (months)", notice_weeks: "Resignation notice (weeks)", min_days: "Min days/week",
+  offer_date: "Offer date",
+};
+const SOURCE_GROUPS = [
+  ["staff", "From staff record"],
+  ["private", "Employment terms (private)"],
+  ["defaults", "Contract defaults"],
+  ["derived", "Derived"],
+  ["typed", "This contract"],
+];
+
+// §4 — resolve the template id from the staff record; never guess silently.
+function resolveTemplate(staff, templatesById, forcedArea) {
+  if (!staff) return { status: "EMPTY" };
+  if (staff.type === "Junior")
+    return { status: "BLOCK", reason: "No Junior template yet — generation is blocked for this person." };
+  if (isManager(staff) || (staff.areas || []).includes("Mgmt"))
+    return { status: "BLOCK", reason: "No Manager template yet — the manager contract isn’t loaded." };
+
+  let area = forcedArea || null;
+  if (!area) {
+    const hasFOH = (staff.areas || []).includes("FOH");
+    const hasBOH = (staff.areas || []).includes("BOH");
+    if (hasFOH && hasBOH)
+      return { status: "NEEDS_CHOICE", reason: "This person is assigned to both FOH and BOH — choose which contract to generate.", choices: ["FOH", "BOH"] };
+    area = hasFOH ? "FOH" : hasBOH ? "BOH" : null;
   }
+  if (!area) return { status: "BLOCK", reason: "Could not resolve an area (no FOH / BOH / Mgmt) — not guessing." };
+  if (!["Full-time", "Part-time", "Casual"].includes(staff.type))
+    return { status: "BLOCK", reason: `Unrecognised employment type “${staff.type || "—"}”.` };
+
+  const basis = staff.type === "Casual" ? "casual" : "hourly"; // Full-time/Part-time → hourly
+  const id = `${area.toLowerCase()}_${basis}`;
+  return templatesById[id] ? { status: "OK", templateId: id } : { status: "BLOCK", reason: `Template “${id}” not found.` };
+}
+
+// §5 — prefill every token; per-contract overrides win. Missing values stay empty (filled at gen time).
+function buildValues(staff, priv, defaults, overrides) {
+  const firstName = (staff?.name || staff?.displayName || "").trim().split(/\s+/)[0] || "";
+  const multi = (staff?.venueIds || []).length > 1;
+  const base = {
+    employee_name: staff?.displayName || staff?.name || "",
+    employee_first_name: firstName,
+    employment_type: staff?.type || "",
+    commence_date: staff?.start || "",
+    location_basis: multi ? "Multiple Locations" : "Single Location",
+    employee_address: priv?.address || "",
+    classification_level: priv?.classificationLevel || "",
+    hourly_rate: priv?.rate || "",
+    contracted_min_hours: priv?.contractedMinHours || "",
+    employer_name: defaults?.employerName || "",
+    owner_name: defaults?.ownerName || "",
+    discount_during: defaults?.discount_during || "",
+    discount_outside: defaults?.discount_outside || "",
+    family_discount: defaults?.family_discount || "",
+    probation_shifts: defaults?.probation_shifts || "",
+    probation_months: defaults?.probation_months || "",
+    notice_weeks: defaults?.notice_weeks || "",
+    min_days: defaults?.min_days || "",
+    offer_date: todayISO(),
+  };
+  return { ...base, ...overrides };
+}
+
+// Render one clause line → nodes; empty tokens are flagged amber so an admin can’t miss them.
+function renderLine(line, values) {
+  const out = []; const re = /{{(\w+)}}/g; let last = 0, m, k = 0;
+  while ((m = re.exec(line))) {
+    if (m.index > last) out.push(line.slice(last, m.index));
+    const t = m[1]; const v = values[t];
+    if (v && String(v).trim()) out.push(String(v));
+    else out.push(<span key={k++} style={{ background: "#fef3c7", color: "#b45309", padding: "0 4px", borderRadius: 3, fontWeight: 600 }}>‹{t}›</span>);
+    last = re.lastIndex;
+  }
+  if (last < line.length) out.push(line.slice(last));
+  return out;
+}
+
+export default function ContractGeneratorPage() {
+  const { groupId, scopedStaff, can } = useRG();
+
+  const [templatesById, setTemplatesById] = useState(null); // null = loading
+  const [defaults, setDefaults] = useState(null);
+  const [loadErr, setLoadErr] = useState("");
+  const [search, setSearch] = useState("");
+  const [selStaff, setSelStaff] = useState(null);
+  const [priv, setPriv] = useState(null);     // gated private/details for the selected staff
+  const [areaChoice, setAreaChoice] = useState(null); // FOH | BOH when NEEDS_CHOICE
+  const [overrides, setOverrides] = useState({});
+  const [writeBack, setWriteBack] = useState({}); // per-private-field "also update staff record" — captured, not written here
+  const [extraClauses, setExtraClauses] = useState("");
+
+  // Fetch the seeded templates + defaults once (gated reads — owner/storeAdmin).
+  useEffect(() => {
+    if (!groupId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const [tsnap, dsnap] = await Promise.all([
+          getDocs(contractTemplatesCol(groupId)),
+          getDoc(contractDefaultsDoc(groupId)),
+        ]);
+        if (!alive) return;
+        const byId = {};
+        tsnap.forEach((d) => { byId[d.id] = { id: d.id, ...d.data() }; });
+        setTemplatesById(byId);
+        setDefaults(dsnap.exists() ? dsnap.data() : {});
+      } catch (e) {
+        if (alive) { setLoadErr("Could not load contract templates/defaults. (If you’re owner/storeAdmin, the contract Firestore rules may not be live yet.)"); setTemplatesById({}); setDefaults({}); }
+      }
+    })();
+    return () => { alive = false; };
+  }, [groupId]);
+
+  const selectStaff = async (s) => {
+    setSelStaff(s); setAreaChoice(null); setOverrides({}); setWriteBack({}); setExtraClauses(""); setPriv(null);
+    try {
+      const d = await getDoc(staffPrivateDoc(groupId, s.id));
+      setPriv(d.exists() ? d.data() : {});
+    } catch { setPriv({}); }
+  };
+
+  const filteredStaff = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = (scopedStaff || []).filter((s) => s.status !== "Left");
+    if (!q) return list;
+    return list.filter((s) => `${s.displayName || s.name || ""} ${s.role || ""}`.toLowerCase().includes(q));
+  }, [scopedStaff, search]);
+
+  const resolved = useMemo(
+    () => (templatesById ? resolveTemplate(selStaff, templatesById, areaChoice) : { status: "EMPTY" }),
+    [selStaff, templatesById, areaChoice]
+  );
+  const template = resolved.status === "OK" ? templatesById[resolved.templateId] : null;
+  const values = useMemo(
+    () => buildValues(selStaff, priv || {}, defaults || {}, overrides),
+    [selStaff, priv, defaults, overrides]
+  );
+  const isMinor = !!(priv && priv.dob && isMinorDob(priv.dob));
+  const sendTarget = (priv && priv.contactEmail) || selStaff?.email || "";
+
+  if (!can("contracts", "view")) {
+    return <div className="card" style={{ margin: 24, color: "var(--gray)", fontSize: 14 }}>You don’t have access to Contract Generator.</div>;
+  }
+
+  const setOverride = (k) => (e) => setOverrides((p) => ({ ...p, [k]: e.target.value }));
+  const fieldsByGroup = (src) => (template?.tokenKeys || []).filter((t) => (TOKEN_SOURCE[t] || "typed") === src);
+
   return (
-    <div className="card" style={{ margin: 24 }}>
-      <div className="card-head">
-        <div>
-          <span className="card-title">Contract Generator</span>
-          <span className="card-sub">Coming soon — staff picker, template auto-select, live preview & send</span>
+    <div style={{ margin: 16 }}>
+      {loadErr && <div className="card" style={{ marginBottom: 12, color: "var(--red)", fontSize: 12 }}>{loadErr}</div>}
+
+      <div style={{ display: "grid", gridTemplateColumns: "260px 1fr 1fr", gap: 12, alignItems: "start" }}>
+        {/* ── Staff picker ── */}
+        <div className="card">
+          <div className="card-head"><span className="card-title">Staff</span><span className="card-sub">Pick who the contract is for</span></div>
+          <input className="form-input" placeholder="Search name or role…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ marginBottom: 8 }} />
+          <div style={{ maxHeight: "62vh", overflowY: "auto" }}>
+            {templatesById === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
+            {filteredStaff.map((s) => (
+              <button key={s.id} className={`nav-item ${selStaff?.id === s.id ? "active" : ""}`} style={{ width: "100%", textAlign: "left" }} onClick={() => selectStaff(s)}>
+                <span>{s.displayName || s.name}</span>
+                <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--gray)" }}>{s.role} · {s.type}</span>
+              </button>
+            ))}
+            {templatesById !== null && filteredStaff.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No staff.</div>}
+          </div>
         </div>
-      </div>
-      <div style={{ padding: "16px 4px", fontSize: 13, color: "var(--gray)" }}>
-        This module is being built. Owner / Store Admin only.
+
+        {/* ── Selection + field review ── */}
+        <div className="card">
+          {!selStaff && <div style={{ fontSize: 13, color: "var(--gray)" }}>Select a staff member to begin.</div>}
+
+          {selStaff && resolved.status === "BLOCK" && (
+            <div style={{ padding: 12, borderRadius: 8, background: "rgba(192,57,43,0.06)", color: "var(--red)", fontSize: 13 }}>
+              <strong>Can’t generate.</strong> {resolved.reason}
+            </div>
+          )}
+
+          {selStaff && resolved.status === "NEEDS_CHOICE" && (
+            <div style={{ padding: 12, borderRadius: 8, background: "rgba(217,119,6,0.08)", fontSize: 13 }}>
+              <div style={{ marginBottom: 8 }}><strong>Choose contract.</strong> {resolved.reason}</div>
+              <div className="btn-row">
+                {resolved.choices.map((a) => <button key={a} className="btn btn-sm" onClick={() => setAreaChoice(a)}>{a}</button>)}
+              </div>
+            </div>
+          )}
+
+          {selStaff && resolved.status === "OK" && template && (
+            <>
+              <div className="card-head">
+                <div><span className="card-title">{template.label}</span><span className="card-sub">{template.id} · prefilled — review & override</span></div>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>
+                Send target: {sendTarget || <em>— none on file —</em>} {isMinor && <span style={{ color: "var(--red)", fontWeight: 600 }}> · under 18 (guardian block shown)</span>}
+              </div>
+
+              {SOURCE_GROUPS.map(([src, label]) => {
+                const keys = fieldsByGroup(src);
+                if (!keys.length) return null;
+                return (
+                  <div key={src} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gray)", margin: "4px 0" }}>{label}</div>
+                    {keys.map((t) => (
+                      <div key={t} className="form-group" style={{ margin: "0 0 6px" }}>
+                        <label className="form-label" style={{ fontSize: 11 }}>{TOKEN_LABEL[t] || t}</label>
+                        <input className="form-input" value={values[t] || ""} onChange={setOverride(t)} placeholder={`‹${t}›`} />
+                        {src === "private" && (
+                          <label style={{ fontSize: 10, color: "var(--gray)", display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
+                            <input type="checkbox" checked={!!writeBack[t]} onChange={(e) => setWriteBack((p) => ({ ...p, [t]: e.target.checked }))} />
+                            also update staff record (applies on generate — Step 5)
+                          </label>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+
+              <div className="form-group" style={{ marginBottom: 8 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>Extra clauses (optional — appended to the contract)</label>
+                <textarea className="form-input" rows={3} value={extraClauses} onChange={(e) => setExtraClauses(e.target.value)} placeholder="One-off clauses for this contract only…" />
+              </div>
+
+              <div className="btn-row">
+                <button className="btn btn-primary" disabled title="Generate + PDF lands in Step 5">Generate PDF (next step)</button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ── Live preview ── */}
+        <div className="card">
+          <div className="card-head"><span className="card-title">Preview</span><span className="card-sub">Amber ‹token› = empty field</span></div>
+          {!template && <div style={{ fontSize: 13, color: "var(--gray)" }}>The filled contract appears here once a template resolves.</div>}
+          {template && (
+            <div style={{ maxHeight: "68vh", overflowY: "auto", fontSize: 12, lineHeight: 1.55, padding: "4px 2px" }}>
+              {template.sections.map((s, i) => (
+                <div key={i} style={{ marginBottom: 8 }}>
+                  {s.heading && <div style={{ fontWeight: 700, marginTop: 8 }}>{s.heading}</div>}
+                  {s.body.map((l, j) => <div key={j}>{renderLine(l, values)}</div>)}
+                </div>
+              ))}
+              {isMinor && template.conditional?.guardian?.body && (
+                <div style={{ marginTop: 8 }}>
+                  {template.conditional.guardian.body.map((l, j) => <div key={j}>{renderLine(l, values)}</div>)}
+                </div>
+              )}
+              {extraClauses.trim() && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontWeight: 700 }}>Additional Terms</div>
+                  {extraClauses.split("\n").filter(Boolean).map((l, j) => <div key={j}>{l}</div>)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
