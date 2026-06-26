@@ -5,7 +5,8 @@ import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordRes
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
 import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol } from "../../utils/restaurantGroupPaths";
-import { defaultPermsForStaffRole, roleToGroupRole, isManager } from "./rgConfig";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { defaultPermsForStaffRole, roleToGroupRole, isManager, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
@@ -494,6 +495,14 @@ export default function StaffDirectoryPage() {
     } catch { showToast("Could not record signature"); }
   };
   const canSignOwn = (p) => !!(me?.email && p?.email && me.email.toLowerCase() === p.email.toLowerCase());
+  // Signed-contract signDocs entries carry no public fileUrl (pay+PII) — download via the
+  // gated callable. Behind SIGNED_UPLOAD_ENABLED until the Storage rule + callables are live.
+  const downloadSignedContract = async (contractId) => {
+    try {
+      const res = await httpsCallable(getFunctions(undefined, "us-central1"), "getSignedContractUrl")({ groupId, contractId });
+      if (res.data?.url) window.open(res.data.url, "_blank", "noopener");
+    } catch { showToast("Could not open signed contract"); }
+  };
 
   // ── assign training / checklists (from the profile, multi-select, area-aware) ──
   const [assignKind, setAssignKind] = useState(null); // "training" | "checklist" | null
@@ -955,9 +964,15 @@ export default function StaffDirectoryPage() {
                   {(profile.signDocs || []).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No documents uploaded.</div>}
                   {(profile.signDocs || []).map((d) => (
                     <div key={d.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
-                      <span><a href={d.fileUrl} target="_blank" rel="noreferrer">📄 {d.name}</a>{d.signedAt
-                        ? <span className="pill pill-green" style={{ marginLeft: 6 }}>Signed {fmtDate(d.signedAt)}{d.signedBy ? ` · ${d.signedBy}` : ""}</span>
-                        : <span className="pill pill-amber" style={{ marginLeft: 6 }}>Awaiting signature</span>}</span>
+                      <span>
+                        {d.contractId
+                          ? <span style={{ fontWeight: 500 }}>📄 {d.name}{SIGNED_UPLOAD_ENABLED
+                              ? <button className="btn btn-sm" style={{ marginLeft: 6 }} onClick={() => downloadSignedContract(d.contractId)}>Download</button>
+                              : <span className="pill pill-gray" style={{ marginLeft: 6 }} title="Enabled after the Storage rule + callables are live">download locked</span>}</span>
+                          : <a href={d.fileUrl} target="_blank" rel="noreferrer">📄 {d.name}</a>}
+                        {d.signedAt
+                          ? <span className="pill pill-green" style={{ marginLeft: 6 }}>Signed {fmtDate(d.signedAt)}{d.signedBy ? ` · ${d.signedBy}` : ""}</span>
+                          : <span className="pill pill-amber" style={{ marginLeft: 6 }}>Awaiting signature</span>}</span>
                       {!d.signedAt && (canEdit || canSignOwn(profile)) && <button className="btn btn-sm btn-primary" onClick={() => signSignDoc(d)}>Acknowledge &amp; sign</button>}
                     </div>
                   ))}

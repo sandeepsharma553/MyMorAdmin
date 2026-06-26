@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import {
-  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen, FileSignature,
+  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen, FileSignature, FileCheck,
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
 import { SOPS_NAV, CHECKLISTS_NAV_LABEL } from "../pages/restaurantgroup/rgConfig";
@@ -28,6 +28,7 @@ const NAV = [
   { key: "performance", path: "/rg/performance", label: "Performance", Icon: BarChart3, title: "Performance" },
   { key: "compliance", path: "/rg/compliance", label: "Awards & Compliance", Icon: Scale, title: "Awards & Compliance" },
   { key: "contracts", path: "/rg/contracts", label: "Contract Generator", Icon: FileSignature, title: "Contract Generator" },
+  { key: "contractsSent", path: "/rg/contracts/sent", permKey: "contracts", label: "Sent Contracts", Icon: FileCheck, title: "Sent Contracts" },
   { key: "messages", path: "/rg/messages", label: "Messages", Icon: MessageCircle, title: "Messages" },
   { key: "calendar", path: "/rg/calendar", label: "Calendar", Icon: CalendarRange, title: "Calendar" },
   { key: "usermgmt", path: "/rg/users", label: "User Management", Icon: ShieldCheck, title: "User Management" },
@@ -38,7 +39,7 @@ const NAV = [
 // Anything NOT listed here falls into the Operations group by default.
 const STAFF_NAV_KEYS = ["staff", "shifts", "leave", "training", "sops", "checklists", "compliance"];
 // Documents group (Sent Contracts will join here later). Kept out of Operations.
-const DOCS_NAV_KEYS = ["contracts"];
+const DOCS_NAV_KEYS = ["contracts", "contractsSent"];
 
 // ── Topbar notification bell: unread badge + feed dropdown + browser popups ──
 function NotificationsBell() {
@@ -140,7 +141,8 @@ function Shell({ children }) {
   const staffNav = useMemo(() => visibleNav.filter((n) => STAFF_NAV_KEYS.includes(n.key)), [visibleNav]);
   const docsNav = useMemo(() => visibleNav.filter((n) => DOCS_NAV_KEYS.includes(n.key)), [visibleNav]);
   const opsNav = useMemo(() => visibleNav.filter((n) => !STAFF_NAV_KEYS.includes(n.key) && !DOCS_NAV_KEYS.includes(n.key)), [visibleNav]);
-  const activeKey = NAV.find((n) => location.pathname.startsWith(n.path))?.key || visibleNav[0]?.key || "staff";
+  // longest matching path wins, so /rg/contracts/sent highlights "Sent Contracts", not the generator
+  const activeKey = NAV.filter((n) => location.pathname.startsWith(n.path)).sort((a, b) => b.path.length - a.path.length)[0]?.key || visibleNav[0]?.key || "staff";
   const current = NAV.find((n) => n.key === activeKey) || NAV[0];
 
   const pendingLeave = useMemo(() => leave.filter((l) => l.status === "Pending").length, [leave]);
