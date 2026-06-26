@@ -36,6 +36,13 @@ service cloud.firestore {
         && (rgStaff(gid, sid).adminUid == request.auth.uid
             || (request.auth.token.email != null && rgStaff(gid, sid).get('email', '') == request.auth.token.email));
     }
+    // NEW: can this signed-in user approve leave? owner/storeAdmin always, OR an
+    // explicit permissions.leave == 'approve' grant on their employees doc.
+    function rgCanApproveLeave(gid) {
+      return rgIsGroupAdmin(gid)
+        || (rgHasEmp() && rgEmp().groupId == gid
+            && rgEmp().get('permissions', {}).get('leave', '') == 'approve');
+    }
 
     match /restaurantGroups/{groupId} {
       allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
@@ -58,42 +65,111 @@ service cloud.firestore {
           allow delete:         if rgIsSuper() || rgCanManageStaff(groupId);
         }
       }
-
+      // ── Contract Generator (Documents module) — owner/storeAdmin only ──
+      // Templates are seeded out-of-band (Admin SDK); the app only READS them.
+      match /contractTemplates/{templateId} {
+        allow read:  if rgIsSuper() || rgIsGroupAdmin(groupId);
+        allow write: if rgIsSuper();
+      }
+      // Contract defaults live in a gated settings/ subcollection (NOT the group doc).
+      match /settings/contractDefaults {
+        allow read, write: if rgIsSuper() || rgIsGroupAdmin(groupId);
+      }
+      match /contracts/{contractId} {
+         allow read, write: if rgIsSuper() || rgIsGroupAdmin(groupId);
+      }
       match /venues/{venueId} {
         allow read, write: if rgIsSuper() || rgIsGroupMember(groupId);
 
-        // Per-venue operational data incl. stock/stockMovements/stocktakes/batches.
-        // NOTE: any group member (incl. staff) can write these — tightening to
-        // managers-only is a business decision, left as-is so staff counts work.
+        // Operational per-venue data (checklists, tempLogs, shifts, stations, equipment,
+        // trainingModules/Assignments, checklistAssignments, kpis, performanceNotes, …) —
+        // any group member. EXCLUDES leaveRequests and the cost/stock collections, which
+        // each have their own tighter block below. (Firestore ORs overlapping matches, so
+        // the only way to NARROW is to exclude here — same pattern as leaveRequests.)
         match /{coll}/{docId=**} {
-          allow read, write: if (rgIsSuper() || rgIsGroupMember(groupId)) && coll != 'leaveRequests';
+          allow read, write: if (rgIsSuper() || rgIsGroupMember(groupId))
+            && !(coll in ['leaveRequests', 'shifts', 'timeEntries', 'availability', 'stock', 'stockMovements', 'stocktakes', 'batches', 'production']);
         }
 
+        // ── Stock / cost collections — manager+ ONLY (matches can('stock') =
+        // owner/storeAdmin/manager; staff is stock:none). Holds cost, weighted-avg,
+        // variance $, production cost. Server (rgSellOrder, Admin SDK) bypasses rules.
+        match /stock/{docId=**}          { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
+        match /stockMovements/{docId=**} { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
+        match /stocktakes/{docId=**}     { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
+        match /batches/{docId=**}        { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
+        match /production/{docId=**}     { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
+
+        // ── CHANGED BLOCK ── approve/update now requires leave-approve permission
+        // (owner/storeAdmin, or an explicit permissions.leave=='approve' grant),
+        // matching the app's `approve` permission level. Submit-your-own unchanged.
         match /leaveRequests/{leaveId} {
           allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
           allow create: if rgIsSuper() || rgCanManageStaff(groupId)
                         || (rgIsGroupMember(groupId) && rgIsOwnStaff(groupId, request.resource.data.staffId));
-          allow update, delete: if rgIsSuper() || rgCanManageStaff(groupId);
+          allow update, delete: if rgIsSuper() || rgCanApproveLeave(groupId);
+        }
+        // ── END CHANGED BLOCK ──
+
+        // ── Availability feature (kiosk clock + availability + assignment) ──
+        // Roster (shifts): any group member READS; only managers+ WRITE. Closes the
+        // previous open hole where any member could write any shift via the catch-all.
+        match /shifts/{shiftId} {
+          allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
+          allow write: if rgIsSuper() || rgCanManageStaff(groupId);
+        }
+        // Time clock: the kiosk is a SHARED terminal — the signed-in device account writes
+        // on behalf of staff (identity is the in-app PIN, NOT auth.uid). So create/update are
+        // group-member; delete is managers+. (Manager "approve" is an update by a manager.)
+        match /timeEntries/{entryId} {
+          allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
+          allow create: if rgIsSuper() || rgIsGroupMember(groupId);
+          allow update: if rgIsSuper() || rgIsGroupMember(groupId);
+          allow delete: if rgIsSuper() || rgCanManageStaff(groupId);
+
+          match /breaks/{breakId} {
+            allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
+            allow write: if rgIsSuper() || rgIsGroupMember(groupId);
+          }
+        }
+        // Availability posting: same shared-terminal model — group-member create/update,
+        // managers+ delete.
+        match /availability/{availId} {
+          allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
+          allow create: if rgIsSuper() || rgIsGroupMember(groupId);
+          allow update: if rgIsSuper() || rgIsGroupMember(groupId);
+          allow delete: if rgIsSuper() || rgCanManageStaff(groupId);
         }
       }
 
       // ── Stock / Menus / Supplier (Module #2) — group-level shared collections ──
-      // Manager+ only (owner/storeAdmin/manager). Staff have stock/menus/supplier:none
-      // and are route-guarded out of these pages. Read and write equal at manager+.
+      // Inventory / suppliers / POs: manager+ (cost & supplier-pricing data).
+      // Menu / modifier groups: readable by group members (floor/POS need them); writes manager+.
+      // Recipes: read tightened to manager+ (expose food-cost composition).
       match /inventoryItems/{itemId} {
         allow read, write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
       match /menuItems/{menuItemId} {
-        allow read, write: if rgIsSuper() || rgCanManageStaff(groupId);
+        // ⚠ COST-FIELD TENSION (flagged): doc contains `cost`. Kept member-read so POS/
+        // floor can read sellPrice/variants/modifierGroupIds. See review §2 for options.
+        allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
+        allow write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
       match /recipes/{recipeId} {
-        allow read, write: if rgIsSuper() || rgCanManageStaff(groupId);
+        // Read tightened to manager+: recipes reveal food-cost build (ingredient qty ×
+        // inventory cost). No staff client screen reads them; POS deducts server-side.
+        allow read:  if rgIsSuper() || rgCanManageStaff(groupId);
+        allow write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
       match /modifierGroups/{modId} {
-        allow read, write: if rgIsSuper() || rgCanManageStaff(groupId);
+        allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
+        allow write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
       match /suppliers/{supplierId} {
-        allow read, write: if rgIsSuper() || rgCanManageStaff(groupId);
+        // Read manager+ (supplier:view). Write owner/storeAdmin only (supplier:edit);
+        // managers are view-only and don't edit the directory from the client.
+        allow read:  if rgIsSuper() || rgCanManageStaff(groupId);
+        allow write: if rgIsSuper() || rgIsGroupAdmin(groupId);
       }
       match /purchaseOrders/{poId} {
         // Write tightened to owner/storeAdmin (supplier:edit). Managers are
