@@ -85,8 +85,9 @@ export default function SentContractsPage() {
   const onDownloadSigned = async (c) => {
     setBusy(c.id);
     try {
+      // getSignedContractUrl returns base64 bytes (no signed URL — runtime SA can't signBlob)
       const res = await httpsCallable(fns(), "getSignedContractUrl")({ groupId, contractId: c.id });
-      if (res.data?.url) window.open(res.data.url, "_blank", "noopener");
+      downloadBlob(res.data.base64, res.data.filename || `signed_${c.id}.pdf`);
     } catch { showToast("Could not open signed contract"); } finally { setBusy(""); }
   };
 

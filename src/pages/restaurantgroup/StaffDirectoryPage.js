@@ -499,8 +499,15 @@ export default function StaffDirectoryPage() {
   // gated callable. Behind SIGNED_UPLOAD_ENABLED until the Storage rule + callables are live.
   const downloadSignedContract = async (contractId) => {
     try {
+      // getSignedContractUrl returns base64 bytes (no signed URL — runtime SA can't signBlob)
       const res = await httpsCallable(getFunctions(undefined, "us-central1"), "getSignedContractUrl")({ groupId, contractId });
-      if (res.data?.url) window.open(res.data.url, "_blank", "noopener");
+      const bytes = atob(res.data.base64);
+      const arr = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([arr], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = res.data.filename || `signed_${contractId}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     } catch { showToast("Could not open signed contract"); }
   };
 
