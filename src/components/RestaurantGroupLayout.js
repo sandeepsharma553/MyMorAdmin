@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import {
-  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen,
+  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen, FileSignature,
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
 import { SOPS_NAV, CHECKLISTS_NAV_LABEL } from "../pages/restaurantgroup/rgConfig";
@@ -27,6 +27,7 @@ const NAV = [
   { key: "supplier", path: "/rg/supplier", label: "Supplier Ordering", Icon: Truck, title: "Supplier Ordering" },
   { key: "performance", path: "/rg/performance", label: "Performance", Icon: BarChart3, title: "Performance" },
   { key: "compliance", path: "/rg/compliance", label: "Awards & Compliance", Icon: Scale, title: "Awards & Compliance" },
+  { key: "contracts", path: "/rg/contracts", label: "Contract Generator", Icon: FileSignature, title: "Contract Generator" },
   { key: "messages", path: "/rg/messages", label: "Messages", Icon: MessageCircle, title: "Messages" },
   { key: "calendar", path: "/rg/calendar", label: "Calendar", Icon: CalendarRange, title: "Calendar" },
   { key: "usermgmt", path: "/rg/users", label: "User Management", Icon: ShieldCheck, title: "User Management" },
@@ -36,6 +37,8 @@ const NAV = [
 // Presentational sidebar grouping (keys only — items, routes, permissions unchanged).
 // Anything NOT listed here falls into the Operations group by default.
 const STAFF_NAV_KEYS = ["staff", "shifts", "leave", "training", "sops", "checklists", "compliance"];
+// Documents group (Sent Contracts will join here later). Kept out of Operations.
+const DOCS_NAV_KEYS = ["contracts"];
 
 // ── Topbar notification bell: unread badge + feed dropdown + browser popups ──
 function NotificationsBell() {
@@ -135,7 +138,8 @@ function Shell({ children }) {
   const visibleNav = useMemo(() => NAV.filter((n) => can(n.permKey || n.key, "view")), [can]);
   // presentational split into two labelled groups; unlisted keys default to Operations
   const staffNav = useMemo(() => visibleNav.filter((n) => STAFF_NAV_KEYS.includes(n.key)), [visibleNav]);
-  const opsNav = useMemo(() => visibleNav.filter((n) => !STAFF_NAV_KEYS.includes(n.key)), [visibleNav]);
+  const docsNav = useMemo(() => visibleNav.filter((n) => DOCS_NAV_KEYS.includes(n.key)), [visibleNav]);
+  const opsNav = useMemo(() => visibleNav.filter((n) => !STAFF_NAV_KEYS.includes(n.key) && !DOCS_NAV_KEYS.includes(n.key)), [visibleNav]);
   const activeKey = NAV.find((n) => location.pathname.startsWith(n.path))?.key || visibleNav[0]?.key || "staff";
   const current = NAV.find((n) => n.key === activeKey) || NAV[0];
 
@@ -190,6 +194,13 @@ function Shell({ children }) {
           <div className="nav-section">
             <div className="nav-label">Operations</div>
             {opsNav.map(renderNavItem)}
+          </div>
+        )}
+
+        {docsNav.length > 0 && (
+          <div className="nav-section">
+            <div className="nav-label">Documents</div>
+            {docsNav.map(renderNavItem)}
           </div>
         )}
 
