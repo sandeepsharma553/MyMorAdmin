@@ -4,6 +4,7 @@ import { useRG } from "./RGContext";
 import { contractTemplatesCol, contractDefaultsDoc, contractsCol, staffPrivateDoc } from "../../utils/restaurantGroupPaths";
 import { isManager } from "./rgConfig";
 import { isMinorDob } from "./staffMinorUtils";
+import contractFill from "./contractFill";
 
 /* ============================================================================
    Contract Generator (Phase 1, Step 4) — READ + RENDER ONLY.
@@ -103,17 +104,17 @@ function buildValues(staff, priv, defaults, overrides) {
   return { ...base, ...overrides };
 }
 
-// Render one clause line → nodes; empty tokens are flagged amber so an admin can’t miss them.
-function renderLine(line, values) {
-  const out = []; const re = /{{(\w+)}}/g; let last = 0, m, k = 0;
-  while ((m = re.exec(line))) {
-    if (m.index > last) out.push(line.slice(last, m.index));
-    const t = m[1]; const v = values[t];
-    if (v && String(v).trim()) out.push(String(v));
-    else out.push(<span key={k++} style={{ background: "#fef3c7", color: "#b45309", padding: "0 4px", borderRadius: 3, fontWeight: 600 }}>‹{t}›</span>);
+// Preview-only: highlight ‹token› placeholders amber. The TEXT comes from the shared
+// contractFill.assemble() (the same source the PDF uses) — this only styles it, so the
+// preview and the PDF can't diverge in content.
+function renderBlockText(text) {
+  const out = []; const re = /‹(\w+)›/g; let last = 0, m, k = 0;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(<span key={k++} style={{ background: "#fef3c7", color: "#b45309", padding: "0 4px", borderRadius: 3, fontWeight: 600 }}>‹{m[1]}›</span>);
     last = re.lastIndex;
   }
-  if (last < line.length) out.push(line.slice(last));
+  if (last < text.length) out.push(text.slice(last));
   return out;
 }
 
@@ -335,23 +336,13 @@ export default function ContractGeneratorPage() {
           {!template && <div style={{ fontSize: 13, color: "var(--gray)" }}>The filled contract appears here once a template resolves.</div>}
           {template && (
             <div style={{ maxHeight: "68vh", overflowY: "auto", fontSize: 12, lineHeight: 1.55, padding: "4px 2px" }}>
-              {template.sections.map((s, i) => (
-                <div key={i} style={{ marginBottom: 8 }}>
-                  {s.heading && <div style={{ fontWeight: 700, marginTop: 8 }}>{s.heading}</div>}
-                  {s.body.map((l, j) => <div key={j}>{renderLine(l, values)}</div>)}
-                </div>
+              {/* Ordering + inclusion (sections, guardian-iff-minor, extraClauses) come from the
+                  SHARED contractFill.assemble — the exact same call the server PDF uses. */}
+              {contractFill.assemble(template, { values, isMinor, extraClauses }).map((b, i) => (
+                b.t === "h"
+                  ? <div key={i} style={{ fontWeight: 700, marginTop: 8 }}>{b.text}</div>
+                  : <div key={i} style={{ marginBottom: 2 }}>{renderBlockText(b.text)}</div>
               ))}
-              {isMinor && template.conditional?.guardian?.body && (
-                <div style={{ marginTop: 8 }}>
-                  {template.conditional.guardian.body.map((l, j) => <div key={j}>{renderLine(l, values)}</div>)}
-                </div>
-              )}
-              {extraClauses.trim() && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontWeight: 700 }}>Additional Terms</div>
-                  {extraClauses.split("\n").filter(Boolean).map((l, j) => <div key={j}>{l}</div>)}
-                </div>
-              )}
             </div>
           )}
         </div>
