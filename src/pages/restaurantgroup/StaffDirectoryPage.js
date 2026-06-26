@@ -5,7 +5,7 @@ import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordRes
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
 import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol } from "../../utils/restaurantGroupPaths";
-import { defaultPermsForStaffRole, roleToGroupRole } from "./rgConfig";
+import { defaultPermsForStaffRole, roleToGroupRole, isManager } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
@@ -72,9 +72,22 @@ const PAYROLL_FIELDS = [
   { key: "bankBsb", label: "Bank BSB", ph: "xxx-xxx" },
   { key: "bankAccount", label: "Bank account number", sensitive: true },
 ];
-const payrollBlank = () => PAYROLL_FIELDS.reduce((o, f) => { o[f.key] = ""; return o; }, {});
-const payrollFrom = (s) => PAYROLL_FIELDS.reduce((o, f) => { o[f.key] = (s[f.key] || "").trim(); return o; }, {});
-const payrollFromProfile = (p) => PAYROLL_FIELDS.reduce((o, f) => { o[f.key] = p[f.key] || ""; return o; }, {});
+// Employment terms (private — owner/storeAdmin only), source of truth for the Contract
+// Generator. Same gated doc + write path as PAYROLL_FIELDS; all optional, populated when a
+// person is edited (no bulk migration). The generator treats missing values as empty-to-fill.
+const EMPLOYMENT_TERMS_FIELDS = [
+  { key: "classificationLevel", label: "Classification level (MA000119)", ph: "e.g. Level 3 / Cook Grade 2" },
+  { key: "payBasis", label: "Pay basis", type: "select", managerOnly: true,
+    options: [["", "—"], ["salary", "Salary (annual)"], ["hourly", "Hourly"]] },
+  { key: "rate", label: "Hourly rate ($)", ph: "e.g. 25.80" }, // label → "Annual salary ($)" for salaried managers
+  { key: "contractedMinHours", label: "Contracted min hours / week", ph: "e.g. 38" },
+];
+// One source of truth for the private/details doc shape. The reducers below iterate THIS,
+// so the existing setDoc(..., {merge:true}) write path picks up the new keys unchanged.
+const PRIVATE_FIELDS = [...PAYROLL_FIELDS, ...EMPLOYMENT_TERMS_FIELDS];
+const payrollBlank = () => PRIVATE_FIELDS.reduce((o, f) => { o[f.key] = ""; return o; }, {});
+const payrollFrom = (s) => PRIVATE_FIELDS.reduce((o, f) => { o[f.key] = (s[f.key] || "").trim(); return o; }, {});
+const payrollFromProfile = (p) => PRIVATE_FIELDS.reduce((o, f) => { o[f.key] = p[f.key] || ""; return o; }, {});
 
 const blankForm = (defaultVenue) => ({
   name: "", role: "FOH", areas: [], venueIds: defaultVenue && defaultVenue !== "all" ? [defaultVenue] : [],
@@ -239,6 +252,42 @@ export default function StaffDirectoryPage() {
       <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>Sensitive data (TFN, super, bank). Used for payroll/onboarding only.</div>
     </div>
   );
+
+  // Employment terms (private — owner/storeAdmin only), pre-fill source for the Contract
+  // Generator. payBasis shows ONLY for managers via the shared exact isManager() helper
+  // (NOT areaOf/unionAreas, which map supervisor/in-charge → Mgmt). For everyone else rate
+  // is the hourly rate. Renders inside the same canPayroll gate as renderPayroll.
+  const renderEmploymentTerms = (state, handler) => {
+    const mgr = isManager({ role: deriveRoleAreas(state).primaryRole });
+    const salaried = mgr && state.payBasis === "salary";
+    return (
+      <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
+        <label className="form-label" style={{ marginBottom: 8, display: "block" }}>
+          Employment terms <span style={{ color: "var(--gray)", fontWeight: 400 }}>(private — used to pre-fill contracts)</span>
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          {EMPLOYMENT_TERMS_FIELDS.map((f) => {
+            if (f.managerOnly && !mgr) return null;
+            const label = f.key === "rate" ? (salaried ? "Annual salary ($)" : "Hourly rate ($)") : f.label;
+            return (
+              <div key={f.key} className="form-group" style={{ margin: 0, gridColumn: f.full ? "1 / -1" : "auto" }}>
+                <label className="form-label">{label}</label>
+                {f.type === "select" ? (
+                  <select className="form-input" value={state[f.key] || ""}
+                    onChange={(e) => { handler(f.key)(e); if (f.key === "payBasis") handler("rate")({ target: { value: "", type: "text" } }); }}>
+                    {f.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                ) : (
+                  <input className="form-input" type="text" value={state[f.key] || ""} onChange={handler(f.key)} placeholder={f.ph || ""} autoComplete="off" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>Optional. The Contract Generator pre-fills from these; leave blank to fill at generation time.</div>
+      </div>
+    );
+  };
   const toggleVenue = (vid, target, setter) => setter((p) => {
     const has = p.venueIds.includes(vid);
     const venueIds = has ? p.venueIds.filter((x) => x !== vid) : [...p.venueIds, vid];
@@ -351,7 +400,7 @@ export default function StaffDirectoryPage() {
     cmp("Venues", (profile.venueNames || []).join(", "), edit.venueIds.map(venueName).join(", "));
     cmp("Stations", (profile.stationNames || []).join(", "), refsToStationNames(edit.stationRefs).join(", "));
     // audit THAT payroll/personal details changed, but never the sensitive values (auditLog is group-readable)
-    if (canPayroll && payroll && PAYROLL_FIELDS.some((f) => String(payroll[f.key] ?? "") !== String(edit[f.key] ?? ""))) {
+    if (canPayroll && payroll && PRIVATE_FIELDS.some((f) => String(payroll[f.key] ?? "") !== String(edit[f.key] ?? ""))) {
       out.push("Payroll/personal details updated");
     }
     return out;
@@ -837,6 +886,7 @@ export default function StaffDirectoryPage() {
               </div>
             </div>
             {canPayroll && renderPayroll(form, setF)}
+            {canPayroll && renderEmploymentTerms(form, setF)}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
               <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <input type="checkbox" checked={form.hasAdminLogin} onChange={setF("hasAdminLogin")} /> Admin website access (email + password login)
@@ -1137,6 +1187,7 @@ export default function StaffDirectoryPage() {
                 </div>
                 {renderCerts(edit, setEdit)}
                 {canPayroll && renderPayroll(edit, setE)}
+                {canPayroll && renderEmploymentTerms(edit, setE)}
                 <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
                   <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <input type="checkbox" checked={edit.hasAdminLogin} onChange={setE("hasAdminLogin")} disabled={!!profile.adminUid} /> Admin website access

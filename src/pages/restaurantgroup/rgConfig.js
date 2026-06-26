@@ -82,6 +82,13 @@ export const roleToGroupRole = (role) =>
 // Default permission map for a staff job role.
 export const defaultPermsForStaffRole = (role) => defaultPermsForRole(roleToGroupRole(role));
 
+// Exact "Manager" test — the SINGLE source of truth for "is this person a manager?",
+// shared by the employment-terms editor (payBasis visibility) and the Contract Generator's
+// §4 template selection, so the entry surface and selection surface can never diverge.
+// Deliberately EXACT (role === "Manager"): areaOf()/staffStructureUtils map supervisor /
+// in-charge → "Mgmt", and those hourly staff must NOT be treated as managers here.
+export const isManager = (staff) => (staff?.role || "") === "Manager";
+
 export const roleMeta = (role) => RG_ROLES.find((r) => r.key === role) || RG_ROLES[3];
 
 // Does a permission map satisfy a required level for a module?
