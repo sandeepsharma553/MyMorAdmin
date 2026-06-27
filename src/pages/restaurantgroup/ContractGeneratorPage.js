@@ -47,7 +47,7 @@ const SOURCE_GROUPS = [
 // ROLLOUT GATE (Step 6): the employee-facing Send stays locked until the test-send PDF is
 // reviewed + approved. Flip to true ONLY after that sign-off. The send function exists and is
 // wired (handles EMPTY_FIELDS / ALREADY_SENT / testTo); this flag just gates the employee button.
-const EMPLOYEE_SEND_ENABLED = false;
+const EMPLOYEE_SEND_ENABLED = true;
 
 // Private tokens the "also update staff record" toggle may write back → private/details field.
 // Anything NOT here (dob/tfn/bank/super, contract-defaults, derived) is never written to the staff record.

@@ -91,7 +91,7 @@ export const isManager = (staff) => (staff?.role || "") === "Manager";
 
 // Step 7 ROLLOUT GATE: signed-contract upload/download UI stays dark until the Storage
 // deny-rule + the upload/getSignedContractUrl callables are live. Flip to true LAST.
-export const SIGNED_UPLOAD_ENABLED = false;
+export const SIGNED_UPLOAD_ENABLED = true;
 
 export const roleMeta = (role) => RG_ROLES.find((r) => r.key === role) || RG_ROLES[3];
 
