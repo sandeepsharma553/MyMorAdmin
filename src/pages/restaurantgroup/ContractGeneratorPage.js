@@ -6,6 +6,7 @@ import { contractTemplatesCol, contractDefaultsDoc, contractsCol, staffPrivateDo
 import { isManager } from "./rgConfig";
 import { isMinorDob } from "./staffMinorUtils";
 import contractFill from "./contractFill";
+import { awardForVenue, isAwardUsableForLabour, staffIsCasual } from "./rgComplianceUtils";
 
 /* ============================================================================
    Contract Generator (Phase 1, Step 4) — READ + RENDER ONLY.
@@ -90,11 +91,24 @@ function pickEntityForStaff(staff, entities) {
   return entities.find((e) => (e.venueIds || []).some((vid) => sv.includes(vid))) || null;
 }
 
+// Look up the hourly rate for a classification level in a VERIFIED award (caller passes null
+// for `award` when unverified). casualHourly for casuals, else baseHourly. null if no match.
+function awardRateForLevel(award, levelLabel, isCasual) {
+  if (!award || !levelLabel) return null;
+  const row = (award.levels || []).find((l) => String(l.level).trim().toLowerCase() === String(levelLabel).trim().toLowerCase());
+  if (!row) return null;
+  const r = isCasual ? row.casualHourly : row.baseHourly;
+  return (r == null || isNaN(Number(r))) ? null : String(r);
+}
+
 // §5 — prefill every token; per-contract overrides win. Missing values stay empty (filled at gen time).
-function buildValues(staff, priv, defaults, overrides, entities) {
+function buildValues(staff, priv, defaults, overrides, entities, venues, awardRates) {
   const multi = (staff?.venueIds || []).length > 1;
   // employer_name prefill: the venue-mapped legal entity's FULL name; else contractDefaults.employerName.
   const entity = pickEntityForStaff(staff, entities);
+  // Award rate is gated on verified===true (mirror isAwardUsableForLabour) — unverified contributes nothing.
+  const staffVenue = (venues || []).find((v) => v.id === (staff?.venueIds || [])[0]);
+  const rateAward = isAwardUsableForLabour(awardForVenue(staffVenue, awardRates)) ? awardForVenue(staffVenue, awardRates) : null;
   const base = {
     employee_name: staff?.displayName || staff?.name || "",
     employment_type: staff?.type || "",
@@ -118,6 +132,12 @@ function buildValues(staff, priv, defaults, overrides, entities) {
   const merged = { ...base, ...overrides };
   // First name is always DERIVED from the (overridable) full name — never an editable field of its own.
   merged.employee_first_name = String(merged.employee_name || "").trim().split(/\s+/)[0] || "";
+  // hourly_rate precedence: per-contract override > staff-record rate > verified-award rate > empty.
+  // Reactive to the SELECTED (possibly overridden) classification level.
+  if (overrides.hourly_rate == null || overrides.hourly_rate === "") {
+    const awardRate = awardRateForLevel(rateAward, merged.classification_level, staffIsCasual(staff));
+    merged.hourly_rate = (priv?.rate || "") || awardRate || "";
+  }
   return merged;
 }
 
@@ -136,7 +156,7 @@ function renderBlockText(text) {
 }
 
 export default function ContractGeneratorPage() {
-  const { groupId, scopedStaff, can, me, showToast, venues, roles, areas } = useRG();
+  const { groupId, scopedStaff, can, me, showToast, venues, roles, areas, awardRates } = useRG();
   const uid = me?.uid || me?.id || null;
 
   const [templatesById, setTemplatesById] = useState(null); // null = loading
@@ -207,8 +227,14 @@ export default function ContractGeneratorPage() {
   );
   const template = resolved.status === "OK" ? templatesById[resolved.templateId] : null;
   const values = useMemo(
-    () => buildValues(selStaff, priv || {}, defaults || {}, overrides, entities),
-    [selStaff, priv, defaults, overrides, entities]
+    () => buildValues(selStaff, priv || {}, defaults || {}, overrides, entities, venues, awardRates),
+    [selStaff, priv, defaults, overrides, entities, venues, awardRates]
+  );
+  // The award mapped to the selected staff's venue (may be unverified) — its level labels feed
+  // the classification dropdown; the RATE auto-fill (in buildValues) separately requires verified.
+  const staffAward = useMemo(
+    () => awardForVenue((venues || []).find((v) => v.id === (selStaff?.venueIds || [])[0]), awardRates),
+    [selStaff, venues, awardRates]
   );
   const isMinor = !!(priv && priv.dob && isMinorDob(priv.dob));
   const sendTarget = (priv && priv.contactEmail) || selStaff?.email || "";
@@ -292,12 +318,18 @@ export default function ContractGeneratorPage() {
   const fieldsByGroup = (src) => (template?.tokenKeys || []).filter((t) => (TOKEN_SOURCE[t] || "typed") === src && !HIDDEN_FIELDS.has(t));
   // classification_level + employer_name become dropdowns when the Settings lists exist;
   // otherwise they fall back to the free-text input so generation never breaks on an empty list.
+  // classification options: the venue award's levels → chunk-3 list → null (free text).
+  const awardLevelOptions = (staffAward?.levels || []).map((l) => l.level).filter(Boolean);
+  const classOptions = awardLevelOptions.length ? awardLevelOptions : (classLevels.length ? classLevels : null);
   const renderField = (t) => {
-    if (t === "classification_level" && classLevels.length) {
+    if (t === "classification_level" && classOptions) {
+      const known = classOptions.includes(values[t]);
       return (
         <select className="form-input" value={values[t] || ""} onChange={setOverride(t)}>
           <option value="">—</option>
-          {classLevels.map((l) => <option key={l} value={l}>{l}</option>)}
+          {classOptions.map((l) => <option key={l} value={l}>{l}</option>)}
+          {/* keep a prefilled-but-unlisted value selectable (e.g. legacy staff-record level) */}
+          {values[t] && !known && <option value={values[t]}>{values[t]}</option>}
         </select>
       );
     }
