@@ -84,11 +84,9 @@ function resolveTemplate(staff, templatesById, forcedArea) {
 
 // §5 — prefill every token; per-contract overrides win. Missing values stay empty (filled at gen time).
 function buildValues(staff, priv, defaults, overrides) {
-  const firstName = (staff?.name || staff?.displayName || "").trim().split(/\s+/)[0] || "";
   const multi = (staff?.venueIds || []).length > 1;
   const base = {
     employee_name: staff?.displayName || staff?.name || "",
-    employee_first_name: firstName,
     employment_type: staff?.type || "",
     commence_date: staff?.start || "",
     location_basis: multi ? "Multiple Locations" : "Single Location",
@@ -107,7 +105,10 @@ function buildValues(staff, priv, defaults, overrides) {
     min_days: defaults?.min_days || "",
     offer_date: todayISO(),
   };
-  return { ...base, ...overrides };
+  const merged = { ...base, ...overrides };
+  // First name is always DERIVED from the (overridable) full name — never an editable field of its own.
+  merged.employee_first_name = String(merged.employee_name || "").trim().split(/\s+/)[0] || "";
+  return merged;
 }
 
 // Preview-only: highlight ‹token› placeholders amber. The TEXT comes from the shared
@@ -264,7 +265,9 @@ export default function ContractGeneratorPage() {
   }
 
   const setOverride = (k) => (e) => setOverrides((p) => ({ ...p, [k]: e.target.value }));
-  const fieldsByGroup = (src) => (template?.tokenKeys || []).filter((t) => (TOKEN_SOURCE[t] || "typed") === src);
+  // employee_first_name is DERIVED from employee_name (see buildValues) — never its own editable field.
+  const HIDDEN_FIELDS = new Set(["employee_first_name"]);
+  const fieldsByGroup = (src) => (template?.tokenKeys || []).filter((t) => (TOKEN_SOURCE[t] || "typed") === src && !HIDDEN_FIELDS.has(t));
 
   return (
     <div style={{ margin: 16 }}>
@@ -278,7 +281,7 @@ export default function ContractGeneratorPage() {
           <div style={{ maxHeight: "62vh", overflowY: "auto" }}>
             {templatesById === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
             {filteredStaff.map((s) => (
-              <button key={s.id} className={`nav-item ${selStaff?.id === s.id ? "active" : ""}`} style={{ width: "100%", textAlign: "left" }} onClick={() => selectStaff(s)}>
+              <button key={s.id} className={`rg-pick-row ${selStaff?.id === s.id ? "active" : ""}`} onClick={() => selectStaff(s)}>
                 <span>{s.displayName || s.name}</span>
                 <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--gray)" }}>{s.role} · {s.type}</span>
               </button>
