@@ -16,6 +16,7 @@ import SupplierPage from "../pages/restaurantgroup/SupplierPage";
 import CompliancePage from "../pages/restaurantgroup/CompliancePage";
 import ContractGeneratorPage from "../pages/restaurantgroup/ContractGeneratorPage";
 import SentContractsPage from "../pages/restaurantgroup/SentContractsPage";
+import ContractTemplatesPage from "../pages/restaurantgroup/ContractTemplatesPage";
 import ProtectedRoute from "../pages/restaurantgroup/ProtectedRoute";
 
 const P = (moduleKey, El) => <ProtectedRoute moduleKey={moduleKey}>{El}</ProtectedRoute>;
@@ -39,6 +40,7 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/compliance" element={P("compliance", <CompliancePage />)} />
       <Route path="/rg/contracts" element={P("contracts", <ContractGeneratorPage />)} />
       <Route path="/rg/contracts/sent" element={P("contracts", <SentContractsPage />)} />
+      <Route path="/rg/contracts/templates" element={P("contracts", <ContractTemplatesPage />)} />
       <Route path="/rg/messages" element={P("messages", <MessagingPage />)} />
       <Route path="/rg/calendar" element={P("calendar", <CalendarPage />)} />
       <Route path="/rg/users" element={P("usermgmt", <UserManagementPage />)} />

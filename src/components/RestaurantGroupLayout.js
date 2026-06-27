@@ -29,6 +29,7 @@ const NAV = [
   { key: "compliance", path: "/rg/compliance", label: "Awards & Compliance", Icon: Scale, title: "Awards & Compliance" },
   { key: "contracts", path: "/rg/contracts", label: "Contract Generator", Icon: FileSignature, title: "Contract Generator" },
   { key: "contractsSent", path: "/rg/contracts/sent", permKey: "contracts", label: "Sent Contracts", Icon: FileCheck, title: "Sent Contracts" },
+  { key: "contractsTemplates", path: "/rg/contracts/templates", permKey: "contracts", label: "Contract Templates", Icon: BookOpen, title: "Contract Templates" },
   { key: "messages", path: "/rg/messages", label: "Messages", Icon: MessageCircle, title: "Messages" },
   { key: "calendar", path: "/rg/calendar", label: "Calendar", Icon: CalendarRange, title: "Calendar" },
   { key: "usermgmt", path: "/rg/users", label: "User Management", Icon: ShieldCheck, title: "User Management" },
@@ -39,7 +40,7 @@ const NAV = [
 // Anything NOT listed here falls into the Operations group by default.
 const STAFF_NAV_KEYS = ["staff", "shifts", "leave", "training", "sops", "checklists", "compliance"];
 // Documents group (Sent Contracts will join here later). Kept out of Operations.
-const DOCS_NAV_KEYS = ["contracts", "contractsSent"];
+const DOCS_NAV_KEYS = ["contracts", "contractsSent", "contractsTemplates"];
 
 // ── Topbar notification bell: unread badge + feed dropdown + browser popups ──
 function NotificationsBell() {
