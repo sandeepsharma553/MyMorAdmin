@@ -126,7 +126,7 @@ function renderBlockText(text) {
 }
 
 export default function ContractGeneratorPage() {
-  const { groupId, scopedStaff, can, me, showToast } = useRG();
+  const { groupId, scopedStaff, can, me, showToast, venues, roles, areas } = useRG();
   const uid = me?.uid || me?.id || null;
 
   const [templatesById, setTemplatesById] = useState(null); // null = loading
@@ -135,6 +135,9 @@ export default function ContractGeneratorPage() {
   const [defaults, setDefaults] = useState(null);
   const [loadErr, setLoadErr] = useState("");
   const [search, setSearch] = useState("");
+  const [venueF, setVenueF] = useState("all");
+  const [areaF, setAreaF] = useState("all");
+  const [roleF, setRoleF] = useState("all");
   const [selStaff, setSelStaff] = useState(null);
   const [priv, setPriv] = useState(null);     // gated private/details for the selected staff
   const [areaChoice, setAreaChoice] = useState(null); // FOH | BOH when NEEDS_CHOICE
@@ -174,10 +177,12 @@ export default function ContractGeneratorPage() {
 
   const filteredStaff = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const list = (scopedStaff || []).filter((s) => s.status !== "Left");
-    if (!q) return list;
-    return list.filter((s) => `${s.displayName || s.name || ""} ${s.role || ""}`.toLowerCase().includes(q));
-  }, [scopedStaff, search]);
+    return (scopedStaff || []).filter((s) => s.status !== "Left")
+      .filter((s) => venueF === "all" || (s.venueIds || []).includes(venueF))
+      .filter((s) => areaF === "all" || (s.areas || []).includes(areaF))
+      .filter((s) => roleF === "all" || s.role === roleF)
+      .filter((s) => !q || `${s.displayName || s.name || ""} ${s.role || ""}`.toLowerCase().includes(q));
+  }, [scopedStaff, search, venueF, areaF, roleF]);
 
   const resolved = useMemo(
     () => (templatesById ? resolveTemplate(selStaff, templatesById, areaChoice) : { status: "EMPTY" }),
@@ -277,7 +282,21 @@ export default function ContractGeneratorPage() {
         {/* ── Staff picker ── */}
         <div className="card">
           <div className="card-head"><span className="card-title">Staff</span><span className="card-sub">Pick who the contract is for</span></div>
-          <input className="form-input" placeholder="Search name or role…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ marginBottom: 8 }} />
+          <input className="form-input" placeholder="Search name or role…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ marginBottom: 6 }} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+            <select className="form-input" value={venueF} onChange={(e) => setVenueF(e.target.value)} title="Venue">
+              <option value="all">All venues</option>
+              {(venues || []).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+            <select className="form-input" value={areaF} onChange={(e) => setAreaF(e.target.value)} title="Area">
+              <option value="all">All areas</option>
+              {(areas || []).map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <select className="form-input" value={roleF} onChange={(e) => setRoleF(e.target.value)} title="Role" style={{ gridColumn: "1 / -1" }}>
+              <option value="all">All roles</option>
+              {(roles || []).map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
           <div style={{ maxHeight: "62vh", overflowY: "auto" }}>
             {templatesById === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
             {filteredStaff.map((s) => (
