@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { getDocs, getDoc, addDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { useRG } from "./RGContext";
-import { contractTemplatesCol, contractDefaultsDoc, contractsCol, staffPrivateDoc } from "../../utils/restaurantGroupPaths";
+import { contractTemplatesCol, contractDefaultsDoc, contractsCol, staffPrivateDoc, contractClassificationsDoc, legalEntitiesDoc } from "../../utils/restaurantGroupPaths";
 import { isManager } from "./rgConfig";
 import { isMinorDob } from "./staffMinorUtils";
 import contractFill from "./contractFill";
@@ -82,9 +82,19 @@ function resolveTemplate(staff, templatesById, forcedArea) {
   return templatesById[id] ? { status: "OK", templateId: id } : { status: "BLOCK", reason: `Template “${id}” not found.` };
 }
 
+// Pick the legal entity that covers the staff member's venue: first entity whose venueIds
+// intersect the staff's venueIds. Two matches → first (still overridable). No match → null.
+function pickEntityForStaff(staff, entities) {
+  const sv = staff?.venueIds || [];
+  if (!sv.length || !entities?.length) return null;
+  return entities.find((e) => (e.venueIds || []).some((vid) => sv.includes(vid))) || null;
+}
+
 // §5 — prefill every token; per-contract overrides win. Missing values stay empty (filled at gen time).
-function buildValues(staff, priv, defaults, overrides) {
+function buildValues(staff, priv, defaults, overrides, entities) {
   const multi = (staff?.venueIds || []).length > 1;
+  // employer_name prefill: the venue-mapped legal entity's FULL name; else contractDefaults.employerName.
+  const entity = pickEntityForStaff(staff, entities);
   const base = {
     employee_name: staff?.displayName || staff?.name || "",
     employment_type: staff?.type || "",
@@ -94,7 +104,7 @@ function buildValues(staff, priv, defaults, overrides) {
     classification_level: priv?.classificationLevel || "",
     hourly_rate: priv?.rate || "",
     contracted_min_hours: priv?.contractedMinHours || "",
-    employer_name: defaults?.employerName || "",
+    employer_name: entity ? entity.name : (defaults?.employerName || ""),
     owner_name: defaults?.ownerName || "",
     discount_during: defaults?.discount_during || "",
     discount_outside: defaults?.discount_outside || "",
@@ -133,6 +143,8 @@ export default function ContractGeneratorPage() {
   const [saving, setSaving] = useState(false);
   const [lastDraft, setLastDraft] = useState(null); // { id } of the just-saved draft (enables Send)
   const [defaults, setDefaults] = useState(null);
+  const [classLevels, setClassLevels] = useState([]); // settings/contractClassifications.levels (optional)
+  const [entities, setEntities] = useState([]);       // settings/legalEntities.entities (optional)
   const [loadErr, setLoadErr] = useState("");
   const [search, setSearch] = useState("");
   const [venueF, setVenueF] = useState("all");
@@ -151,15 +163,20 @@ export default function ContractGeneratorPage() {
     let alive = true;
     (async () => {
       try {
-        const [tsnap, dsnap] = await Promise.all([
+        const [tsnap, dsnap, csnap, esnap] = await Promise.all([
           getDocs(contractTemplatesCol(groupId)),
           getDoc(contractDefaultsDoc(groupId)),
+          // classification + entities are OPTIONAL — a missing/denied read must not break generation
+          getDoc(contractClassificationsDoc(groupId)).catch(() => null),
+          getDoc(legalEntitiesDoc(groupId)).catch(() => null),
         ]);
         if (!alive) return;
         const byId = {};
         tsnap.forEach((d) => { byId[d.id] = { id: d.id, ...d.data() }; });
         setTemplatesById(byId);
         setDefaults(dsnap.exists() ? dsnap.data() : {});
+        setClassLevels(csnap && csnap.exists() ? (csnap.data().levels || []) : []);
+        setEntities(esnap && esnap.exists() ? (esnap.data().entities || []) : []);
       } catch (e) {
         if (alive) { setLoadErr("Could not load contract templates/defaults. (If you’re owner/storeAdmin, the contract Firestore rules may not be live yet.)"); setTemplatesById({}); setDefaults({}); }
       }
@@ -190,8 +207,8 @@ export default function ContractGeneratorPage() {
   );
   const template = resolved.status === "OK" ? templatesById[resolved.templateId] : null;
   const values = useMemo(
-    () => buildValues(selStaff, priv || {}, defaults || {}, overrides),
-    [selStaff, priv, defaults, overrides]
+    () => buildValues(selStaff, priv || {}, defaults || {}, overrides, entities),
+    [selStaff, priv, defaults, overrides, entities]
   );
   const isMinor = !!(priv && priv.dob && isMinorDob(priv.dob));
   const sendTarget = (priv && priv.contactEmail) || selStaff?.email || "";
@@ -273,6 +290,30 @@ export default function ContractGeneratorPage() {
   // employee_first_name is DERIVED from employee_name (see buildValues) — never its own editable field.
   const HIDDEN_FIELDS = new Set(["employee_first_name"]);
   const fieldsByGroup = (src) => (template?.tokenKeys || []).filter((t) => (TOKEN_SOURCE[t] || "typed") === src && !HIDDEN_FIELDS.has(t));
+  // classification_level + employer_name become dropdowns when the Settings lists exist;
+  // otherwise they fall back to the free-text input so generation never breaks on an empty list.
+  const renderField = (t) => {
+    if (t === "classification_level" && classLevels.length) {
+      return (
+        <select className="form-input" value={values[t] || ""} onChange={setOverride(t)}>
+          <option value="">—</option>
+          {classLevels.map((l) => <option key={l} value={l}>{l}</option>)}
+        </select>
+      );
+    }
+    if (t === "employer_name" && entities.length) {
+      const known = entities.some((e) => e.name === values[t]);
+      return (
+        <select className="form-input" value={values[t] || ""} onChange={setOverride(t)}>
+          <option value="">—</option>
+          {entities.map((e) => <option key={e.id} value={e.name}>{e.name}</option>)}
+          {/* keep a prefilled-but-unlisted value (e.g. legacy default) selectable */}
+          {values[t] && !known && <option value={values[t]}>{values[t]}</option>}
+        </select>
+      );
+    }
+    return <input className="form-input" value={values[t] || ""} onChange={setOverride(t)} placeholder={`‹${t}›`} />;
+  };
 
   return (
     <div style={{ margin: 16 }}>
@@ -346,7 +387,7 @@ export default function ContractGeneratorPage() {
                     {keys.map((t) => (
                       <div key={t} className="form-group" style={{ margin: "0 0 6px" }}>
                         <label className="form-label" style={{ fontSize: 11 }}>{TOKEN_LABEL[t] || t}</label>
-                        <input className="form-input" value={values[t] || ""} onChange={setOverride(t)} placeholder={`‹${t}›`} />
+                        {renderField(t)}
                         {src === "private" && (
                           <label style={{ fontSize: 10, color: "var(--gray)", display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
                             <input type="checkbox" checked={!!writeBack[t]} onChange={(e) => setWriteBack((p) => ({ ...p, [t]: e.target.checked }))} />
