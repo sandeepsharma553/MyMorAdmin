@@ -128,6 +128,9 @@ export const acknowledgementDoc = (groupId, staffId, version) => doc(acknowledge
 export const contractTemplatesCol = (groupId) => groupCol(groupId, "contractTemplates");
 export const contractTemplateDoc = (groupId, id) => doc(contractTemplatesCol(groupId), String(id));
 export const contractDefaultsDoc = (groupId) => doc(db, "restaurantGroups", String(groupId), "settings", "contractDefaults");
+// Contract settings (Step 8): MA000119 classification list + legal entities (gated subcollection docs).
+export const contractClassificationsDoc = (groupId) => doc(db, "restaurantGroups", String(groupId), "settings", "contractClassifications");
+export const legalEntitiesDoc = (groupId) => doc(db, "restaurantGroups", String(groupId), "settings", "legalEntities");
 // Generated contracts (draft → sent → signed). Owner/storeAdmin gated in rules.
 export const contractsCol = (groupId) => groupCol(groupId, "contracts");
 export const contractDoc = (groupId, id) => doc(contractsCol(groupId), String(id));

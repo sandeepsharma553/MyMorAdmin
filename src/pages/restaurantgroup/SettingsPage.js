@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueCol, groupDoc } from "../../utils/restaurantGroupPaths";
+import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc } from "../../utils/restaurantGroupPaths";
 import { SUGGESTED_STATIONS } from "./rgConfig";
 import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload } from "./staffStructureUtils";
 import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS } from "./rgStockUtils";
@@ -11,11 +11,50 @@ const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
 const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
 export default function SettingsPage() {
-  const { groupId, group, venues, stations, equipment, roles, areas, empTypes, can, showToast } = useRG();
+  const { groupId, group, venues, stations, equipment, roles, areas, empTypes, can, showToast, me } = useRG();
   const editable = can("settings", "edit");
+  const isOwner = me?.groupRole === "owner"; // legal-entity editing is owner-only
+  const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
   const [tab, setTab] = useState("structure");
   const [venueTab, setVenueTab] = useState(venues[0]?.id || "");
   useEffect(() => { if (!venueTab && venues[0]) setVenueTab(venues[0].id); }, [venues]); // eslint-disable-line
+
+  // ── Contract settings (gated subcollection docs; loaded on mount) ──
+  const [classLevels, setClassLevels] = useState([]);
+  const [newClass, setNewClass] = useState("");
+  const [entities, setEntities] = useState([]);
+  const [entForm, setEntForm] = useState(null); // {id?, name, venueIds[]} edit buffer
+  useEffect(() => {
+    if (!groupId) return;
+    getDoc(contractClassificationsDoc(groupId)).then((d) => setClassLevels(d.exists() ? (d.data().levels || []) : [])).catch(() => {});
+    getDoc(legalEntitiesDoc(groupId)).then((d) => setEntities(d.exists() ? (d.data().entities || []) : [])).catch(() => {});
+  }, [groupId]);
+
+  const saveClassLevels = async (next) => {
+    setClassLevels(next);
+    try { await setDoc(contractClassificationsDoc(groupId), { levels: next, updatedAt: serverTimestamp() }, { merge: true }); }
+    catch { showToast("Could not save classification levels"); }
+  };
+  const addClass = () => { const v = newClass.trim(); if (!v || classLevels.includes(v)) return; saveClassLevels([...classLevels, v]); setNewClass(""); };
+  const removeClass = (v) => saveClassLevels(classLevels.filter((x) => x !== v));
+  const moveClass = (i, dir) => { const j = i + dir; if (j < 0 || j >= classLevels.length) return; const n = [...classLevels]; [n[i], n[j]] = [n[j], n[i]]; saveClassLevels(n); };
+
+  const saveEntities = async (next) => {
+    setEntities(next);
+    try { await setDoc(legalEntitiesDoc(groupId), { entities: next, updatedAt: serverTimestamp() }, { merge: true }); }
+    catch { showToast("Could not save legal entities"); }
+  };
+  const startEnt = (e) => setEntForm(e ? { ...e, venueIds: [...(e.venueIds || [])] } : { name: "", venueIds: [] });
+  const toggleEntVenue = (vid) => setEntForm((p) => ({ ...p, venueIds: p.venueIds.includes(vid) ? p.venueIds.filter((x) => x !== vid) : [...p.venueIds, vid] }));
+  const saveEnt = () => {
+    const name = (entForm.name || "").trim();
+    if (!name) return showToast("Enter the full legal name");
+    const id = entForm.id || slug(name) || `ent-${Date.now()}`;
+    const rec = { id, name, venueIds: entForm.venueIds || [] };
+    saveEntities(entForm.id ? entities.map((e) => (e.id === entForm.id ? rec : e)) : [...entities, rec]);
+    setEntForm(null);
+  };
+  const removeEnt = (e) => saveEntities(entities.filter((x) => x.id !== e.id));
 
   // ── Stations ──
   const venueStations = useMemo(() => stations.filter((s) => s.venueId === venueTab), [stations, venueTab]);
@@ -181,7 +220,7 @@ export default function SettingsPage() {
   return (
     <>
       <div className="tabs" style={{ marginBottom: 16 }}>
-        {[["structure", "Staff structure"], ["stations", "Stations"], ["units", "Temperature units"], ["stock", "Stock lists"]].map(([id, l]) => (
+        {[["structure", "Staff structure"], ["stations", "Stations"], ["units", "Temperature units"], ["stock", "Stock lists"], ["contracts", "Contracts"]].map(([id, l]) => (
           <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
@@ -468,6 +507,87 @@ export default function SettingsPage() {
             <div className="btn-row"><button className="btn btn-primary" onClick={saveUnit}>Save unit</button><button className="btn" onClick={() => setEqForm(null)}>Cancel</button></div>
           </div>
         </div>
+      )}
+
+      {/* ── CONTRACTS: classification levels + legal entities ── */}
+      {tab === "contracts" && (
+        <>
+          <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 12 }}>
+            Picklists for the <strong>Contract Generator</strong> — the MA000119 <strong>classification levels</strong> and your <strong>legal entities</strong> (full registered names) mapped to venues.
+          </div>
+          <div className="grid-2">
+            {/* CLASSIFICATION LEVELS */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Classification levels</span><span className="card-sub">MA000119 levels offered in the generator</span></div></div>
+              {classLevels.map((c, i) => (
+                <div key={c} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <span style={{ fontSize: 13 }}>{c}</span>
+                  {editable && (
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button className="btn btn-sm" disabled={i === 0} title="Move up" onClick={() => moveClass(i, -1)}>↑</button>
+                      <button className="btn btn-sm" disabled={i === classLevels.length - 1} title="Move down" onClick={() => moveClass(i, 1)}>↓</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => removeClass(c)}>✕</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {classLevels.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No levels yet — add the MA000119 levels you use.</div>}
+              {editable && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <input className="form-input" value={newClass} onChange={(e) => setNewClass(e.target.value)} placeholder="e.g. Level 3 / Cook Grade 2" onKeyDown={(e) => e.key === "Enter" && addClass()} />
+                  <button className="btn btn-primary" onClick={addClass}>Add</button>
+                </div>
+              )}
+            </div>
+
+            {/* LEGAL ENTITIES (owner-only edit) */}
+            <div className="card">
+              <div className="card-head">
+                <div><span className="card-title">Legal entities</span><span className="card-sub">Full registered name + the venues each covers</span></div>
+                {isOwner && <button className="btn btn-sm btn-primary" onClick={() => startEnt(null)}>+ Add entity</button>}
+              </div>
+              {entities.map((e) => (
+                <div key={e.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <span style={{ fontSize: 13 }}>
+                    <strong>{e.name}</strong>
+                    <span style={{ fontSize: 11, color: "var(--gray)", marginLeft: 6 }}>{(e.venueIds || []).map(venueName).filter(Boolean).join(", ") || "— no venues —"}</span>
+                  </span>
+                  {isOwner && (
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button className="btn btn-sm" onClick={() => startEnt(e)}>Edit</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => removeEnt(e)}>✕</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {entities.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No legal entities yet.</div>}
+              {!isOwner && <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 8 }}>Only the owner can add or edit legal entities.</div>}
+            </div>
+          </div>
+
+          {/* Entity edit modal — owner only */}
+          {entForm && isOwner && (
+            <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setEntForm(null)}>
+              <div className="rg-modal" style={{ maxWidth: 460 }}>
+                <div className="modal-head"><span className="modal-title">{entForm.id ? "Edit entity" : "Add entity"}</span><button className="modal-close" onClick={() => setEntForm(null)}>✕</button></div>
+                <div className="form-group">
+                  <label className="form-label">Full legal name (as registered — no auto “Pty Ltd”)</label>
+                  <input className="form-input" value={entForm.name} onChange={(e) => setEntForm((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Mad Benji Pty Ltd" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Venues this entity covers</label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {venues.map((v) => (
+                      <button key={v.id} type="button" className={`btn btn-sm ${entForm.venueIds.includes(v.id) ? "btn-primary" : ""}`} onClick={() => toggleEntVenue(v.id)}>{v.name}</button>
+                    ))}
+                    {venues.length === 0 && <span style={{ fontSize: 11, color: "var(--gray)" }}>No venues.</span>}
+                  </div>
+                </div>
+                <div className="btn-row"><button className="btn btn-primary" onClick={saveEnt}>Save entity</button><button className="btn" onClick={() => setEntForm(null)}>Cancel</button></div>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </>
   );
