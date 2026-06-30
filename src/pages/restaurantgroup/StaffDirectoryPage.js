@@ -441,6 +441,8 @@ export default function StaffDirectoryPage() {
       // sensitive payroll data → private subcollection (owner/storeAdmin only in rules)
       if (canPayroll) {
         await setDoc(staffPrivateDoc(groupId, profile.id), { ...payrollFrom(edit), password: newPwd, updatedAt: serverTimestamp() }, { merge: true });
+        // mirror contracted hours to the staff doc (manager-readable; private value unchanged)
+        await setDoc(staffDoc(groupId, profile.id), { contractedWeeklyHours: Number(edit.contractedMinHours) || null, updatedAt: serverTimestamp() }, { merge: true });
         setPayroll({ ...payrollFrom(edit), password: newPwd });
       }
       if (changes.length) logChange("staff.update", `Updated ${displayName}: ${changes.join("; ")}`, { staffId: profile.id, venueIds: edit.venueIds });

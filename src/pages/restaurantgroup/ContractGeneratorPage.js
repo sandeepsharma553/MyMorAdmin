@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { getDocs, getDoc, addDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { useRG } from "./RGContext";
-import { contractTemplatesCol, contractDefaultsDoc, contractsCol, staffPrivateDoc, contractClassificationsDoc, legalEntitiesDoc } from "../../utils/restaurantGroupPaths";
+import { contractTemplatesCol, contractDefaultsDoc, contractsCol, staffPrivateDoc, staffDoc, contractClassificationsDoc, legalEntitiesDoc } from "../../utils/restaurantGroupPaths";
 import { isManager } from "./rgConfig";
 import { isMinorDob } from "./staffMinorUtils";
 import contractFill from "./contractFill";
@@ -267,6 +267,10 @@ export default function ContractGeneratorPage() {
     if (!Object.keys(patch).length) return;
     patch.updatedAt = serverTimestamp();
     await setDoc(staffPrivateDoc(groupId, selStaff.id), patch, { merge: true });
+    // mirror contracted hours to the staff doc (manager-readable) when that field was written back
+    if (writeBack.contracted_min_hours) {
+      await setDoc(staffDoc(groupId, selStaff.id), { contractedWeeklyHours: Number(values.contracted_min_hours) || null, updatedAt: serverTimestamp() }, { merge: true });
+    }
   };
 
   const onGenerate = async () => {

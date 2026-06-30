@@ -194,9 +194,12 @@ export default function ShiftPlannerPage() {
     });
     return b;
   }, [weekShifts, weekDates, venues, holidays]);
-  // Fortnight total: this week + the next week (wk + 7 days, same key format).
-  const nextWk = useMemo(() => { const d = new Date(`${wk}T00:00:00`); d.setDate(d.getDate() + 7); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }, [wk]);
+  // Fortnight total: this week + the next week. Build nextWk via weekKeyOf(nextMonday)
+  // (same path shifts are keyed with) so it matches stored weekKeys exactly (AEST Issue-18).
+  const nextWk = useMemo(() => { const nextMonday = new Date(monday); nextMonday.setDate(monday.getDate() + 7); return weekKeyOf(nextMonday); }, [monday]);
   const fortnightHours = useMemo(() => shifts.filter((sh) => { const k = sh.weekKey || wk; return k === wk || k === nextWk; }).reduce((a, sh) => a + shiftHours(sh), 0), [shifts, wk, nextWk]);
+  // per-staff fortnight (this week + next week) net hours — for the #4 contracted-vs-actual row.
+  const staffFortnightHours = (staffId) => shifts.filter((sh) => sh.staffId === staffId && ((sh.weekKey || wk) === wk || (sh.weekKey || wk) === nextWk)).reduce((a, sh) => a + shiftHours(sh), 0);
 
   // Area→Station drill-down: stations of the SELECTED area scoped to the selected venue
   // (respects "All venues"). Only meaningful once a specific area is picked.
@@ -397,7 +400,20 @@ export default function ShiftPlannerPage() {
           </td>
         );
       })}
-      <td style={{ textAlign: "center", fontSize: 11, fontWeight: 600, borderBottom: "0.5px solid var(--gray-light)" }}>{staffHours(s.id).toFixed(1)}</td>
+      <td style={{ textAlign: "center", fontSize: 11, fontWeight: 600, borderBottom: "0.5px solid var(--gray-light)" }}>
+        {(() => {
+          const actual = staffHours(s.id);
+          const contracted = Number(s.contractedWeeklyHours) || 0;
+          // casuals have no contracted minimum; and hide vs-contracted when none is set
+          if (s.type === "Casual" || contracted === 0) return <span>{actual.toFixed(1)}h</span>;
+          return (
+            <>
+              <div>{actual.toFixed(1)}h / {contracted}h</div>
+              <div style={{ fontSize: 9, fontWeight: 400, color: "var(--gray)" }}>FN {staffFortnightHours(s.id).toFixed(1)}h / {contracted * 2}h</div>
+            </>
+          );
+        })()}
+      </td>
     </tr>
   );
 
