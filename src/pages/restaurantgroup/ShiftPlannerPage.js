@@ -93,10 +93,14 @@ export default function ShiftPlannerPage() {
     const mv = myStaff?.venueIds?.length ? myStaff.venueIds : (myStaff?.venueId ? [myStaff.venueId] : []);
     return staff.filter((s) => (s.venueIds || []).some((v) => mv.includes(v)) || (s.venueId && mv.includes(s.venueId)));
   }, [myScope, scopedStaff, staff, myStaff]);
+  // #2 hide Inactive staff from the planner (keep Active / On leave). Filter LOCALLY
+  // (not in RGContext.scopedStaff) so other pages are unaffected.
   const rows = useMemo(
-    () => visibleStaff.filter((s) => staffInVenue(s, selectedVenue)),
+    () => visibleStaff.filter((s) => staffInVenue(s, selectedVenue) && s.status !== "Inactive"),
     [visibleStaff, selectedVenue]
   );
+  // #3 shared A→Z comparator (case-insensitive) for ordering members within a group.
+  const byName = (a, b) => fullName(a).toLowerCase().localeCompare(fullName(b).toLowerCase());
 
   // ── Clock in / out (staff, today's own shift) ──
   const todayIdx = (new Date().getDay() + 6) % 7;
@@ -128,7 +132,8 @@ export default function ShiftPlannerPage() {
   const weekShifts = useMemo(() => shifts.filter((sh) => (sh.weekKey || wk) === wk), [shifts, wk]);
   const shiftColor = (sh) => stations.find((x) => x.id === sh.stationId)?.color || AREA_COLORS[roleArea(sh.role)];
 
-  const cellShifts = (staffId, day) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day);
+  // sorted chronologically by START time (#1) — filter() returns a fresh array so .sort is safe
+  const cellShifts = (staffId, day) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day).sort((a, b) => parseTime(a.start) - parseTime(b.start));
 
   const staffHours = (staffId) =>
     weekShifts.filter((sh) => sh.staffId === staffId).reduce((a, sh) => a + shiftHours(sh), 0);
@@ -157,9 +162,15 @@ export default function ShiftPlannerPage() {
   // this week OR tagged it) — see staffAtStation.
   const groupedRows = useMemo(() =>
     AREA_GROUPS
-      .map((g) => ({ ...g, members: rows.filter((s) => staffAreaBuckets(s).includes(g.key) && staffAtStation(s, effStation, weekShifts)) }))
+      .map((g) => ({ ...g, members: rows.filter((s) => staffAreaBuckets(s).includes(g.key) && staffAtStation(s, effStation, weekShifts)).sort(byName) }))
       .filter((g) => g.members.length && (areaFilter === "all" || areaFilter === g.key)),
     [rows, areaFilter, effStation, weekShifts]);
+
+  // #5 distinct staff currently shown in the main grid (across all groups) — the basis
+  // for the bottom "Staff rostered" headcount row (derived, no extra query).
+  const rosteredIds = useMemo(() => new Set(groupedRows.flatMap((g) => g.members.map((s) => s.id))), [groupedRows]);
+  const dayHeadcount = (day) => new Set(weekShifts.filter((sh) => sh.day === day && rosteredIds.has(sh.staffId)).map((sh) => sh.staffId)).size;
+  const weekHeadcount = new Set(weekShifts.filter((sh) => rosteredIds.has(sh.staffId)).map((sh) => sh.staffId)).size;
 
   const [form, setForm] = useState({ editId: null, staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: (roles && roles[0]) || ROLES[0], venueId: "", stationId: "", notes: "" });
   const formStations = useMemo(() => stations.filter((s) => s.venueId === form.venueId), [stations, form.venueId]);
@@ -252,11 +263,15 @@ export default function ShiftPlannerPage() {
   };
 
   const th = { padding: "10px 8px", textAlign: "center", fontSize: 11, fontWeight: 600, color: "var(--gray)", borderBottom: "0.5px solid var(--border)" };
+  // #4 sticky header variant for the MAIN roster only. With borderCollapse:collapse a
+  // sticky cell drops its own border, so the divider is drawn as an inset box-shadow.
+  const thSticky = { ...th, position: "sticky", top: 0, zIndex: 2, background: "var(--gray-light)", borderBottom: undefined, boxShadow: "inset 0 -1px 0 var(--border)" };
 
-  // Cell shifts scoped to a venue (for the split comparison view).
-  const cellShiftsV = (staffId, day, vid) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day && (vid === "all" || sh.venueId === vid));
+  // Cell shifts scoped to a venue (for the split comparison view) — START-time sorted (#1).
+  const cellShiftsV = (staffId, day, vid) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day && (vid === "all" || sh.venueId === vid)).sort((a, b) => parseTime(a.start) - parseTime(b.start));
   const VenueGrid = ({ vid }) => {
-    const gridRows = scopedStaff.filter((s) => staffInVenue(s, vid));
+    // #2 hide Inactive + #3 A→Z, same as the main grid (separate source: scopedStaff).
+    const gridRows = scopedStaff.filter((s) => staffInVenue(s, vid) && s.status !== "Inactive").sort(byName);
     const gh = gridRows.reduce((a, s) => a + weekShifts.filter((sh) => sh.staffId === s.id && (vid === "all" || sh.venueId === vid)).reduce((x, sh) => x + shiftHours(sh), 0), 0);
     return (
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -281,7 +296,7 @@ export default function ShiftPlannerPage() {
                       <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                           {shs.map((sh) => (
-                            <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} style={{ borderLeft: `3px solid ${shiftColor(sh)}` }} title="Click to view" onClick={() => setShiftDetail(sh)}>
+                            <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} style={{ borderLeft: `3px solid ${shiftColor(sh)}` }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                               <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                               <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}</div>
                             </div>
@@ -317,7 +332,7 @@ export default function ShiftPlannerPage() {
           <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {shs.map((sh) => (
-                <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} style={{ borderLeft: `3px solid ${shiftColor(sh)}`, boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title="Click to view" onClick={() => setShiftDetail(sh)}>
+                <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} style={{ borderLeft: `3px solid ${shiftColor(sh)}`, boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                   <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                   <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
                 </div>
@@ -416,9 +431,9 @@ export default function ShiftPlannerPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
             <thead>
               <tr style={{ background: "var(--gray-light)" }}>
-                <th style={{ ...th, textAlign: "left", width: 130, padding: "10px 14px" }}>Staff</th>
-                {DAYS.map((d) => <th key={d} style={th}>{d}</th>)}
-                <th style={th}>Hours</th>
+                <th style={{ ...thSticky, textAlign: "left", width: 130, padding: "10px 14px" }}>Staff</th>
+                {DAYS.map((d) => <th key={d} style={thSticky}>{d}</th>)}
+                <th style={thSticky}>Hours</th>
               </tr>
             </thead>
             <tbody>
@@ -433,6 +448,14 @@ export default function ShiftPlannerPage() {
                 </React.Fragment>
               ))}
               {groupedRows.length === 0 && <tr><td colSpan={9} style={{ padding: 20, color: "var(--gray)", fontSize: 13 }}>No staff for {selectedVenueName}{areaFilter !== "all" ? ` in ${areaFilter}` : ""}.</td></tr>}
+              {/* #5 per-day distinct-staff headcount (rostered = ≥1 shift that day) */}
+              {groupedRows.length > 0 && (
+                <tr>
+                  <td style={{ padding: "8px 14px", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", borderTop: "0.5px solid var(--border)" }}>Staff rostered</td>
+                  {DAYS.map((_, day) => <td key={day} style={{ textAlign: "center", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", borderTop: "0.5px solid var(--border)" }}>{dayHeadcount(day) || ""}</td>)}
+                  <td style={{ textAlign: "center", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", borderTop: "0.5px solid var(--border)" }}>{weekHeadcount || ""}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
