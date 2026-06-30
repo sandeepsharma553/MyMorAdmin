@@ -101,6 +101,9 @@ export default function ShiftPlannerPage() {
   );
   // #3 shared A→Z comparator (case-insensitive) for ordering members within a group.
   const byName = (a, b) => fullName(a).toLowerCase().localeCompare(fullName(b).toLowerCase());
+  // colour-by-venue: consume the owner-picked venue.color (set in VenueManager). Slate
+  // fallback (NOT grey — light grey is reserved for the availability state, a later batch).
+  const venueColorOf = (venueId) => venues.find((v) => v.id === venueId)?.color || "#334155";
 
   // ── Clock in / out (staff, today's own shift) ──
   const todayIdx = (new Date().getDay() + 6) % 7;
@@ -296,7 +299,7 @@ export default function ShiftPlannerPage() {
                       <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                           {shs.map((sh) => (
-                            <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} style={{ borderLeft: `3px solid ${shiftColor(sh)}` }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
+                            <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff" }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                               <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                               <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}</div>
                             </div>
@@ -332,7 +335,7 @@ export default function ShiftPlannerPage() {
           <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {shs.map((sh) => (
-                <div key={sh.id} className={`shift-cell ${cellClass(sh.type)}`} style={{ borderLeft: `3px solid ${shiftColor(sh)}`, boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
+                <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff", boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                   <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                   <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
                 </div>
@@ -425,7 +428,18 @@ export default function ShiftPlannerPage() {
           ))}
         </div>
       ) : (
-      /* Roster grid */
+      <>
+      {/* venue-colour legend (main grid only) — for venues in scope */}
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, padding: "0 2px 10px", fontSize: 11 }}>
+        <span style={{ color: "var(--gray)" }}>Venues:</span>
+        {(selectedVenue === "all" ? venues : venues.filter((v) => v.id === selectedVenue)).map((v) => (
+          <span key={v.id} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: venueColorOf(v.id), display: "inline-block" }} />
+            <span style={{ color: "var(--gray)" }}>{v.name}</span>
+          </span>
+        ))}
+      </div>
+      {/* Roster grid */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
@@ -465,6 +479,7 @@ export default function ShiftPlannerPage() {
           <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Labour %: </span><strong>{labourPct}%</strong> <span style={{ color: "var(--gray)" }}>(target 20–25%)</span></div>
         </div>
       </div>
+      </>
       )}
 
       {/* Add shift modal */}
