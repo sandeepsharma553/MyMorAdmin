@@ -99,7 +99,10 @@ export function RGProvider({ children }) {
     if (!groupId || !venues.length) { setPv({}); return; }
     const unsubs = [];
     venues.forEach((v) => {
-      PER_VENUE_COLLECTIONS.forEach((coll) => {
+      // "availability" reuses the SAME per-venue onSnapshot machinery (no ad-hoc listener).
+      // It lives in restaurantGroupPaths.PER_VENUE_COLLECTIONS conceptually; extended here
+      // locally to keep this change within the two in-scope files.
+      [...PER_VENUE_COLLECTIONS, "availability"].forEach((coll) => {
         unsubs.push(onSnapshot(
           venueCol(groupId, v.id, coll),
           (snap) => setPv((prev) => ({
@@ -129,6 +132,7 @@ export function RGProvider({ children }) {
   const stations = useMemo(() => flat("stations", "order"), [pv.stations]); // eslint-disable-line react-hooks/exhaustive-deps
   const equipment = useMemo(() => flat("equipment", "order"), [pv.equipment]); // eslint-disable-line react-hooks/exhaustive-deps
   const stock = useMemo(() => flat("stock"), [pv.stock]); // eslint-disable-line react-hooks/exhaustive-deps
+  const availability = useMemo(() => flat("availability"), [pv.availability]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => resolveRoles(group), [group]);
   // Staff areas: group config when present, else the seed defaults (FOH/BOH/Mgmt).
   const areas = useMemo(() => resolveAreas(group), [group]);
@@ -232,14 +236,14 @@ export function RGProvider({ children }) {
   }, [myNotifications, myStaff, me]);
 
   const value = useMemo(() => ({
-    groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
+    groupId, group, venues, staff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
     announcements, messages, unreadMessages, myNotifications, unreadNotifications,
     inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
     awardRates, complianceManual, acksByStaff, acknowledgements,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, showToast,
-  }), [groupId, group, venues, staff, shifts, leave, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
+  }), [groupId, group, venues, staff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
       inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
       awardRates, complianceManual, acksByStaff, acknowledgements,

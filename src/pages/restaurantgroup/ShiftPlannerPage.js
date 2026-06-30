@@ -8,6 +8,7 @@ import { staffAreaBuckets, staffAtStation } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 import { checkAndCreateShiftAssignments } from "./checklistShiftUtils";
+import { sendNotification } from "./notify";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const FULL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -72,7 +73,7 @@ const AREA_GROUPS = [
 ];
 
 export default function ShiftPlannerPage() {
-  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, availability, selectedVenue, selectedVenueName, showToast, can, me, myStaff, myScope } = useRG();
   const canEdit = can("shifts", "edit");
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
@@ -165,6 +166,8 @@ export default function ShiftPlannerPage() {
 
   // sorted chronologically by START time (#1) — filter() returns a fresh array so .sort is safe
   const cellShifts = (staffId, day) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day).sort((a, b) => parseTime(a.start) - parseTime(b.start));
+  // B5: the availability doc (from the iPad) for this staff on this date (weekDates[dayIdx]).
+  const availFor = (staffId, date) => (availability || []).find((a) => a.staffId === staffId && a.date === date) || null;
 
   const staffHours = (staffId) =>
     weekShifts.filter((sh) => sh.staffId === staffId).reduce((a, sh) => a + shiftHours(sh), 0);
@@ -227,8 +230,14 @@ export default function ShiftPlannerPage() {
 
   const [form, setForm] = useState({ editId: null, staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: (roles && roles[0]) || ROLES[0], venueId: "", stationId: "", notes: "" });
   const formStations = useMemo(() => stations.filter((s) => s.venueId === form.venueId), [stations, form.venueId]);
-  const openAdd = (staffId, day, venueOverride) => {
+  // 3rd arg is overloaded: a venue-id STRING (split-view column override) OR an OPTS object
+  // ({ fromAvailability }) for accept-from-availability. Both supported, neither breaks.
+  const openAdd = (staffId, day, arg3) => {
+    const venueOverride = typeof arg3 === "string" ? arg3 : "";
+    const opts = (arg3 && typeof arg3 === "object") ? arg3 : null;
+    const av = opts?.fromAvailability || null;
     const st = staff.find((s) => s.id === staffId);
+    const date = typeof day === "number" ? weekDates[day] : "";
     setForm((p) => ({
       ...p,
       staffId: staffId || rows[0]?.id || "",
@@ -239,6 +248,10 @@ export default function ShiftPlannerPage() {
       venueId: venueOverride || st?.venueIds?.[0] || st?.venueId || (selectedVenue !== "all" ? selectedVenue : venues[0]?.id || ""),
       stationId: "",
       breakMins: 0,
+      // accept-from-availability: prefill start/end from the posted window when present
+      start: av?.windows?.[0]?.start || p.start,
+      end: av?.windows?.[0]?.end || p.end,
+      availabilityId: av ? `${staffId}_${date}` : null,
       editId: null,
     }));
     setModal(true);
@@ -287,6 +300,7 @@ export default function ShiftPlannerPage() {
         stationId: station?.id || "", station: station?.name || "",
         breakMins: Number(form.breakMins) || 0,
         type, notes: form.notes.trim(), weekKey: wk, published: true,
+        ...(form.availabilityId ? { availabilityId: form.availabilityId } : {}),
       };
       let shiftId;
       if (editing && editing.venueId === venue.id) {
@@ -303,6 +317,15 @@ export default function ShiftPlannerPage() {
         shiftId = created.id;
       }
       showToast(editing ? "Shift updated" : "Shift saved");
+      // accept-from-availability → notify the staffer in-app (fire-and-forget; FCM push is a
+      // separate later step). Only fires when this came from an availability cell.
+      if (form.availabilityId) {
+        sendNotification(groupId, {
+          to: form.staffId, type: "shift_assigned", title: "New shift assigned",
+          body: `${form.day} ${form.start}–${form.end} @ ${venue.name}`,
+          venueId: venue.id, by: me?.displayName || me?.name || "",
+        });
+      }
       // slot-linked checklist auto-assignment — separate async op, NEVER blocks the shift save
       checkAndCreateShiftAssignments(shiftData, shiftId, groupId, checklists)
         .then((r) => {
@@ -385,6 +408,8 @@ export default function ShiftPlannerPage() {
       </td>
       {DAYS.map((_, day) => {
         const shs = cellShifts(s.id, day);
+        const date = weekDates[day];
+        const av = availFor(s.id, date); // availability doc from the iPad (or null)
         return (
           <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -394,6 +419,18 @@ export default function ShiftPlannerPage() {
                   <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
                 </div>
               ))}
+              {/* #8 Days Off — staffer marked unavailable; informational, NOT clickable */}
+              {av && av.available === false && (
+                <div style={{ background: "#f3f4f6", color: "#9ca3af", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={av.note || "Marked unavailable"}>Off</div>
+              )}
+              {/* available & FREE → grey, click to accept (prefilled from the posted window) */}
+              {canEdit && av && av.available === true && shs.length === 0 && (
+                <div className="shift-cell" style={{ background: "#e5e7eb", color: "#111827", cursor: "pointer", textAlign: "center" }} title={av.note || "Available — click to add a shift"} onClick={() => openAdd(s.id, day, { fromAvailability: av })}>Available</div>
+              )}
+              {/* available & ALREADY rostered → black affordance, double-click to add more (v1) */}
+              {canEdit && av && av.available === true && shs.length > 0 && (
+                <div className="shift-cell" style={{ background: "#111827", color: "#fff", fontSize: 10, cursor: "pointer", textAlign: "center" }} title="Available — double-click to add a shift" onDoubleClick={() => openAdd(s.id, day, { fromAvailability: av })}>+ available</div>
+              )}
               {canEdit && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 8px" }} onClick={() => openAdd(s.id, day)}>+</div>}
               {!canEdit && shs.length === 0 && <div className="shift-cell shift-off" style={{ textAlign: "center", opacity: 0.5 }}>·</div>}
             </div>
