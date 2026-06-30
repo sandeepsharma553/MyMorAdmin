@@ -131,6 +131,8 @@ export const contractDefaultsDoc = (groupId) => doc(db, "restaurantGroups", Stri
 // Contract settings (Step 8): MA000119 classification list + legal entities (gated subcollection docs).
 export const contractClassificationsDoc = (groupId) => doc(db, "restaurantGroups", String(groupId), "settings", "contractClassifications");
 export const legalEntitiesDoc = (groupId) => doc(db, "restaurantGroups", String(groupId), "settings", "legalEntities");
+// Public holidays (manual + seed) — gated settings doc; { holidays: [{date,name,state}], updatedAt }.
+export const publicHolidaysDoc = (groupId) => doc(db, "restaurantGroups", String(groupId), "settings", "publicHolidays");
 // Generated contracts (draft → sent → signed). Owner/storeAdmin gated in rules.
 export const contractsCol = (groupId) => groupCol(groupId, "contracts");
 export const contractDoc = (groupId, id) => doc(contractsCol(groupId), String(id));

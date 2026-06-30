@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc } from "../../utils/restaurantGroupPaths";
+import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
+import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS } from "./rgConfig";
 import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload } from "./staffStructureUtils";
 import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS } from "./rgStockUtils";
@@ -24,11 +25,29 @@ export default function SettingsPage() {
   const [newClass, setNewClass] = useState("");
   const [entities, setEntities] = useState([]);
   const [entForm, setEntForm] = useState(null); // {id?, name, venueIds[]} edit buffer
+  // ── Public holidays (gated settings doc) ── seeded in-memory if absent (never auto-written)
+  const [holidays, setHolidays] = useState([]);
+  const [phSeeded, setPhSeeded] = useState(false);
   useEffect(() => {
     if (!groupId) return;
     getDoc(contractClassificationsDoc(groupId)).then((d) => setClassLevels(d.exists() ? (d.data().levels || []) : [])).catch(() => {});
     getDoc(legalEntitiesDoc(groupId)).then((d) => setEntities(d.exists() ? (d.data().entities || []) : [])).catch(() => {});
+    getDoc(publicHolidaysDoc(groupId)).then((d) => {
+      const list = d.exists() ? (d.data().holidays || []) : [];
+      if (list.length) { setHolidays(list); setPhSeeded(false); }
+      else { setHolidays(AU_PUBLIC_HOLIDAYS_SEED); setPhSeeded(true); } // prefill only — not persisted
+    }).catch(() => {});
   }, [groupId]);
+
+  // PH edits stay in local state; a single Save writes the doc (sorted, blanks dropped).
+  const phSet = (i, k, v) => setHolidays((p) => p.map((h, idx) => (idx === i ? { ...h, [k]: v } : h)));
+  const phAdd = () => setHolidays((p) => [...p, { date: "", name: "", state: "ALL" }]);
+  const phRemove = (i) => setHolidays((p) => p.filter((_, idx) => idx !== i));
+  const savePH = async () => {
+    const next = holidays.filter((h) => h.date && h.name).sort((a, b) => a.date.localeCompare(b.date));
+    try { await setDoc(publicHolidaysDoc(groupId), { holidays: next, updatedAt: serverTimestamp() }, { merge: true }); setHolidays(next); setPhSeeded(false); showToast("Public holidays saved"); }
+    catch { showToast("Could not save public holidays"); }
+  };
 
   const saveClassLevels = async (next) => {
     setClassLevels(next);
@@ -220,7 +239,7 @@ export default function SettingsPage() {
   return (
     <>
       <div className="tabs" style={{ marginBottom: 16 }}>
-        {[["structure", "Staff structure"], ["stations", "Stations"], ["units", "Temperature units"], ["stock", "Stock lists"], ["contracts", "Contracts"]].map(([id, l]) => (
+        {[["structure", "Staff structure"], ["stations", "Stations"], ["units", "Temperature units"], ["stock", "Stock lists"], ["holidays", "Public Holidays"], ["contracts", "Contracts"]].map(([id, l]) => (
           <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
@@ -510,6 +529,40 @@ export default function SettingsPage() {
       )}
 
       {/* ── CONTRACTS: classification levels + legal entities ── */}
+      {tab === "holidays" && (
+        <>
+          <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 12 }}>
+            Public holidays drive the <strong>Shift Planner</strong> day indicators (and penalty-rate calc later). National holidays use <strong>All states</strong>; add state-specific ones for the states your venues operate in.
+          </div>
+          {phSeeded && (
+            <div className="card" style={{ background: "var(--amber-light, #fffbeb)", fontSize: 12, marginBottom: 12 }}>
+              Suggested AU public holidays loaded — review and <strong>Save</strong> to keep them, or edit first. (Nothing is stored until you Save.)
+            </div>
+          )}
+          <div className="card">
+            <div className="card-head"><div><span className="card-title">Public holidays</span><span className="card-sub">Date, name and which state it applies to</span></div></div>
+            {holidays.map((h, i) => (
+              <div key={i} className="staff-meta-row" style={{ gap: 8, padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                <input type="date" className="form-input" style={{ maxWidth: 160 }} value={h.date || ""} onChange={(e) => phSet(i, "date", e.target.value)} disabled={!editable} />
+                <input className="form-input" style={{ flex: 1 }} value={h.name || ""} onChange={(e) => phSet(i, "name", e.target.value)} placeholder="Holiday name" disabled={!editable} />
+                <select className="form-input" style={{ maxWidth: 140 }} value={h.state || "ALL"} onChange={(e) => phSet(i, "state", e.target.value)} disabled={!editable}>
+                  <option value="ALL">All states</option>
+                  {AU_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                {editable && <button className="btn btn-sm btn-danger" onClick={() => phRemove(i)}>✕</button>}
+              </div>
+            ))}
+            {holidays.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No public holidays yet — add them or load the suggestions.</div>}
+            {editable && (
+              <div className="btn-row" style={{ marginTop: 12 }}>
+                <button className="btn" onClick={phAdd}>+ Add holiday</button>
+                <button className="btn btn-primary" onClick={savePH}>Save</button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
       {tab === "contracts" && (
         <>
           <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 12 }}>

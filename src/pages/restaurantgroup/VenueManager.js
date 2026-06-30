@@ -3,6 +3,7 @@ import { addDoc, updateDoc, doc, serverTimestamp, writeBatch, getDocs, collectio
 import { db } from "../../firebase";
 import { useRG } from "./RGContext";
 import { venuesCol, groupCol } from "../../utils/restaurantGroupPaths";
+import { AU_STATES } from "./publicHolidays";
 
 const VENUE_SUBCOLLECTIONS = ["shifts", "leaveRequests", "checklists", "checklistAssignments",
   "trainingModules", "trainingAssignments", "stations", "equipment", "kpis", "performanceNotes", "prepList", "tempLogs"];
@@ -14,7 +15,7 @@ const COLORS = [
 const TYPES = [["FOH", "Front of house venue"], ["CK", "Central / production kitchen"]];
 const STATUSES = ["Trading", "Closed", "Renovation"];
 
-const blank = (order) => ({ id: null, name: "", color: "#2563eb", type: "FOH", status: "Trading", order });
+const blank = (order) => ({ id: null, name: "", color: "#2563eb", type: "FOH", status: "Trading", state: "VIC", order });
 
 export default function VenueManager({ open, onClose }) {
   const { groupId, venues, staff, can, showToast } = useRG();
@@ -37,7 +38,7 @@ export default function VenueManager({ open, onClose }) {
 
   const save = async () => {
     if (!editor.name.trim()) return showToast("Venue name required");
-    const payload = { name: editor.name.trim(), color: editor.color, type: editor.type, status: editor.status, order: Number(editor.order) || 0 };
+    const payload = { name: editor.name.trim(), color: editor.color, type: editor.type, status: editor.status, state: editor.state, order: Number(editor.order) || 0 };
     try {
       if (editor.id) { await updateDoc(doc(groupCol(groupId, "venues"), editor.id), payload); showToast("Venue updated"); }
       else { await addDoc(venuesCol(groupId), { ...payload, createdAt: serverTimestamp() }); showToast("Venue added"); }
@@ -103,7 +104,7 @@ export default function VenueManager({ open, onClose }) {
                   </>
                 ) : (
                   <>
-                    <button className="btn btn-sm" onClick={() => setEditor({ id: v.id, name: v.name, color: v.color || "#2563eb", type: v.type || "FOH", status: v.status || "Trading", order: v.order ?? venues.length })}>Edit</button>
+                    <button className="btn btn-sm" onClick={() => setEditor({ id: v.id, name: v.name, color: v.color || "#2563eb", type: v.type || "FOH", status: v.status || "Trading", state: v.state || "VIC", order: v.order ?? venues.length })}>Edit</button>
                     <button className="btn btn-sm btn-danger" onClick={() => setConfirmId(v.id)}>✕</button>
                   </>
                 )}
@@ -128,6 +129,9 @@ export default function VenueManager({ open, onClose }) {
               </div>
               <div className="form-group"><label className="form-label">Status</label>
                 <select className="form-input" value={editor.status} onChange={setF("status")}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
+              </div>
+              <div className="form-group"><label className="form-label">State (public holidays)</label>
+                <select className="form-input" value={editor.state} onChange={setF("state")}>{AU_STATES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
               </div>
               <div className="form-group"><label className="form-label">Sort order</label><input type="number" className="form-input" value={editor.order} onChange={setF("order")} /></div>
             </div>

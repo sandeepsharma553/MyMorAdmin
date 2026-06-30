@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
+import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
+import { venueCol, staffInVenue, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
+import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
 import { staffAreaBuckets, staffAtStation } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
@@ -134,6 +135,30 @@ export default function ShiftPlannerPage() {
 
   const weekShifts = useMemo(() => shifts.filter((sh) => (sh.weekKey || wk) === wk), [shifts, wk]);
   const shiftColor = (sh) => stations.find((x) => x.id === sh.stationId)?.color || AREA_COLORS[roleArea(sh.role)];
+
+  // ── Public holidays (read-only) ── live-listen to the settings doc; fall back to the
+  // seed so PH still shows before the owner saves anything. (Editing lives in Settings.)
+  const [phDoc, setPhDoc] = useState(null);
+  useEffect(() => {
+    if (!groupId) return;
+    const unsub = onSnapshot(publicHolidaysDoc(groupId), (d) => setPhDoc(d.exists() ? (d.data().holidays || []) : []), () => {});
+    return () => unsub();
+  }, [groupId]);
+  const holidays = (phDoc && phDoc.length) ? phDoc : AU_PUBLIC_HOLIDAYS_SEED;
+  // 7 local YYYY-MM-DD strings for the current week — SAME construction as saveShift's shiftDate.
+  const weekDates = useMemo(() => DAYS.map((_, i) => {
+    const d = new Date(`${wk}T00:00:00`); d.setDate(d.getDate() + i);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }), [wk]);
+  // single venue → that venue's state; "all venues" → PH if it's a holiday in ANY venue state.
+  const phState = selectedVenue !== "all" ? (venues.find((v) => v.id === selectedVenue)?.state || null) : null;
+  const venueStates = venues.map((v) => v.state).filter(Boolean);
+  const dayIsPH = (i) => phState ? isPublicHoliday(weekDates[i], phState, holidays) : isPHForAnyState(weekDates[i], venueStates, holidays);
+  const dayPHName = (i) => {
+    const states = phState ? [phState] : venueStates;
+    const h = holidays.find((x) => x.date === weekDates[i] && (x.state === "ALL" || states.includes(x.state)));
+    return h ? h.name : "";
+  };
 
   // sorted chronologically by START time (#1) — filter() returns a fresh array so .sort is safe
   const cellShifts = (staffId, day) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day).sort((a, b) => parseTime(a.start) - parseTime(b.start));
@@ -446,7 +471,11 @@ export default function ShiftPlannerPage() {
             <thead>
               <tr style={{ background: "var(--gray-light)" }}>
                 <th style={{ ...thSticky, textAlign: "left", width: 130, padding: "10px 14px" }}>Staff</th>
-                {DAYS.map((d) => <th key={d} style={thSticky}>{d}</th>)}
+                {DAYS.map((d, i) => (
+                  <th key={d} style={thSticky} title={dayIsPH(i) ? dayPHName(i) : undefined}>
+                    {d}{dayIsPH(i) && <span style={{ display: "block", fontSize: 9, fontWeight: 700, color: "#b45309" }}>PH</span>}
+                  </th>
+                ))}
                 <th style={thSticky}>Hours</th>
               </tr>
             </thead>
