@@ -13,6 +13,7 @@ import { sendNotification } from "./notify";
  */
 export default function ChecklistAssignmentDetail({ assignment, liveChecklist, groupId, canTick, canComment, actorName, showToast, onClose }) {
   const [cmt, setCmt] = useState({ i: null, text: "", priv: false });
+  const [confirmFinish, setConfirmFinish] = useState(false); // #4 finish-incomplete confirm
   if (!assignment) return null;
   const comments = assignment.comments || {}; // legacy single-comment map (read-only)
   const threads = assignment.threads || {}; // v2: threads.{i} = [{ text, by, at, private }]
@@ -54,6 +55,22 @@ export default function ChecklistAssignmentDetail({ assignment, liveChecklist, g
       await updateDoc(ref(), { [`threads.${i}`]: arrayUnion({ text, by: actorName || "Trainer", at: new Date().toISOString(), private: !!cmt.priv }) });
       setCmt({ i: null, text: "", priv: false });
     } catch { showToast?.("Could not save note"); }
+  };
+
+  // #4 Finish-incomplete: notification ONLY — no status change, no doc write. (The COMPLETE
+  // case is already handled in write()'s becameComplete block; this covers leaving items unticked.)
+  const strip = (h) => (h || "").replace(/<[^>]*>/g, "").trim();
+  const doFinishIncomplete = () => {
+    const missingItems = items.filter((_, i) => !checks[i]).map(strip).filter(Boolean);
+    const missingCount = missingItems.length;
+    const preview = missingItems.slice(0, 3).join(", ") + (missingItems.length > 3 ? `, +${missingItems.length - 3} more` : "");
+    sendNotification(groupId, {
+      to: "managers", type: "checklist", title: "Checklist left incomplete",
+      body: `${assignment.staffName} finished "${assignment.checklistTitle}" with ${missingCount} item(s) incomplete${preview ? `: ${preview}` : ""}`,
+      venueId: assignment.venueId, by: assignment.staffName,
+    });
+    setConfirmFinish(false);
+    onClose();
   };
 
   return (
@@ -106,10 +123,22 @@ export default function ChecklistAssignmentDetail({ assignment, liveChecklist, g
           );
         })}
 
+        {/* #4 finish-incomplete confirm — shown in place of the Finish button while confirming */}
+        {confirmFinish && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+            <span style={{ fontSize: 12, color: "var(--gray)" }}>{total - done} item(s) not ticked — notify managers it was left incomplete?</span>
+            <button className="btn btn-sm btn-primary" onClick={doFinishIncomplete}>Yes, finish</button>
+            <button className="btn btn-sm" onClick={() => setConfirmFinish(false)}>Cancel</button>
+          </div>
+        )}
         <div className="btn-row" style={{ marginTop: 12 }}>
           {/* bulk shortcuts are a supervisor action (canComment = manager/owner) — the assignee ticks items individually */}
           {canComment && total > 0 && <button className="btn btn-primary" onClick={() => write(Array(total).fill(true))}>Mark all done</button>}
           {canComment && done > 0 && <button className="btn" onClick={() => write(Array(total).fill(false))}>Reset</button>}
+          {/* Finish: only when there are unticked items (complete already auto-notifies on the last tick) */}
+          {canTick && total > 0 && done < total && !confirmFinish && (
+            <button className="btn" onClick={() => setConfirmFinish(true)}>Finish checklist</button>
+          )}
           <button className="btn" onClick={onClose}>Close</button>
         </div>
       </div>
