@@ -45,7 +45,10 @@ function parseTime(t) {
   if (/pm/i.test(m[3])) h += 12;
   return h + parseInt(m[2], 10) / 60;
 }
-const shiftHours = (sh) => Math.max(0, parseTime(sh.end) - parseTime(sh.start));
+// NET paid hours: gross span minus the unpaid break (so staffHours/totalHours/labourCost
+// all become paid hours automatically). Local to this file — rgUtils.shiftHours unchanged.
+const shiftHours = (sh) =>
+  Math.max(0, (parseTime(sh.end) - parseTime(sh.start)) - (Number(sh.breakMins) || 0) / 60);
 
 const cellClass = (type) =>
   type === "evening" ? "shift-evening" : type === "open" ? "shift-open" : type === "off" ? "shift-off" : "shift-morning";
@@ -176,6 +179,25 @@ export default function ShiftPlannerPage() {
   const labourCost = totalHours * hourly;
   const labourPct = ((labourCost / weeklyRev) * 100).toFixed(1);
 
+  // #11 weekly NET hours by day-type — PH checked FIRST (PH-on-weekend counts as PH),
+  // else Sat / Sun / Mon–Fri. Uses the 3a weekDates + isPublicHoliday + holidays.
+  const hoursByType = useMemo(() => {
+    const b = { mf: 0, sat: 0, sun: 0, ph: 0 };
+    weekShifts.forEach((sh) => {
+      const di = sh.day || 0; // DAYS: Mon..Sun → Sat=5, Sun=6
+      const vState = venues.find((v) => v.id === sh.venueId)?.state;
+      const h = shiftHours(sh);
+      if (isPublicHoliday(weekDates[di], vState, holidays)) b.ph += h;
+      else if (di === 5) b.sat += h;
+      else if (di === 6) b.sun += h;
+      else b.mf += h;
+    });
+    return b;
+  }, [weekShifts, weekDates, venues, holidays]);
+  // Fortnight total: this week + the next week (wk + 7 days, same key format).
+  const nextWk = useMemo(() => { const d = new Date(`${wk}T00:00:00`); d.setDate(d.getDate() + 7); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }, [wk]);
+  const fortnightHours = useMemo(() => shifts.filter((sh) => { const k = sh.weekKey || wk; return k === wk || k === nextWk; }).reduce((a, sh) => a + shiftHours(sh), 0), [shifts, wk, nextWk]);
+
   // Area→Station drill-down: stations of the SELECTED area scoped to the selected venue
   // (respects "All venues"). Only meaningful once a specific area is picked.
   const drillStations = useMemo(() => (areaFilter !== "all" ? stationsForArea(stations, areaFilter, selectedVenue) : []), [stations, areaFilter, selectedVenue]);
@@ -213,6 +235,7 @@ export default function ShiftPlannerPage() {
       // venueOverride wins (e.g. the split-view column you clicked); else the staff's venue, else selected/first
       venueId: venueOverride || st?.venueIds?.[0] || st?.venueId || (selectedVenue !== "all" ? selectedVenue : venues[0]?.id || ""),
       stationId: "",
+      breakMins: 0,
       editId: null,
     }));
     setModal(true);
@@ -223,6 +246,7 @@ export default function ShiftPlannerPage() {
       editId: sh.id, staffId: sh.staffId, day: FULL_DAYS[sh.day] || "Monday",
       start: sh.start, end: sh.end, role: sh.role || ((roles && roles[0]) || ROLES[0]),
       venueId: sh.venueId, stationId: sh.stationId || "", notes: sh.notes || "",
+      breakMins: sh.breakMins ?? 0,
     });
     setShiftDetail(null);
     setModal(true);
@@ -237,6 +261,7 @@ export default function ShiftPlannerPage() {
     const dayIdx = FULL_DAYS.indexOf(form.day);
     const ns = parseTime(form.start), ne = parseTime(form.end);
     if (ne <= ns) return showToast("End time must be after start time");
+    if ((Number(form.breakMins) || 0) / 60 >= (ne - ns)) return showToast("Break can't be longer than the shift.");
     // Hard block: no overlapping shift for this person that day, across ANY venue.
     // (7am–3pm + 3pm–9pm is fine — they only touch; strict overlap = ns < end && start < ne.)
     // overlap check excludes the shift being edited (so re-saving its own times is allowed)
@@ -257,6 +282,7 @@ export default function ShiftPlannerPage() {
         day: dayIdx, start: form.start, end: form.end, role: form.role,
         venueId: venue.id, venue: venue.name,
         stationId: station?.id || "", station: station?.name || "",
+        breakMins: Number(form.breakMins) || 0,
         type, notes: form.notes.trim(), weekKey: wk, published: true,
       };
       let shiftId;
@@ -506,6 +532,10 @@ export default function ShiftPlannerPage() {
           <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Total hours this week: </span><strong>{totalHours.toFixed(1)}</strong></div>
           <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Est. labour cost: </span><strong>${labourCost.toLocaleString()}</strong></div>
           <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Labour %: </span><strong>{labourPct}%</strong> <span style={{ color: "var(--gray)" }}>(target 20–25%)</span></div>
+          <div style={{ fontSize: 11, width: "100%", color: "var(--gray)" }}>
+            Mon–Fri <strong>{hoursByType.mf.toFixed(1)}h</strong> · Sat <strong>{hoursByType.sat.toFixed(1)}h</strong> · Sun <strong>{hoursByType.sun.toFixed(1)}h</strong> · PH <strong>{hoursByType.ph.toFixed(1)}h</strong>
+            <span style={{ marginLeft: 16 }}>Fortnight total: <strong>{fortnightHours.toFixed(1)}h</strong></span>
+          </div>
         </div>
       </div>
       </>
@@ -535,6 +565,11 @@ export default function ShiftPlannerPage() {
               <div className="form-group"><label className="form-label">End time</label>
                 <select className="form-input" value={form.end} onChange={setF("end")}>{ENDS.map((t) => <option key={t}>{t}</option>)}</select>
               </div>
+              <div className="form-group"><label className="form-label">Unpaid break (min)</label>
+                <select className="form-input" value={form.breakMins ?? 0} onChange={setF("breakMins")}>
+                  {[0, 15, 30, 45, 60].map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
               <div className="form-group"><label className="form-label">Role for this shift</label>
                 <select className="form-input" value={form.role} onChange={setF("role")}>{[...new Set([form.role, ...(roles?.length ? roles : ROLES)].filter(Boolean))].map((r) => <option key={r}>{r}</option>)}</select>
               </div>
@@ -550,6 +585,18 @@ export default function ShiftPlannerPage() {
                 </select>
               </div>
             </div>
+            {(() => {
+              const _g = Math.max(0, parseTime(form.end) - parseTime(form.start));
+              const _net = Math.max(0, _g - (Number(form.breakMins) || 0) / 60);
+              return (
+                <div style={{ fontSize: 11, color: "var(--gray)", margin: "2px 0 8px" }}>
+                  {`${_g.toFixed(1)}h shift − ${Number(form.breakMins) || 0} min break = ${_net.toFixed(1)}h paid`}
+                  {(_g >= 5 && (Number(form.breakMins) || 0) < 30) && (
+                    <div style={{ marginTop: 2 }}>Shifts over 5h usually include a 30-min unpaid meal break (Fair Work).</div>
+                  )}
+                </div>
+              );
+            })()}
             <div className="form-group"><label className="form-label">Notes</label><input className="form-input" value={form.notes} onChange={setF("notes")} placeholder="e.g. Cover for sick call, train new staff" /></div>
             <div className="btn-row">
               <button className="btn btn-primary" onClick={saveShift}>Save shift</button>
