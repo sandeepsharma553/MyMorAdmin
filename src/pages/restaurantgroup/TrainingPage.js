@@ -5,7 +5,7 @@ import { venueTrainingCol, venueCol, staffInVenue } from "../../utils/restaurant
 import { fullName, trainingStatusPill, trainingBarColor, progressColor, trainingPct, moduleForStaff, snapshotForAssign } from "./rgUtils";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
-import { showInActiveList } from "./completionWindow";
+import { completedAtMs } from "./completionWindow";
 import { orderItemsForStaff, orderStaffForItem, isSuggested, shouldAutoAssign } from "./assignmentUtils";
 import { stationsForArea, groupItemsByStation, filterByStation, GENERAL_KEY } from "./itemDrilldown";
 import { sendNotification } from "./notify";
@@ -57,8 +57,14 @@ export default function TrainingPage({ initialTab }) {
     [roleStaff, selectedVenue]
   );
   const scopedAssign = useMemo(() => assignments.filter(matchVenue), [assignments, matchVenue]);
-  // active table: hide Complete items older than 48h (counts/metrics keep full scopedAssign)
-  const scopedAssignActive = useMemo(() => scopedAssign.filter((a) => showInActiveList(a)), [scopedAssign]);
+  // assigned table: only genuinely-open items (signed-off/Complete move to the Passed list below)
+  const scopedOpen = useMemo(() => scopedAssign.filter((a) => a.status !== "Complete"), [scopedAssign]);
+  // Passed / Completed list — newest completion first
+  const scopedCompleted = useMemo(
+    () => scopedAssign.filter((a) => a.status === "Complete")
+                      .sort((a, b) => (completedAtMs(b.completedAt) || 0) - (completedAtMs(a.completedAt) || 0)),
+    [scopedAssign]
+  );
   // training is per-venue: show the selected venue's modules (or all when "All venues")
   const venueModules = useMemo(
     () => modules.filter((m) => selectedVenue === "all" || m.venueId === selectedVenue),
@@ -332,7 +338,7 @@ export default function TrainingPage({ initialTab }) {
               <table className="data-table">
                 <thead><tr><th>Staff</th><th>Module</th><th>Venue</th><th>Due</th><th>Status</th><th>Progress</th><th>Action</th></tr></thead>
                 <tbody>
-                  {scopedAssignActive.map((a) => (
+                  {scopedOpen.map((a) => (
                     <tr key={a.id}>
                       <td>{a.staffName}</td><td>{a.moduleTitle}</td><td>{a.venue}</td><td>{a.due || "—"}</td>
                       <td><span className={`pill ${trainingStatusPill(a.status)}`}>{a.status}</span></td>
@@ -345,7 +351,32 @@ export default function TrainingPage({ initialTab }) {
                       </td>
                     </tr>
                   ))}
-                  {scopedAssignActive.length === 0 && <tr><td colSpan={7} style={{ color: "var(--gray)" }}>No assignments.</td></tr>}
+                  {scopedOpen.length === 0 && <tr><td colSpan={7} style={{ color: "var(--gray)" }}>No assignments.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Passed / Completed — signed-off modules move here (read-only via AssignmentDetail lock) */}
+          <div className="card">
+            <div className="card-head"><span className="card-title">Passed / Completed</span><span className="pill pill-green">{scopedCompleted.length} passed</span></div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="data-table">
+                <thead><tr><th>Staff</th><th>Module</th><th>Venue</th><th>Completed</th><th>Signed off by</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody>
+                  {scopedCompleted.map((a) => (
+                    <tr key={a.id}>
+                      <td>{a.staffName}</td><td>{a.moduleTitle}</td><td>{a.venue}</td>
+                      <td>{a.completedAt?.toDate ? a.completedAt.toDate().toLocaleDateString() : "—"}</td>
+                      <td>{a.verifiedBy || "—"}</td>
+                      <td>
+                        <span className={`pill ${trainingStatusPill(a.status)}`}>{a.status}</span>
+                        {a.verified && <span className="pill pill-green" style={{ marginLeft: 4 }}>✓ Verified</span>}
+                      </td>
+                      <td><button className="btn btn-sm" onClick={() => setOpenAssign(a.id)}>Open</button></td>
+                    </tr>
+                  ))}
+                  {scopedCompleted.length === 0 && <tr><td colSpan={7} style={{ color: "var(--gray)" }}>No completed training yet.</td></tr>}
                 </tbody>
               </table>
             </div>
