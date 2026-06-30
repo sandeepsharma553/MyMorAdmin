@@ -15,7 +15,7 @@ import { sendNotification } from "./notify";
  * If the frozen snapshot has no items (e.g. assigned before the module had steps),
  * we fall back to the LIVE module's current steps so it's never empty.
  */
-export default function AssignmentDetail({ assignment, liveModule, groupId, canTick, canVerify, canComment, actorName, showToast, onClose }) {
+export default function AssignmentDetail({ assignment, liveModule, groupId, canTick, canVerify, canComment, actorName, actorId, showToast, onClose }) {
   const [vNote, setVNote] = useState("");
   const [cmt, setCmt] = useState({ i: null, text: "", priv: false });
   if (!assignment) return null;
@@ -46,13 +46,17 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
     ? assignment.checks
     : Array(total).fill(false).map((_, i) => !!assignment.checks?.[i]);
   const done = checks.filter(Boolean).length;
+  // #2 per-item stamp {by, byId, at} — sized to the SAME flat total as checks
+  const checkMeta = (Array.isArray(assignment.checkMeta) && assignment.checkMeta.length === total)
+    ? assignment.checkMeta
+    : Array(total).fill(null).map((_, i) => assignment.checkMeta?.[i] ?? null);
 
   let off = 0;
   const withOffset = sections.map((s) => { const o = off; off += (s.items || []).length; return { ...s, _off: o }; });
 
   const ref = () => doc(venueCol(groupId, assignment.venueId, "trainingAssignments"), assignment.id);
 
-  const write = async (next) => {
+  const write = async (next, nextMeta) => {
     if (locked) return; // completed assignments are read-only (reassign to redo)
     const d = next.filter(Boolean).length;
     const progress = total ? Math.round((d / total) * 100) : 0;
@@ -63,15 +67,25 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
     // if a verified assignment drops below complete, clear the sign-off — never "verified" + incomplete
     const clearVerify = (!allDone && assignment.verified) ? { verified: false, verifiedBy: "", verifyNote: "", completedAt: null } : {};
     try {
-      await updateDoc(ref(), { checks: next, progress, status, ...heal, ...clearVerify });
+      await updateDoc(ref(), { checks: next, checkMeta: nextMeta, progress, status, ...heal, ...clearVerify });
       // tell the managers when someone finishes all steps (ready to sign off)
       if (status === "Awaiting sign-off" && assignment.status !== "Awaiting sign-off") {
         sendNotification(groupId, { to: "managers", type: "training", title: "Training ready for sign-off", body: `${assignment.staffName} completed all steps of "${assignment.moduleTitle}"`, venueId: assignment.venueId, by: assignment.staffName });
       }
     } catch { showToast?.("Could not save"); }
   };
-  const setCheck = (flatI, val) => { const next = [...checks]; next[flatI] = val; write(next); };
-  const markAll = (val) => write(Array(total).fill(val));
+  const stamp = () => ({ by: actorName || "Trainer", byId: actorId || "", at: new Date().toISOString() });
+  const setCheck = (flatI, val) => {
+    const next = [...checks]; next[flatI] = val;
+    const nextMeta = Array(total).fill(null).map((_, i) => checkMeta[i] ?? null);
+    nextMeta[flatI] = val ? stamp() : null;
+    write(next, nextMeta);
+  };
+  const markAll = (val) => {
+    const next = Array(total).fill(val);
+    const nextMeta = val ? Array(total).fill(0).map(() => stamp()) : Array(total).fill(null);
+    write(next, nextMeta);
+  };
   const saveComment = async (flatI) => {
     if (locked) return; // read-only once complete
     const text = cmt.text.trim();
@@ -159,6 +173,11 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
                     <RichText html={it} className={`check-text ${checked ? "done" : ""}`} />
                     {commentable && <button className="btn btn-sm" style={{ marginLeft: "auto" }} title="Add a comment on this step" onClick={() => setCmt({ i: flatI, text: "", priv: false })}>💬{thread.length ? ` ${thread.length}` : ""}</button>}
                   </div>
+                  {checked && checkMeta[flatI] && (
+                    <div style={{ fontSize: 11, color: "var(--gray)", margin: "1px 0 0 30px" }}>
+                      ✓ {checkMeta[flatI].by} · {new Date(checkMeta[flatI].at).toLocaleDateString()}
+                    </div>
+                  )}
                   {thread.map((c, ci) => (
                     <div key={ci} style={{ fontSize: 11, color: "var(--gray)", margin: "1px 0 0 30px" }}>
                       💬 <strong>{c.by || "Trainer"}:</strong> {c.text}

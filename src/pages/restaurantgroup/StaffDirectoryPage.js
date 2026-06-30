@@ -1291,7 +1291,7 @@ export default function StaffDirectoryPage() {
       )}
 
       {openAssignment && (
-        <AssignmentDetail assignment={openAssignment} liveModule={modules.find((m) => m.id === openAssignment.moduleId) || modules.find((m) => m.title === openAssignment.moduleTitle && m.venueId === openAssignment.venueId)} groupId={groupId} canTick={canEdit} canVerify={can("training", "edit")} canComment={can("training", "edit")} actorName={actorName} showToast={showToast} onClose={() => setOpenAssignId(null)} />
+        <AssignmentDetail assignment={openAssignment} liveModule={modules.find((m) => m.id === openAssignment.moduleId) || modules.find((m) => m.title === openAssignment.moduleTitle && m.venueId === openAssignment.venueId)} groupId={groupId} canTick={canEdit} canVerify={can("training", "edit")} canComment={can("training", "edit")} actorName={actorName} actorId={me?.uid || me?.id} showToast={showToast} onClose={() => setOpenAssignId(null)} />
       )}
       {openChecklistAssignment && (
         <ChecklistAssignmentDetail assignment={openChecklistAssignment} liveChecklist={checklists.find((c) => c.id === openChecklistAssignment.checklistId) || checklists.find((c) => c.title === openChecklistAssignment.checklistTitle && c.venueId === openChecklistAssignment.venueId)} groupId={groupId} canTick={canEdit} canComment={canEdit} actorName={actorName} showToast={showToast} onClose={() => setOpenChecklistId(null)} />

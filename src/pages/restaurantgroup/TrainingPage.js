@@ -519,10 +519,11 @@ export default function TrainingPage({ initialTab }) {
           assignment={openAssignment}
           liveModule={modules.find((m) => m.id === openAssignment.moduleId) || modules.find((m) => m.title === openAssignment.moduleTitle && m.venueId === openAssignment.venueId)}
           groupId={groupId}
-          canTick={canEdit || openAssignment.staffId === myStaff?.id}
+          canTick={canEdit}
           canVerify={canEdit}
           canComment={isMgr}
           actorName={me?.displayName || me?.name || me?.email || "Trainer"}
+          actorId={myUid}
           showToast={showToast}
           onClose={() => setOpenAssign(null)}
         />
