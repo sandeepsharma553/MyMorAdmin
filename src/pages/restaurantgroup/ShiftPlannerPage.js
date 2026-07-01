@@ -46,10 +46,12 @@ function parseTime(t) {
   if (/pm/i.test(m[3])) h += 12;
   return h + parseInt(m[2], 10) / 60;
 }
-// NET paid hours: gross span minus the unpaid break (so staffHours/totalHours/labourCost
-// all become paid hours automatically). Local to this file — rgUtils.shiftHours unchanged.
-const shiftHours = (sh) =>
-  Math.max(0, (parseTime(sh.end) - parseTime(sh.start)) - (Number(sh.breakMins) || 0) / 60);
+// PAID hours = the FULL shift span. Breaks are PAID here: breakMins is tracked + shown but
+// NOT deducted, so staffHours/totalHours/labourCost count the whole span. Local to this file
+// — rgUtils.shiftHours unchanged.
+const shiftHours = (sh) => Math.max(0, parseTime(sh.end) - parseTime(sh.start));
+// Break minutes recorded on a shift (compliance readout — paid, never deducted from hours).
+const breakMinsOf = (sh) => Number(sh.breakMins) || 0;
 
 const cellClass = (type) =>
   type === "evening" ? "shift-evening" : type === "open" ? "shift-open" : type === "off" ? "shift-off" : "shift-morning";
@@ -98,11 +100,19 @@ export default function ShiftPlannerPage() {
     const mv = myStaff?.venueIds?.length ? myStaff.venueIds : (myStaff?.venueId ? [myStaff.venueId] : []);
     return staff.filter((s) => (s.venueIds || []).some((v) => mv.includes(v)) || (s.venueId && mv.includes(s.venueId)));
   }, [myScope, scopedStaff, staff, myStaff]);
-  // #2 hide Inactive staff from the planner (keep Active / On leave). Filter LOCALLY
-  // (not in RGContext.scopedStaff) so other pages are unaffected.
+  // Hide DEPARTED staff from the planner (keep Active / On leave). Real status values are
+  // "Active"/"Inactive"/"On leave"/"Left"; also treat a past endDate as departed. Filtered
+  // LOCALLY (not in RGContext.scopedStaff) so other pages are unaffected.
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const hasLeft = (s) => {
+    const st = (s.status || "Active").toLowerCase();
+    if (["inactive", "left"].includes(st)) return true;
+    if (s.endDate && String(s.endDate).slice(0, 10) <= todayISO) return true;
+    return false;
+  };
   const rows = useMemo(
-    () => visibleStaff.filter((s) => staffInVenue(s, selectedVenue) && s.status !== "Inactive"),
-    [visibleStaff, selectedVenue]
+    () => visibleStaff.filter((s) => staffInVenue(s, selectedVenue) && !hasLeft(s)),
+    [visibleStaff, selectedVenue] // eslint-disable-line react-hooks/exhaustive-deps
   );
   // #3 shared A→Z comparator (case-insensitive) for ordering members within a group.
   const byName = (a, b) => fullName(a).toLowerCase().localeCompare(fullName(b).toLowerCase());
@@ -197,6 +207,8 @@ export default function ShiftPlannerPage() {
     });
     return b;
   }, [weekShifts, weekDates, venues, holidays]);
+  // total break minutes recorded across the week's shifts (compliance readout — display only)
+  const weekBreakMins = weekShifts.reduce((a, sh) => a + breakMinsOf(sh), 0);
   // Fortnight total: this week + the next week. Build nextWk via weekKeyOf(nextMonday)
   // (same path shifts are keyed with) so it matches stored weekKeys exactly (AEST Issue-18).
   const nextWk = useMemo(() => { const nextMonday = new Date(monday); nextMonday.setDate(monday.getDate() + 7); return weekKeyOf(nextMonday); }, [monday]);
@@ -351,7 +363,7 @@ export default function ShiftPlannerPage() {
   const cellShiftsV = (staffId, day, vid) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day && (vid === "all" || sh.venueId === vid)).sort((a, b) => parseTime(a.start) - parseTime(b.start));
   const VenueGrid = ({ vid }) => {
     // #2 hide Inactive + #3 A→Z, same as the main grid (separate source: scopedStaff).
-    const gridRows = scopedStaff.filter((s) => staffInVenue(s, vid) && s.status !== "Inactive").sort(byName);
+    const gridRows = scopedStaff.filter((s) => staffInVenue(s, vid) && !hasLeft(s)).sort(byName);
     const gh = gridRows.reduce((a, s) => a + weekShifts.filter((sh) => sh.staffId === s.id && (vid === "all" || sh.venueId === vid)).reduce((x, sh) => x + shiftHours(sh), 0), 0);
     return (
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -545,14 +557,15 @@ export default function ShiftPlannerPage() {
       </div>
       {/* Roster grid */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ overflowX: "auto" }}>
+        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 260px)" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
             <thead>
               <tr style={{ background: "var(--gray-light)" }}>
                 <th style={{ ...thSticky, textAlign: "left", width: 130, padding: "10px 14px" }}>Staff</th>
                 {DAYS.map((d, i) => (
                   <th key={d} style={thSticky} title={dayIsPH(i) ? dayPHName(i) : undefined}>
-                    {d}{dayIsPH(i) && <span style={{ display: "block", fontSize: 9, fontWeight: 700, color: "#b45309" }}>PH</span>}
+                    <div>{d}{weekDates[i] ? ` ${Number(weekDates[i].slice(8, 10))}` : ""}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 4 }}>PH</span>}</div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "var(--gray)" }}>{dayHeadcount(i)} on</div>
                   </th>
                 ))}
                 <th style={thSticky}>Hours</th>
@@ -586,7 +599,7 @@ export default function ShiftPlannerPage() {
           <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Est. labour cost: </span><strong>${labourCost.toLocaleString()}</strong></div>
           <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Labour %: </span><strong>{labourPct}%</strong> <span style={{ color: "var(--gray)" }}>(target 20–25%)</span></div>
           <div style={{ fontSize: 11, width: "100%", color: "var(--gray)" }}>
-            Mon–Fri <strong>{hoursByType.mf.toFixed(1)}h</strong> · Sat <strong>{hoursByType.sat.toFixed(1)}h</strong> · Sun <strong>{hoursByType.sun.toFixed(1)}h</strong> · PH <strong>{hoursByType.ph.toFixed(1)}h</strong>
+            Mon–Fri <strong>{hoursByType.mf.toFixed(1)}h</strong> · Sat <strong>{hoursByType.sat.toFixed(1)}h</strong> · Sun <strong>{hoursByType.sun.toFixed(1)}h</strong> · PH <strong>{hoursByType.ph.toFixed(1)}h</strong> · Breaks <strong>{weekBreakMins} min</strong>
             <span style={{ marginLeft: 16 }}>Fortnight total: <strong>{fortnightHours.toFixed(1)}h</strong></span>
           </div>
         </div>
@@ -618,7 +631,7 @@ export default function ShiftPlannerPage() {
               <div className="form-group"><label className="form-label">End time</label>
                 <select className="form-input" value={form.end} onChange={setF("end")}>{ENDS.map((t) => <option key={t}>{t}</option>)}</select>
               </div>
-              <div className="form-group"><label className="form-label">Unpaid break (min)</label>
+              <div className="form-group"><label className="form-label">Break (min)</label>
                 <select className="form-input" value={form.breakMins ?? 0} onChange={setF("breakMins")}>
                   {[0, 15, 30, 45, 60].map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
@@ -639,13 +652,12 @@ export default function ShiftPlannerPage() {
               </div>
             </div>
             {(() => {
-              const _g = Math.max(0, parseTime(form.end) - parseTime(form.start));
-              const _net = Math.max(0, _g - (Number(form.breakMins) || 0) / 60);
+              const _g = Math.max(0, parseTime(form.end) - parseTime(form.start)); // full paid span
               return (
                 <div style={{ fontSize: 11, color: "var(--gray)", margin: "2px 0 8px" }}>
-                  {`${_g.toFixed(1)}h shift − ${Number(form.breakMins) || 0} min break = ${_net.toFixed(1)}h paid`}
+                  {`${_g.toFixed(1)}h paid · ${Number(form.breakMins) || 0} min break`}
                   {(_g >= 5 && (Number(form.breakMins) || 0) < 30) && (
-                    <div style={{ marginTop: 2 }}>Shifts over 5h usually include a 30-min unpaid meal break (Fair Work).</div>
+                    <div style={{ marginTop: 2 }}>Shifts over 5h should include a 30-min meal break (Fair Work).</div>
                   )}
                 </div>
               );
@@ -668,6 +680,12 @@ export default function ShiftPlannerPage() {
               {[["Day", FULL_DAYS[shiftDetail.day]], ["Rostered", `${shiftDetail.start} – ${shiftDetail.end}`], ["Role", shiftDetail.role], ["Venue", shiftDetail.venue], ["Station", shiftDetail.station]].map(([k, v]) => (
                 <div key={k}><div className="form-label">{k}</div><div style={{ fontSize: 13 }}>{v || "—"}</div></div>
               ))}
+            </div>
+            {/* paid span + break (compliance readout — break is paid, not deducted) */}
+            <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 8 }}>
+              {breakMinsOf(shiftDetail) > 0
+                ? `${shiftHours(shiftDetail).toFixed(1)}h paid · ${breakMinsOf(shiftDetail)} min break`
+                : `${shiftHours(shiftDetail).toFixed(1)}h paid · no break recorded`}
             </div>
             {/* Punch — clock in / break / clock out; admins can edit the times */}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10, marginTop: 12 }}>
