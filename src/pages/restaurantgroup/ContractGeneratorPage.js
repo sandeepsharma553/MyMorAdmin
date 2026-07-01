@@ -176,6 +176,7 @@ export default function ContractGeneratorPage() {
   const [overrides, setOverrides] = useState({});
   const [writeBack, setWriteBack] = useState({}); // per-private-field "also update staff record" — captured, not written here
   const [extraClauses, setExtraClauses] = useState("");
+  const [confirmGen, setConfirmGen] = useState(false); // rate-review confirm dialogue (Option 1)
 
   // Fetch the seeded templates + defaults once (gated reads — owner/storeAdmin).
   useEffect(() => {
@@ -273,19 +274,29 @@ export default function ContractGeneratorPage() {
     }
   };
 
-  const onGenerate = async () => {
-    // Re-resolve §4 at click — never trust the last render.
+  // Option 1: clicking Generate now OPENS the rate-review dialogue (no write). Re-resolve §4
+  // at click — never trust the last render. The write happens in doGenerate on Confirm.
+  const onGenerate = () => {
     const r = resolveTemplate(selStaff, templatesById, areaChoice);
     if (r.status !== "OK") {
       return showToast(r.status === "NEEDS_CHOICE" ? "Choose FOH or BOH before generating."
         : r.status === "BLOCK" ? r.reason : "Select a staff member first.");
     }
+    setConfirmGen(true);
+  };
+
+  // The existing write path — unchanged except it now runs on Confirm. Re-resolves again so a
+  // stale dialogue can't write the wrong template.
+  const doGenerate = async () => {
+    const r = resolveTemplate(selStaff, templatesById, areaChoice);
+    if (r.status !== "OK") { setConfirmGen(false); return showToast(r.status === "BLOCK" ? r.reason : "Cannot generate."); }
     setSaving(true);
     try {
       const ref = await addDoc(contractsCol(groupId), buildContractDoc(r.templateId, templatesById[r.templateId]));
       await applyWriteBack();              // isolated; only ticked private fields
       setLastDraft({ id: ref.id });        // enables the (flag-gated) Send button
       showToast("Draft contract saved");
+      setConfirmGen(false);
     } catch (e) {
       showToast("Could not save contract");
     } finally { setSaving(false); }
@@ -484,6 +495,50 @@ export default function ContractGeneratorPage() {
           )}
         </div>
       </div>
+
+      {/* Option 1 rate-review confirm — gates the EXISTING addDoc behind a Confirm click.
+          Does NOT touch the award verified flag; rate source mirrors buildValues precedence. */}
+      {confirmGen && (() => {
+        const rateInfo = (() => {
+          const rate = values.hourly_rate; // the exact value that will be written onto the contract
+          const hasRate = rate != null && String(rate).trim() !== "";
+          const overrideSet = overrides.hourly_rate != null && String(overrides.hourly_rate).trim() !== "";
+          const manualRate = priv?.rate != null && String(priv.rate).trim() !== "";
+          const awardVerified = isAwardUsableForLabour(staffAward);
+          const awardRate = awardVerified ? awardRateForLevel(staffAward, values.classification_level, staffIsCasual(selStaff)) : null;
+          let source, warn = false;
+          if (overrideSet) source = "Manual override (this contract)";
+          else if (manualRate) source = "Staff record (manual rate)";
+          else if (awardRate != null) source = `Verified award ${staffAward.code}`;
+          else if (staffAward && !awardVerified) { source = `Award ${staffAward.code} not verified — rate not applied`; warn = true; }
+          else if (!values.classification_level) { source = "Classification not set — no rate"; warn = true; }
+          else { source = "No rate set"; warn = true; }
+          return { rate, hasRate, source, warn };
+        })();
+        const venueName = (venues.find((v) => v.id === (selStaff?.venueIds || [])[0])?.name) || "—";
+        return (
+          <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setConfirmGen(false)}>
+            <div className="rg-modal" style={{ maxWidth: 460 }}>
+              <div className="modal-head"><span className="modal-title">Confirm contract details</span><button className="modal-close" onClick={() => setConfirmGen(false)}>✕</button></div>
+              <div style={{ fontSize: 13, lineHeight: 1.7, padding: "4px 2px" }}>
+                <div><strong>Employee:</strong> {values.employee_name || "—"} · {values.employment_type || "—"}</div>
+                <div><strong>Venue:</strong> {venueName}</div>
+                <div><strong>Classification:</strong> {values.classification_level || <span style={{ color: "var(--red)" }}>not set</span>}</div>
+                <div>
+                  <strong>Rate:</strong> {rateInfo.hasRate ? `$${rateInfo.rate}/hr` : <span style={{ color: "var(--red)" }}>—</span>}{" "}
+                  <span style={{ fontSize: 12, color: rateInfo.warn ? "#b45309" : "var(--gray)" }}>({rateInfo.source})</span>
+                </div>
+                <div><strong>Contracted hours:</strong> {values.contracted_min_hours ? `${values.contracted_min_hours}/week` : "—"}</div>
+                {emptyCount > 0 && <div style={{ marginTop: 6, fontSize: 12, color: "#b45309" }}>{emptyCount} field{emptyCount > 1 ? "s" : ""} still empty — ‹…› will show in the PDF.</div>}
+              </div>
+              <div className="btn-row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
+                <button className="btn" onClick={() => setConfirmGen(false)}>Cancel</button>
+                <button className="btn btn-primary" disabled={saving} onClick={doGenerate}>{saving ? "Saving…" : "Confirm & generate"}</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
