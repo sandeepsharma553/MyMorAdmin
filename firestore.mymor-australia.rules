@@ -78,6 +78,16 @@ service cloud.firestore {
       match /contracts/{contractId} {
          allow read, write: if rgIsSuper() || rgIsGroupAdmin(groupId);
       }
+      match /settings/contractClassifications {
+  			allow read, write: if rgIsSuper() || rgIsGroupAdmin(groupId);
+			}
+      match /settings/legalEntities {
+        allow read, write: if rgIsSuper() || rgIsGroupAdmin(groupId);
+      }
+      match /settings/publicHolidays {
+        allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
+        allow write: if rgIsSuper() || rgIsGroupAdmin(groupId);
+      }
       match /venues/{venueId} {
         allow read, write: if rgIsSuper() || rgIsGroupMember(groupId);
 
