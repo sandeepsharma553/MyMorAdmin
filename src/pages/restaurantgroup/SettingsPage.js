@@ -63,13 +63,13 @@ export default function SettingsPage() {
     try { await setDoc(legalEntitiesDoc(groupId), { entities: next, updatedAt: serverTimestamp() }, { merge: true }); }
     catch { showToast("Could not save legal entities"); }
   };
-  const startEnt = (e) => setEntForm(e ? { ...e, venueIds: [...(e.venueIds || [])] } : { name: "", venueIds: [] });
+  const startEnt = (e) => setEntForm(e ? { ...e, venueIds: [...(e.venueIds || [])] } : { name: "", venueIds: [], address: "", abn: "" });
   const toggleEntVenue = (vid) => setEntForm((p) => ({ ...p, venueIds: p.venueIds.includes(vid) ? p.venueIds.filter((x) => x !== vid) : [...p.venueIds, vid] }));
   const saveEnt = () => {
     const name = (entForm.name || "").trim();
     if (!name) return showToast("Enter the full legal name");
     const id = entForm.id || slug(name) || `ent-${Date.now()}`;
-    const rec = { id, name, venueIds: entForm.venueIds || [] };
+    const rec = { id, name, venueIds: entForm.venueIds || [], address: (entForm.address || "").trim(), abn: (entForm.abn || "").trim() };
     saveEntities(entForm.id ? entities.map((e) => (e.id === entForm.id ? rec : e)) : [...entities, rec]);
     setEntForm(null);
   };
@@ -626,6 +626,14 @@ export default function SettingsPage() {
                 <div className="form-group">
                   <label className="form-label">Full legal name (as registered — no auto “Pty Ltd”)</label>
                   <input className="form-input" value={entForm.name} onChange={(e) => setEntForm((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Mad Benji Pty Ltd" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Registered address (optional)</label>
+                  <input className="form-input" value={entForm.address || ""} onChange={(e) => setEntForm((p) => ({ ...p, address: e.target.value }))} placeholder="e.g. 123 Smith St, Fitzroy VIC 3065" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">ABN (optional)</label>
+                  <input className="form-input" value={entForm.abn || ""} onChange={(e) => setEntForm((p) => ({ ...p, abn: e.target.value }))} placeholder="e.g. 12 345 678 901" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Venues this entity covers</label>

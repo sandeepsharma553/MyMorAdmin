@@ -24,7 +24,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const TOKEN_SOURCE = {
   employee_name: "staff", employee_first_name: "staff", employment_type: "staff", commence_date: "staff", location_basis: "derived",
   employee_address: "private", classification_level: "private", hourly_rate: "private", contracted_min_hours: "private",
-  employer_name: "defaults", owner_name: "defaults", discount_during: "defaults", discount_outside: "defaults", family_discount: "defaults",
+  employer_name: "defaults", employer_address: "defaults", owner_name: "defaults", discount_during: "defaults", discount_outside: "defaults", family_discount: "defaults",
   probation_shifts: "defaults", probation_months: "defaults", notice_weeks: "defaults", min_days: "defaults",
   offer_date: "typed",
 };
@@ -32,7 +32,7 @@ const TOKEN_LABEL = {
   employee_name: "Employee name", employee_first_name: "First name", employment_type: "Employment type",
   commence_date: "Commence date", location_basis: "Location basis", employee_address: "Address",
   classification_level: "Classification level", hourly_rate: "Rate", contracted_min_hours: "Contracted min hours",
-  employer_name: "Employer name", owner_name: "Owner (counter-sign)", discount_during: "Discount (during shift)",
+  employer_name: "Employer name", employer_address: "Employer address", owner_name: "Owner (counter-sign)", discount_during: "Discount (during shift)",
   discount_outside: "Discount (outside shift)", family_discount: "Family discount", probation_shifts: "Probation (shifts)",
   probation_months: "Probation (months)", notice_weeks: "Resignation notice (weeks)", min_days: "Min days/week",
   offer_date: "Offer date",
@@ -119,6 +119,10 @@ function buildValues(staff, priv, defaults, overrides, entities, venues, awardRa
     hourly_rate: priv?.rate || "",
     contracted_min_hours: priv?.contractedMinHours || "",
     employer_name: entity ? entity.name : (defaults?.employerName || ""),
+    // mirrors employer_name: the venue-mapped entity's address, else contractDefaults.employerAddress.
+    // NB: follows pickEntityForStaff (venue), so a MANUAL employer_name dropdown change does NOT
+    // re-point the address — flagged as a follow-up (no template renders it yet anyway).
+    employer_address: entity ? (entity.address || "") : (defaults?.employerAddress || ""),
     owner_name: defaults?.ownerName || "",
     discount_during: defaults?.discount_during || "",
     discount_outside: defaults?.discount_outside || "",
