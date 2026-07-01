@@ -26,3 +26,4 @@ yarn-error.log*
 secrets/
 .venv-import/
 scripts/importer/node_modules/
+G01193083.pdf
