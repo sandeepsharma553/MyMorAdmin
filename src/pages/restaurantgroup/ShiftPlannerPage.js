@@ -77,6 +77,8 @@ const AREA_GROUPS = [
 export default function ShiftPlannerPage() {
   const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, availability, selectedVenue, selectedVenueName, showToast, can, me, myStaff, myScope } = useRG();
   const canEdit = can("shifts", "edit");
+  // availability review (✓/✗) is its OWN grantable permission — approve level — NOT shifts:edit
+  const canApproveAvail = can("availability", "approve");
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
   const [shiftDetail, setShiftDetail] = useState(null);
@@ -176,8 +178,12 @@ export default function ShiftPlannerPage() {
 
   // sorted chronologically by START time (#1) — filter() returns a fresh array so .sort is safe
   const cellShifts = (staffId, day) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day).sort((a, b) => parseTime(a.start) - parseTime(b.start));
-  // B5: the availability doc (from the iPad) for this staff on this date (weekDates[dayIdx]).
-  const availFor = (staffId, date) => (availability || []).find((a) => a.staffId === staffId && a.date === date) || null;
+  // B5: availability docs (from the iPad) for this staff on this date (weekDates[dayIdx]).
+  // A staffer can post availability at MULTIPLE venues for the same date (one doc per
+  // venue), so this returns ALL of them — each renders as its own chip.
+  const availAll = (staffId, date) => (availability || []).filter((a) => a.staffId === staffId && a.date === date);
+  // missing status on an available doc = "pending" (legacy docs surface for review)
+  const avStatus = (a) => ((a && a.available === true) ? (a.status || "pending") : (a && a.available === false ? "off" : null));
 
   const staffHours = (staffId) =>
     weekShifts.filter((sh) => sh.staffId === staffId).reduce((a, sh) => a + shiftHours(sh), 0);
@@ -354,6 +360,64 @@ export default function ShiftPlannerPage() {
     catch { showToast("Could not remove shift"); }
   };
 
+  // Accept / reject an availability posting — writes status to THAT doc's OWN venue path
+  // (restaurantGroups/{g}/venues/{a.venueId}/availability/{staffId}_{date}) + notifies the staffer.
+  const acceptAvail = async (a) => {
+    try {
+      await updateDoc(doc(venueCol(groupId, a.venueId, "availability"), `${a.staffId}_${a.date}`), { status: "accepted", reviewedBy: me?.displayName || me?.name || "", reviewedAt: serverTimestamp() });
+      sendNotification(groupId, { to: a.staffId, type: "availability", title: "Availability accepted", body: `${a.date} at ${a.venue} — accepted`, venueId: a.venueId, by: me?.displayName || me?.name || "" });
+      showToast("Availability accepted");
+    } catch { showToast("Could not accept"); }
+  };
+  const rejectAvail = async (a) => {
+    try {
+      await updateDoc(doc(venueCol(groupId, a.venueId, "availability"), `${a.staffId}_${a.date}`), { status: "rejected", reviewedBy: me?.displayName || me?.name || "", reviewedAt: serverTimestamp() });
+      sendNotification(groupId, { to: a.staffId, type: "availability", title: "Availability not accepted", body: `${a.date} at ${a.venue} — not accepted`, venueId: a.venueId, by: me?.displayName || me?.name || "" });
+      showToast("Availability rejected");
+    } catch { showToast("Could not reject"); }
+  };
+
+  // Availability chips — ONE chip per venue-posting, stacked in the day cell above the "+".
+  // pending = grey with ✓/✗ (approvers only, chip body inert); accepted = venue-colour
+  // OUTLINE (distinct from a solid shift) and click-to-roster; off = override-only
+  // (approvers double-click, confirm); rejected = muted strikethrough marker.
+  const avTimeLabel = (a) => (a.windows?.length ? a.windows.map((w) => `${w.start}–${w.end}`).join(", ") : (a.allDay ? "All day" : ""));
+  const renderAvailChip = (a, s, day) => {
+    const st = avStatus(a);
+    const key = `${a.venueId}:${a.id}`; // doc id is staffId_date at EVERY venue — key needs the venue
+    if (st === "off") return (
+      <div key={key} style={{ background: "#f3f4f6", color: "#9ca3af", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px", cursor: canApproveAvail ? "pointer" : "default" }}
+        title={a.note || `Marked unavailable at ${a.venue}`}
+        onDoubleClick={canApproveAvail ? () => { if (window.confirm(`${fullName(s)} marked unavailable at ${a.venue} — roster anyway?`)) openAdd(s.id, day, { fromAvailability: a }); } : undefined}>
+        Off · {a.venue}
+      </div>
+    );
+    if (st === "pending") return (
+      <div key={key} className="shift-cell" style={{ background: "#e5e7eb", color: "#111827", textAlign: "center", cursor: "default" }} title={a.note || "Availability awaiting review"}>
+        <div style={{ fontWeight: 600 }}>{a.venue}{avTimeLabel(a) ? ` ${avTimeLabel(a)}` : ""}</div>
+        {canApproveAvail && (
+          <div style={{ display: "flex", justifyContent: "center", gap: 4, marginTop: 2 }}>
+            <button title="Accept availability" style={{ border: "none", background: "#16a34a", color: "#fff", borderRadius: 3, padding: "0 6px", cursor: "pointer", fontSize: 10 }} onClick={(e) => { e.stopPropagation(); acceptAvail(a); }}>✓</button>
+            <button title="Reject availability" style={{ border: "none", background: "#dc2626", color: "#fff", borderRadius: 3, padding: "0 6px", cursor: "pointer", fontSize: 10 }} onClick={(e) => { e.stopPropagation(); rejectAvail(a); }}>✗</button>
+          </div>
+        )}
+      </div>
+    );
+    if (st === "accepted") return (
+      <div key={key} className="shift-cell" style={{ background: "transparent", border: `2px solid ${venueColorOf(a.venueId)}`, color: venueColorOf(a.venueId), textAlign: "center", cursor: canEdit ? "pointer" : "default" }}
+        title={a.note || "Accepted availability — click to add a shift"}
+        onClick={canEdit ? () => openAdd(s.id, day, { fromAvailability: a }) : undefined}>
+        {a.venue}{avTimeLabel(a) ? ` ${avTimeLabel(a)}` : ""} ✓
+      </div>
+    );
+    if (st === "rejected") return (
+      <div key={key} style={{ color: "#b91c1c", opacity: 0.6, textDecoration: "line-through", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={a.note || "Availability rejected"}>
+        Rejected · {a.venue}
+      </div>
+    );
+    return null;
+  };
+
   const th = { padding: "10px 8px", textAlign: "center", fontSize: 11, fontWeight: 600, color: "var(--gray)", borderBottom: "0.5px solid var(--border)" };
   // #4 sticky header variant for the MAIN roster only. With borderCollapse:collapse a
   // sticky cell drops its own border, so the divider is drawn as an inset box-shadow.
@@ -384,6 +448,8 @@ export default function ShiftPlannerPage() {
                   </td>
                   {DAYS.map((_, day) => {
                     const shs = cellShiftsV(s.id, day, vid);
+                    // this grid is scoped to ONE venue — only its own availability postings
+                    const avs = availAll(s.id, weekDates[day]).filter((a) => a.venueId === vid);
                     return (
                       <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -393,6 +459,7 @@ export default function ShiftPlannerPage() {
                               <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}</div>
                             </div>
                           ))}
+                          {avs.map((a) => renderAvailChip(a, s, day))}
                           {canEdit && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day, vid)}>+</div>}
                         </div>
                       </td>
@@ -421,7 +488,7 @@ export default function ShiftPlannerPage() {
       {DAYS.map((_, day) => {
         const shs = cellShifts(s.id, day);
         const date = weekDates[day];
-        const av = availFor(s.id, date); // availability doc from the iPad (or null)
+        const avs = availAll(s.id, date); // ALL availability docs for this date (one per venue)
         return (
           <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -431,18 +498,7 @@ export default function ShiftPlannerPage() {
                   <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
                 </div>
               ))}
-              {/* #8 Days Off — staffer marked unavailable; informational, NOT clickable */}
-              {av && av.available === false && (
-                <div style={{ background: "#f3f4f6", color: "#9ca3af", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={av.note || "Marked unavailable"}>Off</div>
-              )}
-              {/* available & FREE → grey, click to accept (prefilled from the posted window) */}
-              {canEdit && av && av.available === true && shs.length === 0 && (
-                <div className="shift-cell" style={{ background: "#e5e7eb", color: "#111827", cursor: "pointer", textAlign: "center" }} title={av.note || "Available — click to add a shift"} onClick={() => openAdd(s.id, day, { fromAvailability: av })}>Available</div>
-              )}
-              {/* available & ALREADY rostered → black affordance, double-click to add more (v1) */}
-              {canEdit && av && av.available === true && shs.length > 0 && (
-                <div className="shift-cell" style={{ background: "#111827", color: "#fff", fontSize: 10, cursor: "pointer", textAlign: "center" }} title="Available — double-click to add a shift" onDoubleClick={() => openAdd(s.id, day, { fromAvailability: av })}>+ available</div>
-              )}
+              {avs.map((a) => renderAvailChip(a, s, day))}
               {canEdit && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 8px" }} onClick={() => openAdd(s.id, day)}>+</div>}
               {!canEdit && shs.length === 0 && <div className="shift-cell shift-off" style={{ textAlign: "center", opacity: 0.5 }}>·</div>}
             </div>
