@@ -23,6 +23,15 @@ const mkTimes = (fromMin, toMin) => {
 };
 const STARTS = mkTimes(0, 23 * 60 + 45);        // 12:00am … 11:45pm (full day, 15-min)
 const ENDS = mkTimes(0, 23 * 60 + 45);          // 12:00am … 11:45pm
+// 24h "HH:MM" (venue.hours open/close) → minutes; null when unparseable
+const hhmmToMin = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "").trim()); return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) : null; };
+// "h:mmam/pm" option label → minutes (same parse rules as parseTime; for sorting the union list)
+const timeToMin = (t) => {
+  const m = /(\d+):(\d+)(am|pm)/i.exec(String(t || "").trim()); if (!m) return null;
+  let h = parseInt(m[1], 10) % 12; if (/pm/i.test(m[3])) h += 12; return h * 60 + parseInt(m[2], 10);
+};
+// FULL_DAYS index → venue.hours day key (both are Monday-first)
+const HOURS_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const ROLES = ["FOH — Bar", "FOH — Floor", "FOH — Barista", "BOH — Kitchen", "BOH — Fryer", "BOH — Washing", "Store Manager", "Central Kitchen"];
 const HOURLY = 32;
 const WEEKLY_REVENUE = 42000;
@@ -268,6 +277,25 @@ export default function ShiftPlannerPage() {
 
   const [form, setForm] = useState({ editId: null, staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: (roles && roles[0]) || ROLES[0], venueId: "", stationId: "", notes: "" });
   const formStations = useMemo(() => stations.filter((s) => s.venueId === form.venueId), [stations, form.venueId]);
+  // Time pickers bounded to the selected venue's trading hours ±2h, when usable hours exist
+  // for the selected day. Three data states: proper hours → bounded window; hours missing or
+  // day closed → full STARTS range; open/close unparseable → full range. The CURRENT form
+  // value is UNIONed in (deduped, time-sorted) so editing an out-of-hours shift — or an
+  // availability prefill in a different time format — keeps its value selectable.
+  const { startOptions, endOptions } = useMemo(() => {
+    const dayKey = HOURS_KEYS[FULL_DAYS.indexOf(form.day)];
+    const h = venues.find((v) => v.id === form.venueId)?.hours?.[dayKey];
+    const o = h && h.closed !== true ? hhmmToMin(h.open) : null;
+    const c = h && h.closed !== true ? hhmmToMin(h.close) : null;
+    const bounded = (o != null && c != null)
+      ? mkTimes(Math.max(0, o - 120), Math.min(23 * 60 + 45, c + 120)) // open−2h … close+2h
+      : STARTS;
+    const withCurrent = (val) => {
+      const list = val && !bounded.includes(val) ? [val, ...bounded] : bounded;
+      return [...new Set(list)].sort((a, b) => (timeToMin(a) ?? 0) - (timeToMin(b) ?? 0));
+    };
+    return { startOptions: withCurrent(form.start), endOptions: withCurrent(form.end) };
+  }, [form.venueId, form.day, form.start, form.end, venues]);
   // 3rd arg is overloaded: a venue-id STRING (split-view column override) OR an OPTS object
   // ({ fromAvailability }) for accept-from-availability. Both supported, neither breaks.
   const openAdd = (staffId, day, arg3) => {
@@ -709,10 +737,10 @@ export default function ShiftPlannerPage() {
                 <select className="form-input" value={form.day} onChange={setF("day")}>{FULL_DAYS.map((d) => <option key={d}>{d}</option>)}</select>
               </div>
               <div className="form-group"><label className="form-label">Start time</label>
-                <select className="form-input" value={form.start} onChange={setF("start")}>{STARTS.map((t) => <option key={t}>{t}</option>)}</select>
+                <select className="form-input" value={form.start} onChange={setF("start")}>{startOptions.map((t) => <option key={t}>{t}</option>)}</select>
               </div>
               <div className="form-group"><label className="form-label">End time</label>
-                <select className="form-input" value={form.end} onChange={setF("end")}>{ENDS.map((t) => <option key={t}>{t}</option>)}</select>
+                <select className="form-input" value={form.end} onChange={setF("end")}>{endOptions.map((t) => <option key={t}>{t}</option>)}</select>
               </div>
               <div className="form-group"><label className="form-label">Break (min)</label>
                 <select className="form-input" value={form.breakMins ?? 0} onChange={setF("breakMins")}>
