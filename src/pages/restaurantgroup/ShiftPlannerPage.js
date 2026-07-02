@@ -199,6 +199,14 @@ export default function ShiftPlannerPage() {
   const phState = selectedVenue !== "all" ? (venues.find((v) => v.id === selectedVenue)?.state || null) : null;
   const venueStates = venues.map((v) => v.state).filter(Boolean);
   const dayIsPH = (i) => phState ? isPublicHoliday(weekDates[i], phState, holidays) : isPHForAnyState(weekDates[i], venueStates, holidays);
+  // Closed-day flag for the SELECTED venue (mark, don't remove — mirrors the PH pattern).
+  // Three data states, all explicit: "all venues" → never closed; venue without hours or
+  // day not flagged → open; hours[day].closed === true → closed. i is 0..6 Mon..Sun.
+  const dayClosedForSelected = (i) => {
+    if (selectedVenue === "all") return false;
+    const h = venues.find((v) => v.id === selectedVenue)?.hours?.[HOURS_KEYS[i]];
+    return h?.closed === true;
+  };
   const dayPHName = (i) => {
     const states = phState ? [phState] : venueStates;
     const h = holidays.find((x) => x.date === weekDates[i] && (x.state === "ALL" || states.includes(x.state)));
@@ -296,6 +304,19 @@ export default function ShiftPlannerPage() {
     };
     return { startOptions: withCurrent(form.start), endOptions: withCurrent(form.end) };
   }, [form.venueId, form.day, form.start, form.end, venues]);
+  // Default Add-shift times from the venue's hours: start = open−2h (the bounded window's
+  // left edge), end = close. minToLabel repeats mkTimes' exact formatting so the returned
+  // strings are byte-identical to picker <option> values; null when the venue has no usable
+  // hours for that day (missing / closed / unparseable) — caller falls back to prior times.
+  const defaultTimesFor = (venueId, fullDay) => {
+    const dayKey = HOURS_KEYS[FULL_DAYS.indexOf(fullDay)];
+    const h = venues.find((v) => v.id === venueId)?.hours?.[dayKey];
+    if (!h || h.closed === true) return null;
+    const o = hhmmToMin(h.open), c = hhmmToMin(h.close);
+    if (o == null || c == null) return null;
+    const minToLabel = (min) => { const m = Math.max(0, Math.min(23 * 60 + 45, min)); const hh = Math.floor(m / 60), mm = m % 60, ap = hh >= 12 ? "pm" : "am", h12 = (hh % 12) || 12; return `${h12}:${String(mm).padStart(2, "0")}${ap}`; };
+    return { start: minToLabel(o - 120), end: minToLabel(c) };
+  };
   // 3rd arg is overloaded: a venue-id STRING (split-view column override) OR an OPTS object
   // ({ fromAvailability }) for accept-from-availability. Both supported, neither breaks.
   const openAdd = (staffId, day, arg3) => {
@@ -304,19 +325,24 @@ export default function ShiftPlannerPage() {
     const av = opts?.fromAvailability || null;
     const st = staff.find((s) => s.id === staffId);
     const date = typeof day === "number" ? weekDates[day] : "";
+    // resolve venue + day BEFORE setForm so the hours-derived default uses these SAME values
+    // (venueOverride wins, e.g. the split-view column you clicked; else staff's venue, else selected/first)
+    const resolvedVenueId = venueOverride || st?.venueIds?.[0] || st?.venueId || (selectedVenue !== "all" ? selectedVenue : venues[0]?.id || "");
+    const resolvedDay = typeof day === "number" ? FULL_DAYS[day] : "Monday";
+    // availability prefill wins over the hours-derived default
+    const def = av ? null : defaultTimesFor(resolvedVenueId, resolvedDay);
     setForm((p) => ({
       ...p,
       staffId: staffId || rows[0]?.id || "",
-      day: typeof day === "number" ? FULL_DAYS[day] : "Monday",
+      day: resolvedDay,
       // auto-fill the shift role from the staff member's assigned role (Staff Directory); fall back to a group role
       role: st?.role || (roles && roles.includes(p.role) ? p.role : ((roles && roles[0]) || ROLES[0])),
-      // venueOverride wins (e.g. the split-view column you clicked); else the staff's venue, else selected/first
-      venueId: venueOverride || st?.venueIds?.[0] || st?.venueId || (selectedVenue !== "all" ? selectedVenue : venues[0]?.id || ""),
+      venueId: resolvedVenueId,
       stationId: "",
       breakMins: 0,
-      // accept-from-availability: prefill start/end from the posted window when present
-      start: av?.windows?.[0]?.start || p.start,
-      end: av?.windows?.[0]?.end || p.end,
+      // accept-from-availability window → venue-hours default (open−2h / close) → previous times
+      start: av?.windows?.[0]?.start || def?.start || p.start,
+      end: av?.windows?.[0]?.end || def?.end || p.end,
       availabilityId: av ? `${staffId}_${date}` : null,
       editId: null,
     }));
@@ -477,6 +503,8 @@ export default function ShiftPlannerPage() {
     // #2 hide Inactive + #3 A→Z, same as the main grid (separate source: scopedStaff).
     const gridRows = scopedStaff.filter((s) => staffInVenue(s, vid) && !hasLeft(s)).sort(staffSort);
     const gh = gridRows.reduce((a, s) => a + weekShifts.filter((sh) => sh.staffId === s.id && (vid === "all" || sh.venueId === vid)).reduce((x, sh) => x + shiftHours(sh), 0), 0);
+    // split view is always per-venue → closed-day greying keys off vid directly
+    const vClosed = (day) => venues.find((v) => v.id === vid)?.hours?.[HOURS_KEYS[day]]?.closed === true;
     return (
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
@@ -484,7 +512,7 @@ export default function ShiftPlannerPage() {
             <thead>
               <tr style={{ background: "var(--gray-light)" }}>
                 <th style={{ ...th, textAlign: "left", width: 100, padding: "8px 10px" }}>Staff</th>
-                {DAYS.map((d) => <th key={d} style={{ ...th, padding: "8px 4px" }}>{d}</th>)}
+                {DAYS.map((d, i) => <th key={d} style={{ ...th, padding: "8px 4px", ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={vClosed(i) ? "Venue closed this day" : undefined}>{d}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -498,8 +526,9 @@ export default function ShiftPlannerPage() {
                     const shs = cellShiftsV(s.id, day, vid);
                     // this grid is scoped to ONE venue — only its own availability postings
                     const avs = availAll(s.id, weekDates[day]).filter((a) => a.venueId === vid);
+                    const closedDay = vClosed(day); // muted cell + no "+"; existing shifts still render
                     return (
-                      <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
+                      <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top", ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                           {shs.map((sh) => (
                             <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff" }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
@@ -508,7 +537,7 @@ export default function ShiftPlannerPage() {
                             </div>
                           ))}
                           {avs.map((a) => renderAvailChip(a, s, day))}
-                          {canEdit && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day, vid)}>+</div>}
+                          {canEdit && !closedDay && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day, vid)}>+</div>}
                         </div>
                       </td>
                     );
@@ -537,8 +566,9 @@ export default function ShiftPlannerPage() {
         const shs = cellShifts(s.id, day);
         const date = weekDates[day];
         const avs = availAll(s.id, date); // ALL availability docs for this date (one per venue)
+        const closedDay = dayClosedForSelected(day); // muted cell + no "+"; existing shifts still render
         return (
-          <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top" }}>
+          <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top", ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {shs.map((sh) => (
                 <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff", boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
@@ -547,7 +577,7 @@ export default function ShiftPlannerPage() {
                 </div>
               ))}
               {avs.map((a) => renderAvailChip(a, s, day))}
-              {canEdit && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 8px" }} onClick={() => openAdd(s.id, day)}>+</div>}
+              {canEdit && !closedDay && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 8px" }} onClick={() => openAdd(s.id, day)}>+</div>}
               {!canEdit && shs.length === 0 && <div className="shift-cell shift-off" style={{ textAlign: "center", opacity: 0.5 }}>·</div>}
             </div>
           </td>
@@ -674,8 +704,8 @@ export default function ShiftPlannerPage() {
               <tr style={{ background: "var(--gray-light)" }}>
                 <th style={{ ...thSticky, textAlign: "left", width: 130, padding: "10px 14px" }}>Staff</th>
                 {DAYS.map((d, i) => (
-                  <th key={d} style={thSticky} title={dayIsPH(i) ? dayPHName(i) : undefined}>
-                    <div>{d}{weekDates[i] ? ` ${Number(weekDates[i].slice(8, 10))}` : ""}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 4 }}>PH</span>}</div>
+                  <th key={d} style={{ ...thSticky, ...(dayClosedForSelected(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (dayClosedForSelected(i) ? "Venue closed this day" : undefined)}>
+                    <div>{d}{weekDates[i] ? ` ${Number(weekDates[i].slice(8, 10))}` : ""}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 4 }}>PH</span>}{dayClosedForSelected(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "var(--gray)", marginLeft: 4 }}>Closed</span>}</div>
                     <div style={{ fontSize: 10, fontWeight: 600, color: "var(--gray)" }}>{dayHeadcount(i)} on</div>
                   </th>
                 ))}
