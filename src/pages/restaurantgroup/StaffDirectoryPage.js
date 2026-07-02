@@ -113,6 +113,8 @@ export default function StaffDirectoryPage() {
   };
   const [roleFilter, setRoleFilter] = useState("all");
   const [stationFilter, setStationFilter] = useState("all"); // area→station drill-down (like Training)
+  const [sortBy, setSortBy] = useState("az"); // az | za | newest | oldest — card ordering
+  const [under18Only, setUnder18Only] = useState(false); // needs private DOBs → only rendered/applied when canPayroll
   const [hoursPeriod, setHoursPeriod] = useState("week"); // history hours summary window (quick period)
   const [hoursRange, setHoursRange] = useState({ from: "", to: "" }); // custom date range (overrides period)
   const [search, setSearch] = useState("");
@@ -191,8 +193,26 @@ export default function StaffDirectoryPage() {
     }
     const t = search.trim().toLowerCase();
     if (t) list = list.filter((s) => `${s.displayName || s.name} ${s.role} ${(s.venueNames || []).join(" ")} ${s.email || ""} ${s.pin || ""}`.toLowerCase().includes(t));
-    return list;
-  }, [venueScoped, roleFilter, search, stationFilter, areaForFilter, drillStations]);
+    // under-18 filter — reuses the existing isUnder18 predicate (private DOB via minorIds,
+    // Junior-type fallback); minorIds only loads for canPayroll, so gate the filter the same way
+    if (under18Only && canPayroll) list = list.filter(isUnder18);
+    // sort — createdAt may be a Firestore Timestamp, a raw {seconds}, or MISSING (imported
+    // staff): normalise safely, missing sorts as 0 (oldest)
+    const createdMs = (s) => {
+      const c = s?.createdAt;
+      if (!c) return 0;
+      if (typeof c.toMillis === "function") return c.toMillis();
+      if (typeof c.seconds === "number") return c.seconds * 1000;
+      const ms = new Date(c).getTime();
+      return isNaN(ms) ? 0 : ms;
+    };
+    const azName = (s) => (s.displayName || s.name || "").toLowerCase();
+    const cmp = sortBy === "za" ? (a, b) => azName(b).localeCompare(azName(a))
+      : sortBy === "newest" ? (a, b) => createdMs(b) - createdMs(a)
+      : sortBy === "oldest" ? (a, b) => createdMs(a) - createdMs(b)
+      : (a, b) => azName(a).localeCompare(azName(b));
+    return list.slice().sort(cmp);
+  }, [venueScoped, roleFilter, search, stationFilter, areaForFilter, drillStations, sortBy, under18Only, canPayroll, minorIds]); // eslint-disable-line react-hooks/exhaustive-deps
   const leftCount = useMemo(() => venueScoped.filter((s) => s.status === "Left").length, [venueScoped]);
 
   const onShiftToday = useMemo(() => {
@@ -837,6 +857,17 @@ export default function StaffDirectoryPage() {
             <option value={GENERAL_KEY}>General (no station)</option>
           </select>
         )}
+        {/* Under 18 — hidden for non-payroll users: the filter needs the private DOBs (minorIds) */}
+        {canPayroll && (
+          <button className="btn btn-sm" onClick={() => setUnder18Only((v) => !v)} title="Show only staff under 18"
+            style={under18Only ? { background: "var(--amber)", color: "#fff", borderColor: "var(--amber)" } : undefined}>Under 18</button>
+        )}
+        <select className="form-input" style={{ width: 135 }} value={sortBy} onChange={(e) => setSortBy(e.target.value)} title="Sort staff cards">
+          <option value="az">Sort: A–Z</option>
+          <option value="za">Sort: Z–A</option>
+          <option value="newest">Sort: Newest</option>
+          <option value="oldest">Sort: Oldest</option>
+        </select>
         <input className="form-input" style={{ width: 200, marginLeft: "auto" }} placeholder="🔍 Search staff / PIN..." value={search} onChange={(e) => setSearch(e.target.value)} />
         {canEdit && <button className="btn btn-sm btn-primary" onClick={() => { setForm(blankForm(selectedVenue)); setAddOpen(true); }}>+ Add Staff</button>}
       </div>
