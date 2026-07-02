@@ -84,6 +84,7 @@ export default function ShiftPlannerPage() {
   const [shiftDetail, setShiftDetail] = useState(null);
   const [capStaff, setCapStaff] = useState(null); // staff capability card
   const [areaFilter, setAreaFilter] = useState("all"); // all | FOH | BOH | Mgmt
+  const [sortBy, setSortBy] = useState("az"); // az | za | newest | oldest — staff order within each section
   const [planStation, setPlanStation] = useState("all"); // Area→Station drill-down: all | stationId
   const [splitMode, setSplitMode] = useState(false);
   const [splitA, setSplitA] = useState("");
@@ -118,6 +119,25 @@ export default function ShiftPlannerPage() {
   );
   // #3 shared A→Z comparator (case-insensitive) for ordering members within a group.
   const byName = (a, b) => fullName(a).toLowerCase().localeCompare(fullName(b).toLowerCase());
+  // createdAt may be a Firestore Timestamp, a raw {seconds}, or MISSING (imported staff) —
+  // normalise safely; missing sorts as 0 (treated as oldest).
+  const createdMs = (s) => {
+    const c = s?.createdAt;
+    if (!c) return 0;
+    if (typeof c.toMillis === "function") return c.toMillis();
+    if (typeof c.seconds === "number") return c.seconds * 1000;
+    const t = new Date(c).getTime();
+    return isNaN(t) ? 0 : t;
+  };
+  // Active comparator for the sort control. An "Under 18" filter was DELIBERATELY OMITTED:
+  // the main staff doc only carries `birthday` as MM-DD (no year — StaffDirectoryPage writes
+  // `(form.dob || "").slice(5)`); the full DOB lives in the owner-gated private subcollection
+  // staff/{id}/private/details, which this page cannot read. Under-18 is not computable here.
+  const staffSort =
+    sortBy === "za" ? (a, b) => byName(b, a)
+    : sortBy === "newest" ? (a, b) => createdMs(b) - createdMs(a)
+    : sortBy === "oldest" ? (a, b) => createdMs(a) - createdMs(b)
+    : byName;
   // colour-by-venue: consume the owner-picked venue.color (set in VenueManager). Slate
   // fallback (NOT grey — light grey is reserved for the availability state, a later batch).
   const venueColorOf = (venueId) => venues.find((v) => v.id === venueId)?.color || "#334155";
@@ -236,9 +256,9 @@ export default function ShiftPlannerPage() {
   // this week OR tagged it) — see staffAtStation.
   const groupedRows = useMemo(() =>
     AREA_GROUPS
-      .map((g) => ({ ...g, members: rows.filter((s) => staffAreaBuckets(s).includes(g.key) && staffAtStation(s, effStation, weekShifts)).sort(byName) }))
+      .map((g) => ({ ...g, members: rows.filter((s) => staffAreaBuckets(s).includes(g.key) && staffAtStation(s, effStation, weekShifts)).sort(staffSort) }))
       .filter((g) => g.members.length && (areaFilter === "all" || areaFilter === g.key)),
-    [rows, areaFilter, effStation, weekShifts]);
+    [rows, areaFilter, effStation, weekShifts, sortBy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // #5 distinct staff currently shown in the main grid (across all groups) — the basis
   // for the bottom "Staff rostered" headcount row (derived, no extra query).
@@ -427,7 +447,7 @@ export default function ShiftPlannerPage() {
   const cellShiftsV = (staffId, day, vid) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day && (vid === "all" || sh.venueId === vid)).sort((a, b) => parseTime(a.start) - parseTime(b.start));
   const VenueGrid = ({ vid }) => {
     // #2 hide Inactive + #3 A→Z, same as the main grid (separate source: scopedStaff).
-    const gridRows = scopedStaff.filter((s) => staffInVenue(s, vid) && !hasLeft(s)).sort(byName);
+    const gridRows = scopedStaff.filter((s) => staffInVenue(s, vid) && !hasLeft(s)).sort(staffSort);
     const gh = gridRows.reduce((a, s) => a + weekShifts.filter((sh) => sh.staffId === s.id && (vid === "all" || sh.venueId === vid)).reduce((x, sh) => x + shiftHours(sh), 0), 0);
     return (
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -584,6 +604,13 @@ export default function ShiftPlannerPage() {
             </select>
           )}
           {effStation !== "all" && <span style={{ fontSize: 11, color: "var(--gray)" }}>roster narrowed to staff on this station (rostered or tagged)</span>}
+          {/* staff order (applies to the split view too). No "Under 18" option — see staffSort. */}
+          <select className="form-input" style={{ width: 140, marginLeft: "auto" }} value={sortBy} onChange={(e) => setSortBy(e.target.value)} title="Order staff within each section">
+            <option value="az">Sort: A–Z</option>
+            <option value="za">Sort: Z–A</option>
+            <option value="newest">Sort: Newest</option>
+            <option value="oldest">Sort: Oldest</option>
+          </select>
         </div>
       )}
 
