@@ -138,13 +138,43 @@ function classify(tok) {
 
   let wrote = 0;
   for (const t of templates) {
-    await grp(A).collection("contractTemplates").doc(t.id).set(t.data); // verbatim copy
+    await grp(A).collection("contractTemplates").doc(t.id).set(t.data); // verbatim copy, every field
     wrote++;
     console.log(`  ✓ wrote A/contractTemplates/${t.id}`);
   }
+
+  // READ-BACK VERIFY — side-by-side B vs A (section count + tokenKeys length per template)
+  console.log(`\n${line("═")}\nREAD-BACK VERIFY\n${line("═")}`);
   const rb = await grp(A).collection("contractTemplates").get();
-  console.log(`\n  read-back: A now has ${rb.size} templates [${rb.docs.map((d) => d.id).join(", ")}]`);
-  console.log(`  DONE — wrote ${wrote} template docs.`);
+  const aById = Object.fromEntries(rb.docs.map((d) => [d.id, d.data() || {}]));
+  const expectedIds = ["boh_casual", "boh_hourly", "foh_casual", "foh_hourly"];
+  const gotIds = rb.docs.map((d) => d.id).sort();
+  console.log(`  A/contractTemplates now: ${rb.size} doc(s) → [${gotIds.join(", ")}]`);
+  console.log(`  exactly 4, ids match [${expectedIds.join(", ")}]? ${rb.size === 4 && expectedIds.every((id) => aById[id]) ? "YES" : "NO"}`);
+
+  const sc = (d) => Array.isArray(d.sections) ? d.sections.length : (Array.isArray(d.body) ? d.body.length : 0);
+  const tl = (d) => Array.isArray(d.tokenKeys) ? d.tokenKeys.length : 0;
+  console.log(`\n  ${"id".padEnd(14)} ${"B.sec".padEnd(7)} ${"A.sec".padEnd(7)} ${"B.tok".padEnd(7)} ${"A.tok".padEnd(7)} ${"B.keys".padEnd(7)} ${"A.keys".padEnd(7)} match`);
+  console.log("  " + line("-").slice(0, 72));
+  let allMatch = true;
+  for (const t of templates) {
+    const a = aById[t.id] || {};
+    const bK = Object.keys(t.data).length, aK = Object.keys(a).length;
+    const m = sc(t.data) === sc(a) && tl(t.data) === tl(a) && bK === aK;
+    if (!m) allMatch = false;
+    console.log(`  ${t.id.padEnd(14)} ${String(sc(t.data)).padEnd(7)} ${String(sc(a)).padEnd(7)} ${String(tl(t.data)).padEnd(7)} ${String(tl(a)).padEnd(7)} ${String(bK).padEnd(7)} ${String(aK).padEnd(7)} ${m ? "✓" : "✗ MISMATCH"}`);
+  }
+
+  // confirm no other collection touched
+  const [clsAfter, defAfter] = await Promise.all([
+    grp(A).collection("settings").doc("contractClassifications").get(),
+    grp(A).collection("settings").doc("contractDefaults").get(),
+  ]);
+  console.log(`\n  contractClassifications (A): ${clsAfter.exists ? "PRESENT (unexpected — not touched by this script!)" : "still ABSENT ✓"}`);
+  console.log(`  contractDefaults (A): ${defAfter.exists ? "present, unchanged (not touched by this script) ✓" : "ABSENT"}`);
+
+  console.log(`\n  WRITE SCOPE: ${wrote} template docs created in A/contractTemplates. Nothing else.`);
+  console.log(`  RESULT: ${rb.size === 4 && allMatch ? "OK — 4 templates, section/token/key counts all match B" : "CHECK — mismatch above"}`);
   console.log(line("═") + "\n");
-  process.exit(rb.size === templates.length ? 0 : 1);
+  process.exit(rb.size === 4 && allMatch ? 0 : 1);
 })().catch((e) => { console.error("templates-to-A failed:", e); process.exit(1); });
