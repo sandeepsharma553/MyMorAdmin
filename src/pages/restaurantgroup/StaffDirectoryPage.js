@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, query, where, setDoc, serverTimestamp, arrayUnion, arrayRemove } from "firebase/firestore";
+import { addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, query, where, setDoc, serverTimestamp, arrayUnion, arrayRemove, onSnapshot } from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from "firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol } from "../../utils/restaurantGroupPaths";
+import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
+import { isPublicHoliday, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { defaultPermsForStaffRole, roleToGroupRole, isManager, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
@@ -166,6 +167,17 @@ export default function StaffDirectoryPage() {
     return () => { alive = false; };
   }, [canPayroll, groupId, staffIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const isUnder18 = (s) => minorIds.has(s.id) || isJuniorType(s.type);
+
+  // ── Public holidays (read-only) ── same wiring as ShiftPlannerPage: live-listen to the
+  // group's settings doc; fall back to the AU seed IN MEMORY (never auto-written) so PH
+  // hours still split before the owner saves anything.
+  const [phDoc, setPhDoc] = useState(null);
+  useEffect(() => {
+    if (!groupId) return;
+    const unsub = onSnapshot(publicHolidaysDoc(groupId), (d) => setPhDoc(d.exists() ? (d.data().holidays || []) : []), () => {});
+    return () => unsub();
+  }, [groupId]);
+  const holidays = (phDoc && phDoc.length) ? phDoc : AU_PUBLIC_HOLIDAYS_SEED;
 
   const venueScoped = useMemo(() => scopedStaff.filter((s) => staffInVenue(s, selectedVenue)), [scopedStaff, selectedVenue]);
   // area→station drill-down: when an actual area is selected (not All/Managers/Left), show its stations
@@ -639,9 +651,24 @@ export default function StaffDirectoryPage() {
       if (hoursPeriod === "year") return d.getFullYear() === now.getFullYear();
       return true; // total
     };
-    // three separate pays: Mon–Fri, Saturday, Sunday
-    let mf = 0, sat = 0, sun = 0;
-    sh.forEach((x) => { const d = shiftDateOf(x); if (!inPeriod(d)) return; const h = shiftHours(x); const dd = x.day || 0; if (dd === 6) sun += h; else if (dd === 5) sat += h; else mf += h; });
+    // four separate pays: Mon–Fri, Saturday, Sunday, Public Holiday — PH checked FIRST
+    // (a PH falling on a weekend counts as PH, mirroring the planner's hoursByType).
+    // Venue state for the PH lookup: top-level v.state (in-app VenueManager) OR
+    // v.address.state (super-admin console). A venue with NEITHER has no detectable PH —
+    // that shift honestly falls through to the plain Sat/Sun/Mon–Fri bucket.
+    let mf = 0, sat = 0, sun = 0, ph = 0;
+    sh.forEach((x) => {
+      const d = shiftDateOf(x); if (!inPeriod(d)) return;
+      const h = shiftHours(x);
+      const dstr = d ? dkey(d) : "";
+      const v = venues.find((vv) => vv.id === x.venueId);
+      const vState = v?.state ?? v?.address?.state ?? null;
+      const dd = x.day || 0;
+      if (dstr && vState && isPublicHoliday(dstr, vState, holidays)) ph += h;
+      else if (dd === 6) sun += h;
+      else if (dd === 5) sat += h;
+      else mf += h;
+    });
     const PERIODS = [["week", "This week"], ["fortnight", "Fortnight"], ["month", "This month"], ["year", "This year"], ["total", "Total"]];
     const Head = ({ t, top }) => <div className="card-head" style={{ margin: top ? "14px 0 6px" : "0 0 6px" }}><span className="card-title">{t}</span></div>;
     return (
@@ -651,7 +678,7 @@ export default function StaffDirectoryPage() {
           <Stat n={`${tDone.length}/${myTraining.length}`} l="Training done" />
           <Stat n={`${cDone.length}/${myChecklists.length}`} l="Checklists done" />
         </div>
-        {/* hours worked — quick period OR a custom date range; split into 3 pays (Mon-Fri / Sat / Sun) */}
+        {/* hours worked — quick period OR a custom date range; split into 4 pays (Mon-Fri / Sat / Sun / PH) */}
         <div className="card-head" style={{ margin: "0 0 6px", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <span className="card-title">Hours worked</span>
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
@@ -665,10 +692,11 @@ export default function StaffDirectoryPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          <Stat n={`${(mf + sat + sun).toFixed(1)}h`} l="Total" />
+          <Stat n={`${(mf + sat + sun + ph).toFixed(1)}h`} l="Total" />
           <Stat n={`${mf.toFixed(1)}h`} l="Mon–Fri" />
           <Stat n={`${sat.toFixed(1)}h`} l="Saturday" />
           <Stat n={`${sun.toFixed(1)}h`} l="Sunday" />
+          <Stat n={`${ph.toFixed(1)}h`} l="Public Holiday" />
         </div>
         <Head t="Shift history" />
         {sh.length ? sh.slice(0, 40).map((x) => (
