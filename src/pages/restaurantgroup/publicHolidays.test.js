@@ -5,6 +5,8 @@ import {
   holidayName,
   holidaysForState,
   isPHForAnyState,
+  normalizeState,
+  venueState,
 } from "./publicHolidays";
 
 const H = [
@@ -72,5 +74,41 @@ describe("seed", () => {
   test("a VIC-only seed date is PH for VIC but not NSW", () => {
     expect(isPublicHoliday("2026-11-03", "VIC", AU_PUBLIC_HOLIDAYS_SEED)).toBe(true);
     expect(isPublicHoliday("2026-11-03", "NSW", AU_PUBLIC_HOLIDAYS_SEED)).toBe(false);
+  });
+});
+
+describe("normalizeState", () => {
+  test("codes pass through (incl. lowercase/whitespace)", () => {
+    expect(normalizeState("VIC")).toBe("VIC");
+    expect(normalizeState("vic")).toBe("VIC");
+    expect(normalizeState("  nsw ")).toBe("NSW");
+  });
+  test("full names map to codes", () => {
+    expect(normalizeState("Victoria")).toBe("VIC");
+    expect(normalizeState("new south wales")).toBe("NSW");
+    expect(normalizeState("AUSTRALIAN CAPITAL TERRITORY")).toBe("ACT");
+  });
+  test("unknown values return null — never guesses", () => {
+    expect(normalizeState("Melbourne")).toBe(null);
+    expect(normalizeState("Vic.")).toBe(null);
+    expect(normalizeState("")).toBe(null);
+    expect(normalizeState(null)).toBe(null);
+    expect(normalizeState(undefined)).toBe(null);
+  });
+});
+
+describe("venueState", () => {
+  test("prefers top-level state, normalised", () => {
+    expect(venueState({ state: "vic" })).toBe("VIC");
+    expect(venueState({ state: "VIC", address: { state: "NSW" } })).toBe("VIC");
+  });
+  test("falls back to address.state when top-level absent", () => {
+    expect(venueState({ address: { state: "Victoria" } })).toBe("VIC");
+    expect(venueState({ address: { state: "QLD" } })).toBe("QLD");
+  });
+  test("null for no state anywhere / unknown / no venue", () => {
+    expect(venueState({})).toBe(null);
+    expect(venueState({ address: { state: "somewhere" } })).toBe(null);
+    expect(venueState(null)).toBe(null);
   });
 });

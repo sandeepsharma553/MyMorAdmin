@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
-import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
+import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
 import { staffAreaBuckets, staffAtStation } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
@@ -196,8 +196,9 @@ export default function ShiftPlannerPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }), [wk]);
   // single venue → that venue's state; "all venues" → PH if it's a holiday in ANY venue state.
-  const phState = selectedVenue !== "all" ? (venues.find((v) => v.id === selectedVenue)?.state || null) : null;
-  const venueStates = venues.map((v) => v.state).filter(Boolean);
+  // venueState: top-level state OR address.state, normalised to a code ("Victoria" → "VIC")
+  const phState = selectedVenue !== "all" ? venueState(venues.find((v) => v.id === selectedVenue)) : null;
+  const venueStates = venues.map((v) => venueState(v)).filter(Boolean);
   const dayIsPH = (i) => phState ? isPublicHoliday(weekDates[i], phState, holidays) : isPHForAnyState(weekDates[i], venueStates, holidays);
   // Closed-day flag for the SELECTED venue (mark, don't remove — mirrors the PH pattern).
   // Three data states, all explicit: "all venues" → never closed; venue without hours or

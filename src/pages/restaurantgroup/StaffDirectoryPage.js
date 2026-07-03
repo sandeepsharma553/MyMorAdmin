@@ -5,7 +5,7 @@ import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordRes
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
 import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
-import { isPublicHoliday, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
+import { isPublicHoliday, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { defaultPermsForStaffRole, roleToGroupRole, isManager, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
@@ -653,8 +653,8 @@ export default function StaffDirectoryPage() {
     };
     // four separate pays: Mon–Fri, Saturday, Sunday, Public Holiday — PH checked FIRST
     // (a PH falling on a weekend counts as PH, mirroring the planner's hoursByType).
-    // Venue state for the PH lookup: top-level v.state (in-app VenueManager) OR
-    // v.address.state (super-admin console). A venue with NEITHER has no detectable PH —
+    // Venue state via venueState(): top-level state OR address.state, normalised to a code
+    // ("Victoria" → "VIC"). A venue with no recognisable state has no detectable PH —
     // that shift honestly falls through to the plain Sat/Sun/Mon–Fri bucket.
     let mf = 0, sat = 0, sun = 0, ph = 0;
     sh.forEach((x) => {
@@ -662,7 +662,7 @@ export default function StaffDirectoryPage() {
       const h = shiftHours(x);
       const dstr = d ? dkey(d) : "";
       const v = venues.find((vv) => vv.id === x.venueId);
-      const vState = v?.state ?? v?.address?.state ?? null;
+      const vState = venueState(v);
       const dd = x.day || 0;
       if (dstr && vState && isPublicHoliday(dstr, vState, holidays)) ph += h;
       else if (dd === 6) sun += h;

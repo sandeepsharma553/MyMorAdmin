@@ -54,3 +54,23 @@ export const holidaysForState = (holidays, state) =>
 // For the "all venues" view: PH if it's a holiday in ANY of the given states.
 export const isPHForAnyState = (dateStr, states, holidays) =>
   (states || []).some((s) => isPublicHoliday(dateStr, s, holidays));
+
+// Map any free-text / variant state to a canonical AU_STATES code, or null if unknown.
+// Handles: exact codes ("VIC"), full names ("Victoria"), lowercase, whitespace.
+// Unknown values → null — NEVER guesses a code.
+export const normalizeState = (raw) => {
+  if (!raw) return null;
+  const s = String(raw).trim().toUpperCase();
+  if (AU_STATES.includes(s)) return s;              // already a code
+  const NAMES = {
+    "NEW SOUTH WALES": "NSW", "VICTORIA": "VIC", "QUEENSLAND": "QLD",
+    "SOUTH AUSTRALIA": "SA", "WESTERN AUSTRALIA": "WA", "TASMANIA": "TAS",
+    "AUSTRALIAN CAPITAL TERRITORY": "ACT", "NORTHERN TERRITORY": "NT",
+  };
+  return NAMES[s] || null;                          // unknown → null (no guess)
+};
+
+// Resolve a venue's state for PH matching: top-level state (in-app VenueManager)
+// OR address.state (super-admin console), normalised to a code.
+export const venueState = (venue) =>
+  normalizeState(venue?.state ?? venue?.address?.state ?? null);
