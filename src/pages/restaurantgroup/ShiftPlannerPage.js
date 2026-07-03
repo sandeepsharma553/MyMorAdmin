@@ -91,6 +91,8 @@ export default function ShiftPlannerPage() {
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
   const [shiftDetail, setShiftDetail] = useState(null);
+  const [proposeFor, setProposeFor] = useState(null); // availability doc a manager is counter-proposing
+  const [propForm, setPropForm] = useState({ allDay: false, windows: [] });
   const [capStaff, setCapStaff] = useState(null); // staff capability card
   const [areaFilter, setAreaFilter] = useState("all"); // all | FOH | BOH | Mgmt
   const [sortBy, setSortBy] = useState("az"); // az | za | newest | oldest — staff order within each section
@@ -452,11 +454,48 @@ export default function ShiftPlannerPage() {
     } catch { showToast("Could not reject"); }
   };
 
+  // Counter-propose different windows on a pending/accepted posting. Writes ONLY the
+  // proposed* fields + status — the staffer's original windows/allDay survive untouched,
+  // so a decline can fall back to them. The ball moves to the staffer (iPad side).
+  const openPropose = (a) => {
+    setProposeFor(a);
+    setPropForm({
+      allDay: a.allDay === true && !(a.windows || []).length,
+      windows: (a.windows || []).length ? a.windows.map((w) => ({ ...w })) : [{ start: STARTS[36], end: ENDS[68] }], // 9:00am–5:00pm default
+    });
+  };
+  const setPropWin = (i, k, val) => setPropForm((p) => ({ ...p, windows: p.windows.map((w, x) => (x === i ? { ...w, [k]: val } : w)) }));
+  const saveProposal = async () => {
+    const a = proposeFor;
+    if (!a) return;
+    if (!propForm.allDay) {
+      if (!propForm.windows.length) return showToast("Add at least one time window");
+      for (const w of propForm.windows) {
+        if (parseTime(w.end) <= parseTime(w.start)) return showToast("End time must be after start time");
+      }
+    }
+    const mgr = me?.displayName || me?.name || "";
+    const label = propForm.allDay ? "all day" : propForm.windows.map((w) => `${w.start}–${w.end}`).join(", ");
+    try {
+      await updateDoc(doc(venueCol(groupId, a.venueId, "availability"), `${a.staffId}_${a.date}`), {
+        status: "proposed",
+        proposedAllDay: propForm.allDay === true,
+        proposedWindows: propForm.allDay ? [] : propForm.windows,
+        proposedBy: mgr, proposedAt: serverTimestamp(),
+      });
+      sendNotification(groupId, { to: a.staffId, type: "availability", title: "Availability change proposed", body: `${a.date} at ${a.venue} — manager suggested ${label}`, venueId: a.venueId, by: mgr });
+      showToast("Proposal sent to staff");
+      setProposeFor(null);
+    } catch { showToast("Could not send proposal"); }
+  };
+
   // Availability chips — ONE chip per venue-posting, stacked in the day cell above the "+".
-  // pending = grey with ✓/✗ (approvers only, chip body inert); accepted = venue-colour
-  // OUTLINE (distinct from a solid shift) and click-to-roster; off = override-only
-  // (approvers double-click, confirm); rejected = muted strikethrough marker.
+  // pending = grey with ✓/✗/✎ (approvers only, chip body inert); accepted = venue-colour
+  // OUTLINE (distinct from a solid shift) and click-to-roster, ✎ to counter-propose; off =
+  // override-only (approvers double-click, confirm); rejected = muted strikethrough marker;
+  // proposed = amber, waiting on the STAFFER (no actions here); declined = staffer said no.
   const avTimeLabel = (a) => (a.windows?.length ? a.windows.map((w) => `${w.start}–${w.end}`).join(", ") : (a.allDay ? "All day" : ""));
+  const propTimeLabel = (a) => (a.proposedAllDay ? "All day" : (a.proposedWindows || []).map((w) => `${w.start}–${w.end}`).join(", "));
   const renderAvailChip = (a, s, day) => {
     const st = avStatus(a);
     const key = `${a.venueId}:${a.id}`; // doc id is staffId_date at EVERY venue — key needs the venue
@@ -474,6 +513,7 @@ export default function ShiftPlannerPage() {
           <div style={{ display: "flex", justifyContent: "center", gap: 4, marginTop: 2 }}>
             <button title="Accept availability" style={{ border: "none", background: "#16a34a", color: "#fff", borderRadius: 3, padding: "0 6px", cursor: "pointer", fontSize: 10 }} onClick={(e) => { e.stopPropagation(); acceptAvail(a); }}>✓</button>
             <button title="Reject availability" style={{ border: "none", background: "#dc2626", color: "#fff", borderRadius: 3, padding: "0 6px", cursor: "pointer", fontSize: 10 }} onClick={(e) => { e.stopPropagation(); rejectAvail(a); }}>✗</button>
+            <button title="Propose different times" style={{ border: "none", background: "#d97706", color: "#fff", borderRadius: 3, padding: "0 6px", cursor: "pointer", fontSize: 10 }} onClick={(e) => { e.stopPropagation(); openPropose(a); }}>✎</button>
           </div>
         )}
       </div>
@@ -483,6 +523,21 @@ export default function ShiftPlannerPage() {
         title={a.note || "Accepted availability — click to add a shift"}
         onClick={canEdit ? () => openAdd(s.id, day, { fromAvailability: a }) : undefined}>
         {a.venue}{avTimeLabel(a) ? ` ${avTimeLabel(a)}` : ""} ✓
+        {canApproveAvail && (
+          <button title="Propose different times" style={{ border: "none", background: "#d97706", color: "#fff", borderRadius: 3, padding: "0 6px", cursor: "pointer", fontSize: 10, marginLeft: 4 }} onClick={(e) => { e.stopPropagation(); openPropose(a); }}>✎</button>
+        )}
+      </div>
+    );
+    if (st === "proposed") return (
+      <div key={key} className="shift-cell" style={{ background: "#fef3c7", color: "#92400e", textAlign: "center", cursor: "default" }}
+        title={`Proposed by ${a.proposedBy || "manager"} — waiting for ${fullName(s)} to accept or decline`}>
+        <div style={{ fontWeight: 600 }}>{a.venue} · Proposed: {propTimeLabel(a) || "—"}</div>
+      </div>
+    );
+    if (st === "declined") return (
+      <div key={key} style={{ color: "#9ca3af", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px", background: "#f9fafb", border: "1px dashed #d1d5db" }}
+        title={`${fullName(s)} declined the proposed times${propTimeLabel(a) ? ` (${propTimeLabel(a)})` : ""}`}>
+        Declined · {a.venue}
       </div>
     );
     if (st === "rejected") return (
@@ -848,6 +903,46 @@ export default function ShiftPlannerPage() {
               {canEdit && <button className="btn btn-primary" onClick={() => openEdit(shiftDetail)}>Edit shift</button>}
               {canEdit && <button className="btn btn-danger" onClick={async () => { await removeShift(shiftDetail); setShiftDetail(null); }}>Remove shift</button>}
               <button className="btn" onClick={() => setShiftDetail(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Counter-propose modal — manager suggests different windows on an availability posting */}
+      {proposeFor && (
+        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setProposeFor(null)}>
+          <div className="rg-modal" style={{ maxWidth: 420 }}>
+            <div className="modal-head">
+              <span className="modal-title">Propose new times — {proposeFor.staffName || ""}</span>
+              <button className="modal-close" onClick={() => setProposeFor(null)}>✕</button>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 10 }}>
+              {proposeFor.date} at {proposeFor.venue} · staff posted: {avTimeLabel(proposeFor) || "—"}
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 10, cursor: "pointer" }}>
+              <input type="checkbox" checked={propForm.allDay} onChange={(e) => setPropForm((p) => ({ ...p, allDay: e.target.checked }))} /> All day
+            </label>
+            {!propForm.allDay && (
+              <>
+                {propForm.windows.map((w, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                    <select className="form-input" value={w.start} onChange={(e) => setPropWin(i, "start", e.target.value)}>{STARTS.map((t) => <option key={t}>{t}</option>)}</select>
+                    <span style={{ color: "var(--gray)" }}>–</span>
+                    <select className="form-input" value={w.end} onChange={(e) => setPropWin(i, "end", e.target.value)}>{ENDS.map((t) => <option key={t}>{t}</option>)}</select>
+                    {propForm.windows.length > 1 && (
+                      <button className="btn btn-sm" title="Remove window" onClick={() => setPropForm((p) => ({ ...p, windows: p.windows.filter((_, x) => x !== i) }))}>✕</button>
+                    )}
+                  </div>
+                ))}
+                <button className="btn btn-sm" style={{ marginBottom: 10 }}
+                  onClick={() => setPropForm((p) => ({ ...p, windows: [...p.windows, { start: p.windows[p.windows.length - 1]?.end || STARTS[36], end: ENDS[68] }] }))}>
+                  + Add window
+                </button>
+              </>
+            )}
+            <div className="btn-row">
+              <button className="btn btn-primary" onClick={saveProposal}>Send proposal</button>
+              <button className="btn" onClick={() => setProposeFor(null)}>Cancel</button>
             </div>
           </div>
         </div>
