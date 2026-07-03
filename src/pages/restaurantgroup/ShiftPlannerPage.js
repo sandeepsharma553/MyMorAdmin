@@ -242,7 +242,7 @@ export default function ShiftPlannerPage() {
     const b = { mf: 0, sat: 0, sun: 0, ph: 0 };
     weekShifts.forEach((sh) => {
       const di = sh.day || 0; // DAYS: Mon..Sun → Sat=5, Sun=6
-      const vState = venues.find((v) => v.id === sh.venueId)?.state;
+      const vState = venueState(venues.find((v) => v.id === sh.venueId));
       const h = shiftHours(sh);
       if (isPublicHoliday(weekDates[di], vState, holidays)) b.ph += h;
       else if (di === 5) b.sat += h;
