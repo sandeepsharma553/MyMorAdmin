@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import StaffDirectoryPage from "../pages/restaurantgroup/StaffDirectoryPage";
 import ShiftPlannerPage from "../pages/restaurantgroup/ShiftPlannerPage";
 import LeaveRequestsPage from "../pages/restaurantgroup/LeaveRequestsPage";
+import AvailabilityPage from "../pages/restaurantgroup/AvailabilityPage";
 import TrainingPage from "../pages/restaurantgroup/TrainingPage";
 import ChecklistsPage from "../pages/restaurantgroup/ChecklistsPage";
 import TemperatureLogPage from "../pages/restaurantgroup/TemperatureLogPage";
@@ -27,6 +28,8 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/staff" element={P("staff", <StaffDirectoryPage />)} />
       <Route path="/rg/shifts" element={P("shifts", <ShiftPlannerPage />)} />
       <Route path="/rg/leave" element={P("leave", <LeaveRequestsPage />)} />
+      {/* staff-SELF availability posting + manager-proposal accept/decline (fills the RG_MODULES slot) */}
+      <Route path="/rg/availability" element={P("availability", <AvailabilityPage />)} />
       <Route path="/rg/training" element={P("training", <TrainingPage />)} />
       {/* SOPs = the training-module library (same data + `training` permission); a
           distinct nav item from Checklists, opened to the module library. */}

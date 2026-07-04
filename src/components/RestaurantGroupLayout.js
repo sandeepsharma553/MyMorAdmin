@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import {
-  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen, FileSignature, FileCheck,
+  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen, FileSignature, FileCheck, CalendarClock,
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
 import { SOPS_NAV, CHECKLISTS_NAV_LABEL } from "../pages/restaurantgroup/rgConfig";
@@ -16,6 +16,7 @@ const NAV = [
   { key: "staff", path: "/rg/staff", label: "Staff Directory", Icon: Users, title: "Staff Directory" },
   { key: "shifts", path: "/rg/shifts", label: "Shift Planner", Icon: CalendarDays, title: "Shift Planner" },
   { key: "leave", path: "/rg/leave", label: "Leave Requests", Icon: FileText, title: "Leave Requests" },
+  { key: "availability", path: "/rg/availability", label: "Availability", Icon: CalendarClock, title: "My Availability" },
   { key: "training", path: "/rg/training", label: "Training", Icon: GraduationCap, title: "Training & Development" },
   // SOPs = the training-module library; distinct nav item, gated by the `training`
   // permission (permKey) since it shares training's data — no new permission module.
@@ -38,7 +39,7 @@ const NAV = [
 
 // Presentational sidebar grouping (keys only — items, routes, permissions unchanged).
 // Anything NOT listed here falls into the Operations group by default.
-const STAFF_NAV_KEYS = ["staff", "shifts", "leave", "training", "sops", "checklists", "compliance"];
+const STAFF_NAV_KEYS = ["staff", "shifts", "leave", "availability", "training", "sops", "checklists", "compliance"];
 // Documents group (Sent Contracts will join here later). Kept out of Operations.
 const DOCS_NAV_KEYS = ["contracts", "contractsSent", "contractsTemplates"];
 
