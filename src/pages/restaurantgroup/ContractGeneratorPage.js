@@ -145,6 +145,20 @@ function buildValues(staff, priv, defaults, overrides, entities, venues, awardRa
   return merged;
 }
 
+// Preview heading style — MIRRORS the server's rgHeadingStyle (MyMorFunction
+// rgBuildContractDocDef): Title = first heading or uppercase-heavy → centered 14;
+// H1 = "1. …" → 12; H2 = "1.1 …" → 11 indented; else uniform bold fallback.
+// px here ≈ pt in the PDF; keep the two in sync when styling changes.
+function headingPreviewStyle(text, isFirst) {
+  const s = String(text || "");
+  const letters = s.replace(/[^a-zA-Z]/g, "");
+  const upperHeavy = letters.length >= 4 && letters === letters.toUpperCase();
+  if (isFirst || upperHeavy) return { fontWeight: 700, fontSize: 14, textAlign: "center", margin: "0 0 10px" };
+  if (/^\d+\.\d+/.test(s)) return { fontWeight: 700, fontSize: 11, margin: "6px 0 2px 12px" };
+  if (/^\d+\.\s/.test(s)) return { fontWeight: 700, fontSize: 12, margin: "10px 0 3px" };
+  return { fontWeight: 700, fontSize: 11, margin: "8px 0 2px" };
+}
+
 // Preview-only: highlight ‹token› placeholders amber. The TEXT comes from the shared
 // contractFill.assemble() (the same source the PDF uses) — this only styles it, so the
 // preview and the PDF can't diverge in content.
@@ -487,14 +501,21 @@ export default function ContractGeneratorPage() {
           <div className="card-head"><span className="card-title">Preview</span><span className="card-sub">Amber ‹token› = empty field</span></div>
           {!template && <div style={{ fontSize: 13, color: "var(--gray)" }}>The filled contract appears here once a template resolves.</div>}
           {template && (
-            <div style={{ maxHeight: "68vh", overflowY: "auto", fontSize: 12, lineHeight: 1.55, padding: "4px 2px" }}>
+            <div style={{ maxHeight: "68vh", overflowY: "auto", fontFamily: "'Liberation Sans', Arial, Helvetica, sans-serif", fontSize: 11, lineHeight: 1.15, padding: "4px 2px" }}>
               {/* Ordering + inclusion (sections, guardian-iff-minor, extraClauses) come from the
-                  SHARED contractFill.assemble — the exact same call the server PDF uses. */}
-              {contractFill.assemble(template, { values, isMinor, extraClauses }).map((b, i) => (
-                b.t === "h"
-                  ? <div key={i} style={{ fontWeight: 700, marginTop: 8 }}>{b.text}</div>
-                  : <div key={i} style={{ marginBottom: 2 }}>{renderBlockText(b.text)}</div>
-              ))}
+                  SHARED contractFill.assemble — the exact same call the server PDF uses.
+                  Look mirrors the PDF: Arial 11, justified body, inferred heading levels. */}
+              {(() => {
+                let firstHeadingSeen = false;
+                return contractFill.assemble(template, { values, isMinor, extraClauses }).map((b, i) => {
+                  if (b.t === "h") {
+                    const isFirst = !firstHeadingSeen;
+                    firstHeadingSeen = true;
+                    return <div key={i} style={headingPreviewStyle(b.text, isFirst)}>{b.text}</div>;
+                  }
+                  return <div key={i} style={{ textAlign: "justify", marginBottom: 6 }}>{renderBlockText(b.text)}</div>;
+                });
+              })()}
             </div>
           )}
         </div>
