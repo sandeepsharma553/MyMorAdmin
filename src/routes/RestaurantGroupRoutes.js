@@ -13,6 +13,7 @@ import CalendarPage from "../pages/restaurantgroup/CalendarPage";
 import SettingsPage from "../pages/restaurantgroup/SettingsPage";
 import StockPage from "../pages/restaurantgroup/StockPage";
 import MenusPage from "../pages/restaurantgroup/MenusPage";
+import PosPage from "../pages/restaurantgroup/PosPage";
 import SupplierPage from "../pages/restaurantgroup/SupplierPage";
 import CompliancePage from "../pages/restaurantgroup/CompliancePage";
 import ContractGeneratorPage from "../pages/restaurantgroup/ContractGeneratorPage";
@@ -39,6 +40,10 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/performance" element={P("performance", <PerformancePage />)} />
       <Route path="/rg/stock" element={P("stock", <StockPage />)} />
       <Route path="/rg/menus" element={P("menus", <MenusPage />)} />
+      {/* POS Terminal (Phase 1) — reuses the `menus` permission for page access
+          (no new permission key); the SALE itself is server-gated by rgSellOrder's
+          `stock` check. Same permKey pattern as SOPs→training above. */}
+      <Route path="/rg/pos" element={P("menus", <PosPage />)} />
       <Route path="/rg/supplier" element={P("supplier", <SupplierPage />)} />
       <Route path="/rg/compliance" element={P("compliance", <CompliancePage />)} />
       <Route path="/rg/contracts" element={P("contracts", <ContractGeneratorPage />)} />

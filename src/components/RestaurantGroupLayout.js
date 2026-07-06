@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import {
-  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen, FileSignature, FileCheck, CalendarClock,
+  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen, FileSignature, FileCheck, CalendarClock, ShoppingCart,
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
 import { SOPS_NAV, CHECKLISTS_NAV_LABEL } from "../pages/restaurantgroup/rgConfig";
@@ -25,6 +25,9 @@ const NAV = [
   { key: "temperature", path: "/rg/temperature", label: "Temperature Log", Icon: Thermometer, title: "Temperature Log" },
   { key: "stock", path: "/rg/stock", label: "Stock", Icon: Package, title: "Stock Management" },
   { key: "menus", path: "/rg/menus", label: "Menus", Icon: UtensilsCrossed, title: "Menus" },
+  // POS Terminal (Phase 1) — gated by the `menus` permission (permKey), same
+  // pattern as SOPs→training above; no new permission module.
+  { key: "pos", path: "/rg/pos", permKey: "menus", label: "POS", Icon: ShoppingCart, title: "POS Terminal" },
   { key: "supplier", path: "/rg/supplier", label: "Supplier Ordering", Icon: Truck, title: "Supplier Ordering" },
   { key: "performance", path: "/rg/performance", label: "Performance", Icon: BarChart3, title: "Performance" },
   { key: "compliance", path: "/rg/compliance", label: "Awards & Compliance", Icon: Scale, title: "Awards & Compliance" },
