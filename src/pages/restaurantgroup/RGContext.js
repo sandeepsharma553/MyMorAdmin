@@ -6,7 +6,9 @@ import {
   notificationsCol,
   inventoryItemsCol, menuItemsCol, recipesCol, modifierGroupsCol, suppliersCol, purchaseOrdersCol,
   awardRatesCol, complianceManualDoc, acknowledgementsCol,
+  venueMenuItemsCol,
 } from "../../utils/restaurantGroupPaths";
+import { resolveMenuItemAtVenue } from "./rgStockUtils";
 import { defaultPermsForRole, hasLevel } from "./rgConfig";
 import { resolveAreas, resolveRoles, resolveEmpTypes } from "./staffStructureUtils";
 
@@ -91,6 +93,29 @@ export function RGProvider({ children }) {
     const t = setTimeout(() => setLoading(false), 600);
     return () => { clearTimeout(t); unsubs.forEach((u) => u && u()); };
   }, [groupId]);
+
+  // ── Per-venue menu INSTANCES (template+instance model) — subscribed for the
+  // SELECTED venue only; at "all" the raw templates are shown (no resolution).
+  // ⚠ RULES DEFERRED for venues/{v}/menuItems: until the rules block lands this
+  // collection is group-member writable, and any rules error will silently EMPTY
+  // the venue menu (subColl error callback → setter([])).
+  const [venueMenuInstances, setVenueMenuInstances] = useState([]);
+  useEffect(() => {
+    if (!groupId || selectedVenue === "all") { setVenueMenuInstances([]); return; }
+    return subColl(venueMenuItemsCol(groupId, selectedVenue), setVenueMenuInstances);
+  }, [groupId, selectedVenue]);
+  const menuInstanceById = useMemo(
+    () => Object.fromEntries(venueMenuInstances.map((i) => [i.id, i])),
+    [venueMenuInstances]
+  );
+  // Templates resolved against the selected venue's instances. At "all": templates
+  // as-is (tagged _mode:"template"). At a venue: items WITHOUT an instance are NOT
+  // sold there and drop out of this list entirely.
+  const resolvedMenuItems = useMemo(() => (
+    selectedVenue === "all"
+      ? menuItems.map((m) => ({ ...m, templateId: m.id, _mode: "template" }))
+      : menuItems.map((m) => resolveMenuItemAtVenue(m, menuInstanceById[m.id])).filter(Boolean)
+  ), [menuItems, menuInstanceById, selectedVenue]);
 
   // Everything else lives INSIDE each venue. Subscribe to every per-venue
   // collection for every venue, merge, and stamp venueId/venue on each row.
@@ -239,6 +264,7 @@ export function RGProvider({ children }) {
     groupId, group, venues, staff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
     announcements, messages, unreadMessages, myNotifications, unreadNotifications,
     inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
+    resolvedMenuItems, menuInstanceById, venueMenuInstances,
     awardRates, complianceManual, acksByStaff, acknowledgements,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
@@ -246,6 +272,7 @@ export function RGProvider({ children }) {
   }), [groupId, group, venues, staff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
       inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
+      resolvedMenuItems, menuInstanceById, venueMenuInstances,
       awardRates, complianceManual, acksByStaff, acknowledgements,
       selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, showToast]);
 

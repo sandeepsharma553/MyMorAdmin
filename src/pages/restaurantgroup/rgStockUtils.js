@@ -63,6 +63,58 @@ export const venueCost = (item, stockDoc) => {
   return Number(item?.cost) || 0;
 };
 
+// Option A (per-venue price) — the venue's override (menuItem.venuePrices[venueId])
+// if present & numeric, else the group-level sellPrice. Mirrors venueCost's
+// fallback shape. Keep in sync with the inline copy in rgSellOrder (functions/index.js).
+export const venueSellPrice = (menuItem, venueId) => {
+  const vp = menuItem?.venuePrices?.[venueId];
+  const v = Number(vp);
+  if (vp != null && !isNaN(v)) return v;
+  return Number(menuItem?.sellPrice) || 0;
+};
+
+/* ── Template + per-venue INSTANCE model ────────────────────────────────
+ * Template = group menuItems/{id} (definition). Instance = venues/{v}/menuItems/{id}
+ * (same doc id). linked:true inherits the template (only explicitly-set override
+ * fields win); linked:false ("separate") carries its own values.                */
+
+// Drop undefined/null entries so an instance never clobbers template fields it
+// doesn't explicitly set (Firestore never stores undefined; null = "inherit").
+export const stripUndefined = (obj) => {
+  const out = {};
+  Object.entries(obj || {}).forEach(([k, v]) => { if (v !== undefined && v !== null) out[k] = v; });
+  return out;
+};
+
+// Fields a LINKED instance may override; everything else inherits the template.
+export const INSTANCE_OVERRIDE_FIELDS = ["sellPrice", "variants", "hasVariants", "variantGroupName", "modifierGroupIds", "recipeId"];
+// Instance-only state — always read from the instance when present (both modes).
+export const INSTANCE_STATE_FIELDS = ["linked", "available", "e86", "e86Reason", "e86By", "e86At", "e86Back", "recipeSourceId"];
+
+// Resolve a menu item AT a venue: template is the base; a linked instance inherits
+// it, a separate instance's non-null values win wholesale (template fills gaps —
+// defensive against partial clones). Returns null when NO instance exists at this
+// venue (item not sold here). Keep in sync with the server copy in rgSellOrder
+// (functions/index.js — rgResolveAtVenue).
+export const resolveMenuItemAtVenue = (template, instance) => {
+  if (!template || !instance) return null;
+  let r;
+  if (instance.linked === false) {
+    r = { ...template, ...stripUndefined(instance), _mode: "separate" };
+  } else {
+    r = { ...template, _mode: "linked" };
+    INSTANCE_OVERRIDE_FIELDS.forEach((k) => { if (instance[k] !== undefined && instance[k] !== null) r[k] = instance[k]; });
+    INSTANCE_STATE_FIELDS.forEach((k) => { if (instance[k] !== undefined) r[k] = instance[k]; });
+  }
+  r.id = template.id; r.templateId = template.id;
+  // per-venue modifier overrides: attachment list + option price deltas
+  if (instance.modifierOverrides && Array.isArray(instance.modifierOverrides.modifierGroupIds)) {
+    r.modifierGroupIds = instance.modifierOverrides.modifierGroupIds;
+  }
+  r._optionPrices = (instance.modifierOverrides && instance.modifierOverrides.optionPrices) || null;
+  return r;
+};
+
 // Food cost of a recipe at current ingredient costs (ex-GST). cost is per stock
 // unit; line cost = gross stock used × cost. recipe.ingredients = [{ itemId, qty,
 // netQty?, recipeUnit? }]; itemsById = { [itemId]: inventoryItem }.

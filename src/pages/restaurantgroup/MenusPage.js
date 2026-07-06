@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
+import { addDoc, setDoc, serverTimestamp, writeBatch, deleteField, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useRG } from "./RGContext";
-import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc, menuItemsCol } from "../../utils/restaurantGroupPaths";
+import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc, menuItemsCol, venueMenuItemsCol, venueMenuItemDoc } from "../../utils/restaurantGroupPaths";
 import { sellOrder } from "./sellOrder";
 import {
-  incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost,
+  incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost, venueSellPrice,
   DEFAULT_MENU_CATEGORIES,
 } from "./rgStockUtils";
 
@@ -16,6 +16,7 @@ const fmtWhen = (iso) => { try { return new Date(iso).toLocaleString("en-AU", { 
 export default function MenusPage() {
   const {
     groupId, group, venues, menuItems, recipes, modifierGroups, inventoryItems, stock,
+    resolvedMenuItems, menuInstanceById,
     selectedVenue, selectedVenueName, venueName, can, showToast, me, myStaff,
   } = useRG();
   const canEdit = can("menus", "edit");
@@ -27,7 +28,23 @@ export default function MenusPage() {
   const [fCat, setFCat] = useState("");
 
   const itemById = useMemo(() => Object.fromEntries(inventoryItems.map((i) => [i.id, i])), [inventoryItems]);
-  const recipeByMenuItemId = useMemo(() => Object.fromEntries(recipes.map((r) => [r.menuItemId, r])), [recipes]);
+  // TEMPLATE dish recipes only: venue-cloned recipes carry venueId (and production
+  // recipes carry producesItemId, no menuItemId) — both must not clobber this map.
+  const recipeByMenuItemId = useMemo(
+    () => Object.fromEntries(recipes.filter((r) => r.menuItemId && !r.venueId).map((r) => [r.menuItemId, r])),
+    [recipes]
+  );
+  // Venue-RESOLVED recipes: a separate instance points at its own cloned recipe.
+  const resolvedRecipeByMenuItemId = useMemo(() => {
+    const map = { ...recipeByMenuItemId };
+    resolvedMenuItems.forEach((m) => {
+      if (m._mode === "separate" && m.recipeId) {
+        const r = recipes.find((x) => x.id === m.recipeId);
+        if (r) map[m.templateId || m.id] = r;
+      }
+    });
+    return map;
+  }, [recipeByMenuItemId, resolvedMenuItems, recipes]);
   // Phase 2 — venue selector for recipe costing (cost is per venue). Build a
   // { itemId: that venue's stock doc } map so costing resolves venueCost.
   const [recipeVenue, setRecipeVenue] = useState("");
@@ -36,24 +53,39 @@ export default function MenusPage() {
     const m = {}; (stock || []).forEach((s) => { if (s.venueId === recipeVenue) m[s.id] = s; }); return m;
   }, [stock, recipeVenue]);
 
-  // venue-filtered menu (prototype vM())
+  // Template+instance: the visible list is the RESOLVED one — at a venue, items
+  // without an instance are NOT sold there and are absent; at "all", templates.
   const vItems = useMemo(() => {
     const ql = q.trim().toLowerCase();
-    return menuItems
-      .filter((m) => selectedVenue === "all" || (m.venueIds || []).includes(selectedVenue))
+    return resolvedMenuItems
       .filter((m) => (!ql || (m.displayName || "").toLowerCase().includes(ql)) && (!fCat || m.category === fCat))
       .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
-  }, [menuItems, selectedVenue, q, fCat]);
+  }, [resolvedMenuItems, q, fCat]);
 
-  const foodCostOf = (m) => menuItemFoodCost(m, recipeByMenuItemId, itemById);
-  const marginOf = (m) => marginPct(m.sellPrice, foodCostOf(m));
+  const foodCostOf = (m) => menuItemFoodCost(m, resolvedRecipeByMenuItemId, itemById);
+  // Price at the selected venue — mirrors the server priority in rgSellOrder:
+  // instance.sellPrice → legacy template.venuePrices[venueId] → template sellPrice.
+  const sellAt = (m) => {
+    if (selectedVenue === "all") return Number(m.sellPrice) || 0;
+    const inst = menuInstanceById[m.templateId || m.id];
+    if (inst && inst.sellPrice != null && !isNaN(Number(inst.sellPrice))) return Number(inst.sellPrice);
+    const t = menuItems.find((x) => x.id === (m.templateId || m.id)) || m;
+    return venueSellPrice(t, selectedVenue);
+  };
+  // Pricing/Recipes tabs cost at recipeVenue; when a venue is selected recipeVenue
+  // is locked to it, so sellAt applies. At "all" fall back to legacy venuePrices.
+  const sellAtCostVenue = (m) => (selectedVenue === "all" ? venueSellPrice(m, recipeVenue) : sellAt(m));
+  const marginOf = (m) => marginPct(sellAt(m), foodCostOf(m));
   // Takeaway price is null = "same as dine-in sellPrice" (back-compat: items saved
   // before takeawayPrice existed have no field). Variants carry their own takeawayPrice.
   const effectiveTakeaway = (m) => (m.takeawayPrice == null ? Number(m.sellPrice) || 0 : Number(m.takeawayPrice) || 0);
 
   const patchItem = async (m, patch, okMsg) => {
+    if (!canEdit) return; // write-time re-check (hard rule) — mirrors Ops MenusScreen; UI-disable alone is not a gate
+    // availability/86 are INSTANCE state now — they apply to ONE venue only.
+    if (selectedVenue === "all") return showToast("Select a venue (top-right) — availability & 86 are per-venue now");
     try {
-      await setDoc(menuItemDoc(groupId, m.id), { ...patch, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(venueMenuItemDoc(groupId, selectedVenue, m.templateId || m.id), { ...patch, updatedAt: serverTimestamp() }, { merge: true });
       if (okMsg) showToast(okMsg);
     } catch (e) { showToast(`Could not update: ${e?.code || e?.message || "error"}`); }
   };
@@ -63,30 +95,43 @@ export default function MenusPage() {
   const remove86 = (m) => patchItem(m, { e86: false, available: true, e86Reason: "", e86Back: "" }, "Removed from 86 list");
   const [e86Form, setE86Form] = useState({ id: "", reason: E86_REASONS[0], back: E86_BACK[0] });
   const conf86 = async () => {
-    const m = menuItems.find((x) => x.id === e86Form.id);
+    const m = resolvedMenuItems.find((x) => (x.templateId || x.id) === e86Form.id);
     if (!m) return showToast("Pick a menu item");
     await patchItem(m, { e86: true, available: false, e86Reason: e86Form.reason, e86By: actor, e86At: new Date().toISOString(), e86Back: e86Form.back }, `${m.displayName} added to 86 list`);
     setE86Form({ id: "", reason: E86_REASONS[0], back: E86_BACK[0] });
   };
-  const e86List = useMemo(() => menuItems.filter((m) => m.e86), [menuItems]);
+  // 86 list is venue-scoped (instance e86); at "all" it shows legacy template flags.
+  const e86List = useMemo(() => resolvedMenuItems.filter((m) => m.e86), [resolvedMenuItems]);
 
   // ── availability bulk ──
   const setAll = async (available) => {
     if (!canEdit) return;
+    // bulk availability is INSTANCE state — one venue at a time.
+    if (selectedVenue === "all") return showToast("Select a venue (top-right) — availability is per-venue now");
     try {
       const batch = writeBatch(db);
-      vItems.filter((m) => !m.e86).forEach((m) => batch.set(menuItemDoc(groupId, m.id), { available, updatedAt: serverTimestamp() }, { merge: true }));
+      vItems.filter((m) => !m.e86).forEach((m) => batch.set(venueMenuItemDoc(groupId, selectedVenue, m.templateId || m.id), { available, updatedAt: serverTimestamp() }, { merge: true }));
       await batch.commit();
       showToast(available ? "All items enabled" : "All items disabled");
     } catch (e) { showToast(`Could not update: ${e?.code || e?.message || "error"}`); }
   };
 
   // ── item modal ──
+  // The editor edits the TEMPLATE — so template fields are read from the raw
+  // template doc, never from the venue-resolved item (else a venue override
+  // would leak into the template on save). Instance overrides get their own
+  // fields (inst/instSellPrice) and their own write path in saveItem.
   const [editor, setEditor] = useState(null);
-  const openItem = (m) => setEditor(m ? {
-    id: m.id, displayName: m.displayName || "", kitchenName: m.kitchenName || "", category: m.category || categories[0],
+  const openItem = (rm) => {
+    const tid = rm ? (rm.templateId || rm.id) : null;
+    const m = rm ? (menuItems.find((x) => x.id === tid) || rm) : null;
+    setEditor(m ? {
+    id: tid, displayName: m.displayName || "", kitchenName: m.kitchenName || "", category: m.category || categories[0],
     sellPrice: m.sellPrice ?? "", cost: m.cost ?? "", gstApplicable: m.gstApplicable !== false,
     venueIds: m.venueIds || [], posId: m.posId || "", modifierGroupIds: m.modifierGroupIds || [], available: m.available !== false,
+    // Option A — per-venue price overrides. origVenuePrices keeps the saved keys so
+    // cleared overrides can be removed with deleteField() on save (merge deep-merges maps).
+    venuePrices: { ...(m.venuePrices || {}) }, origVenuePrices: { ...(m.venuePrices || {}) },
     // Takeaway / variants / combo — form uses "" for "null/blank" numbers; normalised on save.
     takeawayPrice: m.takeawayPrice ?? "",
     hasVariants: m.hasVariants === true, variantGroupName: m.variantGroupName || "",
@@ -99,12 +144,18 @@ export default function MenusPage() {
       name: g.name || "", maxChoice: g.maxChoice ?? "", optional: !!g.optional,
       options: (g.options || []).map((o) => ({ menuItemId: o.menuItemId || "", priceDelta: o.priceDelta ?? 0 })),
     })),
+    // template+instance: this venue's instance snapshot (override editing)
+    inst: selectedVenue !== "all" ? (menuInstanceById[tid] || null) : null,
+    instSellPrice: selectedVenue !== "all" && menuInstanceById[tid]?.sellPrice != null ? menuInstanceById[tid].sellPrice : "",
   } : {
     id: null, displayName: "", kitchenName: "", category: categories[0], sellPrice: "", cost: "",
     gstApplicable: true, venueIds: selectedVenue !== "all" ? [selectedVenue] : venues.map((v) => v.id),
     posId: "", modifierGroupIds: [], available: true,
     takeawayPrice: "", hasVariants: false, variantGroupName: "", variants: [], isCombo: false, comboGroups: [],
+    venuePrices: {}, origVenuePrices: {},
+    inst: null, instSellPrice: "",
   });
+  };
   const saveItem = async () => {
     if (!canEdit || !editor) return;
     if (!editor.displayName.trim()) return showToast("Display name is required");
@@ -136,6 +187,21 @@ export default function MenusPage() {
     // ── Takeaway price (item level) — null = use sellPrice ──
     const takeawayPrice = editor.takeawayPrice === "" || editor.takeawayPrice == null ? null : Number(editor.takeawayPrice);
 
+    // ── Per-venue price overrides (Option A) — { [venueId]: ex-GST number } ──
+    // Blank/invalid input = no override for that venue (falls back to the group
+    // sellPrice, mirroring venueCost's null-means-fallback). setDoc merge:true
+    // DEEP-merges maps, so a cleared override must be removed with deleteField();
+    // omitting the key would silently keep the stale override. On create the
+    // original map is empty, so addDoc never receives a deleteField sentinel.
+    const venuePrices = {};
+    editor.venueIds.forEach((vid) => {
+      const raw = editor.venuePrices?.[vid];
+      if (raw !== "" && raw != null && !isNaN(Number(raw))) venuePrices[vid] = Number(raw);
+    });
+    Object.keys(editor.origVenuePrices || {}).forEach((vid) => {
+      if (!(vid in venuePrices)) venuePrices[vid] = deleteField();
+    });
+
     // ── Combos — only 2 in the demo set; keep simple ──
     const isCombo = !!editor.isCombo;
     const comboGroups = isCombo
@@ -152,37 +218,145 @@ export default function MenusPage() {
       : [];
     if (isCombo && !comboGroups.length) return showToast("Add at least one combo group, or turn combo off");
 
+    // TEMPLATE write — definition only. available/e86 are INSTANCE state now and
+    // are deliberately NOT written here (existing template flags are left as
+    // legacy data; venueIds stays as legacy metadata — instance existence is the
+    // authoritative "sold here" signal for sales).
     const data = {
       displayName: editor.displayName.trim(), kitchenName: editor.kitchenName || "", category: editor.category,
       sellPrice, cost: Number(editor.cost) || 0, gstApplicable: !!editor.gstApplicable,
       venueIds: editor.venueIds, posId: editor.posId || "", modifierGroupIds: editor.modifierGroupIds,
-      available: !!editor.available,
-      // New, all optional/back-compatible (default-off): existing items save unchanged in behaviour.
       takeawayPrice,
+      venuePrices,
       hasVariants, variantGroupName: hasVariants ? (editor.variantGroupName || "") : "", variants,
       isCombo, comboGroups,
       updatedAt: serverTimestamp(),
     };
     try {
       if (editor.id) await setDoc(menuItemDoc(groupId, editor.id), data, { merge: true });
-      else await addDoc(menuItemsCol(groupId), { ...data, e86: false, recipeId: null, createdAt: serverTimestamp() });
+      else await addDoc(menuItemsCol(groupId), { ...data, recipeId: null, createdAt: serverTimestamp() });
+      // per-venue INSTANCE price override (blank = inherit; deleteField clears a
+      // previously-set override). Only when editing with a venue selected + instance.
+      if (editor.id && selectedVenue !== "all" && editor.inst) {
+        const raw = editor.instSellPrice;
+        const val = raw !== "" && raw != null && !isNaN(Number(raw)) ? Number(raw) : deleteField();
+        await setDoc(venueMenuItemDoc(groupId, selectedVenue, editor.id), { sellPrice: val, updatedAt: serverTimestamp() }, { merge: true });
+      }
       showToast("Menu item saved");
       setEditor(null);
     } catch (e) { showToast(`Could not save: ${e?.code || e?.message || "error"}`); }
+  };
+
+  // ── template+instance: separate / re-link + recipe provenance (Reading X) ──
+  // Separate = the venue gets its OWN copy: template values seeded onto the
+  // instance + the dish recipe CLONED (venue edits never touch the template's
+  // recipe — one-directional). recipeSourceId records which recipe it came from.
+  const makeSeparate = async (templateId) => {
+    if (!canEdit || selectedVenue === "all") return;
+    const tmpl = menuItems.find((t) => t.id === templateId);
+    if (!tmpl) return;
+    try {
+      let recipeId = null; let recipeSourceId = null;
+      if (tmpl.recipeId) {
+        const src = recipes.find((r) => r.id === tmpl.recipeId);
+        const ref = await addDoc(recipesCol(groupId), {
+          menuItemId: templateId, venueId: selectedVenue, clonedFrom: tmpl.recipeId,
+          ingredients: (src?.ingredients || []).map((g) => ({ ...g })), createdAt: serverTimestamp(),
+        });
+        recipeId = ref.id; recipeSourceId = tmpl.recipeId;
+      }
+      await setDoc(venueMenuItemDoc(groupId, selectedVenue, templateId), {
+        linked: false,
+        sellPrice: Number(tmpl.sellPrice) || 0,
+        hasVariants: tmpl.hasVariants === true, variantGroupName: tmpl.variantGroupName || "",
+        variants: (tmpl.variants || []).map((v) => ({ ...v })),
+        modifierGroupIds: tmpl.modifierGroupIds || [],
+        recipeId, recipeSourceId,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setEditor((p) => (p && p.id === templateId
+        ? { ...p, inst: { ...(p.inst || {}), linked: false, recipeId, recipeSourceId, sellPrice: Number(tmpl.sellPrice) || 0 }, instSellPrice: Number(tmpl.sellPrice) || 0 }
+        : p));
+      showToast("Separate copy created for this venue");
+    } catch (e) { showToast(`Could not separate: ${e?.code || e?.message || "error"}`); }
+  };
+  // Re-link = clear every override so the instance purely inherits again. The
+  // cloned recipe doc is left in place (orphaned, not deleted — data safety).
+  const makeLinked = async (templateId) => {
+    if (!canEdit || selectedVenue === "all") return;
+    try {
+      await setDoc(venueMenuItemDoc(groupId, selectedVenue, templateId), {
+        linked: true,
+        sellPrice: deleteField(), variants: deleteField(), hasVariants: deleteField(), variantGroupName: deleteField(),
+        modifierGroupIds: deleteField(), recipeId: deleteField(), recipeSourceId: deleteField(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setEditor((p) => (p && p.id === templateId ? { ...p, inst: { ...(p.inst || {}), linked: true }, instSellPrice: "" } : p));
+      showToast("Re-linked to template");
+    } catch (e) { showToast(`Could not re-link: ${e?.code || e?.message || "error"}`); }
+  };
+  // Recipe provenance badge: separate instance's cloned recipe vs its source.
+  const recipeSyncPill = (recipeId, recipeSourceId) => {
+    if (!recipeSourceId) return null;
+    const clone = recipes.find((r) => r.id === recipeId);
+    const src = recipes.find((r) => r.id === recipeSourceId);
+    const inSync = JSON.stringify(clone?.ingredients || []) === JSON.stringify(src?.ingredients || []);
+    return <span className="pill" style={{ marginLeft: 6, background: inSync ? "#f0fdf4" : "#fffbeb", color: inSync ? "#16a34a" : "#d97706" }}>{inSync ? "in sync" : "diverged"}</span>;
+  };
+
+  // ── template+instance: bulk "Add items to a venue" (clone-to-venue) ──
+  const [cloneModal, setCloneModal] = useState(null); // { venueId, existing:Set, selected:{[id]:bool}, busy }
+  const loadCloneVenue = async (vid) => {
+    const snap = await getDocs(venueMenuItemsCol(groupId, vid));
+    const existing = new Set(snap.docs.map((d) => d.id));
+    const selected = {};
+    menuItems.forEach((t) => { if (!existing.has(t.id)) selected[t.id] = true; }); // select-all default
+    setCloneModal({ venueId: vid, existing, selected, busy: false });
+  };
+  const openClone = async () => {
+    if (!canEdit) return;
+    const vid = selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || "");
+    if (!vid) return showToast("No venues yet");
+    try { await loadCloneVenue(vid); } catch (e) { showToast(`Could not load venue menu: ${e?.code || e?.message || "error"}`); }
+  };
+  const confirmClone = async () => {
+    if (!canEdit || !cloneModal || cloneModal.busy) return;
+    // idempotent: existing instances are filtered out — never overwritten.
+    const ids = Object.keys(cloneModal.selected).filter((id) => cloneModal.selected[id] && !cloneModal.existing.has(id));
+    if (!ids.length) return showToast("Nothing to add");
+    setCloneModal((p) => ({ ...p, busy: true }));
+    try {
+      for (let i = 0; i < ids.length; i += 400) {
+        const batch = writeBatch(db);
+        ids.slice(i, i + 400).forEach((id) => batch.set(venueMenuItemDoc(groupId, cloneModal.venueId, id), {
+          linked: true, available: true, e86: false,
+          createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        }));
+        await batch.commit();
+      }
+      showToast(`${ids.length} item${ids.length === 1 ? "" : "s"} added to ${venueName(cloneModal.venueId) || "venue"}`);
+      setCloneModal(null);
+    } catch (e) {
+      showToast(`Could not add: ${e?.code || e?.message || "error"}`);
+      setCloneModal((p) => (p ? { ...p, busy: false } : p));
+    }
   };
 
   // ── recipe modal ──
   const [recEditor, setRecEditor] = useState(null); // {menuItemId, recipeId|null, ingredients:[{itemId, qty, netQty, recipeUnit}]}
   const recipeUnitOf = (itemId) => itemById[itemId]?.recipeUnit || itemById[itemId]?.unit || "";
   const openRecipe = (m) => {
-    const r = recipeByMenuItemId[m.id];
+    // venue-resolved: a separate instance opens its OWN cloned recipe.
+    const r = resolvedRecipeByMenuItemId[m.templateId || m.id];
     // normalise lines: netQty (fallback qty) is the entered amount; recipeUnit
     // defaults to the item's recipeUnit. Phase 1 — backward compatible.
-    setRecEditor({ menuItemId: m.id, recipeId: r?.id || null, ingredients: (r?.ingredients || []).map((g) => ({
+    setRecEditor({ menuItemId: m.templateId || m.id, recipeId: r?.id || null, ingredients: (r?.ingredients || []).map((g) => ({
       itemId: g.itemId, netQty: g.netQty != null ? g.netQty : g.qty, recipeUnit: g.recipeUnit || recipeUnitOf(g.itemId),
     })) });
   };
-  const recMenuItem = recEditor ? menuItems.find((m) => m.id === recEditor.menuItemId) : null;
+  const recMenuItem = recEditor
+    ? (resolvedMenuItems.find((m) => (m.templateId || m.id) === recEditor.menuItemId) || menuItems.find((m) => m.id === recEditor.menuItemId))
+    : null;
   const recCost = recEditor ? recipeFoodCost({ ingredients: recEditor.ingredients }, itemById, recipeStockByItem) : 0;
   const saveRecipe = async () => {
     if (!canEdit || !recEditor) return;
@@ -193,13 +367,18 @@ export default function MenusPage() {
     if (!ingredients.length) return showToast("Add at least one ingredient");
     try {
       let recipeId = recEditor.recipeId;
+      // A venue-cloned recipe (carries venueId) belongs to the INSTANCE — never
+      // link it back onto the template, or one venue's edit would leak group-wide.
+      const isVenueClone = !!(recipeId && recipes.find((x) => x.id === recipeId)?.venueId);
       if (recipeId) {
         await setDoc(recipeDoc(groupId, recipeId), { menuItemId: recEditor.menuItemId, ingredients, updatedAt: serverTimestamp() }, { merge: true });
       } else {
         const ref = await addDoc(recipesCol(groupId), { menuItemId: recEditor.menuItemId, ingredients, createdAt: serverTimestamp() });
         recipeId = ref.id;
       }
-      await setDoc(menuItemDoc(groupId, recEditor.menuItemId), { recipeId, updatedAt: serverTimestamp() }, { merge: true });
+      if (!isVenueClone) {
+        await setDoc(menuItemDoc(groupId, recEditor.menuItemId), { recipeId, updatedAt: serverTimestamp() }, { merge: true });
+      }
       showToast("Recipe saved — POS sales now deduct these ingredients");
       setRecEditor(null);
     } catch (e) { showToast(`Could not save recipe: ${e?.code || e?.message || "error"}`); }
@@ -233,7 +412,12 @@ export default function MenusPage() {
   const saveMod = async () => {
     if (!canEdit || !modForm) return;
     if (!modForm.name.trim()) return showToast("Group name required");
-    const options = modForm.options.filter((o) => (o.label || "").trim()).map((o) => ({ label: o.label.trim(), priceDelta: Number(o.priceDelta) || 0 }));
+    // Preserve the importer-written per-option posId (preserve-if-present, never invent
+    // one) — rebuilding as {label, priceDelta} only silently dropped it on every app edit.
+    const options = modForm.options.filter((o) => (o.label || "").trim()).map((o) => ({
+      label: o.label.trim(), priceDelta: Number(o.priceDelta) || 0,
+      ...(o.posId != null && o.posId !== "" ? { posId: String(o.posId) } : {}),
+    }));
     if (!options.length) return showToast("Add at least one option");
     const data = {
       name: modForm.name.trim(), type: modForm.type, required: !!modForm.required,
@@ -255,7 +439,7 @@ export default function MenusPage() {
     return <span className="pill" style={{ background: "#f4f4f5", color: marginColor(mg), fontWeight: 600 }}>{mg}%</span>;
   };
   const recipePill = (m) => {
-    const r = recipeByMenuItemId[m.id];
+    const r = resolvedRecipeByMenuItemId[m.templateId || m.id];
     return r
       ? <span className="pill pill-green" style={{ cursor: canEdit ? "pointer" : "default" }} onClick={() => canEdit && openRecipe(m)}>{(r.ingredients || []).length} ings</span>
       : <span className="pill pill-amber" style={{ cursor: canEdit ? "pointer" : "default" }} onClick={() => canEdit && openRecipe(m)}>No recipe</span>;
@@ -263,19 +447,21 @@ export default function MenusPage() {
 
   // Phase 3 — venue-aware food cost for the Pricing/Margins screen (cost at the
   // selected venue via Phase 2 venueCost). overview/availability keep group cost.
-  const foodCostAtVenue = (m) => menuItemFoodCost(m, recipeByMenuItemId, itemById, recipeStockByItem);
+  const foodCostAtVenue = (m) => menuItemFoodCost(m, resolvedRecipeByMenuItemId, itemById, recipeStockByItem);
   // pricing KPIs (all ex-GST — one base, Hard Rule 8) — at the selected venue
   const pricing = useMemo(() => {
     if (!vItems.length) return { avgSell: 0, avgCost: 0, avgCostPct: 0, avgMargin: 0, below35: 0 };
     let sell = 0, cost = 0, mg = 0, below = 0;
     vItems.forEach((m) => {
-      const c = foodCostAtVenue(m); const g = marginPct(m.sellPrice, c);
-      sell += Number(m.sellPrice) || 0; cost += c; mg += g;
+      // sell at the costing venue (instance-resolved), one venue base with cost.
+      const s = sellAtCostVenue(m);
+      const c = foodCostAtVenue(m); const g = marginPct(s, c);
+      sell += s; cost += c; mg += g;
       if (g < 35) below++;
     });
     const n = vItems.length;
     return { avgSell: sell / n, avgCost: cost / n, avgCostPct: sell > 0 ? Math.round((cost / sell) * 100) : 0, avgMargin: Math.round(mg / n), below35: below };
-  }, [vItems, recipeByMenuItemId, itemById, recipeStockByItem]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [vItems, resolvedRecipeByMenuItemId, itemById, recipeStockByItem, menuInstanceById]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -304,6 +490,7 @@ export default function MenusPage() {
                 <button className="btn btn-sm" onClick={() => setAll(true)}>Enable all</button>
                 <button className="btn btn-sm" onClick={() => setAll(false)}>Disable all</button>
               </>)}
+              {canEdit && <button className="btn btn-sm" onClick={openClone}>+ Add items to venue</button>}
               {canEdit && <button className="btn btn-primary btn-sm" onClick={() => openItem(null)}>+ New menu item</button>}
             </div>
           </div>
@@ -324,7 +511,7 @@ export default function MenusPage() {
                       {m.kitchenName && <div style={{ fontSize: 11, color: "var(--gray)" }}>{m.kitchenName}</div>}</td>
                     <td><span className="pill pill-blue">{m.category}</span></td>
                     <td style={{ fontSize: 12, color: "var(--gray)" }}>{m.posId || "—"}</td>
-                    <td><strong>{money(incGst(m.sellPrice, m.gstApplicable !== false))}</strong><div style={{ fontSize: 11, color: "var(--gray)" }}>{money(m.sellPrice)} ex</div>{m.takeawayPrice != null && <div style={{ fontSize: 11, color: "var(--gray)" }}>TA {money(incGst(effectiveTakeaway(m), m.gstApplicable !== false))}</div>}</td>
+                    <td><strong>{money(incGst(sellAt(m), m.gstApplicable !== false))}</strong><div style={{ fontSize: 11, color: "var(--gray)" }}>{money(sellAt(m))} ex{sellAt(m) !== (Number(m.sellPrice) || 0) ? " · venue" : ""}</div>{m.takeawayPrice != null && <div style={{ fontSize: 11, color: "var(--gray)" }}>TA {money(incGst(effectiveTakeaway(m), m.gstApplicable !== false))}</div>}</td>
                     <td>{money(foodCostOf(m))}</td>
                     <td>{marginPill(m)}</td>
                     <td>{recipePill(m)}</td>
@@ -389,7 +576,7 @@ export default function MenusPage() {
                 <div><div className="form-label">Menu item</div>
                   <select className="form-input" value={e86Form.id} onChange={(e) => setE86Form((p) => ({ ...p, id: e.target.value }))}>
                     <option value="">Choose…</option>
-                    {menuItems.filter((m) => !m.e86).map((m) => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+                    {resolvedMenuItems.filter((m) => !m.e86).map((m) => <option key={m.templateId || m.id} value={m.templateId || m.id}>{m.displayName}</option>)}
                   </select></div>
                 <div><div className="form-label">Reason</div>
                   <select className="form-input" value={e86Form.reason} onChange={(e) => setE86Form((p) => ({ ...p, reason: e.target.value }))}>
@@ -422,15 +609,17 @@ export default function MenusPage() {
               <table className="data-table">
                 <thead><tr><th>Menu item</th><th>Sell ex-GST</th><th>Food cost</th><th>Food cost %</th><th>Gross margin</th><th>Ingredients</th><th></th></tr></thead>
                 <tbody>
-                  {vItems.filter((m) => recipeByMenuItemId[m.id]).map((m) => {
-                    const r = recipeByMenuItemId[m.id];
+                  {vItems.filter((m) => resolvedRecipeByMenuItemId[m.templateId || m.id]).map((m) => {
+                    const r = resolvedRecipeByMenuItemId[m.templateId || m.id];
                     const fc = recipeFoodCost(r, itemById, recipeStockByItem);
-                    const fcp = Number(m.sellPrice) > 0 ? Math.round((fc / Number(m.sellPrice)) * 100) : 0;
-                    const mg = marginPct(m.sellPrice, fc);
+                    // sell at the costing venue (instance-resolved), one venue base with fc.
+                    const s = sellAtCostVenue(m);
+                    const fcp = s > 0 ? Math.round((fc / s) * 100) : 0;
+                    const mg = marginPct(s, fc);
                     return (
                       <tr key={m.id}>
-                        <td><strong>{m.displayName}</strong></td>
-                        <td>{money(m.sellPrice)}</td>
+                        <td><strong>{m.displayName}</strong>{m._mode === "separate" && recipeSyncPill(m.recipeId, m.recipeSourceId)}</td>
+                        <td>{money(s)}</td>
                         <td>{money(fc)}</td>
                         <td><span className="pill" style={{ background: "#f4f4f5", color: fcp > 40 ? "var(--red)" : "#d97706" }}>{fcp}%</span></td>
                         <td><span style={{ fontWeight: 600, color: marginColor(mg) }}>{mg}%</span></td>
@@ -449,12 +638,12 @@ export default function MenusPage() {
           <div className="card">
             <div className="card-head"><span className="card-title">Unlinked items</span><span className="card-sub">No recipe — POS sales of these will NOT deduct stock</span></div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {vItems.filter((m) => !recipeByMenuItemId[m.id]).map((m) => (
+              {vItems.filter((m) => !resolvedRecipeByMenuItemId[m.templateId || m.id]).map((m) => (
                 <span key={m.id} className="pill pill-amber" style={{ cursor: canEdit ? "pointer" : "default" }} onClick={() => canEdit && openRecipe(m)}>
                   {m.displayName} {canEdit ? "· link recipe" : ""}
                 </span>
               ))}
-              {vItems.every((m) => recipeByMenuItemId[m.id]) && <span style={{ fontSize: 12, color: "var(--gray)" }}>Every item has a recipe. 🎉</span>}
+              {vItems.every((m) => resolvedRecipeByMenuItemId[m.templateId || m.id]) && <span style={{ fontSize: 12, color: "var(--gray)" }}>Every item has a recipe. 🎉</span>}
             </div>
           </div>
         </>
@@ -508,13 +697,15 @@ export default function MenusPage() {
                 <tbody>
                   {vItems.map((m) => {
                     const fc = foodCostAtVenue(m);
-                    const mg = marginPct(m.sellPrice, fc);
-                    const gp = (Number(m.sellPrice) || 0) - fc;
+                    // sell at the margin venue (instance-resolved), one venue base with fc.
+                    const s = sellAtCostVenue(m);
+                    const mg = marginPct(s, fc);
+                    const gp = s - fc;
                     return (
                       <tr key={m.id}>
                         <td><strong>{m.displayName}</strong></td>
-                        <td>{money(incGst(m.sellPrice, m.gstApplicable !== false))}</td>
-                        <td>{money(m.sellPrice)}</td>
+                        <td>{money(incGst(s, m.gstApplicable !== false))}</td>
+                        <td>{money(s)}{s !== (Number(m.sellPrice) || 0) ? <span style={{ fontSize: 11, color: "var(--gray)" }}> · venue</span> : null}</td>
                         <td>{money(fc)}</td>
                         <td><span style={{ fontWeight: 600, color: marginColor(mg) }}>{mg}%</span></td>
                         <td style={{ color: mg < 50 ? "var(--red)" : "var(--ink)", fontWeight: 600 }}>{money(gp)}</td>
@@ -571,6 +762,55 @@ export default function MenusPage() {
                 </label>
               ))}
             </div>
+            {/* Option A — per-venue price overrides (venuePrices). Blank = group sellPrice,
+                same null-means-fallback convention as venueCost. Variants keep their own prices. */}
+            {editor.venueIds.length > 0 && (<>
+              <div className="form-label">Per-venue price overrides (ex-GST $ · blank = group price)</div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                {venues.filter((v) => editor.venueIds.includes(v.id)).map((v) => (
+                  <label key={v.id} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                    {v.name}
+                    <input className="form-input" style={{ width: 84 }} type="number" step="0.01" placeholder="group"
+                      value={editor.venuePrices?.[v.id] ?? ""}
+                      onChange={(e) => setEditor((p) => ({ ...p, venuePrices: { ...(p.venuePrices || {}), [v.id]: e.target.value } }))} />
+                  </label>
+                ))}
+              </div>
+            </>)}
+            {/* template+instance: THIS venue's instance controls (price override,
+                link/separate + recipe-provenance badge). Shown only for an existing
+                item with a specific venue selected. */}
+            {editor.id && selectedVenue !== "all" && (editor.inst ? (
+              <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 10, marginBottom: 10 }}>
+                <div className="form-label">
+                  This venue — {selectedVenueName}
+                  <span className="pill" style={{ marginLeft: 6, background: editor.inst.linked === false ? "#fef2f2" : "#eef2ff", color: editor.inst.linked === false ? "#a93226" : "#4338ca" }}>
+                    {editor.inst.linked === false ? "separate copy" : "linked to template"}
+                  </span>
+                  {editor.inst.linked === false && recipeSyncPill(editor.inst.recipeId, editor.inst.recipeSourceId)}
+                </div>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                    Price override ex-GST ($)
+                    <input className="form-input" style={{ width: 90 }} type="number" step="0.01" placeholder="inherit"
+                      value={editor.instSellPrice}
+                      onChange={(e) => setEditor((p) => ({ ...p, instSellPrice: e.target.value }))} />
+                  </label>
+                  {editor.inst.linked === false
+                    ? <button className="btn btn-sm" onClick={() => makeLinked(editor.id)}>Re-link to template</button>
+                    : <button className="btn btn-sm" onClick={() => makeSeparate(editor.id)}>Make separate copy</button>}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 4 }}>
+                  {editor.inst.linked === false
+                    ? "Separate — this venue keeps its own values & recipe; template edits no longer flow here."
+                    : "Linked — inherits the template; blank price = template price. Availability & 86 live on the tabs."}
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 10 }}>
+                Not sold at {selectedVenueName} — use “+ Add items to venue” to add it.
+              </div>
+            ))}
             <div className="form-label">Modifier groups</div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
               {modifierGroups.map((g) => (
@@ -690,6 +930,48 @@ export default function MenusPage() {
         </div>
       )}
 
+      {/* clone-to-venue modal — bulk "Add items to a venue" (select-all default,
+          per-item deselect; existing instances shown as already-added, never overwritten) */}
+      {cloneModal && (
+        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && !cloneModal.busy && setCloneModal(null)}>
+          <div className="rg-modal" style={{ maxWidth: 560 }}>
+            <div className="modal-head"><span className="modal-title">Add items to a venue</span><button className="modal-close" onClick={() => setCloneModal(null)}>✕</button></div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+              <div className="form-label" style={{ margin: 0 }}>Venue</div>
+              <select className="form-input" style={{ width: 180 }} value={cloneModal.venueId}
+                onChange={(e) => loadCloneVenue(e.target.value).catch(() => showToast("Could not load venue menu"))}>
+                {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+              <button className="btn btn-sm" onClick={() => setCloneModal((p) => ({ ...p, selected: Object.fromEntries(menuItems.filter((t) => !p.existing.has(t.id)).map((t) => [t.id, true])) }))}>Select all</button>
+              <button className="btn btn-sm" onClick={() => setCloneModal((p) => ({ ...p, selected: {} }))}>None</button>
+            </div>
+            <div style={{ maxHeight: 340, overflowY: "auto", border: "0.5px solid var(--border)", borderRadius: 8, padding: 8 }}>
+              {menuItems.slice().sort((a, b) => (a.displayName || "").localeCompare(b.displayName || "")).map((t) => {
+                const already = cloneModal.existing.has(t.id);
+                return (
+                  <label key={t.id} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, padding: "3px 2px", opacity: already ? 0.5 : 1 }}>
+                    <input type="checkbox" disabled={already} checked={already || !!cloneModal.selected[t.id]}
+                      onChange={(e) => setCloneModal((p) => ({ ...p, selected: { ...p.selected, [t.id]: e.target.checked } }))} />
+                    {t.displayName} <span style={{ color: "var(--gray)" }}>· {t.category}</span>
+                    {already && <span className="pill" style={{ marginLeft: "auto", background: "#f4f4f5", color: "var(--gray)" }}>already added</span>}
+                  </label>
+                );
+              })}
+              {menuItems.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No templates yet.</div>}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
+              <span style={{ fontSize: 12, color: "var(--gray)" }}>
+                {Object.values(cloneModal.selected).filter(Boolean).length} to add · {cloneModal.existing.size} already at {venueName(cloneModal.venueId) || "venue"}
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-sm" disabled={cloneModal.busy} onClick={() => setCloneModal(null)}>Cancel</button>
+                <button className="btn btn-primary btn-sm" disabled={cloneModal.busy} onClick={confirmClone}>{cloneModal.busy ? "Adding…" : "Add to venue"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* recipe modal */}
       {recEditor && recMenuItem && (
         <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setRecEditor(null)}>
@@ -717,12 +999,13 @@ export default function MenusPage() {
             <div style={{ fontSize: 11, color: "var(--gray)", margin: "2px 0 8px" }}>Enter the <strong>net</strong> amount in the item's recipe unit; stock deducts the gross (after yield).</div>
             <button className="btn btn-sm" onClick={() => setRecEditor((p) => ({ ...p, ingredients: [...p.ingredients, { itemId: "", netQty: "", recipeUnit: "" }] }))}>+ Add ingredient</button>
             <div style={{ borderTop: "0.5px solid var(--border)", marginTop: 12, paddingTop: 10, fontSize: 13 }}>
+              {/* sell at the costing venue (instance-resolved), matching recCost's venue base. */}
               <div style={{ display: "flex", justifyContent: "space-between" }}><span>Total food cost</span><strong>{money(recCost)}</strong></div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}><span>Sell price (ex-GST)</span><strong>{money(recMenuItem.sellPrice)}</strong></div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span>Sell price (ex-GST)</span><strong>{money(sellAtCostVenue(recMenuItem))}</strong></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Gross margin</span>
-                <strong style={{ color: marginColor(marginPct(recMenuItem.sellPrice, recCost)) }}>
-                  {money((Number(recMenuItem.sellPrice) || 0) - recCost)} — {marginPct(recMenuItem.sellPrice, recCost)}%
+                <strong style={{ color: marginColor(marginPct(sellAtCostVenue(recMenuItem), recCost)) }}>
+                  {money(sellAtCostVenue(recMenuItem) - recCost)} — {marginPct(sellAtCostVenue(recMenuItem), recCost)}%
                 </strong>
               </div>
             </div>

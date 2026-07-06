@@ -102,6 +102,19 @@ export const stockDoc = (groupId, venueId, itemId) => doc(stockCol(groupId, venu
 export const stockMovementsCol = (groupId, venueId) => venueCol(groupId, venueId, "stockMovements");
 export const stocktakesCol = (groupId, venueId) => venueCol(groupId, venueId, "stocktakes");
 export const batchesCol = (groupId, venueId) => venueCol(groupId, venueId, "batches");
+// Per-venue ORDERS — created ONLY server-side by the rgSellOrder callable, inside
+// the same transaction as the stock deduction (order + deduction are atomic).
+// Clients use these paths to READ orders; never write an order client-side.
+export const ordersCol = (groupId, venueId) => venueCol(groupId, venueId, "orders");
+export const orderDoc = (groupId, venueId, orderId) => doc(ordersCol(groupId, venueId), String(orderId));
+// Per-venue menu INSTANCE — same doc id as the group-level template menuItem.
+// Holds only per-venue overrides (price/variants/86/availability/recipe). linked:true
+// inherits the template; separate (linked:false) instances carry their own values.
+// ⚠ RULES DEFERRED: until a rules block lands, this collection is group-member
+// writable via the venues wildcard, and a rules error silently EMPTIES the menu
+// (RGContext subColl error → setter([])).
+export const venueMenuItemsCol = (groupId, venueId) => venueCol(groupId, venueId, "menuItems");
+export const venueMenuItemDoc = (groupId, venueId, templateId) => doc(venueMenuItemsCol(groupId, venueId), String(templateId));
 // Central-kitchen production log (Phase 4) — per venue, covered by the existing
 // venues/{venueId}/{coll}/{docId=**} security rule (group-member read/write).
 export const productionCol = (groupId, venueId) => venueCol(groupId, venueId, "production");

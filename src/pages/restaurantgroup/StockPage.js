@@ -114,7 +114,9 @@ export default function StockPage() {
 
   // demo POS sale — calls the real rgSellOrder transaction (handoff §6)
   const [selling, setSelling] = useState("");
-  const recipesByMenuItemId = useMemo(() => Object.fromEntries(recipes.map((r) => [r.menuItemId, r])), [recipes]);
+  // TEMPLATE dish recipes only — venue-cloned recipes (venueId) and production
+  // recipes (producesItemId) must not clobber this map.
+  const recipesByMenuItemId = useMemo(() => Object.fromEntries(recipes.filter((r) => r.menuItemId && !r.venueId).map((r) => [r.menuItemId, r])), [recipes]);
   const demoItems = useMemo(
     () => menuItems.filter((m) => recipesByMenuItemId[m.id] && (m.venueIds || []).includes(movVenue)),
     [menuItems, recipesByMenuItemId, movVenue]
