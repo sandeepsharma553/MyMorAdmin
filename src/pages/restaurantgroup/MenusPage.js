@@ -5,7 +5,7 @@ import { useRG } from "./RGContext";
 import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc, menuItemsCol, venueMenuItemsCol, venueMenuItemDoc } from "../../utils/restaurantGroupPaths";
 import { sellOrder } from "./sellOrder";
 import {
-  incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost, venueSellPrice,
+  incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost, venueSellPrice, resolvedSellPrice,
   DEFAULT_MENU_CATEGORIES,
 } from "./rgStockUtils";
 
@@ -63,15 +63,9 @@ export default function MenusPage() {
   }, [resolvedMenuItems, q, fCat]);
 
   const foodCostOf = (m) => menuItemFoodCost(m, resolvedRecipeByMenuItemId, itemById);
-  // Price at the selected venue — mirrors the server priority in rgSellOrder:
-  // instance.sellPrice → legacy template.venuePrices[venueId] → template sellPrice.
-  const sellAt = (m) => {
-    if (selectedVenue === "all") return Number(m.sellPrice) || 0;
-    const inst = menuInstanceById[m.templateId || m.id];
-    if (inst && inst.sellPrice != null && !isNaN(Number(inst.sellPrice))) return Number(inst.sellPrice);
-    const t = menuItems.find((x) => x.id === (m.templateId || m.id)) || m;
-    return venueSellPrice(t, selectedVenue);
-  };
+  // Price at the selected venue — the ONE shared resolver (rgStockUtils), mirrors
+  // the server priority: instance.sellPrice → legacy venuePrices → template.
+  const sellAt = (m) => resolvedSellPrice(m, { menuInstanceById, menuItems, selectedVenue });
   // Pricing/Recipes tabs cost at recipeVenue; when a venue is selected recipeVenue
   // is locked to it, so sellAt applies. At "all" fall back to legacy venuePrices.
   const sellAtCostVenue = (m) => (selectedVenue === "all" ? venueSellPrice(m, recipeVenue) : sellAt(m));

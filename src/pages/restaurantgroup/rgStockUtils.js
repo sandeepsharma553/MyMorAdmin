@@ -115,6 +115,18 @@ export const resolveMenuItemAtVenue = (template, instance) => {
   return r;
 };
 
+// The ONE client-side sell-price resolver (hoisted from the identical sellAt copies
+// in MenusPage / PosPage / Ops MenusScreen). Mirrors the server priority in
+// rgSellOrder: instance.sellPrice → legacy template.venuePrices[venueId] →
+// template sellPrice. "all" has no venue context → raw template price.
+export const resolvedSellPrice = (m, { menuInstanceById, menuItems, selectedVenue }) => {
+  if (selectedVenue === "all") return Number(m?.sellPrice) || 0;
+  const inst = menuInstanceById?.[m?.templateId || m?.id];
+  if (inst && inst.sellPrice != null && !isNaN(Number(inst.sellPrice))) return Number(inst.sellPrice);
+  const t = (menuItems || []).find((x) => x.id === (m?.templateId || m?.id)) || m;
+  return venueSellPrice(t, selectedVenue);
+};
+
 // Food cost of a recipe at current ingredient costs (ex-GST). cost is per stock
 // unit; line cost = gross stock used × cost. recipe.ingredients = [{ itemId, qty,
 // netQty?, recipeUnit? }]; itemsById = { [itemId]: inventoryItem }.
