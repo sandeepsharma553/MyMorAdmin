@@ -25,9 +25,10 @@ const NAV = [
   { key: "temperature", path: "/rg/temperature", label: "Temperature Log", Icon: Thermometer, title: "Temperature Log" },
   { key: "stock", path: "/rg/stock", label: "Stock", Icon: Package, title: "Stock Management" },
   { key: "menus", path: "/rg/menus", label: "Menus", Icon: UtensilsCrossed, title: "Menus" },
-  // POS Terminal (Phase 1) — gated by the `menus` permission (permKey), same
-  // pattern as SOPs→training above; no new permission module.
-  { key: "pos", path: "/rg/pos", permKey: "menus", label: "POS", Icon: ShoppingCart, title: "POS Terminal" },
+  // POS Terminal — its OWN `pos` permission (staff default: view) so order-taking
+  // staff see the POS without inheriting menu management. rgSellOrder enforces
+  // the sale server-side (stock OR pos permission).
+  { key: "pos", path: "/rg/pos", label: "POS", Icon: ShoppingCart, title: "POS Terminal" },
   { key: "supplier", path: "/rg/supplier", label: "Supplier Ordering", Icon: Truck, title: "Supplier Ordering" },
   { key: "performance", path: "/rg/performance", label: "Performance", Icon: BarChart3, title: "Performance" },
   { key: "compliance", path: "/rg/compliance", label: "Awards & Compliance", Icon: Scale, title: "Awards & Compliance" },

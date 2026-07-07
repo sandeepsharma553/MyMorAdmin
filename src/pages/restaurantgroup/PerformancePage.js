@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
-import { addDoc, doc, serverTimestamp, writeBatch } from "firebase/firestore";
+import React, { useEffect, useMemo, useState } from "react";
+import { addDoc, doc, getDocs, query, serverTimestamp, where, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { fullName, progressColor, noteTypePill, noteTypeLabel } from "./rgUtils";
+import { money } from "./rgStockUtils";
 
 const KPI_COLORS = [
   ["Green", "var(--green)"], ["Amber", "var(--amber)"], ["Blue", "var(--blue)"], ["Red", "var(--red)"], ["Purple", "var(--purple)"],
@@ -56,6 +57,36 @@ export default function PerformancePage() {
   );
   const notes = useMemo(() => perfNotes.filter(matchVenue), [perfNotes, matchVenue]);
 
+  // ── POS sales by staff (this month) — venue orders are written by rgSellOrder
+  // with staffId/staffName (PIN-identified on the POS); aggregated client-side.
+  // One-shot fetch, not a listener: this is a monthly summary, not a live feed.
+  const [sales, setSales] = useState(null); // null = loading · [] = none/error
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      setSales(null);
+      try {
+        const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+        const vids = selectedVenue === "all" ? venues.map((v) => v.id) : [selectedVenue];
+        const snaps = await Promise.all(vids.map((vid) =>
+          getDocs(query(venueCol(groupId, vid, "orders"), where("createdAt", ">=", monthStart)))));
+        if (dead) return;
+        const by = {};
+        snaps.forEach((s) => s.forEach((d) => {
+          const o = d.data();
+          const k = o.staffId || "__none__";
+          by[k] = by[k] || { staffId: o.staffId || null, staffName: o.staffName || "Unattributed", orders: 0, total: 0 };
+          by[k].orders += 1;
+          by[k].total += Number(o.amounts?.total) || 0;
+        }));
+        setSales(Object.values(by).sort((a, b) => b.total - a.total));
+      } catch {
+        if (!dead) setSales([]);
+      }
+    })();
+    return () => { dead = true; };
+  }, [groupId, selectedVenue, venues]);
+
   const save = async () => {
     if (!form.staffId) return showToast("Select a staff member");
     if (!form.note.trim()) return showToast("Write a note");
@@ -102,6 +133,27 @@ export default function PerformancePage() {
             {venueKpis.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>{selectedVenue === "all" ? "Select a venue to view/add its KPIs." : "No KPIs yet. Click Edit to add some."}</div>}
           </div>
         </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="card-head"><span className="card-title">POS sales by staff — {monthLabel()}</span></div>
+        {sales === null ? (
+          <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading sales…</div>
+        ) : sales.length === 0 ? (
+          <div style={{ fontSize: 12, color: "var(--gray)" }}>No POS orders this month{selectedVenue === "all" ? "" : " at this venue"}.</div>
+        ) : (() => {
+          const top = Math.max(...sales.map((r) => r.total), 1);
+          return sales.map((r) => (
+            <div key={r.staffId || "none"} className="perf-row">
+              <span className="perf-name">{r.staffName}{r.staffId ? "" : " *"}</span>
+              <div className="perf-bar-wrap"><div className="perf-bar" style={{ width: `${Math.round((r.total / top) * 100)}%`, background: "var(--blue)" }} /></div>
+              <span className="perf-val" style={{ minWidth: 130, textAlign: "right" }}>{r.orders} orders · {money(r.total)}</span>
+            </div>
+          ));
+        })()}
+        {sales?.some((r) => !r.staffId) && (
+          <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 6 }}>* orders sent before staff sign-in existed, or by tools that skip it.</div>
+        )}
       </div>
 
       <div className="card">

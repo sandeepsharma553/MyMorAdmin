@@ -35,7 +35,7 @@ const lineKeyOf = (id, mods) => `${id}|${(mods || []).map((x) => x.label).slice(
 export default function PosPage() {
   const {
     groupId, group, menuItems, resolvedMenuItems, menuInstanceById, modifierGroups,
-    selectedVenue, selectedVenueName, showToast,
+    selectedVenue, selectedVenueName, showToast, myStaff, me,
   } = useRG();
   const categories = group?.menuCategories?.length ? group.menuCategories : DEFAULT_MENU_CATEGORIES;
 
@@ -44,6 +44,15 @@ export default function PosPage() {
   const [serviceMode, setServiceMode] = useState("dinein");
   const [sending, setSending] = useState(false);
   const [modModal, setModModal] = useState(null); // { item, sel: { [gid]: [labels] } }
+
+  // WHO is taking the order — on the admin web app everyone signs in with their
+  // OWN account, so the login IS the identity: no name+PIN gate here (that gate
+  // lives on the shared-device Ops iPad POS). Orders are attributed to the
+  // logged-in user's staff profile (myStaff, resolved by adminUid/email); the
+  // server validates the id and stamps staffId/staffName on the order doc,
+  // feeding the per-staff sales figures on the Performance page. A login with
+  // no staff profile (e.g. a pure owner account) sells unattributed.
+  const operator = myStaff || null;
 
   // the ONE shared price resolver (rgStockUtils) — same value the server charges
   const sellAt = (m) => resolvedSellPrice(m, { menuInstanceById, menuItems, selectedVenue });
@@ -101,7 +110,7 @@ export default function PosPage() {
           ...(l.modifiers?.length ? { modifiers: l.modifiers.slice(0, MAX_MODS).map((x) => ({ label: x.label })) } : {}),
         })),
         reference: `POS-${Date.now().toString().slice(-6)}`,
-        orderMeta: { serviceMode },
+        orderMeta: { serviceMode, ...(operator ? { staff: { id: operator.id } } : {}) },
       });
       if (r.skipped?.length) {
         showToast(`Skipped: ${[...new Set(r.skipped.map((x) => x.reason))].join("; ")}`);
@@ -165,7 +174,11 @@ export default function PosPage() {
 
       {/* RIGHT — order rail */}
       <div className="card" style={{ width: 320, flexShrink: 0, display: "flex", flexDirection: "column", padding: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>Order — {selectedVenueName}</div>
+        <div style={{ fontSize: 13, fontWeight: 800 }}>Order — {selectedVenueName}</div>
+        <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>
+          Served by <strong>{operator ? (operator.displayName || operator.name) : (me?.name || me?.email || "this login")}</strong>
+          {operator ? "" : " (no staff profile — sales won't count toward anyone)"}
+        </div>
         {/* service mode (sent as orderMeta.serviceMode) */}
         <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
           {SERVICE_MODES.map((sm) => (

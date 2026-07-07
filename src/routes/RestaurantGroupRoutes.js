@@ -40,10 +40,10 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/performance" element={P("performance", <PerformancePage />)} />
       <Route path="/rg/stock" element={P("stock", <StockPage />)} />
       <Route path="/rg/menus" element={P("menus", <MenusPage />)} />
-      {/* POS Terminal (Phase 1) — reuses the `menus` permission for page access
-          (no new permission key); the SALE itself is server-gated by rgSellOrder's
-          `stock` check. Same permKey pattern as SOPs→training above. */}
-      <Route path="/rg/pos" element={P("menus", <PosPage />)} />
+      {/* POS Terminal — its OWN `pos` permission (staff default: view) so
+          order-taking staff can open it; the SALE itself is server-gated by
+          rgSellOrder (stock OR pos permission, fail-closed). */}
+      <Route path="/rg/pos" element={P("pos", <PosPage />)} />
       <Route path="/rg/supplier" element={P("supplier", <SupplierPage />)} />
       <Route path="/rg/compliance" element={P("compliance", <CompliancePage />)} />
       <Route path="/rg/contracts" element={P("contracts", <ContractGeneratorPage />)} />
