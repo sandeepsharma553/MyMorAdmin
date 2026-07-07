@@ -817,8 +817,13 @@ export default function ShiftPlannerPage() {
         </div>
         <div style={{ padding: "12px 14px", background: "var(--gray-light)", borderTop: "0.5px solid var(--border)", display: "flex", gap: 20, flexWrap: "wrap" }}>
           <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Total hours this week: </span><strong>{totalHours.toFixed(1)}</strong></div>
-          <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Est. labour cost: </span><strong>${labourCost.toLocaleString()}</strong></div>
-          <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Labour %: </span><strong>{labourPct}%</strong> <span style={{ color: "var(--gray)" }}>(target 20–25%)</span></div>
+          {/* labour $ / % are management info — shifts:edit only (staff still sees hours + break split below) */}
+          {canEdit && (
+            <>
+              <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Est. labour cost: </span><strong>${labourCost.toLocaleString()}</strong></div>
+              <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Labour %: </span><strong>{labourPct}%</strong> <span style={{ color: "var(--gray)" }}>(target 20–25%)</span></div>
+            </>
+          )}
           <div style={{ fontSize: 11, width: "100%", color: "var(--gray)" }}>
             Mon–Fri <strong>{hoursByType.mf.toFixed(1)}h</strong> · Sat <strong>{hoursByType.sat.toFixed(1)}h</strong> · Sun <strong>{hoursByType.sun.toFixed(1)}h</strong> · PH <strong>{hoursByType.ph.toFixed(1)}h</strong> · Paid <strong>{weekSplit.paid.toFixed(1)}h</strong> · Unpaid <strong>{weekSplit.unpaid.toFixed(1)}h</strong>
             <span style={{ marginLeft: 16 }}>Fortnight total: <strong>{fortnightHours.toFixed(1)}h</strong></span>
