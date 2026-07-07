@@ -5,9 +5,9 @@ import { money, incGst, resolvedSellPrice, DEFAULT_MENU_CATEGORIES } from "./rgS
 
 /* POS Terminal — Phase 2 (order-entry grid + modifier modal + service-mode + send).
  * Payment + discounts are NOT here (no discount model exists yet — verified).
- * Route-gated by the `menus` permission (view); the SALE itself is authorised
- * server-side by rgSellOrder's `stock` permission gate — a denied sale surfaces
- * the server's error toast here.
+ * Route-gated by the `pos` permission (view — staff default); the SALE itself is
+ * authorised server-side by rgSellOrder (stock OR pos permission, fail-closed) —
+ * a denied sale surfaces the server's error toast here.
  * Rail prices are CLIENT-ESTIMATES: the server re-prices every line + modifier
  * authoritatively (instance.sellPrice → legacy venuePrices → template; modifier
  * deltas from _optionPrices → group priceDelta — labels only are sent, never
