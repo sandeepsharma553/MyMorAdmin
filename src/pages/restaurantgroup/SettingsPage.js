@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
+import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS } from "./rgConfig";
 import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload } from "./staffStructureUtils";
@@ -28,10 +28,18 @@ export default function SettingsPage() {
   // ── Public holidays (gated settings doc) ── seeded in-memory if absent (never auto-written)
   const [holidays, setHolidays] = useState([]);
   const [phSeeded, setPhSeeded] = useState(false);
+  // ── Labour targets (gated settings/labourTargets doc — NOT the group doc, which is
+  // group-readable: staff must not read $/hr + weekly revenue). Editor is ADMIN-ONLY;
+  // the Ops group-doc editor still coexists until Step 2 removes it (different docs).
+  const [labour, setLabour] = useState({ hourlyRate: "", weeklyRevenue: "" });
   useEffect(() => {
     if (!groupId) return;
     getDoc(contractClassificationsDoc(groupId)).then((d) => setClassLevels(d.exists() ? (d.data().levels || []) : [])).catch(() => {});
     getDoc(legalEntitiesDoc(groupId)).then((d) => setEntities(d.exists() ? (d.data().entities || []) : [])).catch(() => {});
+    getDoc(labourTargetsDoc(groupId)).then((d) => {
+      const x = d.exists() ? d.data() : {};
+      setLabour({ hourlyRate: x.hourlyRate ?? "", weeklyRevenue: x.weeklyRevenue ?? "" });
+    }).catch(() => {});
     getDoc(publicHolidaysDoc(groupId)).then((d) => {
       const list = d.exists() ? (d.data().holidays || []) : [];
       if (list.length) { setHolidays(list); setPhSeeded(false); }
@@ -47,6 +55,18 @@ export default function SettingsPage() {
     const next = holidays.filter((h) => h.date && h.name).sort((a, b) => a.date.localeCompare(b.date));
     try { await setDoc(publicHolidaysDoc(groupId), { holidays: next, updatedAt: serverTimestamp() }, { merge: true }); setHolidays(next); setPhSeeded(false); showToast("Public holidays saved"); }
     catch { showToast("Could not save public holidays"); }
+  };
+
+  // Numbers only; blank clears to null (same convention as the old Ops saveNumber).
+  const saveLabour = async () => {
+    const num = (v) => { const t = String(v ?? "").trim(); if (t === "") return null; const n = Number(t); return isNaN(n) ? undefined : n; };
+    const hourlyRate = num(labour.hourlyRate);
+    const weeklyRevenue = num(labour.weeklyRevenue);
+    if (hourlyRate === undefined || weeklyRevenue === undefined) return showToast("Labour targets must be numbers");
+    try {
+      await setDoc(labourTargetsDoc(groupId), { hourlyRate, weeklyRevenue, updatedAt: serverTimestamp() }, { merge: true });
+      showToast("Labour targets saved");
+    } catch { showToast("Could not save labour targets"); }
   };
 
   const saveClassLevels = async (next) => {
@@ -428,6 +448,19 @@ export default function SettingsPage() {
                   <button className="btn btn-primary" onClick={addCertOption}>Add</button>
                 </div>
               )}
+            </div>
+            {/* LABOUR TARGETS — gated settings/labourTargets doc (NOT the group doc):
+                staff must not read $/hr + weekly revenue from Firestore. */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Labour targets</span><span className="card-sub">Drive the labour % summary on the Shift Planner (gated doc — not staff-readable)</span></div></div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div className="form-group"><label className="form-label">Default hourly rate ($)</label>
+                  <input type="number" className="form-input" value={labour.hourlyRate} onChange={(e) => setLabour((p) => ({ ...p, hourlyRate: e.target.value }))} placeholder="e.g. 32" disabled={!editable} /></div>
+                <div className="form-group"><label className="form-label">Weekly revenue ($)</label>
+                  <input type="number" className="form-input" value={labour.weeklyRevenue} onChange={(e) => setLabour((p) => ({ ...p, weeklyRevenue: e.target.value }))} placeholder="e.g. 42000" disabled={!editable} /></div>
+              </div>
+              <div style={{ fontSize: 10, color: "var(--gray)", marginBottom: 8 }}>Blank clears a value (planner falls back to its built-in estimate).</div>
+              {editable && <div className="btn-row"><button className="btn btn-primary" onClick={saveLabour}>Save</button></div>}
             </div>
           </div>
 

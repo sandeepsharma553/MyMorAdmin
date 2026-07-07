@@ -94,7 +94,7 @@ const AREA_GROUPS = [
 ];
 
 export default function ShiftPlannerPage() {
-  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, availability, selectedVenue, selectedVenueName, showToast, can, me, myStaff, myScope } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, me, myStaff, myScope } = useRG();
   const canEdit = can("shifts", "edit");
   // availability review (✓/✗) is its OWN grantable permission — approve level — NOT shifts:edit
   const canApproveAvail = can("availability", "approve");
@@ -242,9 +242,10 @@ export default function ShiftPlannerPage() {
     () => rows.reduce((a, s) => a + staffHours(s.id), 0),
     [rows, weekShifts]
   );
-  // configurable per group (set hourlyRate / weeklyRevenue on the group doc); fall back to estimates
-  const hourly = Number(group?.hourlyRate) || HOURLY;
-  const weeklyRev = Number(group?.weeklyRevenue) || WEEKLY_REVENUE;
+  // configurable per group via the gated settings/labourTargets doc (Admin Settings →
+  // Labour targets). null/denied read → the built-in estimates below.
+  const hourly = Number(labourTargets?.hourlyRate) || HOURLY;
+  const weeklyRev = Number(labourTargets?.weeklyRevenue) || WEEKLY_REVENUE;
   const labourCost = totalHours * hourly;
   const labourPct = ((labourCost / weeklyRev) * 100).toFixed(1);
 

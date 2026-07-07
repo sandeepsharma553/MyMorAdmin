@@ -6,7 +6,7 @@ import {
   notificationsCol,
   inventoryItemsCol, menuItemsCol, recipesCol, modifierGroupsCol, suppliersCol, purchaseOrdersCol,
   awardRatesCol, complianceManualDoc, acknowledgementsCol,
-  venueMenuItemsCol,
+  venueMenuItemsCol, labourTargetsDoc,
 } from "../../utils/restaurantGroupPaths";
 import { resolveMenuItemAtVenue } from "./rgStockUtils";
 import { defaultPermsForRole, hasLevel } from "./rgConfig";
@@ -63,6 +63,9 @@ export function RGProvider({ children }) {
   // Awards & Compliance — group-level award rates + the single versioned manual.
   const [awardRates, setAwardRates] = useState([]);
   const [complianceManual, setComplianceManual] = useState(null);
+  // Labour targets (settings/labourTargets — gated doc, NOT the group doc).
+  // null = missing OR permission-denied; consumers fall back to their defaults.
+  const [labourTargets, setLabourTargets] = useState(null);
   // Acknowledgements: per-staff subcollections, keyed by staffId (fan-out below).
   const [acks, setAcks] = useState({}); // { [staffId]: [{id, ...}] }
   // pv[collection][venueId] = rows[]  — the rest is per-venue
@@ -89,6 +92,7 @@ export function RGProvider({ children }) {
       subColl(purchaseOrdersCol(groupId), setPurchaseOrders),
       subColl(awardRatesCol(groupId), setAwardRates),
       onSnapshot(complianceManualDoc(groupId), (d) => setComplianceManual(d.exists() ? { id: d.id, ...d.data() } : null), () => setComplianceManual(null)),
+      onSnapshot(labourTargetsDoc(groupId), (d) => setLabourTargets(d.exists() ? { id: d.id, ...d.data() } : null), () => setLabourTargets(null)),
     ];
     const t = setTimeout(() => setLoading(false), 600);
     return () => { clearTimeout(t); unsubs.forEach((u) => u && u()); };
@@ -265,7 +269,7 @@ export function RGProvider({ children }) {
     announcements, messages, unreadMessages, myNotifications, unreadNotifications,
     inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
     resolvedMenuItems, menuInstanceById, venueMenuInstances,
-    awardRates, complianceManual, acksByStaff, acknowledgements,
+    awardRates, complianceManual, labourTargets, acksByStaff, acknowledgements,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, showToast,
@@ -273,7 +277,7 @@ export function RGProvider({ children }) {
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
       inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
       resolvedMenuItems, menuInstanceById, venueMenuInstances,
-      awardRates, complianceManual, acksByStaff, acknowledgements,
+      awardRates, complianceManual, labourTargets, acksByStaff, acknowledgements,
       selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, showToast]);
 
   return (
