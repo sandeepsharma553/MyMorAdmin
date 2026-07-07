@@ -55,12 +55,22 @@ function parseTime(t) {
   if (/pm/i.test(m[3])) h += 12;
   return h + parseInt(m[2], 10) / 60;
 }
-// PAID hours = the FULL shift span. Breaks are PAID here: breakMins is tracked + shown but
-// NOT deducted, so staffHours/totalHours/labourCost count the whole span. Local to this file
+// Hours = the FULL shift span (gross). The break is AUTO-DERIVED from shift length
+// (deriveBreak below) and shown as a paid/unpaid split — display-only for now:
+// staffHours/totalHours/labourCost still count the whole span. Local to this file
 // — rgUtils.shiftHours unchanged.
 const shiftHours = (sh) => Math.max(0, parseTime(sh.end) - parseTime(sh.start));
-// Break minutes recorded on a shift (compliance readout — paid, never deducted from hours).
-const breakMinsOf = (sh) => Number(sh.breakMins) || 0;
+// ── ROSTERED break rule (flat MA000119 basis): gross > 5h → 30 min UNPAID; ≤5h → none. ──
+// PLANNED hours only (from the shift doc) — actual clocked breaks (timeEntries) are a
+// separate system. SINGLE SOURCE for the rule: to make it award-driven later, change ONLY
+// this function. The stored sh.breakMins field is kept for backward-compat, but DISPLAY
+// (chips, hours column, footer) uses this derived value.
+const deriveBreak = (startStr, endStr) => {
+  const grossHours = Math.max(0, parseTime(endStr) - parseTime(startStr));
+  const breakMins = grossHours > 5 ? 30 : 0;
+  const unpaidHours = breakMins / 60;
+  return { grossHours, breakMins, unpaidHours, paidHours: Math.max(0, grossHours - unpaidHours) };
+};
 
 const cellClass = (type) =>
   type === "evening" ? "shift-evening" : type === "open" ? "shift-open" : type === "off" ? "shift-off" : "shift-morning";
@@ -253,14 +263,17 @@ export default function ShiftPlannerPage() {
     });
     return b;
   }, [weekShifts, weekDates, venues, holidays]);
-  // total break minutes recorded across the week's shifts (compliance readout — display only)
-  const weekBreakMins = weekShifts.reduce((a, sh) => a + breakMinsOf(sh), 0);
+  // weekly rostered paid/unpaid split from the derived break rule (display only — labour
+  // cost stays full-span below, that's a separate payroll decision)
+  const weekSplit = useMemo(() => weekShifts.reduce((a, sh) => {
+    const b = deriveBreak(sh.start, sh.end);
+    a.paid += b.paidHours; a.unpaid += b.unpaidHours;
+    return a;
+  }, { paid: 0, unpaid: 0 }), [weekShifts]);
   // Fortnight total: this week + the next week. Build nextWk via weekKeyOf(nextMonday)
   // (same path shifts are keyed with) so it matches stored weekKeys exactly (AEST Issue-18).
   const nextWk = useMemo(() => { const nextMonday = new Date(monday); nextMonday.setDate(monday.getDate() + 7); return weekKeyOf(nextMonday); }, [monday]);
   const fortnightHours = useMemo(() => shifts.filter((sh) => { const k = sh.weekKey || wk; return k === wk || k === nextWk; }).reduce((a, sh) => a + shiftHours(sh), 0), [shifts, wk, nextWk]);
-  // per-staff fortnight (this week + next week) net hours — for the #4 contracted-vs-actual row.
-  const staffFortnightHours = (staffId) => shifts.filter((sh) => sh.staffId === staffId && ((sh.weekKey || wk) === wk || (sh.weekKey || wk) === nextWk)).reduce((a, sh) => a + shiftHours(sh), 0);
 
   // Area→Station drill-down: stations of the SELECTED area scoped to the selected venue
   // (respects "All venues"). Only meaningful once a specific area is picked.
@@ -342,7 +355,6 @@ export default function ShiftPlannerPage() {
       role: st?.role || (roles && roles.includes(p.role) ? p.role : ((roles && roles[0]) || ROLES[0])),
       venueId: resolvedVenueId,
       stationId: "",
-      breakMins: 0,
       // accept-from-availability window → venue-hours default (open−2h / close) → previous times
       start: av?.windows?.[0]?.start || def?.start || p.start,
       end: av?.windows?.[0]?.end || def?.end || p.end,
@@ -357,7 +369,6 @@ export default function ShiftPlannerPage() {
       editId: sh.id, staffId: sh.staffId, day: FULL_DAYS[sh.day] || "Monday",
       start: sh.start, end: sh.end, role: sh.role || ((roles && roles[0]) || ROLES[0]),
       venueId: sh.venueId, stationId: sh.stationId || "", notes: sh.notes || "",
-      breakMins: sh.breakMins ?? 0,
     });
     setShiftDetail(null);
     setModal(true);
@@ -372,7 +383,6 @@ export default function ShiftPlannerPage() {
     const dayIdx = FULL_DAYS.indexOf(form.day);
     const ns = parseTime(form.start), ne = parseTime(form.end);
     if (ne <= ns) return showToast("End time must be after start time");
-    if ((Number(form.breakMins) || 0) / 60 >= (ne - ns)) return showToast("Break can't be longer than the shift.");
     // Hard block: no overlapping shift for this person that day, across ANY venue.
     // (7am–3pm + 3pm–9pm is fine — they only touch; strict overlap = ns < end && start < ne.)
     // overlap check excludes the shift being edited (so re-saving its own times is allowed)
@@ -393,7 +403,7 @@ export default function ShiftPlannerPage() {
         day: dayIdx, start: form.start, end: form.end, role: form.role,
         venueId: venue.id, venue: venue.name,
         stationId: station?.id || "", station: station?.name || "",
-        breakMins: Number(form.breakMins) || 0,
+        breakMins: deriveBreak(form.start, form.end).breakMins, // derived (>5h → 30) — stored for Ops/export consistency
         type, notes: form.notes.trim(), weekKey: wk, published: true,
         ...(form.availabilityId ? { availabilityId: form.availabilityId } : {}),
       };
@@ -577,6 +587,9 @@ export default function ShiftPlannerPage() {
                   <td style={{ padding: "6px 10px", borderBottom: "0.5px solid var(--gray-light)" }}>
                     <div style={{ fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--red)" }} onClick={() => setCapStaff(s)} title="View capability">{fullName(s)}</div>
                     <div style={{ fontSize: 9, color: "var(--gray)" }}>{s.role}</div>
+                    {s.type !== "Casual" && Number(s.contractedWeeklyHours) > 0 && (
+                      <div style={{ fontSize: 8, color: "var(--gray)" }}>Contracted: {Number(s.contractedWeeklyHours)}h/wk</div>
+                    )}
                   </td>
                   {DAYS.map((_, day) => {
                     const shs = cellShiftsV(s.id, day, vid);
@@ -590,6 +603,7 @@ export default function ShiftPlannerPage() {
                             <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff" }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                               <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                               <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}</div>
+                              {(() => { const bm = deriveBreak(sh.start, sh.end).breakMins; return bm > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{bm} min break</div> : null; })()}
                             </div>
                           ))}
                           {avs.map((a) => renderAvailChip(a, s, day))}
@@ -617,6 +631,12 @@ export default function ShiftPlannerPage() {
       <td style={{ padding: "8px 14px", borderBottom: "0.5px solid var(--gray-light)" }}>
         <div style={{ fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--red)" }} onClick={() => setCapStaff(s)} title="View capability (certs, training, history)">{fullName(s)}</div>
         <div style={{ fontSize: 10, color: "var(--gray)" }}>{s.role}</div>
+        {/* contracted minimum under the name — only when set (contractedWeeklyHours populates on
+            staff-edit / contract write-back, no bulk migration, so blank is EXPECTED); casuals
+            have no contracted minimum. Absent/null/0 → render nothing. */}
+        {s.type !== "Casual" && Number(s.contractedWeeklyHours) > 0 && (
+          <div style={{ fontSize: 9, color: "var(--gray)" }}>Contracted: {Number(s.contractedWeeklyHours)}h/wk</div>
+        )}
       </td>
       {DAYS.map((_, day) => {
         const shs = cellShifts(s.id, day);
@@ -630,6 +650,7 @@ export default function ShiftPlannerPage() {
                 <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff", boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                   <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                   <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
+                  {(() => { const bm = deriveBreak(sh.start, sh.end).breakMins; return bm > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{bm} min break</div> : null; })()}
                 </div>
               ))}
               {avs.map((a) => renderAvailChip(a, s, day))}
@@ -641,14 +662,17 @@ export default function ShiftPlannerPage() {
       })}
       <td style={{ textAlign: "center", fontSize: 11, fontWeight: 600, borderBottom: "0.5px solid var(--gray-light)" }}>
         {(() => {
-          const actual = staffHours(s.id);
-          const contracted = Number(s.contractedWeeklyHours) || 0;
-          // casuals have no contracted minimum; and hide vs-contracted when none is set
-          if (s.type === "Casual" || contracted === 0) return <span>{actual.toFixed(1)}h</span>;
+          // rostered total + derived paid/unpaid split (contracted moved under the name).
+          // Split applies to CASUALS too — the break rule is shift-length-driven, not type-driven.
+          const t = weekShifts.filter((sh) => sh.staffId === s.id).reduce((a, sh) => {
+            const b = deriveBreak(sh.start, sh.end);
+            a.gross += b.grossHours; a.paid += b.paidHours; a.unpaid += b.unpaidHours;
+            return a;
+          }, { gross: 0, paid: 0, unpaid: 0 });
           return (
             <>
-              <div>{actual.toFixed(1)}h / {contracted}h</div>
-              <div style={{ fontSize: 9, fontWeight: 400, color: "var(--gray)" }}>FN {staffFortnightHours(s.id).toFixed(1)}h / {contracted * 2}h</div>
+              <div>{t.gross.toFixed(1)}h</div>
+              <div style={{ fontSize: 9, fontWeight: 400, color: "var(--gray)" }}>{t.paid.toFixed(1)}h paid · {t.unpaid.toFixed(1)}h unpaid</div>
             </>
           );
         })()}
@@ -796,7 +820,7 @@ export default function ShiftPlannerPage() {
           <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Est. labour cost: </span><strong>${labourCost.toLocaleString()}</strong></div>
           <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Labour %: </span><strong>{labourPct}%</strong> <span style={{ color: "var(--gray)" }}>(target 20–25%)</span></div>
           <div style={{ fontSize: 11, width: "100%", color: "var(--gray)" }}>
-            Mon–Fri <strong>{hoursByType.mf.toFixed(1)}h</strong> · Sat <strong>{hoursByType.sat.toFixed(1)}h</strong> · Sun <strong>{hoursByType.sun.toFixed(1)}h</strong> · PH <strong>{hoursByType.ph.toFixed(1)}h</strong> · Breaks <strong>{weekBreakMins} min</strong>
+            Mon–Fri <strong>{hoursByType.mf.toFixed(1)}h</strong> · Sat <strong>{hoursByType.sat.toFixed(1)}h</strong> · Sun <strong>{hoursByType.sun.toFixed(1)}h</strong> · PH <strong>{hoursByType.ph.toFixed(1)}h</strong> · Paid <strong>{weekSplit.paid.toFixed(1)}h</strong> · Unpaid <strong>{weekSplit.unpaid.toFixed(1)}h</strong>
             <span style={{ marginLeft: 16 }}>Fortnight total: <strong>{fortnightHours.toFixed(1)}h</strong></span>
           </div>
         </div>
@@ -828,11 +852,6 @@ export default function ShiftPlannerPage() {
               <div className="form-group"><label className="form-label">End time</label>
                 <select className="form-input" value={form.end} onChange={setF("end")}>{endOptions.map((t) => <option key={t}>{t}</option>)}</select>
               </div>
-              <div className="form-group"><label className="form-label">Break (min)</label>
-                <select className="form-input" value={form.breakMins ?? 0} onChange={setF("breakMins")}>
-                  {[0, 15, 30, 45, 60].map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
               <div className="form-group"><label className="form-label">Role for this shift</label>
                 <select className="form-input" value={form.role} onChange={setF("role")}>{[...new Set([form.role, ...(roles?.length ? roles : ROLES)].filter(Boolean))].map((r) => <option key={r}>{r}</option>)}</select>
               </div>
@@ -849,13 +868,13 @@ export default function ShiftPlannerPage() {
               </div>
             </div>
             {(() => {
-              const _g = Math.max(0, parseTime(form.end) - parseTime(form.start)); // full paid span
+              // derived break readout — same deriveBreak rule as chips/Hours/footer (auto, no input)
+              const b = deriveBreak(form.start, form.end);
               return (
                 <div style={{ fontSize: 11, color: "var(--gray)", margin: "2px 0 8px" }}>
-                  {`${_g.toFixed(1)}h paid · ${Number(form.breakMins) || 0} min break`}
-                  {(_g >= 5 && (Number(form.breakMins) || 0) < 30) && (
-                    <div style={{ marginTop: 2 }}>Shifts over 5h should include a 30-min meal break (Fair Work).</div>
-                  )}
+                  {b.breakMins > 0
+                    ? `${b.paidHours.toFixed(1)}h paid · ${b.unpaidHours.toFixed(1)}h unpaid (${b.breakMins} min break auto-applied)`
+                    : `${b.grossHours.toFixed(1)}h · no break`}
                 </div>
               );
             })()}
@@ -878,11 +897,14 @@ export default function ShiftPlannerPage() {
                 <div key={k}><div className="form-label">{k}</div><div style={{ fontSize: 13 }}>{v || "—"}</div></div>
               ))}
             </div>
-            {/* paid span + break (compliance readout — break is paid, not deducted) */}
+            {/* hours + DERIVED break split (same deriveBreak rule as chips/Hours column/footer) */}
             <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 8 }}>
-              {breakMinsOf(shiftDetail) > 0
-                ? `${shiftHours(shiftDetail).toFixed(1)}h paid · ${breakMinsOf(shiftDetail)} min break`
-                : `${shiftHours(shiftDetail).toFixed(1)}h paid · no break recorded`}
+              {(() => {
+                const b = deriveBreak(shiftDetail.start, shiftDetail.end);
+                return b.breakMins > 0
+                  ? `${b.paidHours.toFixed(1)}h paid · ${b.unpaidHours.toFixed(1)}h unpaid (${b.breakMins} min break)`
+                  : `${b.grossHours.toFixed(1)}h · no break`;
+              })()}
             </div>
             {/* Punch — clock in / break / clock out; admins can edit the times */}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10, marginTop: 12 }}>

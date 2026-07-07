@@ -656,10 +656,16 @@ export default function StaffDirectoryPage() {
     // Venue state via venueState(): top-level state OR address.state, normalised to a code
     // ("Victoria" → "VIC"). A venue with no recognisable state has no detectable PH —
     // that shift honestly falls through to the plain Sat/Sun/Mon–Fri bucket.
-    let mf = 0, sat = 0, sun = 0, ph = 0;
+    // ROSTERED break split — LOCAL rule (mirrors ShiftPlannerPage.deriveBreak: gross > 5h →
+    // 30 min UNPAID; ≤5h → none). Gross comes from the SHARED rgUtils.shiftHours, which is
+    // deliberately untouched (weeklyHours / StaffCapabilityCard / Ops mirror depend on it);
+    // the split is computed here on top, display-only. Buckets stay gross (full span).
+    let mf = 0, sat = 0, sun = 0, ph = 0, grossTot = 0, breakTot = 0;
     sh.forEach((x) => {
       const d = shiftDateOf(x); if (!inPeriod(d)) return;
       const h = shiftHours(x);
+      grossTot += h;
+      breakTot += h > 5 ? 30 : 0;
       const dstr = d ? dkey(d) : "";
       const v = venues.find((vv) => vv.id === x.venueId);
       const vState = venueState(v);
@@ -669,6 +675,8 @@ export default function StaffDirectoryPage() {
       else if (dd === 5) sat += h;
       else mf += h;
     });
+    const unpaidTot = breakTot / 60;
+    const paidTot = Math.max(0, grossTot - unpaidTot);
     const PERIODS = [["week", "This week"], ["fortnight", "Fortnight"], ["month", "This month"], ["year", "This year"], ["total", "Total"]];
     const Head = ({ t, top }) => <div className="card-head" style={{ margin: top ? "14px 0 6px" : "0 0 6px" }}><span className="card-title">{t}</span></div>;
     return (
@@ -697,6 +705,10 @@ export default function StaffDirectoryPage() {
           <Stat n={`${sat.toFixed(1)}h`} l="Saturday" />
           <Stat n={`${sun.toFixed(1)}h`} l="Sunday" />
           <Stat n={`${ph.toFixed(1)}h`} l="Public Holiday" />
+        </div>
+        {/* rostered break split for the same period — derived (>5h → 30 min unpaid), display-only */}
+        <div style={{ fontSize: 11, color: "var(--gray)", margin: "-8px 0 14px" }}>
+          Rostered <strong>{grossTot.toFixed(1)}h</strong> · Breaks <strong>{breakTot} min</strong> · <strong>{paidTot.toFixed(1)}h</strong> paid · <strong>{unpaidTot.toFixed(1)}h</strong> unpaid
         </div>
         <Head t="Shift history" />
         {sh.length ? sh.slice(0, 40).map((x) => (
