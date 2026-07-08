@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { getDocs } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { contractTemplatesCol } from "../../utils/restaurantGroupPaths";
-import contractFill from "./contractFill";
+import { DocSheet } from "./contractDocSheet";
 
 /* ============================================================================
    Contract Templates — READ-ONLY viewer (Phase 1, Step 8).
@@ -37,11 +37,6 @@ export default function ContractTemplatesPage() {
   }, [groupId]);
 
   const selected = useMemo(() => (templates || []).find((t) => t.id === selId) || null, [templates, selId]);
-  // Empty values → every token renders as ‹token›; same assembly the PDF uses.
-  const blocks = useMemo(
-    () => (selected ? contractFill.assemble(selected, { values: {}, isMinor: false, extraClauses: "" }) : []),
-    [selected]
-  );
 
   if (!can("contracts", "view")) {
     return <div className="card" style={{ margin: 24, color: "var(--gray)", fontSize: 14 }}>You don’t have access to Contract Templates.</div>;
@@ -75,12 +70,8 @@ export default function ContractTemplatesPage() {
                   <span className="card-sub">{selected.id} · {selected.area} · {selected.basis} · award {selected.award || "—"} · v{selected.version || 1} · tokens shown as ‹token›</span>
                 </div>
               </div>
-              <div style={{ maxHeight: "72vh", overflowY: "auto", fontSize: 12, lineHeight: 1.55, padding: "4px 2px" }}>
-                {blocks.map((b, i) => (
-                  b.t === "h"
-                    ? <div key={i} style={{ fontWeight: 700, marginTop: 8 }}>{b.text}</div>
-                    : <div key={i} style={{ marginBottom: 2 }}>{b.text}</div>
-                ))}
+              <div style={{ maxHeight: "72vh", overflowY: "auto", background: "#e8e8ea", padding: 20, borderRadius: 8 }}>
+                <DocSheet template={selected} />
               </div>
             </>
           )}
