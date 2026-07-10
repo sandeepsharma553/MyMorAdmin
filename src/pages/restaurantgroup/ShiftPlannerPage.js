@@ -3,35 +3,25 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot, deleteF
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
-import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
+import { fullName, downloadCsv, weekKeyOf, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS } from "./rgUtils";
 import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 import { checkAndCreateShiftAssignments } from "./checklistShiftUtils";
-import { sendNotification } from "./notify";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const FULL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-// 15-minute time options across the trading day (incl. 6:30am opening, 7:15am second arrival)
-const mkTimes = (fromMin, toMin) => {
-  const out = [];
-  for (let m = fromMin; m <= toMin; m += 15) {
-    const h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? "pm" : "am", h12 = (h % 12) || 12;
-    out.push(`${h12}:${String(mm).padStart(2, "0")}${ap}`);
-  }
-  return out;
-};
-const STARTS = mkTimes(0, 23 * 60 + 45);        // 12:00am … 11:45pm (full day, 15-min)
-const ENDS = mkTimes(0, 23 * 60 + 45);          // 12:00am … 11:45pm
-// 24h "HH:MM" (venue.hours open/close) → minutes; null when unparseable
-const hhmmToMin = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "").trim()); return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) : null; };
+// Unified time options (Phase 3e): the shared rgUtils FULL-DAY list; the form's pickers
+// are bounded to venue hours (open−1h … close+1h) via boundedTimes below. The local
+// mkTimes/hhmmToMin copies are gone — rgUtils is the single source.
+const STARTS = FULL_DAY_TIMES;
+const ENDS = FULL_DAY_TIMES;
 // "h:mmam/pm" option label → minutes (same parse rules as parseTime; for sorting the union list)
 const timeToMin = (t) => {
   const m = /(\d+):(\d+)(am|pm)/i.exec(String(t || "").trim()); if (!m) return null;
   let h = parseInt(m[1], 10) % 12; if (/pm/i.test(m[3])) h += 12; return h * 60 + parseInt(m[2], 10);
 };
-// FULL_DAYS index → venue.hours day key (both are Monday-first)
-const HOURS_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+// FULL_DAYS index → venue.hours day key: the shared rgUtils.HOURS_KEYS (Monday-first).
 const ROLES = ["FOH — Bar", "FOH — Floor", "FOH — Barista", "BOH — Kitchen", "BOH — Fryer", "BOH — Washing", "Store Manager", "Central Kitchen"];
 const HOURLY = 32;
 const WEEKLY_REVENUE = 42000;
@@ -80,15 +70,11 @@ const cellClass = (type) =>
 // from the owner's configured areas (group.areas / areaOrder / areaBreak). See groupedRows.
 
 export default function ShiftPlannerPage() {
-  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, me, myStaff, myScope } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope } = useRG();
   const canEdit = can("shifts", "edit");
-  // availability review (✓/✗) is its OWN grantable permission — approve level — NOT shifts:edit
-  const canApproveAvail = can("availability", "approve");
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
   const [shiftDetail, setShiftDetail] = useState(null);
-  const [proposeFor, setProposeFor] = useState(null); // availability doc a manager is counter-proposing
-  const [propForm, setPropForm] = useState({ allDay: false, windows: [] });
   const [capStaff, setCapStaff] = useState(null); // staff capability card
   const [areaFilter, setAreaFilter] = useState("all"); // all | FOH | BOH | Mgmt
   const [sortBy, setSortBy] = useState("az"); // az | za | newest | oldest — staff order within each section
@@ -245,12 +231,10 @@ export default function ShiftPlannerPage() {
 
   // sorted chronologically by START time (#1) — filter() returns a fresh array so .sort is safe
   const cellShifts = (staffId, day) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day).sort((a, b) => parseTime(a.start) - parseTime(b.start));
-  // B5: availability docs (from the iPad) for this staff on this date (weekDates[dayIdx]).
-  // A staffer can post availability at MULTIPLE venues for the same date (one doc per
-  // venue), so this returns ALL of them — each renders as its own chip.
+  // Availability docs for this staff on this date — the DUAL-READ array (legacy per-venue
+  // + new cluster-scoped rows, _src-tagged). INFORMATIONAL ONLY (Phase 3c): each renders
+  // as one read-only chip; the six-state status machine is gone.
   const availAll = (staffId, date) => (availability || []).filter((a) => a.staffId === staffId && a.date === date);
-  // missing status on an available doc = "pending" (legacy docs surface for review)
-  const avStatus = (a) => ((a && a.available === true) ? (a.status || "pending") : (a && a.available === false ? "off" : null));
 
   // PAID hours (gross − effective break) — the payroll figure everywhere on this page.
   const staffHours = (staffId) =>
@@ -359,52 +343,39 @@ export default function ShiftPlannerPage() {
 
   const [form, setForm] = useState({ editId: null, staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: (roles && roles[0]) || ROLES[0], venueId: "", stationId: "", notes: "" });
   const formStations = useMemo(() => stations.filter((s) => s.venueId === form.venueId), [stations, form.venueId]);
-  // Time pickers bounded to the selected venue's trading hours ±2h, when usable hours exist
-  // for the selected day. Three data states: proper hours → bounded window; hours missing or
-  // day closed → full STARTS range; open/close unparseable → full range. The CURRENT form
-  // value is UNIONed in (deduped, time-sorted) so editing an out-of-hours shift — or an
-  // availability prefill in a different time format — keeps its value selectable.
+  // Time pickers bounded to the selected venue's trading hours ±1h (Phase 3e — was ±2h)
+  // via the shared boundedTimes/hoursEnvelopeForDay; hours missing / day closed /
+  // unparseable → the FULL-DAY list. The CURRENT form value is UNIONed in (deduped,
+  // time-sorted) so editing an out-of-hours shift keeps its value selectable.
   const { startOptions, endOptions } = useMemo(() => {
     const dayKey = HOURS_KEYS[FULL_DAYS.indexOf(form.day)];
-    const h = venues.find((v) => v.id === form.venueId)?.hours?.[dayKey];
-    const o = h && h.closed !== true ? hhmmToMin(h.open) : null;
-    const c = h && h.closed !== true ? hhmmToMin(h.close) : null;
-    const bounded = (o != null && c != null)
-      ? mkTimes(Math.max(0, o - 120), Math.min(23 * 60 + 45, c + 120)) // open−2h … close+2h
-      : STARTS;
+    const bounded = boundedTimes(hoursEnvelopeForDay(venues.find((v) => v.id === form.venueId), dayKey));
     const withCurrent = (val) => {
       const list = val && !bounded.includes(val) ? [val, ...bounded] : bounded;
       return [...new Set(list)].sort((a, b) => (timeToMin(a) ?? 0) - (timeToMin(b) ?? 0));
     };
     return { startOptions: withCurrent(form.start), endOptions: withCurrent(form.end) };
   }, [form.venueId, form.day, form.start, form.end, venues]);
-  // Default Add-shift times from the venue's hours: start = open−2h (the bounded window's
-  // left edge), end = close. minToLabel repeats mkTimes' exact formatting so the returned
-  // strings are byte-identical to picker <option> values; null when the venue has no usable
-  // hours for that day (missing / closed / unparseable) — caller falls back to prior times.
+  // Default Add-shift times from the venue's hours: start = open−1h (the bounded window's
+  // left edge, Phase 3e — was open−2h), end = close. minToLabel repeats mkTimes' exact
+  // formatting so the returned strings are byte-identical to picker <option> values; null
+  // when the venue has no usable hours that day — caller falls back to prior times.
   const defaultTimesFor = (venueId, fullDay) => {
-    const dayKey = HOURS_KEYS[FULL_DAYS.indexOf(fullDay)];
-    const h = venues.find((v) => v.id === venueId)?.hours?.[dayKey];
-    if (!h || h.closed === true) return null;
-    const o = hhmmToMin(h.open), c = hhmmToMin(h.close);
-    if (o == null || c == null) return null;
+    const env = hoursEnvelopeForDay(venues.find((v) => v.id === venueId), HOURS_KEYS[FULL_DAYS.indexOf(fullDay)]);
+    if (!env) return null;
     const minToLabel = (min) => { const m = Math.max(0, Math.min(23 * 60 + 45, min)); const hh = Math.floor(m / 60), mm = m % 60, ap = hh >= 12 ? "pm" : "am", h12 = (hh % 12) || 12; return `${h12}:${String(mm).padStart(2, "0")}${ap}`; };
-    return { start: minToLabel(o - 120), end: minToLabel(c) };
+    return { start: minToLabel(env.openMin - 60), end: minToLabel(env.closeMin) };
   };
-  // 3rd arg is overloaded: a venue-id STRING (split-view column override) OR an OPTS object
-  // ({ fromAvailability }) for accept-from-availability. Both supported, neither breaks.
-  const openAdd = (staffId, day, arg3) => {
-    const venueOverride = typeof arg3 === "string" ? arg3 : "";
-    const opts = (arg3 && typeof arg3 === "object") ? arg3 : null;
-    const av = opts?.fromAvailability || null;
+  // 3rd arg: an optional venue-id STRING (split-view column override). The old
+  // fromAvailability accept-to-roster prefill is GONE (Phase 3c) — availability is
+  // informational only; managers read it and build shifts manually.
+  const openAdd = (staffId, day, venueOverride = "") => {
     const st = staff.find((s) => s.id === staffId);
-    const date = typeof day === "number" ? weekDates[day] : "";
     // resolve venue + day BEFORE setForm so the hours-derived default uses these SAME values
     // (venueOverride wins, e.g. the split-view column you clicked; else staff's venue, else selected/first)
     const resolvedVenueId = venueOverride || st?.venueIds?.[0] || st?.venueId || (selectedVenue !== "all" ? selectedVenue : venues[0]?.id || "");
     const resolvedDay = typeof day === "number" ? FULL_DAYS[day] : "Monday";
-    // availability prefill wins over the hours-derived default
-    const def = av ? null : defaultTimesFor(resolvedVenueId, resolvedDay);
+    const def = defaultTimesFor(resolvedVenueId, resolvedDay);
     setForm((p) => ({
       ...p,
       staffId: staffId || rows[0]?.id || "",
@@ -413,10 +384,9 @@ export default function ShiftPlannerPage() {
       role: st?.role || (roles && roles.includes(p.role) ? p.role : ((roles && roles[0]) || ROLES[0])),
       venueId: resolvedVenueId,
       stationId: "",
-      // accept-from-availability window → venue-hours default (open−2h / close) → previous times
-      start: av?.windows?.[0]?.start || def?.start || p.start,
-      end: av?.windows?.[0]?.end || def?.end || p.end,
-      availabilityId: av ? `${staffId}_${date}` : null,
+      // venue-hours default (open−1h / close) → previous times
+      start: def?.start || p.start,
+      end: def?.end || p.end,
       editId: null,
     }));
     setModal(true);
@@ -468,7 +438,8 @@ export default function ShiftPlannerPage() {
           : deriveBreak(form.start, form.end, !!(station?.area && areaGetsBreak(group, station.area))).breakMins,
         ...(editing?.breakOverrideMins != null ? { breakOverrideMins: editing.breakOverrideMins } : {}),
         type, notes: form.notes.trim(), weekKey: wk, published: true,
-        ...(form.availabilityId ? { availabilityId: form.availabilityId } : {}),
+        // (Phase 3c) availabilityId is NO LONGER written — availability is informational
+        // only. Existing shifts' stored availabilityId is left alone (no migration).
       };
       let shiftId;
       if (editing && editing.venueId === venue.id) {
@@ -485,15 +456,6 @@ export default function ShiftPlannerPage() {
         shiftId = created.id;
       }
       showToast(editing ? "Shift updated" : "Shift saved");
-      // accept-from-availability → notify the staffer in-app (fire-and-forget; FCM push is a
-      // separate later step). Only fires when this came from an availability cell.
-      if (form.availabilityId) {
-        sendNotification(groupId, {
-          to: form.staffId, type: "shift_assigned", title: "New shift assigned",
-          body: `${form.day} ${form.start}–${form.end} @ ${venue.name}`,
-          venueId: venue.id, by: me?.displayName || me?.name || "",
-        });
-      }
       // slot-linked checklist auto-assignment — separate async op, NEVER blocks the shift save
       checkAndCreateShiftAssignments(shiftData, shiftId, groupId, checklists)
         .then((r) => {
@@ -510,115 +472,27 @@ export default function ShiftPlannerPage() {
     catch { showToast("Could not remove shift"); }
   };
 
-  // Accept / reject an availability posting — writes status to THAT doc's OWN venue path
-  // (restaurantGroups/{g}/venues/{a.venueId}/availability/{staffId}_{date}) + notifies the staffer.
-  const acceptAvail = async (a) => {
-    try {
-      await updateDoc(doc(venueCol(groupId, a.venueId, "availability"), `${a.staffId}_${a.date}`), { status: "accepted", reviewedBy: me?.displayName || me?.name || "", reviewedAt: serverTimestamp() });
-      sendNotification(groupId, { to: a.staffId, type: "availability", title: "Availability accepted", body: `${a.date} at ${a.venue} — accepted`, venueId: a.venueId, by: me?.displayName || me?.name || "" });
-      showToast("Availability accepted");
-    } catch { showToast("Could not accept"); }
-  };
-  const rejectAvail = async (a) => {
-    try {
-      await updateDoc(doc(venueCol(groupId, a.venueId, "availability"), `${a.staffId}_${a.date}`), { status: "rejected", reviewedBy: me?.displayName || me?.name || "", reviewedAt: serverTimestamp() });
-      sendNotification(groupId, { to: a.staffId, type: "availability", title: "Availability not accepted", body: `${a.date} at ${a.venue} — not accepted`, venueId: a.venueId, by: me?.displayName || me?.name || "" });
-      showToast("Availability rejected");
-    } catch { showToast("Could not reject"); }
-  };
+  // (Phase 3c) The availability accept/reject/counter-propose machine is GONE —
+  // availability is DISPLAY ONLY. Managers read when a staffer is free and build
+  // shifts manually via the normal "+" / "+ Add shift" flow.
 
-  // Counter-propose different windows on a pending/accepted posting. Writes ONLY the
-  // proposed* fields + status — the staffer's original windows/allDay survive untouched,
-  // so a decline can fall back to them. The ball moves to the staffer (iPad side).
-  const openPropose = (a) => {
-    setProposeFor(a);
-    setPropForm({
-      allDay: a.allDay === true && !(a.windows || []).length,
-      windows: (a.windows || []).length ? a.windows.map((w) => ({ ...w })) : [{ start: STARTS[36], end: ENDS[68] }], // 9:00am–5:00pm default
-    });
-  };
-  const setPropWin = (i, k, val) => setPropForm((p) => ({ ...p, windows: p.windows.map((w, x) => (x === i ? { ...w, [k]: val } : w)) }));
-  const saveProposal = async () => {
-    const a = proposeFor;
-    if (!a) return;
-    if (!propForm.allDay) {
-      if (!propForm.windows.length) return showToast("Add at least one time window");
-      for (const w of propForm.windows) {
-        if (parseTime(w.end) <= parseTime(w.start)) return showToast("End time must be after start time");
-      }
-    }
-    const mgr = me?.displayName || me?.name || "";
-    const label = propForm.allDay ? "all day" : propForm.windows.map((w) => `${w.start}–${w.end}`).join(", ");
-    try {
-      await updateDoc(doc(venueCol(groupId, a.venueId, "availability"), `${a.staffId}_${a.date}`), {
-        status: "proposed",
-        proposedAllDay: propForm.allDay === true,
-        proposedWindows: propForm.allDay ? [] : propForm.windows,
-        proposedBy: mgr, proposedAt: serverTimestamp(),
-      });
-      sendNotification(groupId, { to: a.staffId, type: "availability", title: "Availability change proposed", body: `${a.date} at ${a.venue} — manager suggested ${label}`, venueId: a.venueId, by: mgr });
-      showToast("Proposal sent to staff");
-      setProposeFor(null);
-    } catch { showToast("Could not send proposal"); }
-  };
-
-  // Availability chips — ONE chip per venue-posting, stacked in the day cell above the "+".
-  // pending = grey with ✓/✗/✎ (approvers only, chip body inert); accepted = venue-colour
-  // OUTLINE (distinct from a solid shift) and click-to-roster, ✎ to counter-propose; off =
-  // override-only (approvers double-click, confirm); rejected = muted strikethrough marker;
-  // proposed = amber, waiting on the STAFFER (no actions here); declined = staffer said no.
+  // Availability — INFORMATIONAL ONLY. ONE read-only line per posting: the posted
+  // window(s) (or "All day") + note marker. No buttons, no onClick, no status colours.
+  // Renders identically for legacy (venueId) and new cluster-scoped (clusterId) rows.
   const avTimeLabel = (a) => (a.windows?.length ? a.windows.map((w) => `${w.start}–${w.end}`).join(", ") : (a.allDay ? "All day" : ""));
-  const propTimeLabel = (a) => (a.proposedAllDay ? "All day" : (a.proposedWindows || []).map((w) => `${w.start}–${w.end}`).join(", "));
-  const renderAvailChip = (a, s, day) => {
-    const st = avStatus(a);
-    const key = `${a.venueId}:${a.id}`; // doc id is staffId_date at EVERY venue — key needs the venue
-    if (st === "off") return (
-      <div key={key} style={{ background: "#f3f4f6", color: "#9ca3af", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px", cursor: canApproveAvail ? "pointer" : "default" }}
-        title={a.note || `Marked unavailable at ${a.venue}`}
-        onDoubleClick={canApproveAvail ? () => { if (window.confirm(`${fullName(s)} marked unavailable at ${a.venue} — roster anyway?`)) openAdd(s.id, day, { fromAvailability: a }); } : undefined}>
-        Off · {a.venue}
+  const renderAvailChip = (a) => {
+    const key = `${a._src || "legacy"}:${a.clusterId || a.venueId || ""}:${a.id}`;
+    if (a.available === false) return (
+      <div key={key} style={{ background: "#f3f4f6", color: "#9ca3af", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={a.note || "Marked unavailable"}>
+        Unavailable
       </div>
     );
-    if (st === "pending") return (
-      <div key={key} className="shift-cell" style={{ background: "#e5e7eb", color: "#111827", textAlign: "center", cursor: "default" }} title={a.note || "Availability awaiting review"}>
-        <div style={{ fontWeight: 600 }}>{a.venue}{avTimeLabel(a) ? ` ${avTimeLabel(a)}` : ""}</div>
-        {canApproveAvail && (
-          <div style={{ display: "flex", justifyContent: "center", gap: 4, marginTop: 2 }}>
-            <button title="Accept availability" style={{ border: "none", background: "#16a34a", color: "#fff", borderRadius: 3, padding: "0 6px", cursor: "pointer", fontSize: 10 }} onClick={(e) => { e.stopPropagation(); acceptAvail(a); }}>✓</button>
-            <button title="Reject availability" style={{ border: "none", background: "#dc2626", color: "#fff", borderRadius: 3, padding: "0 6px", cursor: "pointer", fontSize: 10 }} onClick={(e) => { e.stopPropagation(); rejectAvail(a); }}>✗</button>
-            <button title="Propose different times" style={{ border: "none", background: "#d97706", color: "#fff", borderRadius: 3, padding: "0 6px", cursor: "pointer", fontSize: 10 }} onClick={(e) => { e.stopPropagation(); openPropose(a); }}>✎</button>
-          </div>
-        )}
+    return (
+      <div key={key} style={{ background: "#ecfdf5", border: "1px dashed #10b981", color: "#047857", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px" }}
+        title={`Posted availability (info only)${a.note ? ` — ${a.note}` : ""}`}>
+        Free{avTimeLabel(a) ? `: ${avTimeLabel(a)}` : ""}{a.note ? " 📝" : ""}
       </div>
     );
-    if (st === "accepted") return (
-      <div key={key} className="shift-cell" style={{ background: "transparent", border: `2px solid ${venueColorOf(a.venueId)}`, color: venueColorOf(a.venueId), textAlign: "center", cursor: canEdit ? "pointer" : "default" }}
-        title={a.note || "Accepted availability — click to add a shift"}
-        onClick={canEdit ? () => openAdd(s.id, day, { fromAvailability: a }) : undefined}>
-        {a.venue}{avTimeLabel(a) ? ` ${avTimeLabel(a)}` : ""} ✓
-        {canApproveAvail && (
-          <button title="Propose different times" style={{ border: "none", background: "#d97706", color: "#fff", borderRadius: 3, padding: "0 6px", cursor: "pointer", fontSize: 10, marginLeft: 4 }} onClick={(e) => { e.stopPropagation(); openPropose(a); }}>✎</button>
-        )}
-      </div>
-    );
-    if (st === "proposed") return (
-      <div key={key} className="shift-cell" style={{ background: "#fef3c7", color: "#92400e", textAlign: "center", cursor: "default" }}
-        title={`Proposed by ${a.proposedBy || "manager"} — waiting for ${fullName(s)} to accept or decline`}>
-        <div style={{ fontWeight: 600 }}>{a.venue} · Proposed: {propTimeLabel(a) || "—"}</div>
-      </div>
-    );
-    if (st === "declined") return (
-      <div key={key} style={{ color: "#9ca3af", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px", background: "#f9fafb", border: "1px dashed #d1d5db" }}
-        title={`${fullName(s)} declined the proposed times${propTimeLabel(a) ? ` (${propTimeLabel(a)})` : ""}`}>
-        Declined · {a.venue}
-      </div>
-    );
-    if (st === "rejected") return (
-      <div key={key} style={{ color: "#b91c1c", opacity: 0.6, textDecoration: "line-through", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={a.note || "Availability rejected"}>
-        Rejected · {a.venue}
-      </div>
-    );
-    return null;
   };
 
   const th = { padding: "10px 8px", textAlign: "center", fontSize: 11, fontWeight: 600, color: "var(--gray)", borderBottom: "0.5px solid var(--border)" };
@@ -656,8 +530,8 @@ export default function ShiftPlannerPage() {
                   </td>
                   {DAYS.map((_, day) => {
                     const shs = cellShiftsV(s.id, day, vid);
-                    // this grid is scoped to ONE venue — only its own availability postings
-                    const avs = availAll(s.id, weekDates[day]).filter((a) => a.venueId === vid);
+                    // legacy postings are venue-scoped; new cluster rows are staffer-wide info
+                    const avs = availAll(s.id, weekDates[day]).filter((a) => a._src === "cluster" || a.venueId === vid);
                     const closedDay = vClosed(day); // muted cell + no "+"; existing shifts still render
                     return (
                       <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top", ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
@@ -669,7 +543,7 @@ export default function ShiftPlannerPage() {
                               {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{b.grossHours.toFixed(1)}h gross · {b.paidHours.toFixed(1)}h paid · {b.unpaidHours.toFixed(1)}h unpaid</div> : null; })()}
                             </div>
                           ))}
-                          {avs.map((a) => renderAvailChip(a, s, day))}
+                          {avs.map((a) => renderAvailChip(a))}
                           {canEdit && !closedDay && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day, vid)}>+</div>}
                         </div>
                       </td>
@@ -716,7 +590,7 @@ export default function ShiftPlannerPage() {
                   {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{b.grossHours.toFixed(1)}h gross · {b.paidHours.toFixed(1)}h paid · {b.unpaidHours.toFixed(1)}h unpaid</div> : null; })()}
                 </div>
               ))}
-              {avs.map((a) => renderAvailChip(a, s, day))}
+              {avs.map((a) => renderAvailChip(a))}
               {canEdit && !closedDay && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 8px" }} onClick={() => openAdd(s.id, day)}>+</div>}
               {!canEdit && shs.length === 0 && <div className="shift-cell shift-off" style={{ textAlign: "center", opacity: 0.5 }}>·</div>}
             </div>
@@ -1020,46 +894,6 @@ export default function ShiftPlannerPage() {
               {canEdit && <button className="btn btn-primary" onClick={() => openEdit(shiftDetail)}>Edit shift</button>}
               {canEdit && <button className="btn btn-danger" onClick={async () => { if (window.confirm(`Remove ${shiftDetail.staffName}'s ${shiftDetail.start}–${shiftDetail.end} shift?`)) { await removeShift(shiftDetail); setShiftDetail(null); } }}>Remove shift</button>}
               <button className="btn" onClick={() => setShiftDetail(null)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Counter-propose modal — manager suggests different windows on an availability posting */}
-      {proposeFor && (
-        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setProposeFor(null)}>
-          <div className="rg-modal" style={{ maxWidth: 420 }}>
-            <div className="modal-head">
-              <span className="modal-title">Propose new times — {proposeFor.staffName || ""}</span>
-              <button className="modal-close" onClick={() => setProposeFor(null)}>✕</button>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 10 }}>
-              {proposeFor.date} at {proposeFor.venue} · staff posted: {avTimeLabel(proposeFor) || "—"}
-            </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 10, cursor: "pointer" }}>
-              <input type="checkbox" checked={propForm.allDay} onChange={(e) => setPropForm((p) => ({ ...p, allDay: e.target.checked }))} /> All day
-            </label>
-            {!propForm.allDay && (
-              <>
-                {propForm.windows.map((w, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                    <select className="form-input" value={w.start} onChange={(e) => setPropWin(i, "start", e.target.value)}>{STARTS.map((t) => <option key={t}>{t}</option>)}</select>
-                    <span style={{ color: "var(--gray)" }}>–</span>
-                    <select className="form-input" value={w.end} onChange={(e) => setPropWin(i, "end", e.target.value)}>{ENDS.map((t) => <option key={t}>{t}</option>)}</select>
-                    {propForm.windows.length > 1 && (
-                      <button className="btn btn-sm" title="Remove window" onClick={() => setPropForm((p) => ({ ...p, windows: p.windows.filter((_, x) => x !== i) }))}>✕</button>
-                    )}
-                  </div>
-                ))}
-                <button className="btn btn-sm" style={{ marginBottom: 10 }}
-                  onClick={() => setPropForm((p) => ({ ...p, windows: [...p.windows, { start: p.windows[p.windows.length - 1]?.end || STARTS[36], end: ENDS[68] }] }))}>
-                  + Add window
-                </button>
-              </>
-            )}
-            <div className="btn-row">
-              <button className="btn btn-primary" onClick={saveProposal}>Send proposal</button>
-              <button className="btn" onClick={() => setProposeFor(null)}>Cancel</button>
             </div>
           </div>
         </div>

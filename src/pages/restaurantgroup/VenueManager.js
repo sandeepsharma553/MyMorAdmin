@@ -4,6 +4,7 @@ import { db } from "../../firebase";
 import { useRG } from "./RGContext";
 import { venuesCol, groupCol } from "../../utils/restaurantGroupPaths";
 import { AU_STATES } from "./publicHolidays";
+import { groupClusters, clusterName } from "./staffStructureUtils";
 
 const VENUE_SUBCOLLECTIONS = ["shifts", "leaveRequests", "checklists", "checklistAssignments",
   "trainingModules", "trainingAssignments", "stations", "equipment", "kpis", "performanceNotes", "prepList", "tempLogs"];
@@ -25,11 +26,12 @@ const HOURS_DAYS = [
 const blankHours = () =>
   HOURS_DAYS.reduce((acc, [k]) => ({ ...acc, [k]: { open: "09:00", close: "17:00", closed: false } }), {});
 
-const blank = (order) => ({ id: null, name: "", color: "#2563eb", type: "FOH", status: "Trading", state: "VIC", order, hours: blankHours() });
+const blank = (order) => ({ id: null, name: "", color: "#2563eb", type: "FOH", status: "Trading", state: "VIC", order, hours: blankHours(), clusterId: "" });
 
 export default function VenueManager({ open, onClose }) {
-  const { groupId, venues, staff, can, showToast, me } = useRG();
+  const { groupId, group, venues, staff, can, showToast, me } = useRG();
   const isOwner = me?.groupRole === "owner"; // hours editing is OWNER-only (tighter than the modal's settings:edit gate)
+  const clusters = groupClusters(group); // Phase 3a — defined in Settings; a venue joins exactly ONE
   const [editor, setEditor] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -55,7 +57,8 @@ export default function VenueManager({ open, onClose }) {
     if (!editor.name.trim()) return showToast("Venue name required");
     // hours goes in the payload ONLY for the owner: updateDoc writes named keys only, so a
     // storeAdmin save omits hours entirely and the stored value (e.g. super-admin-set) survives.
-    const payload = { name: editor.name.trim(), color: editor.color, type: editor.type, status: editor.status, state: editor.state, order: Number(editor.order) || 0, ...(isOwner ? { hours: editor.hours } : {}) };
+    // clusterId: "" (Unassigned) is stored as null — a valid transient state; no default cluster
+    const payload = { name: editor.name.trim(), color: editor.color, type: editor.type, status: editor.status, state: editor.state, order: Number(editor.order) || 0, clusterId: editor.clusterId || null, ...(isOwner ? { hours: editor.hours } : {}) };
     try {
       if (editor.id) { await updateDoc(doc(groupCol(groupId, "venues"), editor.id), payload); showToast("Venue updated"); }
       else { await addDoc(venuesCol(groupId), { ...payload, createdAt: serverTimestamp() }); showToast("Venue added"); }
@@ -111,7 +114,7 @@ export default function VenueManager({ open, onClose }) {
                 <span className="nav-dot" style={{ background: v.color, width: 12, height: 12 }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 600 }}>{v.name} {v.type === "CK" && <span className="pill pill-gray" style={{ marginLeft: 4 }}>CK</span>}</div>
-                  <div style={{ fontSize: 11, color: "var(--gray)" }}>{v.status || "Trading"}</div>
+                  <div style={{ fontSize: 11, color: "var(--gray)" }}>{v.status || "Trading"} · {clusterName(group, v.clusterId) || "Unassigned"}</div>
                 </div>
                 {confirmId === v.id ? (
                   <>
@@ -121,7 +124,7 @@ export default function VenueManager({ open, onClose }) {
                   </>
                 ) : (
                   <>
-                    <button className="btn btn-sm" onClick={() => setEditor({ id: v.id, name: v.name, color: v.color || "#2563eb", type: v.type || "FOH", status: v.status || "Trading", state: v.state || "VIC", order: v.order ?? venues.length, hours: { ...blankHours(), ...(v.hours || {}) } })}>Edit</button>
+                    <button className="btn btn-sm" onClick={() => setEditor({ id: v.id, name: v.name, color: v.color || "#2563eb", type: v.type || "FOH", status: v.status || "Trading", state: v.state || "VIC", order: v.order ?? venues.length, hours: { ...blankHours(), ...(v.hours || {}) }, clusterId: v.clusterId || "" })}>Edit</button>
                     <button className="btn btn-sm btn-danger" onClick={() => setConfirmId(v.id)}>✕</button>
                   </>
                 )}
@@ -149,6 +152,14 @@ export default function VenueManager({ open, onClose }) {
               </div>
               <div className="form-group"><label className="form-label">State (public holidays)</label>
                 <select className="form-input" value={editor.state} onChange={setF("state")}>{AU_STATES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+              </div>
+              {/* Phase 3a — a venue belongs to exactly ONE cluster (labour pool); Unassigned is
+                  a valid transient state, no auto-assignment. Clusters are defined in Settings. */}
+              <div className="form-group"><label className="form-label">Cluster (labour pool)</label>
+                <select className="form-input" value={editor.clusterId || ""} onChange={setF("clusterId")}>
+                  <option value="">— Unassigned —</option>
+                  {clusters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
               </div>
               <div className="form-group"><label className="form-label">Sort order</label><input type="number" className="form-input" value={editor.order} onChange={setF("order")} /></div>
             </div>

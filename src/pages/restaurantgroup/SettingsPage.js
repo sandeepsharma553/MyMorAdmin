@@ -4,7 +4,7 @@ import { useRG } from "./RGContext";
 import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS } from "./rgConfig";
-import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaGetsBreak, areaPinned, areaExclusive, orderedAreas } from "./staffStructureUtils";
+import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaGetsBreak, areaPinned, areaExclusive, orderedAreas, groupClusters } from "./staffStructureUtils";
 import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS } from "./rgStockUtils";
 
 const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
@@ -239,6 +239,38 @@ export default function SettingsPage() {
     catch { showToast("Could not save area order"); }
   };
 
+  // ── Clusters (Phase 3a) ── group.clusters = [{ id, name }] — named labour pools; venues
+  // point at one via venue.clusterId (assigned in Venue Manager). Whole-array writes, same
+  // pattern as Areas. Delete BLOCKS while any venue is still assigned (no silent orphaning).
+  const clusters = groupClusters(group);
+  const [newCluster, setNewCluster] = useState("");
+  const [clusterEdit, setClusterEdit] = useState(null); // { id, name } rename buffer
+  const saveClusters = async (next) => {
+    try { await updateDoc(groupDoc(groupId), { clusters: next }); }
+    catch { showToast("Could not save clusters"); }
+  };
+  const addCluster = async () => {
+    const name = newCluster.trim();
+    if (!name) return;
+    if (clusters.some((c) => c.name.toLowerCase() === name.toLowerCase())) return showToast("A cluster with that name already exists");
+    // stable generated id — NEVER the name (names are editable; availability keys need id stability)
+    const id = `c-${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36).padStart(2, "0")}`;
+    await saveClusters([...clusters, { id, name }]);
+    setNewCluster(""); showToast("Cluster added");
+  };
+  const renameCluster = async () => {
+    const name = (clusterEdit?.name || "").trim();
+    if (!name) return showToast("Cluster name required");
+    await saveClusters(clusters.map((c) => (c.id === clusterEdit.id ? { ...c, name } : c)));
+    setClusterEdit(null); showToast("Cluster renamed");
+  };
+  const removeCluster = async (c) => {
+    const assigned = venues.filter((v) => v.clusterId === c.id);
+    if (assigned.length) return showToast(`Can't delete "${c.name}" — ${assigned.length} venue${assigned.length === 1 ? "" : "s"} still assigned (${assigned.map((v) => v.name).join(", ")}). Reassign in Venue Manager first.`);
+    await saveClusters(clusters.filter((x) => x.id !== c.id));
+    showToast("Cluster deleted");
+  };
+
   // ── Employment types ── (same shape as Areas/Roles: an editable group-doc list)
   const [newEmpType, setNewEmpType] = useState("");
   const saveEmpTypes = async (next) => {
@@ -440,6 +472,42 @@ export default function SettingsPage() {
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <input className="form-input" value={newArea} onChange={(e) => setNewArea(e.target.value)} placeholder="New area (e.g. Bar)" onKeyDown={(e) => e.key === "Enter" && addArea()} />
                   <button className="btn btn-primary" onClick={addArea}>Add</button>
+                </div>
+              )}
+            </div>
+            {/* CLUSTERS (Phase 3a) — named labour pools of venues; venue.clusterId is assigned
+                in Venue Manager. Delete BLOCKS while venues are still assigned. */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Clusters</span><span className="card-sub">Labour pools of venues — availability will be posted per cluster · assign venues in Venue Manager</span></div></div>
+              {clusters.map((c) => {
+                const count = venues.filter((v) => v.clusterId === c.id).length;
+                return (
+                  <div key={c.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                    {clusterEdit?.id === c.id ? (
+                      <span style={{ display: "inline-flex", gap: 6, flex: 1 }}>
+                        <input className="form-input" value={clusterEdit.name} onChange={(e) => setClusterEdit((p) => ({ ...p, name: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && renameCluster()} autoFocus />
+                        <button className="btn btn-sm btn-primary" onClick={renameCluster}>Save</button>
+                        <button className="btn btn-sm" onClick={() => setClusterEdit(null)}>Cancel</button>
+                      </span>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: 13 }}>{c.name} <span style={{ fontSize: 11, color: "var(--gray)" }}>· {count} venue{count === 1 ? "" : "s"}</span></span>
+                        {editable && (
+                          <span style={{ display: "inline-flex", gap: 4 }}>
+                            <button className="btn btn-sm" onClick={() => setClusterEdit({ id: c.id, name: c.name })}>Rename</button>
+                            <button className="btn btn-sm btn-danger" title={count ? "Blocked — reassign its venues first" : "Delete cluster"} onClick={() => removeCluster(c)}>✕</button>
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+              {!clusters.length && <div style={{ fontSize: 12, color: "var(--gray)" }}>No clusters yet — add one, then assign venues in Venue Manager.</div>}
+              {editable && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <input className="form-input" value={newCluster} onChange={(e) => setNewCluster(e.target.value)} placeholder="New cluster (e.g. Sydney CBD)" onKeyDown={(e) => e.key === "Enter" && addCluster()} />
+                  <button className="btn btn-primary" onClick={addCluster}>Add</button>
                 </div>
               )}
             </div>

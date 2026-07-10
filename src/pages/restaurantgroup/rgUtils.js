@@ -129,6 +129,53 @@ export const weekKeyOf = (date = new Date()) => {
 };
 export const weekDayIndex = (date = new Date()) => (new Date(date).getDay() + 6) % 7; // 0 = Monday
 export const currentWeekKey = () => weekKeyOf();
+
+// ── Phase 3e: unified time options + venue-hours bounding (single source — replaces the
+// planner/poster local mkTimes/TIMES copies) ──
+// 15-minute time options in the "9:00am"/"5:30pm" shape shifts use.
+export const mkTimes = (fromMin = 0, toMin = 23 * 60 + 45) => {
+  const out = [];
+  for (let m = fromMin; m <= toMin; m += 15) {
+    const h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? "pm" : "am", h12 = (h % 12) || 12;
+    out.push(`${h12}:${String(mm).padStart(2, "0")}${ap}`);
+  }
+  return out;
+};
+// THE full-day list (12:00am–11:45pm) — the single fallback every picker shares.
+export const FULL_DAY_TIMES = mkTimes(0, 23 * 60 + 45);
+// 24h "HH:MM" (venue.hours open/close) → minutes; null when unparseable.
+export const hhmmToMin = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "").trim()); return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) : null; };
+// venue.hours day keys, Monday-first (same order as the planner day columns).
+export const HOURS_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+// "YYYY-MM-DD" → venue.hours day key.
+export const dayKeyOfDate = (dateStr) => HOURS_KEYS[(new Date(`${dateStr}T00:00:00`).getDay() + 6) % 7];
+// 15-min options from (open − 1h) to (close + 1h), clamped to the day; FULL-DAY list when
+// the envelope is null. THE shared bound every time picker now uses (Phase 3e buffer: ±1h
+// — was open−2h…close+2h on the Admin planner, unbounded everywhere else).
+export const boundedTimes = (env) => {
+  if (!env || env.openMin == null || env.closeMin == null) return FULL_DAY_TIMES;
+  return mkTimes(Math.max(0, env.openMin - 60), Math.min(23 * 60 + 45, env.closeMin + 60));
+};
+// One venue's usable hours for a day — null when closed / missing / unparseable.
+export const hoursEnvelopeForDay = (venue, dayKey) => {
+  const h = venue?.hours?.[dayKey];
+  if (!h || h.closed === true) return null;
+  const openMin = hhmmToMin(h.open), closeMin = hhmmToMin(h.close);
+  if (openMin == null || closeMin == null) return null;
+  return { openMin, closeMin };
+};
+// Widest envelope across a CLUSTER's venues for a day: earliest open, latest close.
+// PER-VENUE fallback — venues with no usable hours are DROPPED (one blank venue never
+// forces the whole cluster to full-day); null ONLY when NO venue in the pool has usable
+// hours that day (caller then falls back to FULL_DAY_TIMES). "__default__" (the unassigned
+// pool) = venues with no clusterId; literal kept here so this block stays byte-mirrored
+// with Ops rgUtils, where importing staffStructureUtils.DEFAULT_CLUSTER_ID would cycle.
+export const clusterEnvelopeForDay = (venues, clusterId, dayKey) => {
+  const pool = (venues || []).filter((v) => (clusterId === "__default__" ? !v.clusterId : v.clusterId === clusterId));
+  const envs = pool.map((v) => hoursEnvelopeForDay(v, dayKey)).filter(Boolean);
+  if (!envs.length) return null;
+  return { openMin: Math.min(...envs.map((e) => e.openMin)), closeMin: Math.max(...envs.map((e) => e.closeMin)) };
+};
 // total hours rostered to this staff member in the CURRENT week
 export const weeklyHours = (staffId, shifts) => {
   const wk = currentWeekKey();

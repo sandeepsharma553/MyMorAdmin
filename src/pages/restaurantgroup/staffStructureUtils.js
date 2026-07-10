@@ -28,6 +28,38 @@ export const orderedAreas = (group) => {
   return [...order, ...areas.filter((a) => !order.includes(a))];
 };
 
+// ── Clusters (Phase 3a) — a cluster is a NAMED LABOUR POOL holding a set of venues; a
+// venue belongs to EXACTLY ONE cluster via venue.clusterId ("" / absent = Unassigned).
+// Definitions live on the group doc: group.clusters = [{ id, name }]. `id` is a stable
+// generated slug (never the name — names are editable; the later availability key
+// {staffId}_{clusterId}_{date} depends on id stability). Authored in Settings; venues are
+// assigned in the venue editor. NOTE: membership lives on the VENUE doc, so clusterOfVenue
+// takes `venues` (not `group`).
+export const groupClusters = (group) => (Array.isArray(group?.clusters) ? group.clusters : []);
+export const clusterOfVenue = (venues, venueId) =>
+  (venues || []).find((v) => v.id === venueId)?.clusterId || null;
+export const clusterName = (group, clusterId) =>
+  groupClusters(group).find((c) => c.id === clusterId)?.name || "";
+// Ordered unique clusterIds for a staffer: their venueIds → each venue's clusterId, nulls
+// (unassigned venues) dropped, deduped, ordered by group.clusters definition order (unknown
+// ids last, first-seen order). The LATER availability poster uses this to decide "no picker
+// (1 cluster)" vs "pick a cluster (2+)" — NOT wired into any poster/planner yet.
+export const clustersForStaff = (group, venues, staffMember) => {
+  const vids = staffMember?.venueIds?.length ? staffMember.venueIds : (staffMember?.venueId ? [staffMember.venueId] : []);
+  const ids = [...new Set(vids.map((vid) => clusterOfVenue(venues, vid)).filter(Boolean))];
+  const order = groupClusters(group).map((c) => c.id);
+  const idx = (id) => { const i = order.indexOf(id); return i === -1 ? order.length : i; };
+  return ids.sort((a, b) => idx(a) - idx(b));
+};
+// Poster-facing variant (Phase 3b): NEVER empty — staff whose venues have no cluster fall
+// into the implicit "__default__" pool, so the availability doc key
+// {staffId}_{clusterId}_{date} always has a cluster and the poster never dead-ends.
+export const DEFAULT_CLUSTER_ID = "__default__";
+export const clustersForStaffDefaulted = (group, venues, staffMember) => {
+  const ids = clustersForStaff(group, venues, staffMember);
+  return ids.length ? ids : [DEFAULT_CLUSTER_ID];
+};
+
 // Add a value to a picklist — trimmed, case-insensitively de-duplicated. Returns
 // the SAME array reference when nothing changes, so callers can skip the write.
 export const addToList = (list, value) => {

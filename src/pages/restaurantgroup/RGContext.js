@@ -3,7 +3,7 @@ import { onSnapshot } from "firebase/firestore";
 import { useSelector } from "react-redux";
 import {
   groupDoc, venuesCol, venueCol, staffCol, announcementsCol, messagesCol, PER_VENUE_COLLECTIONS,
-  notificationsCol,
+  notificationsCol, groupAvailabilityCol,
   inventoryItemsCol, menuItemsCol, recipesCol, modifierGroupsCol, suppliersCol, purchaseOrdersCol,
   awardRatesCol, complianceManualDoc, acknowledgementsCol,
   venueMenuItemsCol, labourTargetsDoc,
@@ -145,6 +145,13 @@ export function RGProvider({ children }) {
     return () => unsubs.forEach((u) => u && u());
   }, [groupId, venueIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Cluster-scoped availability (NEW group-level collection) — Phase 3c dual-read ──
+  const [clusterAvail, setClusterAvail] = useState([]);
+  useEffect(() => {
+    if (!groupId) { setClusterAvail([]); return; }
+    return subColl(groupAvailabilityCol(groupId), setClusterAvail); // fail-soft → [] until 3d rules land
+  }, [groupId]);
+
   const flat = (coll, sortKey) => {
     let rows = Object.values(pv[coll] || {}).flat();
     if (sortKey) rows = rows.slice().sort((a, b) => ((a[sortKey] ?? 1e15) > (b[sortKey] ?? 1e15) ? 1 : (a[sortKey] ?? 1e15) < (b[sortKey] ?? 1e15) ? -1 : 0));
@@ -161,7 +168,18 @@ export function RGProvider({ children }) {
   const stations = useMemo(() => flat("stations", "order"), [pv.stations]); // eslint-disable-line react-hooks/exhaustive-deps
   const equipment = useMemo(() => flat("equipment", "order"), [pv.equipment]); // eslint-disable-line react-hooks/exhaustive-deps
   const stock = useMemo(() => flat("stock"), [pv.stock]); // eslint-disable-line react-hooks/exhaustive-deps
-  const availability = useMemo(() => flat("availability"), [pv.availability]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ── Availability DUAL-READ (Phase 3c) ── merges the LEGACY per-venue docs (status-era,
+  // venueId/venue stamped by the fan-out) with the NEW cluster-scoped group-level docs into
+  // the one informational array downstream consumes (staffId, date, available, allDay,
+  // windows, note are common to both; legacy rows also carry venueId/venue, new rows
+  // clusterId). _src tags each row so the two sources stay separable.
+  // ⚠ LEGACY BRANCH REMOVABLE after the 14-day cutover window clears (post-Phase-3 cleanup):
+  // drop the flat("availability") arm here AND the "availability" entry in the per-venue
+  // fan-out above.
+  const availability = useMemo(() => [
+    ...flat("availability").map((a) => ({ ...a, _src: "legacy" })),
+    ...clusterAvail.map((a) => ({ ...a, _src: "cluster" })),
+  ], [pv.availability, clusterAvail]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => resolveRoles(group), [group]);
   // Staff areas: group config when present, else the seed defaults (FOH/BOH/Mgmt).
   const areas = useMemo(() => resolveAreas(group), [group]);

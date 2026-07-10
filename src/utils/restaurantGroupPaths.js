@@ -27,6 +27,14 @@ export const groupCol = (groupId, name) => {
 export const venuesCol = (groupId) => groupCol(groupId, "venues");
 export const venueDoc = (groupId, venueId) => doc(db, "restaurantGroups", String(groupId), "venues", String(venueId));
 
+// ── Cluster-scoped availability (Phase 3b) ── ONE group-level collection replaces the old
+// per-venue availability fan-out: restaurantGroups/{g}/availability/{staffId}_{clusterId}_{date}.
+// Docs are informational-only (no status/proposal/review fields). The OLD per-venue
+// collection (venues/{v}/availability, id `staffId_date`) still exists and is read by the
+// planner + manager machine until Phase 3c — do not confuse the two.
+export const groupAvailabilityCol = (groupId) => groupCol(groupId, "availability");
+export const availabilityDocId = (staffId, clusterId, date) => `${staffId}_${clusterId}_${date}`;
+
 // Generic per-venue subcollection: restaurantGroups/{g}/venues/{v}/{name}.
 // All operational data (staff, shifts, leave, checklists, performanceNotes,
 // trainingModules, trainingAssignments, kpis) lives INSIDE each venue.
