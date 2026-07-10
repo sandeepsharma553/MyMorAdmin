@@ -8,6 +8,26 @@ export const resolveAreas = (group) => (group?.areas?.length ? group.areas : DEF
 export const resolveRoles = (group) => (group?.roles?.length ? group.roles : DEFAULT_ROLES);
 export const resolveEmpTypes = (group) => (group?.empTypes?.length ? group.empTypes : DEFAULT_EMP_TYPES);
 
+// ── Per-area rostered-break flag + explicit display order — COMPANION fields on the group
+// doc (group.areaBreak: {areaName: bool}, group.areaOrder: [areaName]). group.areas STAYS a
+// plain string[]; these never restructure it, so every existing reader keeps working.
+// Missing areaBreak entry → TRUE (breaks on by default). areaOrder is intersected with the
+// live areas list, then any areas it doesn't mention append in group.areas order — a stale
+// or partial order can never hide an area.
+export const areaGetsBreak = (group, areaName) => (group?.areaBreak || {})[areaName] !== false;
+// Pinned areas sort FIRST on the Shift Planner (group.areaPinned: {areaName: bool}).
+// Missing entry → false (not pinned).
+export const areaPinned = (group, areaName) => (group?.areaPinned || {})[areaName] === true;
+// EXCLUSIVE areas capture membership on the Shift Planner: staff who hold an exclusive
+// area are shown ONLY under that area's section, ignoring their other areas
+// (group.areaExclusive: {areaName: bool}). Missing entry → false.
+export const areaExclusive = (group, areaName) => (group?.areaExclusive || {})[areaName] === true;
+export const orderedAreas = (group) => {
+  const areas = resolveAreas(group);
+  const order = (Array.isArray(group?.areaOrder) ? group.areaOrder : []).filter((a) => areas.includes(a));
+  return [...order, ...areas.filter((a) => !order.includes(a))];
+};
+
 // Add a value to a picklist — trimmed, case-insensitively de-duplicated. Returns
 // the SAME array reference when nothing changes, so callers can skip the write.
 export const addToList = (list, value) => {

@@ -13,7 +13,7 @@ import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
 import { isJuniorType, isMinorDob } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
-import { staffAreas, stationsForVenue } from "./staffStructureUtils";
+import { staffAreas, stationsForVenue, areaGetsBreak } from "./staffStructureUtils";
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
@@ -656,24 +656,35 @@ export default function StaffDirectoryPage() {
     // Venue state via venueState(): top-level state OR address.state, normalised to a code
     // ("Victoria" → "VIC"). A venue with no recognisable state has no detectable PH —
     // that shift honestly falls through to the plain Sat/Sun/Mon–Fri bucket.
-    // ROSTERED break split — LOCAL rule (mirrors ShiftPlannerPage.deriveBreak: gross ≥ 5h →
-    // 30 min UNPAID; <5h → none). Gross comes from the SHARED rgUtils.shiftHours, which is
-    // deliberately untouched (weeklyHours / StaffCapabilityCard / Ops mirror depend on it);
-    // the split is computed here on top, display-only. Buckets stay gross (full span).
+    // ROSTERED break split — EFFECTIVE per shift, mirroring ShiftPlannerPage: a manual
+    // breakOverrideMins wins; else AREA-DRIVEN (stationId → station.area → group.areaBreak,
+    // missing entry → ON; no station/area → none) AND gross ≥ 5h → 30 min UNPAID. No keyword
+    // guessing — the flag is looked up by the exact area string. Gross comes from the SHARED
+    // rgUtils.shiftHours, which is deliberately untouched (weeklyHours / StaffCapabilityCard
+    // / Ops mirror depend on it). The four day-type buckets are PAID (effective break
+    // deducted per shift), matching the planner's hoursByType; grossTot keeps the full span
+    // for the Rostered/Breaks summary line.
+    const shiftBreakMins = (x, h) => {
+      if (x.breakOverrideMins != null) return x.breakOverrideMins;
+      const area = stations.find((st) => st.id === x.stationId && st.venueId === x.venueId)?.area;
+      return area && areaGetsBreak(group, area) && h >= 5 ? 30 : 0;
+    };
     let mf = 0, sat = 0, sun = 0, ph = 0, grossTot = 0, breakTot = 0;
     sh.forEach((x) => {
       const d = shiftDateOf(x); if (!inPeriod(d)) return;
       const h = shiftHours(x);
+      const bm = shiftBreakMins(x, h);
+      const hp = Math.max(0, h - bm / 60); // PAID hours — what the buckets accumulate
       grossTot += h;
-      breakTot += h >= 5 ? 30 : 0;
+      breakTot += bm;
       const dstr = d ? dkey(d) : "";
       const v = venues.find((vv) => vv.id === x.venueId);
       const vState = venueState(v);
       const dd = x.day || 0;
-      if (dstr && vState && isPublicHoliday(dstr, vState, holidays)) ph += h;
-      else if (dd === 6) sun += h;
-      else if (dd === 5) sat += h;
-      else mf += h;
+      if (dstr && vState && isPublicHoliday(dstr, vState, holidays)) ph += hp;
+      else if (dd === 6) sun += hp;
+      else if (dd === 5) sat += hp;
+      else mf += hp;
     });
     const unpaidTot = breakTot / 60;
     const paidTot = Math.max(0, grossTot - unpaidTot);
@@ -706,7 +717,7 @@ export default function StaffDirectoryPage() {
           <Stat n={`${sun.toFixed(1)}h`} l="Sunday" />
           <Stat n={`${ph.toFixed(1)}h`} l="Public Holiday" />
         </div>
-        {/* rostered break split for the same period — derived (≥5h → 30 min unpaid), display-only */}
+        {/* rostered break split for the same period — EFFECTIVE (override ?? area-driven ≥5h rule), display-only */}
         <div style={{ fontSize: 11, color: "var(--gray)", margin: "-8px 0 14px" }}>
           Rostered <strong>{grossTot.toFixed(1)}h</strong> · Breaks <strong>{breakTot} min</strong> · <strong>{paidTot.toFixed(1)}h</strong> paid · <strong>{unpaidTot.toFixed(1)}h</strong> unpaid
         </div>

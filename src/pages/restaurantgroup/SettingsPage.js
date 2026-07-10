@@ -4,7 +4,7 @@ import { useRG } from "./RGContext";
 import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS } from "./rgConfig";
-import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload } from "./staffStructureUtils";
+import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaGetsBreak, areaPinned, areaExclusive, orderedAreas } from "./staffStructureUtils";
 import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS } from "./rgStockUtils";
 
 const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
@@ -196,8 +196,12 @@ export default function SettingsPage() {
   };
   const removeRole = async (r) => { await saveRoles(removeFromList(roles, r)); };
 
-  // ── Areas ── (same shape as Roles: an editable group-doc list, FOH/BOH/Mgmt by default)
+  // ── Areas ── (same shape as Roles: an editable group-doc list, FOH/BOH/Mgmt by default).
+  // Companion fields (group.areas STAYS a string[]): areaBreak — per-area rostered-break
+  // flag (missing entry → ON), and areaOrder — explicit display order (drag to reorder).
   const [newArea, setNewArea] = useState("");
+  const [dragArea, setDragArea] = useState(null); // index (within areasOrdered) being dragged
+  const areasOrdered = orderedAreas(group);
   const saveAreas = async (next) => {
     try { await updateDoc(groupDoc(groupId), { areas: next }); }
     catch { showToast("Could not save areas"); }
@@ -209,6 +213,31 @@ export default function SettingsPage() {
     await saveAreas(next); showToast("Area added");
   };
   const removeArea = async (a) => { await saveAreas(removeFromList(areas, a)); };
+  // whole-map writes (not dot-notation) — area names are free text and may contain dots
+  const toggleAreaBreak = async (name) => {
+    const next = { ...(group?.areaBreak || {}), [name]: !areaGetsBreak(group, name) };
+    try { await updateDoc(groupDoc(groupId), { areaBreak: next }); }
+    catch { showToast("Could not save break setting"); }
+  };
+  const toggleAreaPinned = async (name) => {
+    const next = { ...(group?.areaPinned || {}), [name]: !areaPinned(group, name) };
+    try { await updateDoc(groupDoc(groupId), { areaPinned: next }); }
+    catch { showToast("Could not save pin setting"); }
+  };
+  // exclusive: staff who hold this area are shown ONLY under its planner section,
+  // ignoring their other areas (membership capture — ordering is unaffected)
+  const toggleAreaExclusive = async (name) => {
+    const next = { ...(group?.areaExclusive || {}), [name]: !areaExclusive(group, name) };
+    try { await updateDoc(groupDoc(groupId), { areaExclusive: next }); }
+    catch { showToast("Could not save exclusive setting"); }
+  };
+  const dropArea = async (to) => {
+    const from = dragArea; setDragArea(null);
+    if (from === null || from === to) return;
+    const next = [...areasOrdered]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
+    try { await updateDoc(groupDoc(groupId), { areaOrder: next }); }
+    catch { showToast("Could not save area order"); }
+  };
 
   // ── Employment types ── (same shape as Areas/Roles: an editable group-doc list)
   const [newEmpType, setNewEmpType] = useState("");
@@ -385,13 +414,26 @@ export default function SettingsPage() {
             Define the staff structure — the <strong>Areas</strong> and <strong>Roles</strong> staff can be assigned, and the <strong>Stations</strong> within each venue. Used across Staff, Shifts, Training, Checklists &amp; permissions.
           </div>
           <div className="grid-2">
-            {/* AREAS */}
+            {/* AREAS — drag to reorder (writes areaOrder); per-area rostered-break toggle (writes areaBreak) */}
             <div className="card">
-              <div className="card-head"><div><span className="card-title">Areas</span><span className="card-sub">Staff &amp; checklists group by these (FOH, BOH, Mgmt…)</span></div></div>
-              {areas.map((a) => (
-                <div key={a} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
-                  <span style={{ fontSize: 13 }}>{a}</span>
-                  {editable && areas.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the picklist (existing staff keep their area)" onClick={() => removeArea(a)}>✕</button>}
+              <div className="card-head"><div><span className="card-title">Areas</span><span className="card-sub">Staff &amp; checklists group by these — drag to reorder · Pin sorts first · Exclusive captures its staff · Break = rostered break</span></div></div>
+              {areasOrdered.map((a, i) => (
+                <div key={a} className="staff-meta-row" draggable={editable}
+                  onDragStart={() => setDragArea(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropArea(i)} onDragEnd={() => setDragArea(null)}
+                  style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)", cursor: editable ? "grab" : "default", opacity: dragArea === i ? 0.5 : 1 }}>
+                  <span style={{ fontSize: 13 }}>{editable && <span style={{ color: "var(--gray)", marginRight: 6 }} title="Drag to reorder">⠿</span>}{a}</span>
+                  <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    <button className={`btn btn-sm ${areaPinned(group, a) ? "btn-primary" : ""}`} disabled={!editable}
+                      title={areaPinned(group, a) ? "Pinned — this area's section sorts first on the Shift Planner" : "Not pinned — sorts in list order after pinned areas"}
+                      onClick={() => editable && toggleAreaPinned(a)}>{areaPinned(group, a) ? "Pin ✓" : "Pin ✕"}</button>
+                    <button className={`btn btn-sm ${areaExclusive(group, a) ? "btn-primary" : ""}`} disabled={!editable}
+                      title={areaExclusive(group, a) ? "Exclusive — staff holding this area appear ONLY under it on the planner, ignoring their other areas" : "Not exclusive — combines normally into Multi-area"}
+                      onClick={() => editable && toggleAreaExclusive(a)}>{areaExclusive(group, a) ? "Exclusive ✓" : "Exclusive ✕"}</button>
+                    <button className={`btn btn-sm ${areaGetsBreak(group, a) ? "btn-primary" : ""}`} disabled={!editable}
+                      title={areaGetsBreak(group, a) ? "Rostered break ON — ≥5h shifts on this area's stations get a 30 min unpaid break" : "Rostered break OFF for this area"}
+                      onClick={() => editable && toggleAreaBreak(a)}>{areaGetsBreak(group, a) ? "Break ✓" : "Break ✕"}</button>
+                    {editable && areas.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the picklist (existing staff keep their area)" onClick={() => removeArea(a)}>✕</button>}
+                  </span>
                 </div>
               ))}
               {editable && (

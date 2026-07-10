@@ -1,10 +1,10 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot, deleteField } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { fullName, downloadCsv, weekKeyOf } from "./rgUtils";
-import { staffAreaBuckets, staffAtStation } from "./staffStructureUtils";
+import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 import { checkAndCreateShiftAssignments } from "./checklistShiftUtils";
@@ -55,19 +55,19 @@ function parseTime(t) {
   if (/pm/i.test(m[3])) h += 12;
   return h + parseInt(m[2], 10) / 60;
 }
-// Hours = the FULL shift span (gross). The break is AUTO-DERIVED from shift length
-// (deriveBreak below) and shown as a paid/unpaid split — display-only for now:
-// staffHours/totalHours/labourCost still count the whole span. Local to this file
-// — rgUtils.shiftHours unchanged.
-const shiftHours = (sh) => Math.max(0, parseTime(sh.end) - parseTime(sh.start));
-// ── ROSTERED break rule (flat MA000119 basis): gross > 5h → 30 min UNPAID; ≤5h → none. ──
-// PLANNED hours only (from the shift doc) — actual clocked breaks (timeEntries) are a
-// separate system. SINGLE SOURCE for the rule: to make it award-driven later, change ONLY
-// this function. The stored sh.breakMins field is kept for backward-compat, but DISPLAY
-// (chips, hours column, footer) uses this derived value.
-const deriveBreak = (startStr, endStr) => {
+// Hours are on the PAID basis everywhere on this page (gross − EFFECTIVE break; see
+// effectiveBreak in the component: manual override ?? area-derived). Gross appears only
+// inside per-shift/per-row breakdowns via deriveBreak's grossHours. The old local
+// shiftHours helper is gone — rgUtils.shiftHours is unchanged for other pages.
+// ── ROSTERED break rule: AREA-DRIVEN. Eligibility = the shift's station → station.area →
+// group.areaBreak[area] (Settings toggle, missing entry → ON). No station or no area → NO
+// auto break. Eligible AND gross ≥ 5h → 30 min UNPAID; otherwise none. No keyword/substring
+// area guessing — the flag is looked up by the exact area string. PLANNED hours only —
+// actual clocked breaks (timeEntries) are a separate system. SINGLE SOURCE for the rule:
+// callers resolve `eligible` via shiftBreakEligible; manual overrides via effectiveBreak.
+const deriveBreak = (startStr, endStr, eligible) => {
   const grossHours = Math.max(0, parseTime(endStr) - parseTime(startStr));
-  const breakMins = grossHours >= 5 ? 30 : 0;
+  const breakMins = eligible && grossHours >= 5 ? 30 : 0;
   const unpaidHours = breakMins / 60;
   return { grossHours, breakMins, unpaidHours, paidHours: Math.max(0, grossHours - unpaidHours) };
 };
@@ -75,23 +75,9 @@ const deriveBreak = (startStr, endStr) => {
 const cellClass = (type) =>
   type === "evening" ? "shift-evening" : type === "open" ? "shift-open" : type === "off" ? "shift-off" : "shift-morning";
 
-// area colours (#5): FOH green, BOH blue, Mgmt black — station-specific colour
-// (set in Settings) wins when the shift has a station.
-const AREA_COLORS = { FOH: "#16a34a", BOH: "#2563eb", Mgmt: "#111111", Other: "#6b7280" };
-const roleArea = (role) => {
-  const r = role || "";
-  if (/manager|owner|admin|supervisor|in charge/i.test(r)) return "Mgmt";
-  if (/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i.test(r)) return "BOH";
-  if (/foh|floor|\bbar\b|barista|counter|service/i.test(r)) return "FOH";
-  return "Other";
-};
-
-const AREA_GROUPS = [
-  { key: "Mgmt", label: "Management" },
-  { key: "FOH", label: "Front of House" },
-  { key: "BOH", label: "Back of House" },
-  { key: "Other", label: "Other" },
-];
+// The old hardcoded AREA_GROUPS taxonomy + keyword role/area guessing (roleArea/AREA_COLORS,
+// which were dead code) are GONE — planner sections, filters and the break rule now come
+// from the owner's configured areas (group.areas / areaOrder / areaBreak). See groupedRows.
 
 export default function ShiftPlannerPage() {
   const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, me, myStaff, myScope } = useRG();
@@ -189,9 +175,40 @@ export default function ShiftPlannerPage() {
       setShiftDetail((p) => (p && p.id === sh.id ? { ...p, [field]: val } : p));
     } catch { showToast("Could not update time"); }
   };
+  // manual break override — same updateDoc path as the punch edits. null clears the field
+  // (deleteField) so the shift reverts to the area-derived automatic value. The stored
+  // breakMins mirror is kept EFFECTIVE in the same write so it never goes stale (nothing
+  // local reads it — display/math stay derived).
+  const setBreakOverride = async (sh, mins) => {
+    try {
+      const eff = mins != null ? mins : deriveBreak(sh.start, sh.end, shiftBreakEligible(sh)).breakMins;
+      await updateDoc(doc(venueCol(groupId, sh.venueId, "shifts"), sh.id), {
+        breakOverrideMins: mins != null ? mins : deleteField(), breakMins: eff,
+      });
+      setShiftDetail((p) => {
+        if (!p || p.id !== sh.id) return p;
+        const n = { ...p, breakMins: eff };
+        if (mins != null) n.breakOverrideMins = mins; else delete n.breakOverrideMins;
+        return n;
+      });
+    } catch { showToast("Could not update break"); }
+  };
 
   const weekShifts = useMemo(() => shifts.filter((sh) => (sh.weekKey || wk) === wk), [shifts, wk]);
-  const shiftColor = (sh) => stations.find((x) => x.id === sh.stationId)?.color || AREA_COLORS[roleArea(sh.role)];
+
+  // ── Area-driven break resolution ── station (exact id + venue match) → its area string →
+  // the owner's per-area flag. Unknown station / missing area → null → no auto break.
+  const shiftAreaOf = (sh) => stations.find((x) => x.id === sh.stationId && x.venueId === sh.venueId)?.area || null;
+  const shiftBreakEligible = (sh) => { const a = shiftAreaOf(sh); return !!a && areaGetsBreak(group, a); };
+  // EFFECTIVE break: manual breakOverrideMins (set in the shift-detail modal) wins when
+  // present; ABSENT means "derive", so existing shifts need no edit. Same return shape as
+  // deriveBreak plus `manual`.
+  const effectiveBreak = (sh) => {
+    const d = deriveBreak(sh.start, sh.end, shiftBreakEligible(sh));
+    if (sh.breakOverrideMins == null) return { ...d, manual: false };
+    const unpaidHours = sh.breakOverrideMins / 60;
+    return { grossHours: d.grossHours, breakMins: sh.breakOverrideMins, unpaidHours, paidHours: Math.max(0, d.grossHours - unpaidHours), manual: true };
+  };
 
   // ── Public holidays (read-only) ── live-listen to the settings doc; fall back to the
   // seed so PH still shows before the owner saves anything. (Editing lives in Settings.)
@@ -235,46 +252,49 @@ export default function ShiftPlannerPage() {
   // missing status on an available doc = "pending" (legacy docs surface for review)
   const avStatus = (a) => ((a && a.available === true) ? (a.status || "pending") : (a && a.available === false ? "off" : null));
 
+  // PAID hours (gross − effective break) — the payroll figure everywhere on this page.
   const staffHours = (staffId) =>
-    weekShifts.filter((sh) => sh.staffId === staffId).reduce((a, sh) => a + shiftHours(sh), 0);
+    weekShifts.filter((sh) => sh.staffId === staffId).reduce((a, sh) => a + effectiveBreak(sh).paidHours, 0);
 
   const totalHours = useMemo(
     () => rows.reduce((a, s) => a + staffHours(s.id), 0),
-    [rows, weekShifts]
+    [rows, weekShifts, stations, group] // eslint-disable-line react-hooks/exhaustive-deps
   );
   // configurable per group via the gated settings/labourTargets doc (Admin Settings →
-  // Labour targets). null/denied read → the built-in estimates below.
+  // Labour targets). null/denied read → the built-in estimates below. totalHours is PAID
+  // hours (effective break subtracted), so labourCost/labourPct are paid-based too.
   const hourly = Number(labourTargets?.hourlyRate) || HOURLY;
   const weeklyRev = Number(labourTargets?.weeklyRevenue) || WEEKLY_REVENUE;
   const labourCost = totalHours * hourly;
   const labourPct = ((labourCost / weeklyRev) * 100).toFixed(1);
 
-  // #11 weekly NET hours by day-type — PH checked FIRST (PH-on-weekend counts as PH),
-  // else Sat / Sun / Mon–Fri. Uses the 3a weekDates + isPublicHoliday + holidays.
+  // #11 weekly PAID hours by day-type — PH checked FIRST (PH-on-weekend counts as PH),
+  // else Sat / Sun / Mon–Fri. PAID basis (effective break subtracted) so the four buckets
+  // reconcile with the paid headline/footer totals.
   const hoursByType = useMemo(() => {
     const b = { mf: 0, sat: 0, sun: 0, ph: 0 };
     weekShifts.forEach((sh) => {
       const di = sh.day || 0; // DAYS: Mon..Sun → Sat=5, Sun=6
       const vState = venueState(venues.find((v) => v.id === sh.venueId));
-      const h = shiftHours(sh);
+      const h = effectiveBreak(sh).paidHours;
       if (isPublicHoliday(weekDates[di], vState, holidays)) b.ph += h;
       else if (di === 5) b.sat += h;
       else if (di === 6) b.sun += h;
       else b.mf += h;
     });
     return b;
-  }, [weekShifts, weekDates, venues, holidays]);
-  // weekly rostered paid/unpaid split from the derived break rule (display only — labour
-  // cost stays full-span below, that's a separate payroll decision)
+  }, [weekShifts, weekDates, venues, holidays, stations, group]); // eslint-disable-line react-hooks/exhaustive-deps
+  // weekly rostered paid/unpaid split from the EFFECTIVE break (override ?? area-derived) —
+  // consistent with totalHours/labourCost, which are now paid-based.
   const weekSplit = useMemo(() => weekShifts.reduce((a, sh) => {
-    const b = deriveBreak(sh.start, sh.end);
+    const b = effectiveBreak(sh);
     a.paid += b.paidHours; a.unpaid += b.unpaidHours;
     return a;
-  }, { paid: 0, unpaid: 0 }), [weekShifts]);
+  }, { paid: 0, unpaid: 0 }), [weekShifts, stations, group]); // eslint-disable-line react-hooks/exhaustive-deps
   // Fortnight total: this week + the next week. Build nextWk via weekKeyOf(nextMonday)
   // (same path shifts are keyed with) so it matches stored weekKeys exactly (AEST Issue-18).
   const nextWk = useMemo(() => { const nextMonday = new Date(monday); nextMonday.setDate(monday.getDate() + 7); return weekKeyOf(nextMonday); }, [monday]);
-  const fortnightHours = useMemo(() => shifts.filter((sh) => { const k = sh.weekKey || wk; return k === wk || k === nextWk; }).reduce((a, sh) => a + shiftHours(sh), 0), [shifts, wk, nextWk]);
+  const fortnightHours = useMemo(() => shifts.filter((sh) => { const k = sh.weekKey || wk; return k === wk || k === nextWk; }).reduce((a, sh) => a + effectiveBreak(sh).paidHours, 0), [shifts, wk, nextWk, stations, group]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Area→Station drill-down: stations of the SELECTED area scoped to the selected venue
   // (respects "All venues"). Only meaningful once a specific area is picked.
@@ -283,16 +303,53 @@ export default function ShiftPlannerPage() {
   // (e.g. after switching venue/area), so a stale selection can't silently filter wrongly.
   const effStation = drillStations.some((st) => st.id === planStation) ? planStation : "all";
 
-  // rows grouped into area sections (Management / FOH / BOH / Other), honouring the
-  // area filter; empty groups are dropped. A MULTI-AREA person appears under EACH of
-  // their area groups (staffAreaBuckets), so e.g. a FOH+BOH person shows in both.
-  // When a station is selected, rows narrow to staff AT that station (rostered there
-  // this week OR tagged it) — see staffAtStation.
-  const groupedRows = useMemo(() =>
-    AREA_GROUPS
-      .map((g) => ({ ...g, members: rows.filter((s) => staffAreaBuckets(s).includes(g.key) && staffAtStation(s, effStation, weekShifts)).sort(staffSort) }))
-      .filter((g) => g.members.length && (areaFilter === "all" || areaFilter === g.key)),
-    [rows, areaFilter, effStation, weekShifts, sortBy]); // eslint-disable-line react-hooks/exhaustive-deps
+  // rows grouped into sections BY THE OWNER'S CONFIGURED AREAS (staff.areas[] strings — no
+  // bucket/keyword guessing, no name-based special cases). ONE row per person, no duplication:
+  //   • holds an EXCLUSIVE area (areaExclusive, Settings) → that area's section ONLY,
+  //     ignoring their other areas — first exclusive in orderedAreas order wins as the
+  //     deterministic tie-break, never duplicated;
+  //   • exactly 1 area → that area's section;
+  //   • 2+ areas → the single "Multi-area" section (no per-combination sections);
+  //   • no areas → "No area assigned".
+  // An exclusive section is a NORMAL single-area section (same rank/pin logic) — exclusivity
+  // affects MEMBERSHIP only. SECTION ORDER: pinned areas (areaPinned) first in orderedAreas
+  // order, then unpinned single-area sections in orderedAreas order, then "Multi-area", then
+  // "No area assigned". The area filter shows sections whose MEMBERSHIP includes the picked
+  // area — Multi-area appears under any area one of its members holds (whole section, members
+  // unfiltered); an exclusive member's other areas do NOT leak into other filters.
+  const groupedRows = useMemo(() => {
+    const ordered = orderedAreas(group);
+    const idx = (a) => { const i = ordered.indexOf(a); return i === -1 ? ordered.length : i; };
+    const sections = new Map();
+    const push = (key, label, areas, s) => {
+      if (!sections.has(key)) sections.set(key, { key, label, areaSet: new Set(), members: [] });
+      const g = sections.get(key);
+      areas.forEach((a) => g.areaSet.add(a));
+      g.members.push(s);
+    };
+    rows.filter((s) => staffAtStation(s, effStation, weekShifts)).forEach((s) => {
+      const list = [...new Set(staffAreas(s).filter(Boolean))];
+      const exclusives = list.filter((a) => areaExclusive(group, a)).sort((a, b) => (idx(a) - idx(b)) || a.localeCompare(b));
+      if (exclusives.length) push(`area:${exclusives[0]}`, exclusives[0], [exclusives[0]], s);
+      else if (list.length === 1) push(`area:${list[0]}`, list[0], list, s);
+      else if (list.length > 1) push("__multi__", "Multi-area", list, s);
+      else push("__none__", "No area assigned", [], s);
+    });
+    const rank = (g) => {
+      if (g.key === "__none__") return [3];
+      if (g.key === "__multi__") return [2];
+      // single-area sections (incl. exclusive ones) are labelled by their area name
+      return [areaPinned(group, g.label) ? 0 : 1, idx(g.label)];
+    };
+    return [...sections.values()]
+      .map((g) => ({ ...g, areas: [...g.areaSet], members: g.members.slice().sort(staffSort) }))
+      .filter((g) => areaFilter === "all" || g.areas.includes(areaFilter))
+      .sort((a, b) => {
+        const ra = rank(a), rb = rank(b);
+        for (let i = 0; i < Math.max(ra.length, rb.length); i++) { const d = (ra[i] ?? -1) - (rb[i] ?? -1); if (d) return d; }
+        return a.label.localeCompare(b.label);
+      });
+  }, [rows, areaFilter, effStation, weekShifts, sortBy, group]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // #5 distinct staff currently shown in the main grid (across all groups) — the basis
   // for the bottom "Staff rostered" headcount row (derived, no extra query).
@@ -404,7 +461,12 @@ export default function ShiftPlannerPage() {
         day: dayIdx, start: form.start, end: form.end, role: form.role,
         venueId: venue.id, venue: venue.name,
         stationId: station?.id || "", station: station?.name || "",
-        breakMins: deriveBreak(form.start, form.end).breakMins, // derived (>5h → 30) — stored for Ops/export consistency
+        // EFFECTIVE break stored (existing override ?? area-driven ≥5h rule) — for Ops/export
+        // consistency only; nothing local READS this field (display/math stay derived). The
+        // override is carried through so a venue-move (delete + recreate) can't drop it.
+        breakMins: editing?.breakOverrideMins != null ? editing.breakOverrideMins
+          : deriveBreak(form.start, form.end, !!(station?.area && areaGetsBreak(group, station.area))).breakMins,
+        ...(editing?.breakOverrideMins != null ? { breakOverrideMins: editing.breakOverrideMins } : {}),
         type, notes: form.notes.trim(), weekKey: wk, published: true,
         ...(form.availabilityId ? { availabilityId: form.availabilityId } : {}),
       };
@@ -569,7 +631,7 @@ export default function ShiftPlannerPage() {
   const VenueGrid = ({ vid }) => {
     // #2 hide Inactive + #3 A→Z, same as the main grid (separate source: scopedStaff).
     const gridRows = scopedStaff.filter((s) => staffInVenue(s, vid) && !hasLeft(s)).sort(staffSort);
-    const gh = gridRows.reduce((a, s) => a + weekShifts.filter((sh) => sh.staffId === s.id && (vid === "all" || sh.venueId === vid)).reduce((x, sh) => x + shiftHours(sh), 0), 0);
+    const gh = gridRows.reduce((a, s) => a + weekShifts.filter((sh) => sh.staffId === s.id && (vid === "all" || sh.venueId === vid)).reduce((x, sh) => x + effectiveBreak(sh).paidHours, 0), 0);
     // split view is always per-venue → closed-day greying keys off vid directly
     const vClosed = (day) => venues.find((v) => v.id === vid)?.hours?.[HOURS_KEYS[day]]?.closed === true;
     return (
@@ -604,7 +666,7 @@ export default function ShiftPlannerPage() {
                             <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff" }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                               <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                               <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}</div>
-                              {(() => { const bm = deriveBreak(sh.start, sh.end).breakMins; return bm > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{bm} min break</div> : null; })()}
+                              {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{b.grossHours.toFixed(1)}h gross · {b.paidHours.toFixed(1)}h paid · {b.unpaidHours.toFixed(1)}h unpaid</div> : null; })()}
                             </div>
                           ))}
                           {avs.map((a) => renderAvailChip(a, s, day))}
@@ -620,7 +682,7 @@ export default function ShiftPlannerPage() {
           </table>
         </div>
         <div style={{ padding: "8px 12px", background: "var(--gray-light)", borderTop: "0.5px solid var(--border)", fontSize: 11 }}>
-          <span style={{ color: "var(--gray)" }}>Hours this week: </span><strong>{gh.toFixed(1)}</strong>
+          <span style={{ color: "var(--gray)" }}>Paid hours this week: </span><strong>{gh.toFixed(1)}</strong>
         </div>
       </div>
     );
@@ -651,7 +713,7 @@ export default function ShiftPlannerPage() {
                 <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff", boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                   <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                   <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
-                  {(() => { const bm = deriveBreak(sh.start, sh.end).breakMins; return bm > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{bm} min break</div> : null; })()}
+                  {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{b.grossHours.toFixed(1)}h gross · {b.paidHours.toFixed(1)}h paid · {b.unpaidHours.toFixed(1)}h unpaid</div> : null; })()}
                 </div>
               ))}
               {avs.map((a) => renderAvailChip(a, s, day))}
@@ -663,17 +725,17 @@ export default function ShiftPlannerPage() {
       })}
       <td style={{ textAlign: "center", fontSize: 11, fontWeight: 600, borderBottom: "0.5px solid var(--gray-light)" }}>
         {(() => {
-          // rostered total + derived paid/unpaid split (contracted moved under the name).
-          // Split applies to CASUALS too — the break rule is shift-length-driven, not type-driven.
+          // PAID total headline (gross − EFFECTIVE break, override-aware) + gross/unpaid
+          // subline. The break is area-driven per shift — see effectiveBreak.
           const t = weekShifts.filter((sh) => sh.staffId === s.id).reduce((a, sh) => {
-            const b = deriveBreak(sh.start, sh.end);
+            const b = effectiveBreak(sh);
             a.gross += b.grossHours; a.paid += b.paidHours; a.unpaid += b.unpaidHours;
             return a;
           }, { gross: 0, paid: 0, unpaid: 0 });
           return (
             <>
-              <div>{t.gross.toFixed(1)}h</div>
-              <div style={{ fontSize: 9, fontWeight: 400, color: "var(--gray)" }}>{t.paid.toFixed(1)}h paid · {t.unpaid.toFixed(1)}h unpaid</div>
+              <div>{t.paid.toFixed(1)}h</div>
+              <div style={{ fontSize: 9, fontWeight: 400, color: "var(--gray)" }}>{t.gross.toFixed(1)}h gross · {t.unpaid.toFixed(1)}h unpaid</div>
             </>
           );
         })()}
@@ -695,7 +757,8 @@ export default function ShiftPlannerPage() {
           <button className="btn btn-sm" onClick={() => setSplitMode((s) => !s)} style={splitMode ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>⊟ Split view</button>
           {canEdit && <button className="btn btn-sm btn-primary" onClick={() => openAdd("", 0)}>+ Add shift</button>}
           <button className="btn btn-sm" onClick={() => {
-            const rows = [["Staff", "Day", "Start", "End", "Role", "Station", "Venue", "Hours"], ...weekShifts.slice().sort((a, b) => (a.day - b.day) || a.start.localeCompare(b.start)).map((sh) => [sh.staffName, FULL_DAYS[sh.day] || "", sh.start, sh.end, sh.role, sh.station || "", sh.venue, shiftHours(sh).toFixed(1)])];
+            // Gross / Paid / Unpaid per shift (effective break) — replaces the single "Hours" column
+            const rows = [["Staff", "Day", "Start", "End", "Role", "Station", "Venue", "Gross", "Paid", "Unpaid"], ...weekShifts.slice().sort((a, b) => (a.day - b.day) || a.start.localeCompare(b.start)).map((sh) => { const b = effectiveBreak(sh); return [sh.staffName, FULL_DAYS[sh.day] || "", sh.start, sh.end, sh.role, sh.station || "", sh.venue, b.grossHours.toFixed(1), b.paidHours.toFixed(1), b.unpaidHours.toFixed(1)]; })];
             downloadCsv(`roster-${wk}.csv`, rows); showToast("Roster exported");
           }}>Export</button>
         </div>
@@ -732,7 +795,8 @@ export default function ShiftPlannerPage() {
       {/* Area filter + Area→Station drill-down */}
       {!splitMode && (
         <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-          {[["all", "All"], ["Mgmt", "Management"], ["FOH", "FOH"], ["BOH", "BOH"]].map(([k, l]) => (
+          {/* filter buttons come from the owner's configured areas (orderedAreas) — no hardcoded taxonomy */}
+          {[["all", "All"], ...orderedAreas(group).map((a) => [a, a])].map(([k, l]) => (
             <button key={k} className="btn btn-sm" onClick={() => { setAreaFilter(k); setPlanStation("all"); }}
               style={areaFilter === k ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{l}</button>
           ))}
@@ -817,7 +881,7 @@ export default function ShiftPlannerPage() {
           </table>
         </div>
         <div style={{ padding: "12px 14px", background: "var(--gray-light)", borderTop: "0.5px solid var(--border)", display: "flex", gap: 20, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Total hours this week: </span><strong>{totalHours.toFixed(1)}</strong></div>
+          <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Total paid hours this week: </span><strong>{totalHours.toFixed(1)}</strong></div>
           {/* labour $ / % are management info — shifts:edit only (staff still sees hours + break split below) */}
           {canEdit && (
             <>
@@ -827,7 +891,7 @@ export default function ShiftPlannerPage() {
           )}
           <div style={{ fontSize: 11, width: "100%", color: "var(--gray)" }}>
             Mon–Fri <strong>{hoursByType.mf.toFixed(1)}h</strong> · Sat <strong>{hoursByType.sat.toFixed(1)}h</strong> · Sun <strong>{hoursByType.sun.toFixed(1)}h</strong> · PH <strong>{hoursByType.ph.toFixed(1)}h</strong> · Paid <strong>{weekSplit.paid.toFixed(1)}h</strong> · Unpaid <strong>{weekSplit.unpaid.toFixed(1)}h</strong>
-            <span style={{ marginLeft: 16 }}>Fortnight total: <strong>{fortnightHours.toFixed(1)}h</strong></span>
+            <span style={{ marginLeft: 16 }}>Fortnight paid total: <strong>{fortnightHours.toFixed(1)}h</strong></span>
           </div>
         </div>
       </div>
@@ -874,13 +938,21 @@ export default function ShiftPlannerPage() {
               </div>
             </div>
             {(() => {
-              // derived break readout — same deriveBreak rule as chips/Hours/footer (auto, no input)
-              const b = deriveBreak(form.start, form.end);
+              // EFFECTIVE break preview — area-driven from the selected station, and
+              // override-aware when editing a shift that carries breakOverrideMins (mirror
+              // the Ops form). DISPLAY ONLY — reuses effectiveBreak on a synthetic shift
+              // built from form state; the saveShift payload is untouched.
+              const editingShift = form.editId ? shifts.find((s) => s.id === form.editId) : null;
+              const b = effectiveBreak({ start: form.start, end: form.end, stationId: form.stationId, venueId: form.venueId, breakOverrideMins: editingShift?.breakOverrideMins });
+              const fArea = stations.find((s) => s.id === form.stationId && s.venueId === form.venueId)?.area || null;
+              const why = !fArea ? " (no station → no area → no auto break)" : (!areaGetsBreak(group, fArea) ? ` (${fArea}: breaks off)` : "");
               return (
                 <div style={{ fontSize: 11, color: "var(--gray)", margin: "2px 0 8px" }}>
                   {b.breakMins > 0
-                    ? `${b.paidHours.toFixed(1)}h paid · ${b.unpaidHours.toFixed(1)}h unpaid (${b.breakMins} min break auto-applied)`
-                    : `${b.grossHours.toFixed(1)}h · no break`}
+                    ? `${b.paidHours.toFixed(1)}h paid · ${b.unpaidHours.toFixed(1)}h unpaid (${b.breakMins} min break ${b.manual ? "· manual override" : `auto — ${fArea}`})`
+                    : b.manual
+                      ? `${b.grossHours.toFixed(1)}h · no break (manual override)`
+                      : `${b.grossHours.toFixed(1)}h · no auto break${why}`}
                 </div>
               );
             })()}
@@ -903,15 +975,32 @@ export default function ShiftPlannerPage() {
                 <div key={k}><div className="form-label">{k}</div><div style={{ fontSize: 13 }}>{v || "—"}</div></div>
               ))}
             </div>
-            {/* hours + DERIVED break split (same deriveBreak rule as chips/Hours column/footer) */}
+            {/* hours + EFFECTIVE break (manual override ?? area-derived) with its source */}
             <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 8 }}>
               {(() => {
-                const b = deriveBreak(shiftDetail.start, shiftDetail.end);
+                const b = effectiveBreak(shiftDetail);
+                const area = shiftAreaOf(shiftDetail);
+                const src = b.manual ? "manual override"
+                  : area ? (areaGetsBreak(group, area) ? `auto — ${area}` : `auto — ${area}: breaks off`)
+                  : "auto — no station/area";
                 return b.breakMins > 0
-                  ? `${b.paidHours.toFixed(1)}h paid · ${b.unpaidHours.toFixed(1)}h unpaid (${b.breakMins} min break)`
-                  : `${b.grossHours.toFixed(1)}h · no break`;
+                  ? `${b.grossHours.toFixed(1)}h gross · ${b.paidHours.toFixed(1)}h paid · ${b.unpaidHours.toFixed(1)}h unpaid (${b.breakMins} min break · ${src})`
+                  : `${b.grossHours.toFixed(1)}h gross · ${b.paidHours.toFixed(1)}h paid · no break (${src})`;
               })()}
             </div>
+            {/* manual break override — 0..60 in 15-min steps; "Automatic" clears the field so
+                the shift reverts to the area-derived value */}
+            {canEdit && (
+              <div className="form-group" style={{ marginTop: 10, marginBottom: 0 }}>
+                <label className="form-label">Break override</label>
+                <select className="form-input" style={{ width: 230 }}
+                  value={shiftDetail.breakOverrideMins != null ? String(shiftDetail.breakOverrideMins) : ""}
+                  onChange={(e) => setBreakOverride(shiftDetail, e.target.value === "" ? null : Number(e.target.value))}>
+                  <option value="">Automatic (use area rule)</option>
+                  {[0, 15, 30, 45, 60].map((m) => <option key={m} value={m}>{m} min{m === 0 ? " (no break)" : ""}</option>)}
+                </select>
+              </div>
+            )}
             {/* Punch — clock in / break / clock out; admins can edit the times */}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10, marginTop: 12 }}>
               <div className="form-label" style={{ marginBottom: 6 }}>Punch{canEdit ? " · admin can edit" : ""}</div>
