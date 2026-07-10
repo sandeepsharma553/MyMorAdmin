@@ -656,8 +656,8 @@ export default function StaffDirectoryPage() {
     // Venue state via venueState(): top-level state OR address.state, normalised to a code
     // ("Victoria" → "VIC"). A venue with no recognisable state has no detectable PH —
     // that shift honestly falls through to the plain Sat/Sun/Mon–Fri bucket.
-    // ROSTERED break split — LOCAL rule (mirrors ShiftPlannerPage.deriveBreak: gross > 5h →
-    // 30 min UNPAID; ≤5h → none). Gross comes from the SHARED rgUtils.shiftHours, which is
+    // ROSTERED break split — LOCAL rule (mirrors ShiftPlannerPage.deriveBreak: gross ≥ 5h →
+    // 30 min UNPAID; <5h → none). Gross comes from the SHARED rgUtils.shiftHours, which is
     // deliberately untouched (weeklyHours / StaffCapabilityCard / Ops mirror depend on it);
     // the split is computed here on top, display-only. Buckets stay gross (full span).
     let mf = 0, sat = 0, sun = 0, ph = 0, grossTot = 0, breakTot = 0;
@@ -665,7 +665,7 @@ export default function StaffDirectoryPage() {
       const d = shiftDateOf(x); if (!inPeriod(d)) return;
       const h = shiftHours(x);
       grossTot += h;
-      breakTot += h > 5 ? 30 : 0;
+      breakTot += h >= 5 ? 30 : 0;
       const dstr = d ? dkey(d) : "";
       const v = venues.find((vv) => vv.id === x.venueId);
       const vState = venueState(v);
@@ -706,7 +706,7 @@ export default function StaffDirectoryPage() {
           <Stat n={`${sun.toFixed(1)}h`} l="Sunday" />
           <Stat n={`${ph.toFixed(1)}h`} l="Public Holiday" />
         </div>
-        {/* rostered break split for the same period — derived (>5h → 30 min unpaid), display-only */}
+        {/* rostered break split for the same period — derived (≥5h → 30 min unpaid), display-only */}
         <div style={{ fontSize: 11, color: "var(--gray)", margin: "-8px 0 14px" }}>
           Rostered <strong>{grossTot.toFixed(1)}h</strong> · Breaks <strong>{breakTot} min</strong> · <strong>{paidTot.toFixed(1)}h</strong> paid · <strong>{unpaidTot.toFixed(1)}h</strong> unpaid
         </div>
@@ -954,7 +954,7 @@ export default function StaffDirectoryPage() {
 
       {/* Add modal */}
       {addOpen && (
-        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setAddOpen(false)}>
+        <div className="rg-modal-overlay">
           <div className="rg-modal" style={{ maxWidth: 600 }}>
             <div className="modal-head"><span className="modal-title">Add staff member</span><button className="modal-close" onClick={() => setAddOpen(false)}>✕</button></div>
             {/* Cascade: Name → Venue(s) → Role → Areas → Stations */}

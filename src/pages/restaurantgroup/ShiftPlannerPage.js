@@ -67,7 +67,7 @@ const shiftHours = (sh) => Math.max(0, parseTime(sh.end) - parseTime(sh.start));
 // (chips, hours column, footer) uses this derived value.
 const deriveBreak = (startStr, endStr) => {
   const grossHours = Math.max(0, parseTime(endStr) - parseTime(startStr));
-  const breakMins = grossHours > 5 ? 30 : 0;
+  const breakMins = grossHours >= 5 ? 30 : 0;
   const unpaidHours = breakMins / 60;
   return { grossHours, breakMins, unpaidHours, paidHours: Math.max(0, grossHours - unpaidHours) };
 };
@@ -929,7 +929,7 @@ export default function ShiftPlannerPage() {
             <div style={{ marginTop: 12 }}><div className="form-label">Notes</div><div style={{ fontSize: 13, color: shiftDetail.notes ? "var(--ink)" : "var(--gray)" }}>{shiftDetail.notes || "No notes"}</div></div>
             <div className="btn-row">
               {canEdit && <button className="btn btn-primary" onClick={() => openEdit(shiftDetail)}>Edit shift</button>}
-              {canEdit && <button className="btn btn-danger" onClick={async () => { await removeShift(shiftDetail); setShiftDetail(null); }}>Remove shift</button>}
+              {canEdit && <button className="btn btn-danger" onClick={async () => { if (window.confirm(`Remove ${shiftDetail.staffName}'s ${shiftDetail.start}–${shiftDetail.end} shift?`)) { await removeShift(shiftDetail); setShiftDetail(null); } }}>Remove shift</button>}
               <button className="btn" onClick={() => setShiftDetail(null)}>Close</button>
             </div>
           </div>
