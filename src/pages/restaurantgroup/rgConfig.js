@@ -47,6 +47,10 @@ export const DEFAULT_ROLES = ["Manager", "FOH Supervisor", "FOH In Charge", "FOH
 export const DEFAULT_AREAS = ["FOH", "BOH", "Mgmt"];
 // Employment types. Editable in Settings (group.empTypes[]); seed defaults.
 export const DEFAULT_EMP_TYPES = ["Casual", "Part-time", "Full-time", "Junior"];
+// Leave types. Editable in Settings (group.leaveTypes[]); seed defaults. "Other" is NOT
+// in this list — it is PERMANENT: the request forms always append it, and it stores
+// type:"Other" + typeOther:"<free text>" so history never depends on an editable label.
+export const DEFAULT_LEAVE_TYPES = ["Annual Leave", "Sick Leave", "Personal Leave", "Study Leave", "Unpaid Leave", "RDO", "Compassionate Leave"];
 export const SUGGESTED_STATIONS = {
   FOH: ["Counter", "Floor", "Barista", "Bar"],
   BOH: ["Grill", "Salad", "Food Prep", "Restock", "Fryer", "Dishwashing"],

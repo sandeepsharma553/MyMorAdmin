@@ -33,6 +33,11 @@ export const leaveStatusPill = (status) => {
   return "pill-amber";
 };
 
+// Display label for a leave request — "Other" shows its stored free text (typeOther,
+// Phase 4a). THE one shared copy (Phase 4c): planner grid/footer/guard, leave page,
+// calendar and notification bodies all use it.
+export const leaveLabel = (l) => (l?.type === "Other" ? (l?.typeOther || "Other") : (l?.type || ""));
+
 export const trainingStatusPill = (status) => {
   if (status === "Complete") return "pill-green";
   if (status === "Overdue") return "pill-red";

@@ -2,10 +2,13 @@ import React, { useMemo, useState } from "react";
 import { addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol } from "../../utils/restaurantGroupPaths";
-import { fullName, leaveTypePill, leaveStatusPill, avatarColor, initials, downloadCsv } from "./rgUtils";
+import { fullName, leaveTypePill, leaveStatusPill, leaveLabel, avatarColor, initials, downloadCsv } from "./rgUtils";
+import { resolveLeaveTypes } from "./staffStructureUtils";
 import { sendNotification } from "./notify";
 
-const TYPES = ["Annual Leave", "Sick Leave", "Personal Leave", "Study Leave", "Unpaid Leave", "RDO"];
+// Leave TYPES are owner-editable as of Phase 4a — resolveLeaveTypes(group) (Settings →
+// Leave types card), with a PERMANENT "Other" appended by the chooser that stores
+// type:"Other" + typeOther:"<free text>". The old hardcoded TYPES const is gone.
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const fmtRange = (s, e) => {
@@ -22,14 +25,16 @@ const daysBetween = (s, e) => {
 };
 
 export default function LeaveRequestsPage() {
-  const { groupId, staff, venues, leave, selectedVenue, matchVenue, showToast, can, me, myStaff, myScope, scopedStaff } = useRG();
+  const { groupId, group, staff, venues, leave, selectedVenue, matchVenue, showToast, can, me, myStaff, myScope, scopedStaff } = useRG();
   // Approving others' requests needs the `approve` permission. The owner/superadmin tier is
   // full-access and ALWAYS approves (even if their stored permissions predate the approve
   // level). Submitting stays scoped (see submit() — your own team only).
   const canApprove = can("leave", "approve") || myScope === "owner" || me?.type === "superadmin";
   const isEmployee = myScope === "staff";
   const actorName = me?.displayName || me?.name || me?.email || "Manager";
-  const [form, setForm] = useState({ venueId: "", staffId: isEmployee ? (myStaff?.id || "") : "", type: TYPES[0], start: "", end: "", reason: "" });
+  const leaveTypes = resolveLeaveTypes(group);
+  const typeOptions = [...leaveTypes, "Other"]; // "Other" is permanent — never in group.leaveTypes
+  const [form, setForm] = useState({ venueId: "", staffId: isEmployee ? (myStaff?.id || "") : "", type: "", typeOther: "", start: "", end: "", reason: "" });
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
   // venue → staff: staff options narrow to the chosen venue (managers/owners submit for their team)
   const venueStaffOptions = useMemo(
@@ -45,12 +50,24 @@ export default function LeaveRequestsPage() {
   );
   const pending = scoped.filter((l) => l.status === "Pending");
   const history = scoped.filter((l) => l.status !== "Pending");
+  // ── history grouped into per-type SECTIONS (Phase 4c) ── ONE "Other" section (custom
+  // texts show per-row via leaveLabel); rows inside keep the existing array order — there
+  // was no explicit sort before (context fan-out order), and that is preserved.
+  const historySections = useMemo(() => {
+    const map = new Map();
+    history.forEach((l) => {
+      const key = l.type === "Other" ? "Other" : (l.type || "—");
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(l);
+    });
+    return [...map.entries()];
+  }, [history]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const decide = async (l, status) => {
     try {
       await updateDoc(doc(venueCol(groupId, l.venueId, "leaveRequests"), l.id), { status, approvedBy: actorName, decidedAt: serverTimestamp() });
       showToast(status === "Approved" ? "Leave approved — blocked in shift planner" : "Leave declined — staff notified");
-      sendNotification(groupId, { to: l.staffId, type: "leave", title: `Leave ${status.toLowerCase()}`, body: `${l.type} ${l.dates} — ${status.toLowerCase()} by ${actorName}`, venueId: l.venueId, by: actorName });
+      sendNotification(groupId, { to: l.staffId, type: "leave", title: `Leave ${status.toLowerCase()}`, body: `${leaveLabel(l)} ${l.dates} — ${status.toLowerCase()} by ${actorName}`, venueId: l.venueId, by: actorName });
     } catch { showToast("Could not update request"); }
   };
 
@@ -58,6 +75,8 @@ export default function LeaveRequestsPage() {
     const staffId = isEmployee ? (myStaff?.id || "") : form.staffId;
     if (!staffId) return showToast("Select a staff member");
     if (!scopedIds.has(staffId)) return showToast("You can only submit leave for your own team");
+    if (!form.type) return showToast("Pick a leave type");
+    if (form.type === "Other" && !form.typeOther.trim()) return showToast('Describe the leave type for "Other"');
     if (!form.start) return showToast("Choose a start date");
     const st = staff.find((s) => s.id === staffId);
     // file the request under a venue the staff member actually belongs to; derive the
@@ -72,13 +91,14 @@ export default function LeaveRequestsPage() {
       await addDoc(venueCol(groupId, vid, "leaveRequests"), {
         staffId, staffName: st?.displayName || fullName(st),
         venue: venueName, venueId: vid, area: st?.area || (st?.role || "").split(" — ")[0] || "",
-        type: form.type, dates: fmtRange(form.start, form.end), days: daysBetween(form.start, form.end),
+        type: form.type, typeOther: form.type === "Other" ? form.typeOther.trim() : "",
+        dates: fmtRange(form.start, form.end), days: daysBetween(form.start, form.end),
         startDate: form.start, endDate: form.end || form.start, reason: form.reason.trim(),
         status: "Pending", approvedBy: "", createdAt: serverTimestamp(),
       });
       showToast("Leave request submitted — manager notified");
-      sendNotification(groupId, { to: "managers", type: "leave", title: "New leave request", body: `${st?.displayName || fullName(st)} · ${form.type} ${fmtRange(form.start, form.end)}`, venueId: vid, by: st?.displayName || fullName(st) });
-      setForm({ venueId: "", staffId: "", type: TYPES[0], start: "", end: "", reason: "" });
+      sendNotification(groupId, { to: "managers", type: "leave", title: "New leave request", body: `${st?.displayName || fullName(st)} · ${leaveLabel({ type: form.type, typeOther: form.typeOther })} ${fmtRange(form.start, form.end)}`, venueId: vid, by: st?.displayName || fullName(st) });
+      setForm({ venueId: "", staffId: "", type: "", typeOther: "", start: "", end: "", reason: "" });
     } catch { showToast("Could not submit request"); }
   };
 
@@ -102,7 +122,7 @@ export default function LeaveRequestsPage() {
               <div key={l.id} className="leave-card" style={{ borderColor: bg(l.type), background: bg(l.type) }}>
                 <div className="leave-avatar" style={{ background: avatarColor(st || { venue: l.venue }) }}>{initials(st || { name: l.staffName })}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>{l.staffName} <span className={`pill ${leaveTypePill(l.type)}`} style={{ marginLeft: 4 }}>{l.type}</span></div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>{l.staffName} <span className={`pill ${leaveTypePill(l.type)}`} style={{ marginLeft: 4 }}>{leaveLabel(l)}</span></div>
                   <div style={{ fontSize: 11, color: "var(--gray)" }}>{l.venue} · {l.area} · {l.dates} ({l.days} {l.days === 1 ? "day" : "days"})</div>
                   {l.reason && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}>"{l.reason}"</div>}
                 </div>
@@ -146,7 +166,13 @@ export default function LeaveRequestsPage() {
           </div>
           <div className="form-group">
             <label className="form-label">Leave type</label>
-            <select className="form-input" value={form.type} onChange={setF("type")}>{TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+            <select className="form-input" value={form.type} onChange={setF("type")}>
+              <option value="">Select type…</option>
+              {typeOptions.map((t) => <option key={t}>{t}</option>)}
+            </select>
+            {form.type === "Other" && (
+              <input className="form-input" style={{ marginTop: 6 }} value={form.typeOther} onChange={setF("typeOther")} placeholder="Describe the leave type (required)" />
+            )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={form.start} onChange={setF("start")} /></div>
@@ -159,16 +185,22 @@ export default function LeaveRequestsPage() {
 
       {/* History */}
       <div className="card">
-        <div className="card-head"><span className="card-title">Leave history</span><button className="btn btn-sm" onClick={() => { downloadCsv("leave-history.csv", [["Staff", "Venue", "Type", "Dates", "Days", "Status", "Approved by"], ...history.map((l) => [l.staffName, l.venue, l.type, l.dates, l.days, l.status, l.approvedBy || ""])]); showToast("Leave history exported (CSV)"); }}>Export</button></div>
+        <div className="card-head"><span className="card-title">Leave history</span><button className="btn btn-sm" onClick={() => { downloadCsv("leave-history.csv", [["Staff", "Venue", "Type", "Dates", "Days", "Status", "Approved by"], ...history.map((l) => [l.staffName, l.venue, leaveLabel(l), l.dates, l.days, l.status, l.approvedBy || ""])]); showToast("Leave history exported (CSV)"); }}>Export</button></div>
         <div style={{ overflowX: "auto" }}>
           <table className="data-table">
             <thead><tr><th>Staff</th><th>Venue</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Approved by</th></tr></thead>
             <tbody>
-              {history.map((l) => (
-                <tr key={l.id}>
-                  <td>{l.staffName}</td><td>{l.venue}</td><td>{l.type}</td><td>{l.dates}</td><td>{l.days}</td>
-                  <td><span className={`pill ${leaveStatusPill(l.status)}`}>{l.status}</span></td><td>{l.approvedBy || "—"}</td>
-                </tr>
+              {/* per-type sections (Phase 4c) — ONE "Other" section; CSV above stays flat */}
+              {historySections.map(([t, rows]) => (
+                <React.Fragment key={t}>
+                  <tr><td colSpan={7} style={{ padding: "6px 10px", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", textTransform: "uppercase", letterSpacing: 0.4 }}>{t} <span style={{ fontWeight: 400 }}>· {rows.length}</span></td></tr>
+                  {rows.map((l) => (
+                    <tr key={l.id}>
+                      <td>{l.staffName}</td><td>{l.venue}</td><td>{leaveLabel(l)}</td><td>{l.dates}</td><td>{l.days}</td>
+                      <td><span className={`pill ${leaveStatusPill(l.status)}`}>{l.status}</span></td><td>{l.approvedBy || "—"}</td>
+                    </tr>
+                  ))}
+                </React.Fragment>
               ))}
               {history.length === 0 && <tr><td colSpan={7} style={{ color: "var(--gray)" }}>No leave history yet.</td></tr>}
             </tbody>

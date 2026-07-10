@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { getDoc } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { staffPrivateDoc } from "../../utils/restaurantGroupPaths";
-import { fullName, weekKeyOf, weekDayIndex } from "./rgUtils";
+import { fullName, weekKeyOf, weekDayIndex, leaveLabel } from "./rgUtils";
 import { isJuniorType, isMinorDob, parseDob } from "./staffMinorUtils";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -167,7 +167,7 @@ export default function CalendarPage() {
               const items = [
                 ...bd.filter((s) => (isUnder18(s) ? cats.u18 : cats.bday)).map((s) => { const j = isUnder18(s); return { t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }; }),
                 ...(cats.shift ? sh.sort((a, b) => (a.start || "").localeCompare(b.start || "")).map((s) => ({ t: `${s.start}–${s.end} ${isStaff ? "" : nameOf(s.staffId)}${s.station ? ` · ${s.station}` : ""}`, bg: "var(--blue-light)", color: "var(--ink)" })) : []),
-                ...(cats.leave ? lv.map((l) => ({ t: `${isStaff ? "" : nameOf(l.staffId) + " "}${l.type}`, bg: "var(--amber-light)", color: "var(--ink)" })) : []),
+                ...(cats.leave ? lv.map((l) => ({ t: `${isStaff ? "" : nameOf(l.staffId) + " "}${leaveLabel(l)}`, bg: "var(--amber-light)", color: "var(--ink)" })) : []),
                 ...(cats.train ? tr.map((a) => ({ t: `${a.moduleTitle} due${isStaff ? "" : ` · ${nameOf(a.staffId)}`}`, bg: "#fee2e2", color: "#991b1b" })) : []),
               ];
               return (
@@ -192,7 +192,7 @@ export default function CalendarPage() {
             const items = [
               ...bd.filter((s) => (isUnder18(s) ? cats.u18 : cats.bday)).map((s) => { const j = isUnder18(s); return { type: "bday", t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d", title: j ? `${nameOf(s.id)} — turning 18` : `${nameOf(s.id)}'s birthday` }; }),
               ...(cats.shift ? sh.map((s) => ({ type: "shift", t: `${isStaff ? "" : nameOf(s.staffId) + " "}${s.start}–${s.end}`, bg: "var(--blue-light)", color: "var(--ink)", title: `${nameOf(s.staffId)} · ${shortRole(s.role)} · ${s.venue}` })) : []),
-              ...(cats.leave ? lv.map((l) => ({ type: "leave", t: `${isStaff ? "" : nameOf(l.staffId) + " "}${l.type}`, bg: "var(--amber-light)", color: "var(--ink)", title: `${nameOf(l.staffId)} · ${l.type}` })) : []),
+              ...(cats.leave ? lv.map((l) => ({ type: "leave", t: `${isStaff ? "" : nameOf(l.staffId) + " "}${leaveLabel(l)}`, bg: "var(--amber-light)", color: "var(--ink)", title: `${nameOf(l.staffId)} · ${leaveLabel(l)}` })) : []),
               ...(cats.train ? tr.map((a) => ({ type: "train", t: `${isStaff ? "" : nameOf(a.staffId) + " "}${a.moduleTitle} due`, bg: "#fee2e2", color: "#991b1b", title: `Training due: ${a.moduleTitle}` })) : []),
             ];
             return (
@@ -231,7 +231,7 @@ export default function CalendarPage() {
             {detail.sh.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Shifts</div>
               {detail.sh.map((s) => <div key={s.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span><strong>{s.start}–{s.end}</strong> · {nameOf(s.staffId)}</span><span style={{ color: "var(--gray)" }}>{shortRole(s.role)}{s.station ? ` · ${s.station}` : ""} · {s.venue}</span></div>)}</>}
             {detail.lv.length > 0 && <><div className="form-label" style={{ marginTop: 10 }}>Approved leave</div>
-              {detail.lv.map((l) => <div key={l.id} style={{ fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill pill-amber">{l.type}</span> {nameOf(l.staffId)} <span style={{ color: "var(--gray)" }}>· {l.dates}</span></div>)}</>}
+              {detail.lv.map((l) => <div key={l.id} style={{ fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill pill-amber">{leaveLabel(l)}</span> {nameOf(l.staffId)} <span style={{ color: "var(--gray)" }}>· {l.dates}</span></div>)}</>}
             {detail.tr.length > 0 && <><div className="form-label" style={{ marginTop: 10 }}>Training due</div>
               {detail.tr.map((a) => <div key={a.id} style={{ fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill pill-red">Due</span> {a.moduleTitle} <span style={{ color: "var(--gray)" }}>· {nameOf(a.staffId)}</span></div>)}</>}
             <div className="btn-row" style={{ marginTop: 14 }}><button className="btn" onClick={() => setDayOpen(null)}>Close</button></div>

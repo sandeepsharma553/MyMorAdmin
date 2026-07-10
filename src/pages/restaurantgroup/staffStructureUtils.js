@@ -1,4 +1,4 @@
-import { DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES } from "./rgConfig";
+import { DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES, DEFAULT_LEAVE_TYPES } from "./rgConfig";
 
 /* Pure helpers for the staff-structure (Area/Role/Station) foundation — no React,
  * no Firestore, so they're trivially unit-testable. */
@@ -7,6 +7,9 @@ import { DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES } from "./rgConfig";
 export const resolveAreas = (group) => (group?.areas?.length ? group.areas : DEFAULT_AREAS);
 export const resolveRoles = (group) => (group?.roles?.length ? group.roles : DEFAULT_ROLES);
 export const resolveEmpTypes = (group) => (group?.empTypes?.length ? group.empTypes : DEFAULT_EMP_TYPES);
+// Leave types (Phase 4a): owner-editable named types. "Other" is PERMANENT and appended by
+// the request forms — never part of this list.
+export const resolveLeaveTypes = (group) => (group?.leaveTypes?.length ? group.leaveTypes : DEFAULT_LEAVE_TYPES);
 
 // ── Per-area rostered-break flag + explicit display order — COMPANION fields on the group
 // doc (group.areaBreak: {areaName: bool}, group.areaOrder: [areaName]). group.areas STAYS a

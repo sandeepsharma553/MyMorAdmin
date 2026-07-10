@@ -4,7 +4,7 @@ import { useRG } from "./RGContext";
 import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS } from "./rgConfig";
-import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaGetsBreak, areaPinned, areaExclusive, orderedAreas, groupClusters } from "./staffStructureUtils";
+import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaGetsBreak, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes } from "./staffStructureUtils";
 import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS } from "./rgStockUtils";
 
 const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
@@ -271,6 +271,33 @@ export default function SettingsPage() {
     showToast("Cluster deleted");
   };
 
+  // ── Leave types (Phase 4a) ── group.leaveTypes = string[] (mirror Areas: whole-array
+  // writes; order here = chooser order, drag to reorder). "Other" is PERMANENT in the
+  // request forms — never stored in this list, never removable, always appended last.
+  const leaveTypes = resolveLeaveTypes(group);
+  const [newLeaveType, setNewLeaveType] = useState("");
+  const [dragLeave, setDragLeave] = useState(null); // index being dragged
+  const saveLeaveTypes = async (next) => {
+    try { await updateDoc(groupDoc(groupId), { leaveTypes: next }); }
+    catch { showToast("Could not save leave types"); }
+  };
+  const addLeaveType = async () => {
+    const name = newLeaveType.trim();
+    if (!name) return;
+    if (name.toLowerCase() === "other") return showToast('"Other" is built-in — it always appears at the end of the chooser');
+    const next = addToList(leaveTypes, name);
+    setNewLeaveType("");
+    if (next === leaveTypes) return; // duplicate — nothing to save
+    await saveLeaveTypes(next); showToast("Leave type added");
+  };
+  const removeLeaveType = async (t) => { await saveLeaveTypes(removeFromList(leaveTypes, t)); };
+  const dropLeaveType = async (to) => {
+    const from = dragLeave; setDragLeave(null);
+    if (from === null || from === to) return;
+    const next = [...leaveTypes]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
+    await saveLeaveTypes(next);
+  };
+
   // ── Employment types ── (same shape as Areas/Roles: an editable group-doc list)
   const [newEmpType, setNewEmpType] = useState("");
   const saveEmpTypes = async (next) => {
@@ -508,6 +535,25 @@ export default function SettingsPage() {
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <input className="form-input" value={newCluster} onChange={(e) => setNewCluster(e.target.value)} placeholder="New cluster (e.g. Sydney CBD)" onKeyDown={(e) => e.key === "Enter" && addCluster()} />
                   <button className="btn btn-primary" onClick={addCluster}>Add</button>
+                </div>
+              )}
+            </div>
+            {/* LEAVE TYPES (Phase 4a) — owner-editable chooser list for leave requests.
+                "Other + free text" is permanent/appended by the forms and NOT in this list. */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Leave types</span><span className="card-sub">Offered in leave requests — drag to reorder · "Other + free text" is always available and not listed here</span></div></div>
+              {leaveTypes.map((t, i) => (
+                <div key={t} className="staff-meta-row" draggable={editable}
+                  onDragStart={() => setDragLeave(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropLeaveType(i)} onDragEnd={() => setDragLeave(null)}
+                  style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)", cursor: editable ? "grab" : "default", opacity: dragLeave === i ? 0.5 : 1 }}>
+                  <span style={{ fontSize: 13 }}>{editable && <span style={{ color: "var(--gray)", marginRight: 6 }} title="Drag to reorder">⠿</span>}{t}</span>
+                  {editable && leaveTypes.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the chooser (existing requests keep their stored type)" onClick={() => removeLeaveType(t)}>✕</button>}
+                </div>
+              ))}
+              {editable && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <input className="form-input" value={newLeaveType} onChange={(e) => setNewLeaveType(e.target.value)} placeholder="New leave type (e.g. Parental Leave)" onKeyDown={(e) => e.key === "Enter" && addLeaveType()} />
+                  <button className="btn btn-primary" onClick={addLeaveType}>Add</button>
                 </div>
               )}
             </div>

@@ -3,7 +3,7 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot, deleteF
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
-import { fullName, downloadCsv, weekKeyOf, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS } from "./rgUtils";
+import { fullName, downloadCsv, weekKeyOf, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel } from "./rgUtils";
 import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import StaffCapabilityCard from "./StaffCapabilityCard";
@@ -235,6 +235,13 @@ export default function ShiftPlannerPage() {
   // + new cluster-scoped rows, _src-tagged). INFORMATIONAL ONLY (Phase 3c): each renders
   // as one read-only chip; the six-state status machine is gone.
   const availAll = (staffId, date) => (availability || []).filter((a) => a.staffId === staffId && a.date === date);
+  // ── Approved leave (Phase 4b) ── read-only grid block per covered day. SAME match as
+  // the saveShift guard below (status "Approved", staffId, startDate<=day<=endDate) —
+  // pending/declined leave never matches, so it never blocks a cell. The guard itself is
+  // UNCHANGED; this is the visual counterpart.
+  const leaveFor = (staffId, dateKey) =>
+    (leave || []).find((l) => l.status === "Approved" && l.staffId === staffId
+      && (l.startDate || "") <= dateKey && (l.endDate || l.startDate || "") >= dateKey) || null;
 
   // PAID hours (gross − effective break) — the payroll figure everywhere on this page.
   const staffHours = (staffId) =>
@@ -275,6 +282,23 @@ export default function ShiftPlannerPage() {
     a.paid += b.paidHours; a.unpaid += b.unpaidHours;
     return a;
   }, { paid: 0, unpaid: 0 }), [weekShifts, stations, group]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ── Approved leave this week, per type (Phase 4c) ── VISIBLE-ROSTER staff only; days
+  // CLAMPED to the shown week (a multi-week leave counts only the 7 visible dates). All
+  // "Other" requests group under ONE "Other" bucket regardless of their custom text.
+  const weekLeave = useMemo(() => {
+    const ids = new Set(rows.map((r) => r.id));
+    const byType = {};
+    (leave || []).forEach((l) => {
+      if (l.status !== "Approved" || !ids.has(l.staffId)) return;
+      const s = l.startDate || "", e = l.endDate || l.startDate || "";
+      const days = weekDates.filter((d) => s <= d && e >= d).length;
+      if (!days) return;
+      const key = l.type === "Other" ? "Other" : (l.type || "—");
+      byType[key] = (byType[key] || 0) + days;
+    });
+    return byType;
+  }, [leave, rows, weekDates]);
+
   // Fortnight total: this week + the next week. Build nextWk via weekKeyOf(nextMonday)
   // (same path shifts are keyed with) so it matches stored weekKeys exactly (AEST Issue-18).
   const nextWk = useMemo(() => { const nextMonday = new Date(monday); nextMonday.setDate(monday.getDate() + 7); return weekKeyOf(nextMonday); }, [monday]);
@@ -421,7 +445,7 @@ export default function ShiftPlannerPage() {
     const sd = new Date(`${wk}T00:00:00`); sd.setDate(sd.getDate() + dayIdx);
     const shiftDate = `${sd.getFullYear()}-${String(sd.getMonth() + 1).padStart(2, "0")}-${String(sd.getDate()).padStart(2, "0")}`;
     const onLeave = (leave || []).find((l) => l.status === "Approved" && l.staffId === form.staffId && (l.startDate || "") <= shiftDate && (l.endDate || l.startDate || "") >= shiftDate);
-    if (onLeave) return showToast(`${fullName(st)} is on approved ${onLeave.type} that day (${onLeave.dates}) — on leave across all venues.`);
+    if (onLeave) return showToast(`${fullName(st)} is on approved ${leaveLabel(onLeave)} that day (${onLeave.dates}) — on leave across all venues.`);
     const type = parseTime(form.start) >= 15 ? "evening" : "morning";
     const station = stations.find((s) => s.id === form.stationId && s.venueId === venue.id);
     const editing = form.editId ? shifts.find((s) => s.id === form.editId) : null;
@@ -533,9 +557,15 @@ export default function ShiftPlannerPage() {
                     // legacy postings are venue-scoped; new cluster rows are staffer-wide info
                     const avs = availAll(s.id, weekDates[day]).filter((a) => a._src === "cluster" || a.venueId === vid);
                     const closedDay = vClosed(day); // muted cell + no "+"; existing shifts still render
+                    const lv = leaveFor(s.id, weekDates[day]); // APPROVED leave (Phase 4b) — read-only block, no "+"
                     return (
                       <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top", ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          {lv && (
+                            <div key={`leave-${lv.id}`} style={{ background: "var(--amber-light, #fffbeb)", border: "1px solid #f59e0b", color: "#92400e", fontSize: 10, fontWeight: 600, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={`Approved leave — ${leaveLabel(lv)}${lv.dates ? ` (${lv.dates})` : ""}`}>
+                              On leave: {leaveLabel(lv)}
+                            </div>
+                          )}
                           {shs.map((sh) => (
                             <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff" }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                               <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
@@ -544,7 +574,7 @@ export default function ShiftPlannerPage() {
                             </div>
                           ))}
                           {avs.map((a) => renderAvailChip(a))}
-                          {canEdit && !closedDay && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day, vid)}>+</div>}
+                          {canEdit && !closedDay && !lv && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day, vid)}>+</div>}
                         </div>
                       </td>
                     );
@@ -580,9 +610,15 @@ export default function ShiftPlannerPage() {
         const date = weekDates[day];
         const avs = availAll(s.id, date); // ALL availability docs for this date (one per venue)
         const closedDay = dayClosedForSelected(day); // muted cell + no "+"; existing shifts still render
+        const lv = leaveFor(s.id, date); // APPROVED leave covering this day (Phase 4b) — read-only block, no "+"
         return (
           <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top", ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {lv && (
+                <div key={`leave-${lv.id}`} style={{ background: "var(--amber-light, #fffbeb)", border: "1px solid #f59e0b", color: "#92400e", fontSize: 10, fontWeight: 600, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={`Approved leave — ${leaveLabel(lv)}${lv.dates ? ` (${lv.dates})` : ""}`}>
+                  On leave: {leaveLabel(lv)}
+                </div>
+              )}
               {shs.map((sh) => (
                 <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff", boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                   <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
@@ -591,8 +627,8 @@ export default function ShiftPlannerPage() {
                 </div>
               ))}
               {avs.map((a) => renderAvailChip(a))}
-              {canEdit && !closedDay && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 8px" }} onClick={() => openAdd(s.id, day)}>+</div>}
-              {!canEdit && shs.length === 0 && <div className="shift-cell shift-off" style={{ textAlign: "center", opacity: 0.5 }}>·</div>}
+              {canEdit && !closedDay && !lv && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 8px" }} onClick={() => openAdd(s.id, day)}>+</div>}
+              {!canEdit && shs.length === 0 && !lv && <div className="shift-cell shift-off" style={{ textAlign: "center", opacity: 0.5 }}>·</div>}
             </div>
           </td>
         );
@@ -767,6 +803,12 @@ export default function ShiftPlannerPage() {
             Mon–Fri <strong>{hoursByType.mf.toFixed(1)}h</strong> · Sat <strong>{hoursByType.sat.toFixed(1)}h</strong> · Sun <strong>{hoursByType.sun.toFixed(1)}h</strong> · PH <strong>{hoursByType.ph.toFixed(1)}h</strong> · Paid <strong>{weekSplit.paid.toFixed(1)}h</strong> · Unpaid <strong>{weekSplit.unpaid.toFixed(1)}h</strong>
             <span style={{ marginLeft: 16 }}>Fortnight paid total: <strong>{fortnightHours.toFixed(1)}h</strong></span>
           </div>
+          {/* per-type approved-leave days for the visible week (Phase 4c) — only types present */}
+          {Object.keys(weekLeave).length > 0 && (
+            <div style={{ fontSize: 11, width: "100%", color: "var(--gray)" }}>
+              On leave this week (days): {Object.entries(weekLeave).map(([t, n]) => `${t}: ${n}`).join(" · ")}
+            </div>
+          )}
         </div>
       </div>
       </>
