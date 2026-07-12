@@ -9,6 +9,10 @@ import { initials } from "./rgUtils";
 // approve ranks above edit; used today for leave approval. Selectable per-person/module
 // in the matrix; on modules that don't check it, approve simply acts as edit-or-higher.
 const LEVEL_OPTS = [["none", "✕ None"], ["view", "👁 View"], ["edit", "✏ Edit"], ["approve", "✓ Approve"]];
+// Staff Directory only (Phase 5a): "self" = own read-only profile. Note "self" is also
+// the derived FLOOR — a stored "none" still behaves as self at runtime (hasLevel floors
+// the staff module), so None and Self differ only in what the owner has declared.
+const LEVEL_OPTS_STAFF = [["none", "✕ None"], ["self", "👤 Self (own profile)"], ["view", "👁 View"], ["edit", "✏ Edit"], ["approve", "✓ Approve"]];
 
 export default function UserManagementPage() {
   const { groupId, group, staff, venues, can, showToast, me } = useRG();
@@ -154,7 +158,7 @@ export default function UserManagementPage() {
               <div key={m.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                 <span style={{ fontSize: 12, fontWeight: 500 }}>{m.label}</span>
                 <select className="form-input" style={{ width: 130 }} value={permDraft[m.key] || "none"} onChange={(e) => setPermDraft((p) => ({ ...p, [m.key]: e.target.value }))}>
-                  {LEVEL_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  {(m.key === "staff" ? LEVEL_OPTS_STAFF : LEVEL_OPTS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>
             ))}

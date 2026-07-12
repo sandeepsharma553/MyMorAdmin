@@ -142,7 +142,9 @@ function Shell({ children }) {
 
   const [venueMgrOpen, setVenueMgrOpen] = useState(false);
 
-  const visibleNav = useMemo(() => NAV.filter((n) => can(n.permKey || n.key, "view")), [can]);
+  // The staff item needs only "self" (Phase 5a — every group member may open their OWN
+  // read-only profile there); every other item still requires at least "view".
+  const visibleNav = useMemo(() => NAV.filter((n) => can(n.permKey || n.key, n.key === "staff" ? "self" : "view")), [can]);
   // presentational split into two labelled groups; unlisted keys default to Operations
   const staffNav = useMemo(() => visibleNav.filter((n) => STAFF_NAV_KEYS.includes(n.key)), [visibleNav]);
   const docsNav = useMemo(() => visibleNav.filter((n) => DOCS_NAV_KEYS.includes(n.key)), [visibleNav]);

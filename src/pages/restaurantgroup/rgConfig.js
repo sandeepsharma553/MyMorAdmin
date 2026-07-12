@@ -58,11 +58,13 @@ export const SUGGESTED_STATIONS = {
 
 export const RG_MODULE_KEYS = RG_MODULES.map((m) => m.key);
 
-export const LEVELS = { NONE: "none", VIEW: "view", EDIT: "edit", APPROVE: "approve" };
+export const LEVELS = { NONE: "none", SELF: "self", VIEW: "view", EDIT: "edit", APPROVE: "approve" };
 // Ranked, monotonic. `approve` sits ABOVE `edit`: because hasLevel() is "has AT LEAST
-// this level" (order[have] >= order[required]), anyone with approve (3) automatically
-// passes edit (2)/view (1) checks, while can(key,"approve") admits only approve.
-const order = { none: 0, view: 1, edit: 2, approve: 3 };
+// this level" (order[have] >= order[required]), anyone with approve automatically
+// passes edit/view checks, while can(key,"approve") admits only approve.
+// "self" (Phase 5a) sits strictly BETWEEN none and view: it opens ONLY own-profile
+// surfaces (can(key,"self")) and passes no existing >= "view" / >= "edit" check.
+const order = { none: 0, self: 1, view: 2, edit: 3, approve: 4 };
 
 // Four roles mirroring the prototype hierarchy.
 export const RG_ROLES = [
@@ -105,8 +107,14 @@ export const SIGNED_UPLOAD_ENABLED = true;
 export const roleMeta = (role) => RG_ROLES.find((r) => r.key === role) || RG_ROLES[3];
 
 // Does a permission map satisfy a required level for a module?
+// Phase 5a: the STAFF module has a derived "self" FLOOR — every group member counts as
+// at least staff:"self" (own profile only) even when their STORED map says "none"
+// (stored maps are full snapshots, so a default-map change alone would never reach
+// existing users). Floored here at resolve time: zero Firestore writes, and since
+// self < view, no staff-list gate or other module's check changes behaviour.
 export const hasLevel = (perms, moduleKey, required = "view") => {
-  const have = perms?.[moduleKey] || "none";
+  let have = perms?.[moduleKey] || "none";
+  if (moduleKey === "staff" && order[have] < order.self) have = "self";
   return order[have] >= order[required];
 };
 
@@ -114,5 +122,6 @@ export const levelMeta = (lvl) => {
   if (lvl === "approve") return { label: "✓ Approve", color: "var(--red)" };
   if (lvl === "edit") return { label: "✏ Edit", color: "var(--green)" };
   if (lvl === "view") return { label: "👁 View", color: "var(--blue)" };
+  if (lvl === "self") return { label: "👤 Self", color: "var(--amber)" };
   return { label: "✕ None", color: "var(--gray)" };
 };

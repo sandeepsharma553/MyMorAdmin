@@ -21,12 +21,14 @@ import SentContractsPage from "../pages/restaurantgroup/SentContractsPage";
 import ContractTemplatesPage from "../pages/restaurantgroup/ContractTemplatesPage";
 import ProtectedRoute from "../pages/restaurantgroup/ProtectedRoute";
 
-const P = (moduleKey, El) => <ProtectedRoute moduleKey={moduleKey}>{El}</ProtectedRoute>;
+const P = (moduleKey, El, level) => <ProtectedRoute moduleKey={moduleKey} level={level}>{El}</ProtectedRoute>;
 
 export default function RestaurantGroupRoutes() {
   return (
     <Routes>
-      <Route path="/rg/staff" element={P("staff", <StaffDirectoryPage />)} />
+      {/* staff needs only "self" (Phase 5a): a self-tier user reaches the page but sees
+          ONLY their own read-only profile — the page itself scopes on can("staff","view"). */}
+      <Route path="/rg/staff" element={P("staff", <StaffDirectoryPage />, "self")} />
       <Route path="/rg/shifts" element={P("shifts", <ShiftPlannerPage />)} />
       <Route path="/rg/leave" element={P("leave", <LeaveRequestsPage />)} />
       {/* staff-SELF availability posting + manager-proposal accept/decline (fills the RG_MODULES slot) */}

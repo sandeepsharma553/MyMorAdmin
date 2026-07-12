@@ -98,8 +98,10 @@ const blankForm = (defaultVenue) => ({
 });
 
 export default function StaffDirectoryPage() {
-  const { groupId, group, staff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, areas, empTypes, selectedVenue, showToast, can, me } = useRG();
+  const { groupId, group, staff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, areas, empTypes, selectedVenue, showToast, can, me, myStaff } = useRG();
   const canEdit = can("staff", "edit");
+  // Phase 5a: false for the "self" tier — they get ONLY their own read-only profile below.
+  const canViewAll = can("staff", "view");
   // Sensitive payroll (TFN/bank/super) is restricted to owner/storeAdmin (and super),
   // matching the Firestore rule on staff/{id}/private. Managers manage staff but not payroll.
   const canPayroll = ["owner", "storeAdmin"].includes(me?.groupRole) || me?.type === "superadmin";
@@ -881,6 +883,57 @@ export default function StaffDirectoryPage() {
       </div>
     );
   };
+
+  // ── Phase 5a "self" tier (staff ≥ self but < view): ONLY their own profile, read-only.
+  // No list, cards, search, counts or Add button; no edit affordances (self-editing is 5b).
+  // "Own" = the RGContext myStaff match (staff.adminUid == uid OR staff.email == login email);
+  // unresolvable (PIN-only, no link) shows a clear message — never other people's data.
+  if (!canViewAll) {
+    const s = myStaff;
+    const KV = ({ k, v }) => (
+      <div className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 13, padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+        <span style={{ color: "var(--gray)" }}>{k}</span><span style={{ textAlign: "right" }}>{v || "—"}</span>
+      </div>
+    );
+    return (
+      <div style={{ maxWidth: 620, margin: "24px auto" }}>
+        {!s ? (
+          <div className="card">
+            <div className="card-head"><span className="card-title">My profile</span></div>
+            <div style={{ fontSize: 13, color: "var(--gray)" }}>
+              Your login isn’t linked to a staff profile yet, so there’s nothing to show here.
+              Ask a manager to link your email to your profile in the Staff Directory.
+            </div>
+          </div>
+        ) : (
+          <div className="card">
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
+              <div className="staff-avatar" style={{ background: avatarColor(s) }}>{initials(s)}</div>
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 700 }}>{s.displayName || s.name}</div>
+                <div style={{ fontSize: 12, color: "var(--gray)" }}>{s.role}{s.status && s.status !== "Active" ? ` · ${s.status}` : ""}</div>
+              </div>
+            </div>
+            <KV k="Venues" v={(s.venueNames || []).join(", ")} />
+            <KV k="Areas" v={staffAreas(s).join(", ")} />
+            <KV k="Stations" v={(s.stationNames || []).join(", ")} />
+            <KV k="Employment" v={s.type} />
+            <KV k="Phone" v={s.phone} />
+            <KV k="Start date" v={s.start} />
+            <KV k="POS PIN" v={s.pin} />
+            <KV k="Rostered this week" v={`${weeklyHours(s.id, shifts)}h`} />
+            <div className="form-label" style={{ marginTop: 12 }}>Certificates</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {(s.certs || []).length
+                ? s.certs.map((c, i) => { const st = certStatus(c.expiry); return <span key={i} className={`pill ${st.pill}`}>{c.name}{c.expiry ? ` · ${c.expiry}` : ""}{st.note ? ` (${st.note})` : ""}</span>; })
+                : <span style={{ fontSize: 12, color: "var(--gray)" }}>None recorded</span>}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 14 }}>Read-only — ask a manager to update any of these details.</div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
