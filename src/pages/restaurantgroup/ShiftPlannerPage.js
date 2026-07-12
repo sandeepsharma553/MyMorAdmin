@@ -325,7 +325,13 @@ export default function ShiftPlannerPage() {
   // "No area assigned". The area filter shows sections whose MEMBERSHIP includes the picked
   // area — Multi-area appears under any area one of its members holds (whole section, members
   // unfiltered); an exclusive member's other areas do NOT leak into other filters.
-  const groupedRows = useMemo(() => {
+  // Phase-2 grouping, PARAMETERISED (split-view fix): the exact grouping body, over an
+  // arbitrary staff `list`; `areasOf(s)` supplies the areas to group a staffer by (main
+  // grid: the cross-venue union staffAreas(s); split view: that COLUMN venue's areas).
+  // Closes over group/areaFilter/staffSort so every caller gets the same pinned →
+  // singles → Multi-area → No-area order, exclusive capture, and area filter. Callers
+  // apply the station filter (staffAtStation) to `list` themselves.
+  const groupRowsFor = (list, areasOf) => {
     const ordered = orderedAreas(group);
     const idx = (a) => { const i = ordered.indexOf(a); return i === -1 ? ordered.length : i; };
     const sections = new Map();
@@ -335,12 +341,12 @@ export default function ShiftPlannerPage() {
       areas.forEach((a) => g.areaSet.add(a));
       g.members.push(s);
     };
-    rows.filter((s) => staffAtStation(s, effStation, weekShifts)).forEach((s) => {
-      const list = [...new Set(staffAreas(s).filter(Boolean))];
-      const exclusives = list.filter((a) => areaExclusive(group, a)).sort((a, b) => (idx(a) - idx(b)) || a.localeCompare(b));
+    list.forEach((s) => {
+      const sAreas = [...new Set(areasOf(s).filter(Boolean))];
+      const exclusives = sAreas.filter((a) => areaExclusive(group, a)).sort((a, b) => (idx(a) - idx(b)) || a.localeCompare(b));
       if (exclusives.length) push(`area:${exclusives[0]}`, exclusives[0], [exclusives[0]], s);
-      else if (list.length === 1) push(`area:${list[0]}`, list[0], list, s);
-      else if (list.length > 1) push("__multi__", "Multi-area", list, s);
+      else if (sAreas.length === 1) push(`area:${sAreas[0]}`, sAreas[0], sAreas, s);
+      else if (sAreas.length > 1) push("__multi__", "Multi-area", sAreas, s);
       else push("__none__", "No area assigned", [], s);
     });
     const rank = (g) => {
@@ -357,7 +363,11 @@ export default function ShiftPlannerPage() {
         for (let i = 0; i < Math.max(ra.length, rb.length); i++) { const d = (ra[i] ?? -1) - (rb[i] ?? -1); if (d) return d; }
         return a.label.localeCompare(b.label);
       });
-  }, [rows, areaFilter, effStation, weekShifts, sortBy, group]); // eslint-disable-line react-hooks/exhaustive-deps
+  };
+  const groupedRows = useMemo(
+    () => groupRowsFor(rows.filter((s) => staffAtStation(s, effStation, weekShifts)), (s) => staffAreas(s)),
+    [rows, areaFilter, effStation, weekShifts, sortBy, group] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // #5 distinct staff currently shown in the main grid (across all groups) — the basis
   // for the bottom "Staff rostered" headcount row (derived, no extra query).
@@ -527,8 +537,21 @@ export default function ShiftPlannerPage() {
   // Cell shifts scoped to a venue (for the split comparison view) — START-time sorted (#1).
   const cellShiftsV = (staffId, day, vid) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day && (vid === "all" || sh.venueId === vid)).sort((a, b) => parseTime(a.start) - parseTime(b.start));
   const VenueGrid = ({ vid }) => {
-    // #2 hide Inactive + #3 A→Z, same as the main grid (separate source: scopedStaff).
-    const gridRows = scopedStaff.filter((s) => staffInVenue(s, vid) && !hasLeft(s)).sort(staffSort);
+    // Phase-2 SECTIONS per column (split-view fix): the same grouping/order as the main
+    // grid via groupRowsFor — and the area + station filters are now honoured here too
+    // (this path previously ignored both). Each staffer groups by THIS venue's areas
+    // (venueRoles[vid].areas); legacy docs with no venueRoles entry for the venue fall
+    // back to the cross-venue union staffAreas(s), NOT to "No area assigned".
+    // #2 hide Inactive + #3 sort control still apply (separate source: scopedStaff).
+    const areasOfVenue = (s) => {
+      const perVenue = s.venueRoles?.[vid]?.areas;
+      return (perVenue && perVenue.length) ? perVenue : staffAreas(s);
+    };
+    const gridSections = groupRowsFor(
+      scopedStaff.filter((s) => staffInVenue(s, vid) && !hasLeft(s) && staffAtStation(s, effStation, weekShifts)),
+      areasOfVenue
+    );
+    const gridRows = gridSections.flatMap((g) => g.members); // footer hours + empty state
     const gh = gridRows.reduce((a, s) => a + weekShifts.filter((sh) => sh.staffId === s.id && (vid === "all" || sh.venueId === vid)).reduce((x, sh) => x + effectiveBreak(sh).paidHours, 0), 0);
     // split view is always per-venue → closed-day greying keys off vid directly
     const vClosed = (day) => venues.find((v) => v.id === vid)?.hours?.[HOURS_KEYS[day]]?.closed === true;
@@ -543,7 +566,15 @@ export default function ShiftPlannerPage() {
               </tr>
             </thead>
             <tbody>
-              {gridRows.map((s) => (
+              {/* section header rows — same format as the main grid, incl. the member count */}
+              {gridSections.map((g) => (
+                <React.Fragment key={g.key}>
+                  <tr>
+                    <td colSpan={8} style={{ padding: "6px 10px", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", borderBottom: "0.5px solid var(--border)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                      {g.label} <span style={{ fontWeight: 400 }}>· {g.members.length}</span>
+                    </td>
+                  </tr>
+                  {g.members.map((s) => (
                 <tr key={s.id}>
                   <td style={{ padding: "6px 10px", borderBottom: "0.5px solid var(--gray-light)" }}>
                     <div style={{ fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--red)" }} onClick={() => setCapStaff(s)} title="View capability">{fullName(s)}</div>
@@ -580,6 +611,8 @@ export default function ShiftPlannerPage() {
                     );
                   })}
                 </tr>
+                  ))}
+                </React.Fragment>
               ))}
               {gridRows.length === 0 && <tr><td colSpan={8} style={{ padding: 16, color: "var(--gray)", fontSize: 12 }}>No staff here.</td></tr>}
             </tbody>
