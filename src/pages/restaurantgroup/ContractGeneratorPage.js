@@ -7,6 +7,7 @@ import { isManager } from "./rgConfig";
 import { isMinorDob } from "./staffMinorUtils";
 import contractFill from "./contractFill";
 import { awardForVenue, isAwardUsableForLabour, staffIsCasual } from "./rgComplianceUtils";
+import { rateSplitFromPrivate } from "./staffStructureUtils";
 
 /* ============================================================================
    Contract Generator (Phase 1, Step 4) — READ + RENDER ONLY.
@@ -54,7 +55,7 @@ const EMPLOYEE_SEND_ENABLED = true;
 const WRITEBACK_MAP = {
   employee_address: "address",
   classification_level: "classificationLevel",
-  hourly_rate: "rate",
+  hourly_rate: "hourlyRate", // rate split (Bug 1) — writes the NEW key, never resurrects legacy `rate`
   contracted_min_hours: "contractedMinHours",
 };
 
@@ -109,6 +110,11 @@ function buildValues(staff, priv, defaults, overrides, entities, venues, awardRa
   // Award rate is gated on verified===true (mirror isAwardUsableForLabour) — unverified contributes nothing.
   const staffVenue = (venues || []).find((v) => v.id === (staff?.venueIds || [])[0]);
   const rateAward = isAwardUsableForLabour(awardForVenue(staffVenue, awardRates)) ? awardForVenue(staffVenue, awardRates) : null;
+  // Rate split (Bug 1): the staff-record hourly figure, via the shared absent-key fallback
+  // (new hourlyRate wins even when ""; only a pre-split doc falls back to legacy `rate`,
+  // bucketed by legacy payBasis). Salaried staff resolve to "" here — there is no
+  // annual-salary token, so they fall through to award rate / empty exactly as before.
+  const privHourly = rateSplitFromPrivate(priv).hourlyRate || "";
   const base = {
     employee_name: staff?.displayName || staff?.name || "",
     employment_type: staff?.type || "",
@@ -116,7 +122,7 @@ function buildValues(staff, priv, defaults, overrides, entities, venues, awardRa
     location_basis: multi ? "Multiple Locations" : "Single Location",
     employee_address: priv?.address || "",
     classification_level: priv?.classificationLevel || "",
-    hourly_rate: priv?.rate || "",
+    hourly_rate: privHourly,
     contracted_min_hours: priv?.contractedMinHours || "",
     employer_name: entity ? entity.name : (defaults?.employerName || ""),
     // mirrors employer_name: the venue-mapped entity's address, else contractDefaults.employerAddress.
@@ -140,7 +146,7 @@ function buildValues(staff, priv, defaults, overrides, entities, venues, awardRa
   // Reactive to the SELECTED (possibly overridden) classification level.
   if (overrides.hourly_rate == null || overrides.hourly_rate === "") {
     const awardRate = awardRateForLevel(rateAward, merged.classification_level, staffIsCasual(staff));
-    merged.hourly_rate = (priv?.rate || "") || awardRate || "";
+    merged.hourly_rate = privHourly || awardRate || "";
   }
   return merged;
 }
@@ -528,7 +534,7 @@ export default function ContractGeneratorPage() {
           const rate = values.hourly_rate; // the exact value that will be written onto the contract
           const hasRate = rate != null && String(rate).trim() !== "";
           const overrideSet = overrides.hourly_rate != null && String(overrides.hourly_rate).trim() !== "";
-          const manualRate = priv?.rate != null && String(priv.rate).trim() !== "";
+          const manualRate = String(rateSplitFromPrivate(priv).hourlyRate || "").trim() !== ""; // rate split (Bug 1) — same absent-key fallback as buildValues
           const awardVerified = isAwardUsableForLabour(staffAward);
           const awardRate = awardVerified ? awardRateForLevel(staffAward, values.classification_level, staffIsCasual(selStaff)) : null;
           let source, warn = false;

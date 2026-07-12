@@ -4,7 +4,7 @@ import { useRG } from "./RGContext";
 import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS } from "./rgConfig";
-import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaGetsBreak, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes } from "./staffStructureUtils";
+import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaGetsBreak, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, empTypeIsSalaried } from "./staffStructureUtils";
 import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS } from "./rgStockUtils";
 
 const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
@@ -311,6 +311,14 @@ export default function SettingsPage() {
     await saveEmpTypes(next); showToast("Employment type added");
   };
   const removeEmpType = async (t) => { await saveEmpTypes(removeFromList(empTypes, t)); };
+  // Salary/Hourly per employment type — companion map beside empTypes (mirrors the Areas
+  // card's Break toggle exactly: plain map keyed by the type NAME, whole-value write).
+  // Unset key → seed default (only "Full-time" salaried) via empTypeIsSalaried.
+  const toggleEmpTypeSalaried = async (t) => {
+    const next = { ...(group?.empTypeSalaried || {}), [t]: !empTypeIsSalaried(group, t) };
+    try { await updateDoc(groupDoc(groupId), { empTypeSalaried: next }); }
+    catch { showToast("Could not save pay basis"); }
+  };
 
   // ── Certificates ── (owner-editable list; consumed by the Staff cert picker)
   const CERT_DEFAULTS = ["RSA", "Food Safety Supervisor", "Food Handler", "First Aid / CPR", "Working with Children", "Barista Certificate", "Allergen Awareness"];
@@ -575,11 +583,17 @@ export default function SettingsPage() {
             </div>
             {/* EMPLOYMENT TYPES */}
             <div className="card">
-              <div className="card-head"><div><span className="card-title">Employment types</span><span className="card-sub">Shown in the Add-staff &amp; profile employment picker</span></div></div>
+              <div className="card-head"><div><span className="card-title">Employment types</span><span className="card-sub">Shown in the Add-staff &amp; profile employment picker · Salary/Hourly drives the Employment-terms pay field</span></div></div>
               {empTypes.map((t) => (
                 <div key={t} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                   <span style={{ fontSize: 13 }}>{t}</span>
-                  {editable && empTypes.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the picklist (existing staff keep their type)" onClick={() => removeEmpType(t)}>✕</button>}
+                  <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    {/* pay basis per type (Bug 1) — mirrors the Areas card's Break toggle */}
+                    <button className={`btn btn-sm ${empTypeIsSalaried(group, t) ? "btn-primary" : ""}`} disabled={!editable}
+                      title={empTypeIsSalaried(group, t) ? "Salary — staff of this type enter an ANNUAL salary in Employment terms" : "Hourly — staff of this type enter an HOURLY rate in Employment terms"}
+                      onClick={() => editable && toggleEmpTypeSalaried(t)}>{empTypeIsSalaried(group, t) ? "Salary ✓" : "Hourly"}</button>
+                    {editable && empTypes.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the picklist (existing staff keep their type)" onClick={() => removeEmpType(t)}>✕</button>}
+                  </span>
                 </div>
               ))}
               {editable && (

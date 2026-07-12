@@ -7,13 +7,13 @@ import { useRG } from "./RGContext";
 import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { defaultPermsForStaffRole, roleToGroupRole, isManager, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
+import { defaultPermsForStaffRole, roleToGroupRole, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
 import { isJuniorType, isMinorDob } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
-import { staffAreas, stationsForVenue, areaGetsBreak } from "./staffStructureUtils";
+import { staffAreas, stationsForVenue, areaGetsBreak, empTypeIsSalaried, rateSplitFromPrivate } from "./staffStructureUtils";
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
@@ -79,17 +79,28 @@ const PAYROLL_FIELDS = [
 // person is edited (no bulk migration). The generator treats missing values as empty-to-fill.
 const EMPLOYMENT_TERMS_FIELDS = [
   { key: "classificationLevel", label: "Classification level (MA000119)", ph: "e.g. Level 3 / Cook Grade 2" },
-  { key: "payBasis", label: "Pay basis", type: "select", managerOnly: true,
-    options: [["", "—"], ["salary", "Salary (annual)"], ["hourly", "Hourly"]] },
-  { key: "rate", label: "Hourly rate ($)", ph: "e.g. 25.80" }, // label → "Annual salary ($)" for salaried managers
+  // Pay basis is DERIVED from the EMPLOYMENT TYPE (group.empTypeSalaried — Settings →
+  // Employment types); the per-staff payBasis select is GONE. The old single `rate` is
+  // SPLIT: exactly one of these two renders (salaried type → annualSalary, else
+  // hourlyRate). Legacy `rate`/`payBasis` stay on stored docs, read only by the
+  // absent-key fallback (rateSplitFromPrivate) — never deleted, never migrated.
+  { key: "annualSalary", label: "Annual salary ($)", ph: "e.g. 65000", salariedOnly: true },
+  { key: "hourlyRate", label: "Hourly rate ($)", ph: "e.g. 25.80", hourlyOnly: true },
   { key: "contractedMinHours", label: "Contracted min hours / week", ph: "e.g. 38" },
 ];
 // One source of truth for the private/details doc shape. The reducers below iterate THIS,
 // so the existing setDoc(..., {merge:true}) write path picks up the new keys unchanged.
 const PRIVATE_FIELDS = [...PAYROLL_FIELDS, ...EMPLOYMENT_TERMS_FIELDS];
 const payrollBlank = () => PRIVATE_FIELDS.reduce((o, f) => { o[f.key] = ""; return o; }, {});
-const payrollFrom = (s) => PRIVATE_FIELDS.reduce((o, f) => { o[f.key] = (s[f.key] || "").trim(); return o; }, {});
-const payrollFromProfile = (p) => PRIVATE_FIELDS.reduce((o, f) => { o[f.key] = p[f.key] || ""; return o; }, {});
+// String() first: legacy private docs can hold NUMBERS (e.g. rate: 33.05 saved unquoted) —
+// (number).trim() would throw and kill the whole save.
+const payrollFrom = (s) => PRIVATE_FIELDS.reduce((o, f) => { o[f.key] = String(s[f.key] ?? "").trim(); return o; }, {});
+const payrollFromProfile = (p) => ({
+  ...PRIVATE_FIELDS.reduce((o, f) => { o[f.key] = p[f.key] || ""; return o; }, {}),
+  // rate-split read-fallback — new key ABSENT (undefined, not "") → legacy rate, bucketed
+  // by the stored legacy payBasis. See rateSplitFromPrivate for the absent-vs-empty rule.
+  ...rateSplitFromPrivate(p),
+});
 
 const blankForm = (defaultVenue) => ({
   name: "", role: "FOH", areas: [], venueIds: defaultVenue && defaultVenue !== "all" ? [defaultVenue] : [],
@@ -289,12 +300,12 @@ export default function StaffDirectoryPage() {
   );
 
   // Employment terms (private — owner/storeAdmin only), pre-fill source for the Contract
-  // Generator. payBasis shows ONLY for managers via the shared exact isManager() helper
-  // (NOT areaOf/unionAreas, which map supervisor/in-charge → Mgmt). For everyone else rate
-  // is the hourly rate. Renders inside the same canPayroll gate as renderPayroll.
+  // Generator. Pay basis is DERIVED from the EMPLOYMENT TYPE (group.empTypeSalaried,
+  // Settings → Employment types) — NOT from job role; the per-staff payBasis select is
+  // gone (stored payBasis remains as legacy data for the rate read-fallback). Salaried
+  // types show Annual salary; all others Hourly rate. Same canPayroll gate as renderPayroll.
   const renderEmploymentTerms = (state, handler) => {
-    const mgr = isManager({ role: deriveRoleAreas(state).primaryRole });
-    const salaried = mgr && state.payBasis === "salary";
+    const salaried = empTypeIsSalaried(group, state.type);
     return (
       <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
         <label className="form-label" style={{ marginBottom: 8, display: "block" }}>
@@ -302,24 +313,17 @@ export default function StaffDirectoryPage() {
         </label>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           {EMPLOYMENT_TERMS_FIELDS.map((f) => {
-            if (f.managerOnly && !mgr) return null;
-            const label = f.key === "rate" ? (salaried ? "Annual salary ($)" : "Hourly rate ($)") : f.label;
+            if (f.salariedOnly && !salaried) return null;
+            if (f.hourlyOnly && salaried) return null;
             return (
               <div key={f.key} className="form-group" style={{ margin: 0, gridColumn: f.full ? "1 / -1" : "auto" }}>
-                <label className="form-label">{label}</label>
-                {f.type === "select" ? (
-                  <select className="form-input" value={state[f.key] || ""}
-                    onChange={(e) => { handler(f.key)(e); if (f.key === "payBasis") handler("rate")({ target: { value: "", type: "text" } }); }}>
-                    {f.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                ) : (
-                  <input className="form-input" type="text" value={state[f.key] || ""} onChange={handler(f.key)} placeholder={f.ph || ""} autoComplete="off" />
-                )}
+                <label className="form-label">{f.label}</label>
+                <input className="form-input" type="text" value={state[f.key] || ""} onChange={handler(f.key)} placeholder={f.ph || ""} autoComplete="off" />
               </div>
             );
           })}
         </div>
-        <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>Optional. The Contract Generator pre-fills from these; leave blank to fill at generation time.</div>
+        <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>Optional. The Contract Generator pre-fills from these; leave blank to fill at generation time. Salary vs hourly follows the employment type (Settings → Employment types).</div>
       </div>
     );
   };

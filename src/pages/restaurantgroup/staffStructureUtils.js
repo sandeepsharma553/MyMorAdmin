@@ -11,6 +11,28 @@ export const resolveEmpTypes = (group) => (group?.empTypes?.length ? group.empTy
 // the request forms — never part of this list.
 export const resolveLeaveTypes = (group) => (group?.leaveTypes?.length ? group.leaveTypes : DEFAULT_LEAVE_TYPES);
 
+// ── Pay basis by EMPLOYMENT TYPE (Bug 1) ── group.empTypeSalaried: {typeName: bool}, a
+// COMPANION map beside group.empTypes (mirrors areaBreak: plain map keyed by the type
+// NAME, whole-value updateDoc — never dot-notation, names are free text). Key present →
+// that value; key ABSENT → seed default: ONLY "Full-time" is salaried. The seed is
+// DERIVED here at read time, so existing groups with no empTypeSalaried map (zero
+// writes) still show Full-time as salary and everything else as hourly.
+export const empTypeIsSalaried = (group, type) => {
+  const m = group?.empTypeSalaried || {};
+  if (Object.prototype.hasOwnProperty.call(m, String(type ?? ""))) return m[type] === true;
+  return type === "Full-time";
+};
+// Read-fallback for the legacy single private `rate` (NO migration, NO writes): the old
+// field was hourly for everyone except salaried staff, where it held an ANNUAL figure —
+// the stored legacy `payBasis` is the bucketing signal. The NEW split key wins whenever
+// it EXISTS on the doc, INCLUDING when it is "" — private writes are {merge:true}, so a
+// deliberately-blanked new field must never be shadowed by a stale legacy `rate`. Only a
+// truly ABSENT key (undefined — pre-split doc) falls back.
+export const rateSplitFromPrivate = (p) => ({
+  annualSalary: p?.annualSalary !== undefined ? p.annualSalary : (p?.payBasis === "salary" ? (p?.rate || "") : ""),
+  hourlyRate: p?.hourlyRate !== undefined ? p.hourlyRate : (p?.payBasis === "salary" ? "" : (p?.rate || "")),
+});
+
 // ── Per-area rostered-break flag + explicit display order — COMPANION fields on the group
 // doc (group.areaBreak: {areaName: bool}, group.areaOrder: [areaName]). group.areas STAYS a
 // plain string[]; these never restructure it, so every existing reader keeps working.
