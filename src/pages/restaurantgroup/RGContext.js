@@ -48,7 +48,14 @@ export function RGProvider({ children }) {
 
   const [group, setGroup] = useState(null);
   const [venues, setVenues] = useState([]);
-  const [staff, setStaff] = useState([]); // GROUP-LEVEL (multi-venue via venueIds)
+  const [staffAll, setStaffAll] = useState([]); // GROUP-LEVEL (multi-venue via venueIds) — RAW, incl. drafts
+  // ── Phase 5c: DRAFT containment — THE one choke point. Drafts (status "draft",
+  // case-safe) are excluded from the `staff` array every consumer reads (and therefore
+  // from scopedStaff, planner rows, leave/calendar/training/performance targets, pickers
+  // and counts) — nothing else about the array changes. ONLY the Staff Directory renders
+  // drafts, via the separate draftStaff array below.
+  const staff = useMemo(() => staffAll.filter((s) => String(s.status || "").toLowerCase() !== "draft"), [staffAll]);
+  const draftStaff = useMemo(() => staffAll.filter((s) => String(s.status || "").toLowerCase() === "draft"), [staffAll]);
   const [announcements, setAnnouncements] = useState([]);
   const [messages, setMessages] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -80,7 +87,7 @@ export function RGProvider({ children }) {
     const unsubs = [
       onSnapshot(groupDoc(groupId), (d) => setGroup(d.exists() ? { id: d.id, ...d.data() } : null), () => setLoading(false)),
       subColl(venuesCol(groupId), setVenues, "order"),
-      subColl(staffCol(groupId), setStaff),
+      subColl(staffCol(groupId), setStaffAll),
       subColl(announcementsCol(groupId), setAnnouncements),
       subColl(messagesCol(groupId), setMessages),
       subColl(notificationsCol(groupId), setNotifications),
@@ -283,7 +290,7 @@ export function RGProvider({ children }) {
   }, [myNotifications, myStaff, me]);
 
   const value = useMemo(() => ({
-    groupId, group, venues, staff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
+    groupId, group, venues, staff, draftStaff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
     announcements, messages, unreadMessages, myNotifications, unreadNotifications,
     inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
     resolvedMenuItems, menuInstanceById, venueMenuInstances,
@@ -291,7 +298,7 @@ export function RGProvider({ children }) {
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, showToast,
-  }), [groupId, group, venues, staff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
+  }), [groupId, group, venues, staff, draftStaff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
       inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
       resolvedMenuItems, menuInstanceById, venueMenuInstances,

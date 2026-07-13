@@ -117,7 +117,7 @@ const blankForm = (defaultVenue) => ({
 });
 
 export default function StaffDirectoryPage() {
-  const { groupId, group, staff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, areas, empTypes, selectedVenue, showToast, can, me, myStaff } = useRG();
+  const { groupId, group, staff, draftStaff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, areas, empTypes, selectedVenue, showToast, can, me, myStaff } = useRG();
   const canEdit = can("staff", "edit");
   // Phase 5a: false for the "self" tier — they get ONLY their own read-only profile below.
   const canViewAll = can("staff", "view");
@@ -141,6 +141,8 @@ export default function StaffDirectoryPage() {
   const [hoursRange, setHoursRange] = useState({ from: "", to: "" }); // custom date range (overrides period)
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [draftId, setDraftId] = useState(null); // Phase 5c: the draft doc being resumed in the add modal
+  const [confirmDraftDel, setConfirmDraftDel] = useState(null); // draft id awaiting delete confirm (two-click)
   const [form, setForm] = useState(blankForm(selectedVenue));
   const [profile, setProfile] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -375,7 +377,7 @@ export default function StaffDirectoryPage() {
     if (form.hasAdminLogin && (!isEmail(form.email))) return showToast("Admin access needs a valid email");
     setSaving(true);
     try {
-      const displayName = uniqueDisplayName(form.name, staff, null);
+      const displayName = uniqueDisplayName(form.name, [...staff, ...draftStaff], draftId); // dedupe against drafts too; skip the one being completed
       const pin = (form.pin || "").trim() || genPin(staff);
       if (pin && staff.some((s) => s.pin === pin)) return showToast("PIN already in use — pick another");
       // per-venue role+areas → primary role (groupRole/permissions) + union areas (eligibility)
@@ -386,7 +388,7 @@ export default function StaffDirectoryPage() {
       if (form.hasAdminLogin) {
         adminUid = await createAdminLogin({ email: form.email.toLowerCase().trim(), password: pwd, name: displayName, role: primaryRole, venueIds: form.venueIds, permissions });
       }
-      const created = await addDoc(staffCol(groupId), {
+      const payload = {
         name: form.name.trim(), displayName, role: primaryRole,
         areas: unionAreas, area: unionAreas[0] || areaOf(primaryRole), // legacy single — backward-compat
         groupRole: roleToGroupRole(primaryRole), permissions, venueRoles: form.venueRoles || {},
@@ -396,16 +398,82 @@ export default function StaffDirectoryPage() {
         cert: (form.certs && form.certs[0]) ? form.certs[0].name : "Not yet obtained", certs: form.certs || [],
         birthday: (form.dob || "").slice(5), // MM-DD only (day+month, team-visible); full DOB stays private
         status: form.status, pin, email: form.hasAdminLogin ? form.email.toLowerCase().trim() : "",
-        hasAdminLogin: !!form.hasAdminLogin, adminUid, createdAt: serverTimestamp(),
-      });
+        hasAdminLogin: !!form.hasAdminLogin, adminUid,
+      };
+      let staffId = draftId;
+      if (draftId) {
+        // Phase 5c: COMPLETING a draft — the FULL normal save ran above (validation, PIN,
+        // permissions, admin login); status flips "draft" → form.status ("Active", seeded
+        // by openDraft). merge keeps the draft's original createdAt.
+        await setDoc(doc(staffCol(groupId), draftId), { ...payload, updatedAt: serverTimestamp() }, { merge: true });
+      } else {
+        const created = await addDoc(staffCol(groupId), { ...payload, createdAt: serverTimestamp() });
+        staffId = created.id;
+      }
       // sensitive data (payroll + login password) → private subcollection (owner/storeAdmin only in rules)
-      if (canPayroll) await setDoc(staffPrivateDoc(groupId, created.id), { ...payrollFrom(form), password: pwd, updatedAt: serverTimestamp() });
+      if (canPayroll) await setDoc(staffPrivateDoc(groupId, staffId), { ...payrollFrom(form), password: pwd, updatedAt: serverTimestamp() });
       showToast(`${displayName} added`);
       logChange("staff.create", `Added staff member ${displayName} (${form.role})`, { venueIds: form.venueIds });
-      setAddOpen(false); setForm(blankForm(selectedVenue));
+      setAddOpen(false); setDraftId(null); setForm(blankForm(selectedVenue));
     } catch (e) {
       showToast(e?.code === "auth/email-already-in-use" ? "That admin email already exists" : "Could not add staff");
     } finally { setSaving(false); }
+  };
+
+  // ── Phase 5c: SAVE AS DRAFT — name-only (venue requirement relaxed), status "draft",
+  // NO PIN (Ops POS/PinIdentify key off a non-empty pin, so drafts stay invisible there),
+  // HARD-skips the admin-login block (no Auth user, no employees/{uid}, no users/{uid},
+  // whatever the checkbox says) and skips the private/details write. Drafts never reach
+  // any consumer — RGContext excludes them from `staff` — except the Drafts section here.
+  const saveDraft = async () => {
+    if (!form.name.trim()) return showToast("Name is required");
+    setSaving(true);
+    try {
+      const displayName = uniqueDisplayName(form.name, [...staff, ...draftStaff], draftId);
+      const { primaryRole, unionAreas } = deriveRoleAreas(form);
+      const payload = {
+        name: form.name.trim(), displayName, role: primaryRole,
+        areas: unionAreas, area: unionAreas[0] || "",
+        venueRoles: form.venueRoles || {},
+        venueIds: form.venueIds, venueNames: form.venueIds.map(venueName),
+        stationRefs: refsClean(form.stationRefs, form.venueIds), stationIds: refsToStationIds(refsClean(form.stationRefs, form.venueIds)), stationNames: refsToStationNames(refsClean(form.stationRefs, form.venueIds)),
+        phone: form.phone.trim(), start: form.start, endDate: form.endDate || "", type: form.type,
+        cert: (form.certs && form.certs[0]) ? form.certs[0].name : "Not yet obtained", certs: form.certs || [],
+        status: "draft",
+        pin: "", // NO PIN for drafts — also leaves the 4-digit pool untouched
+        email: "", hasAdminLogin: false, adminUid: "", // hard-skip: no auth account for a draft
+      };
+      if (draftId) await setDoc(doc(staffCol(groupId), draftId), { ...payload, updatedAt: serverTimestamp() }, { merge: true });
+      else await addDoc(staffCol(groupId), { ...payload, createdAt: serverTimestamp() });
+      logChange("staff.draft", `Saved draft staff member ${displayName}`, { venueIds: form.venueIds });
+      showToast(`${displayName} saved as draft`);
+      setAddOpen(false); setDraftId(null); setForm(blankForm(selectedVenue));
+    } catch { showToast("Could not save draft"); }
+    finally { setSaving(false); }
+  };
+  // resume a draft: prefill the add-staff form; Completing runs the FULL saveStaff path —
+  // status flips to "Active" because openDraft seeds form.status accordingly.
+  const openDraft = (d) => {
+    setForm({
+      name: d.name || "", role: d.role || "FOH",
+      areas: staffAreas(d).length ? staffAreas(d) : [],
+      venueIds: d.venueIds || [], phone: d.phone || "", start: d.start || "", endDate: d.endDate || "",
+      type: d.type || "Casual", cert: d.cert || "Not yet obtained", certs: d.certs || [],
+      status: "Active", // ← the resume→complete transition: saveStaff writes status: form.status
+      stationIds: d.stationIds || [], stationRefs: d.stationRefs || [], venueRoles: d.venueRoles || {},
+      pin: "", hasAdminLogin: false, email: "", password: "", ...payrollBlank(),
+    });
+    setDraftId(d.id);
+    setAddOpen(true);
+  };
+  const removeDraft = async (d) => {
+    if (confirmDraftDel !== d.id) { setConfirmDraftDel(d.id); return; } // two-click confirm (removeStaff pattern)
+    try {
+      await deleteDoc(doc(staffCol(groupId), d.id));
+      logChange("staff.draft.delete", `Deleted draft staff member ${d.displayName || d.name || "Unnamed"}`, {});
+      showToast("Draft deleted");
+    } catch { showToast("Could not delete draft"); }
+    finally { setConfirmDraftDel(null); }
   };
 
   // ── profile / edit ──
@@ -1189,8 +1257,39 @@ export default function StaffDirectoryPage() {
           <option value="oldest">Sort: Oldest</option>
         </select>
         <input className="form-input" style={{ width: 200, marginLeft: "auto" }} placeholder="🔍 Search staff / PIN..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        {canEdit && <button className="btn btn-sm btn-primary" onClick={() => { setForm(blankForm(selectedVenue)); setAddOpen(true); }}>+ Add Staff</button>}
+        {canEdit && <button className="btn btn-sm btn-primary" onClick={() => { setForm(blankForm(selectedVenue)); setDraftId(null); setAddOpen(true); }}>+ Add Staff</button>}
       </div>
+
+      {/* ── Phase 5c: DRAFTS — pinned ABOVE the A–Z grid, rendered from the SEPARATE
+          draftStaff array (RGContext excludes drafts from `staff`), so the metric cards,
+          A–Z grid, search and filter buttons never see them. Amber "incomplete" treatment
+          mirrors the under-18 card tint. */}
+      {draftStaff.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div className="card-head" style={{ marginBottom: 6 }}>
+            <span className="card-title">Drafts <span className="pill pill-amber" style={{ marginLeft: 6 }}>{draftStaff.length} incomplete</span></span>
+            <span className="card-sub">not rosterable until completed — resume or delete</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 12 }}>
+            {draftStaff.map((d) => (
+              <div key={d.id} className="staff-card" onClick={() => canEdit && openDraft(d)} style={{ background: "#fff7ed", border: "1.5px dashed var(--amber)" }} title={canEdit ? "Resume this draft" : "Draft — incomplete"}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 4 }}>
+                  <div className="staff-avatar" style={{ background: "var(--amber)" }}>{initials(d)}</div>
+                  <span className="pill pill-amber" title="Draft — incomplete">Draft</span>
+                </div>
+                <div className="staff-name">{d.displayName || d.name || "Unnamed"}</div>
+                <div className="staff-role">{d.role || "—"}{(d.venueNames || []).length ? ` · ${d.venueNames.join(", ")}` : " · no venue yet"}</div>
+                {canEdit && (
+                  <div className="btn-row" style={{ marginTop: 10 }}>
+                    <button className="btn btn-sm btn-primary" onClick={(e) => { e.stopPropagation(); openDraft(d); }}>Resume</button>
+                    <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); removeDraft(d); }}>{confirmDraftDel === d.id ? "Confirm delete" : "Delete draft"}</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 12 }}>
         {filtered.map((s) => (
@@ -1237,7 +1336,7 @@ export default function StaffDirectoryPage() {
       {addOpen && (
         <div className="rg-modal-overlay">
           <div className="rg-modal" style={{ maxWidth: 600 }}>
-            <div className="modal-head"><span className="modal-title">Add staff member</span><button className="modal-close" onClick={() => setAddOpen(false)}>✕</button></div>
+            <div className="modal-head"><span className="modal-title">{draftId ? "Complete draft staff member" : "Add staff member"}</span><button className="modal-close" onClick={() => { setAddOpen(false); setDraftId(null); }}>✕</button></div>
             {/* Cascade: Name → Venue(s) → Role → Areas → Stations */}
             <div className="form-group"><label className="form-label">Name *</label><input className="form-input" value={form.name} onChange={setF("name")} placeholder="First name" /></div>
             <div className="form-group"><label className="form-label">Venues * (works at)</label><VenuePicker value={form.venueIds} onToggle={(vid) => toggleVenue(vid, form, setForm)} /></div>
@@ -1270,8 +1369,9 @@ export default function StaffDirectoryPage() {
               )}
             </div>
             <div className="btn-row">
-              <button className="btn btn-primary" onClick={saveStaff} disabled={saving}>{saving ? "Saving..." : "Add staff member"}</button>
-              <button className="btn" onClick={() => setAddOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveStaff} disabled={saving}>{saving ? "Saving..." : draftId ? "Complete & add staff member" : "Add staff member"}</button>
+              <button className="btn" onClick={saveDraft} disabled={saving} title="Save with just a name — finish later from the Drafts section">Save as draft</button>
+              <button className="btn" onClick={() => { setAddOpen(false); setDraftId(null); }}>Cancel</button>
             </div>
           </div>
         </div>
