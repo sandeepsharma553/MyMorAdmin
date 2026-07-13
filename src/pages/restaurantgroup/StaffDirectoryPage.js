@@ -628,8 +628,26 @@ export default function StaffDirectoryPage() {
         contactEmail: String(selfDirect.contactEmail ?? "").trim(),
         updatedAt: serverTimestamp(),
       };
+      // which fields ACTUALLY changed vs the values loaded from private/details — drives
+      // the owner notification + audit line below. Compared BEFORE the local state merge.
+      const changed = SELF_DIRECT_KEYS.filter((k) => String((selfPriv && selfPriv[k]) ?? "").trim() !== payload[k]);
       await setDoc(staffPrivateDoc(groupId, myStaff.id), payload, { merge: true });
       setSelfPriv((p) => ({ ...(p || {}), ...payload }));
+      if (changed.length) {
+        const labels = changed.map((k) => (PAYROLL_FIELDS.find((x) => x.key === k)?.label || k).toLowerCase()).join(", ");
+        const who = myStaff.displayName || fullName(myStaff);
+        // direct edits apply INSTANTLY (no approval, no request doc, no pending dot) — but
+        // the owner must still learn it happened. Same recipient fan-out as
+        // submitSelfRequest (every owner/storeAdmin staff doc; NOT to:"managers", which
+        // also reaches plain managers). Fire-and-forget — sendNotification catches
+        // internally, so a notify failure never fails or rolls back the save.
+        // Field NAMES only — values must never enter a notification (group-readable).
+        staff.filter((x) => ["owner", "storeAdmin"].includes(x.groupRole)).forEach((x) =>
+          sendNotification(groupId, { to: x.id, type: "payroll_details_updated", title: "Personal details updated", body: `${who} updated their personal details (${labels})`, by: who })
+        );
+        // audit: direct self-edits previously had NO audit line — field names only, never values
+        logChange("staff.payroll.selfedit", `${who} updated their personal details: ${labels}`, { staffId: myStaff.id });
+      }
       showToast("Your details were updated");
     } catch { showToast("Could not save — your access may not be enabled yet"); }
     finally { setSelfBusy(false); }
