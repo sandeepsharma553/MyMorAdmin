@@ -40,6 +40,7 @@ export default function PosPage() {
   const categories = group?.menuCategories?.length ? group.menuCategories : DEFAULT_MENU_CATEGORIES;
 
   const [cat, setCat] = useState(""); // "" = all categories
+  const [q, setQ] = useState(""); // search — filters WITHIN the selected category
   const [lines, setLines] = useState([]); // [{ key, menuItemId, displayName, qty, unitPrice, modifiers:[{label,priceDelta}], modDelta }]
   const [serviceMode, setServiceMode] = useState("dinein");
   const [sending, setSending] = useState(false);
@@ -58,12 +59,17 @@ export default function PosPage() {
   // the ONE shared price resolver (rgStockUtils) — same value the server charges
   const sellAt = (m) => resolvedSellPrice(m, { menuInstanceById, menuItems, selectedVenue });
 
-  const tiles = useMemo(
-    () => resolvedMenuItems
+  // search composes with the category filter; alphabetical order is kept —
+  // predictable beats relevance-ranking on a POS grid.
+  const tiles = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    return resolvedMenuItems
       .filter((m) => !cat || m.category === cat)
-      .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || "")),
-    [resolvedMenuItems, cat]
-  );
+      .filter((m) => !query
+        || (m.displayName || "").toLowerCase().includes(query)
+        || (m.kitchenName || "").toLowerCase().includes(query))
+      .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
+  }, [resolvedMenuItems, cat, q]);
   const liveCats = useMemo(
     () => categories.filter((c) => resolvedMenuItems.some((m) => m.category === c)),
     [categories, resolvedMenuItems]
@@ -93,7 +99,7 @@ export default function PosPage() {
     if (m.e86 || m.available === false) return;
     // items with RESOLVED modifier groups open the modal; others add straight to the rail
     const gids = (m.modifierGroupIds || []).filter((gid) => modifierGroups.some((g) => g.id === gid));
-    if (gids.length) setModModal({ item: m, sel: {} });
+    if (gids.length) setModModal({ item: m, sel: {}, open: {} }); // open = per-group expand/collapse (display only)
     else pushLine(m, []);
   };
   const bump = (key, d) => setLines((prev) => prev
@@ -157,8 +163,20 @@ export default function PosPage() {
         ))}
       </div>
 
-      {/* CENTRE — item tiles (venue-resolved; e86/unavailable greyed + non-tappable) */}
-      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, alignContent: "flex-start" }}>
+      {/* CENTRE — search + item tiles (venue-resolved; e86/unavailable greyed + non-tappable) */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* autoFocus is right on the web POS: a keyboard is always attached, so
+            landing on the page ready-to-type saves a click. (Ops does NOT autofocus —
+            an iPad software keyboard would cover the grid.) */}
+        <div style={{ position: "relative" }}>
+          <input className="form-input" autoFocus value={q} onChange={(e) => setQ(e.target.value)}
+            placeholder={`Search items${cat ? ` in ${cat}` : ""}…`} style={{ width: "100%", paddingRight: 30 }} />
+          {q !== "" && (
+            <button onClick={() => setQ("")} title="Clear search" aria-label="Clear search"
+              style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", cursor: "pointer", fontSize: 15, color: "var(--gray)", padding: 0 }}>×</button>
+          )}
+        </div>
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, alignContent: "flex-start" }}>
         {tiles.map((m) => {
           const off = m.e86 || m.available === false;
           const hasMods = (m.modifierGroupIds || []).length > 0;
@@ -175,7 +193,14 @@ export default function PosPage() {
             </div>
           );
         })}
-        {tiles.length === 0 && <div className="card" style={{ gridColumn: "1 / -1", color: "var(--gray)", fontSize: 13 }}>No items{cat ? ` in ${cat}` : ""} at {selectedVenueName}.</div>}
+        {tiles.length === 0 && (
+          <div className="card" style={{ gridColumn: "1 / -1", color: "var(--gray)", fontSize: 13 }}>
+            {q.trim()
+              ? <>No items match “{q.trim()}”{cat ? ` in ${cat}` : ""}. <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => setQ("")}>Clear search</button></>
+              : <>No items{cat ? ` in ${cat}` : ""} at {selectedVenueName}.</>}
+          </div>
+        )}
+        </div>
       </div>
 
       {/* RIGHT — order rail */}
@@ -257,15 +282,27 @@ export default function PosPage() {
           <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setModModal(null)}>
             <div className="rg-modal" style={{ maxWidth: 480 }}>
               <div className="modal-head"><span className="modal-title">{m.displayName}</span><button className="modal-close" onClick={() => setModModal(null)}>✕</button></div>
-              {groups.map(({ gid, g }) => (
-                <div key={gid} style={{ marginBottom: 12 }}>
-                  <div className="form-label">
+              {/* DISPLAY ordering/collapse only — selection rules (toggle/minFor/unmet/ok)
+                  are untouched. Required groups (minFor > 0) first + always expanded;
+                  optional groups collapse by default but auto-expand once they hold
+                  selections (never hide the user's own choices). */}
+              {[...groups].sort((a, b) => (minFor(a.g) > 0 ? 0 : 1) - (minFor(b.g) > 0 ? 0 : 1)).map(({ gid, g }) => {
+                const req = minFor(g) > 0;
+                const selCount = (modModal.sel[gid] || []).length;
+                const expanded = req || (modModal.open?.[gid] != null ? modModal.open[gid] : selCount > 0);
+                return (
+                <div key={gid} style={{ marginBottom: 12, ...(req ? { borderLeft: "3px solid var(--red)", paddingLeft: 8 } : {}) }}>
+                  <div className="form-label" style={req ? {} : { cursor: "pointer", userSelect: "none" }}
+                    onClick={req ? undefined : () => setModModal((p) => ({ ...p, open: { ...p.open, [gid]: !expanded } }))}>
+                    {!req && <span style={{ marginRight: 4, fontSize: 10, color: "var(--gray)" }}>{expanded ? "▾" : "▸"}</span>}
                     {g.name}
                     <span style={{ fontWeight: 400, color: "var(--gray)", marginLeft: 6, fontSize: 11 }}>
                       {g.type === "single" ? "pick one" : g.maxSelections != null ? `up to ${g.maxSelections}` : "any"}
                       {minFor(g) > 0 ? ` · min ${minFor(g)}` : ""}{g.required ? " · required" : ""}
+                      {!expanded ? ` · ${(g.options || []).length} options${selCount ? ` · ${selCount} selected` : ""}` : ""}
                     </span>
                   </div>
+                  {expanded && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {(g.options || []).map((o) => {
                       const on = (modModal.sel[gid] || []).includes(o.label);
@@ -278,8 +315,10 @@ export default function PosPage() {
                       );
                     })}
                   </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
               {chosen.length > MAX_MODS && <div style={{ fontSize: 11, color: "var(--red)", marginBottom: 6 }}>Max {MAX_MODS} add-ons per line (server limit).</div>}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
                 <span style={{ fontSize: 12, color: "var(--gray)" }}>{money(incGst(estUnit, m.gstApplicable !== false))} inc-GST / each</span>
