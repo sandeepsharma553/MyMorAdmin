@@ -145,6 +145,12 @@ export const acknowledgementDoc = (groupId, staffId, version) => doc(acknowledge
 // directly for these. Docs are kept as history (applied/declined) — never deleted.
 export const payrollChangeRequestsCol = (groupId, staffId) => collection(staffDoc(groupId, staffId), "payrollChangeRequests");
 export const payrollChangeRequestDoc = (groupId, staffId, reqId) => doc(payrollChangeRequestsCol(groupId, staffId), reqId);
+// Per-staff document/contract history (Phase B) — upload/rename/delete/restore trail.
+// Deliberately NOT the auditLog (group-readable; filenames can be sensitive): this
+// subcollection gets a tight rule (owner/storeAdmin + the staffer), published separately —
+// until then every read/write FAILS SOFT.
+export const docHistoryCol = (groupId, staffId) => collection(staffDoc(groupId, staffId), "docHistory");
+export const docHistoryDoc = (groupId, staffId, id) => doc(docHistoryCol(groupId, staffId), id);
 
 /* ── Contract Generator (Documents module) ────────────────────────────
  * Templates are group-level master docs (seeded out-of-band); contract

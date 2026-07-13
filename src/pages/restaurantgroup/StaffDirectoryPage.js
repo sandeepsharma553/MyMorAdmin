@@ -4,7 +4,7 @@ import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from "firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, publicHolidaysDoc, payrollChangeRequestsCol, payrollChangeRequestDoc, contractsCol } from "../../utils/restaurantGroupPaths";
+import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, publicHolidaysDoc, payrollChangeRequestsCol, payrollChangeRequestDoc, contractsCol, docHistoryCol } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { defaultPermsForStaffRole, roleToGroupRole, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
@@ -137,6 +137,13 @@ export default function StaffDirectoryPage() {
         at: serverTimestamp(), notifySuperAdmin: true, seenBySuper: false, ...extra,
       });
     } catch { /* non-blocking */ }
+  };
+  // ── Phase B: per-staff document history (staff/{id}/docHistory) ── file NAMES only,
+  // never a URL, never contents. Fire-and-forget: the tight docHistory rule ships
+  // separately, so writes may be DENIED until then — a history failure must NEVER fail
+  // the underlying action. (auditLog lines stay values/filename-free — it's group-readable.)
+  const logDocHistory = (staffId, entry) => {
+    addDoc(docHistoryCol(groupId, staffId), { ...entry, by: actorName, at: serverTimestamp() }).catch(() => {});
   };
   const [roleFilter, setRoleFilter] = useState("all");
   const [stationFilter, setStationFilter] = useState("all"); // area→station drill-down (like Training)
@@ -604,6 +611,7 @@ export default function StaffDirectoryPage() {
       const entry = { id: `doc${Date.now()}`, name: docFile.name, fileUrl: up.url, filePath: up.path, uploadedAt: new Date().toISOString(), uploadedBy: actorName };
       await updateDoc(staffDoc(groupId, profile.id), { signDocs: arrayUnion(entry) });
       setProfile((p) => ({ ...p, signDocs: [...(p.signDocs || []), entry] }));
+      logDocHistory(profile.id, { action: "upload", kind: "document", itemId: entry.id, fileName: entry.name }); // Phase B history line
       setDocFile(null); showToast("Document uploaded for signing");
     } catch { showToast("Could not upload document"); }
   };
@@ -616,6 +624,33 @@ export default function StaffDirectoryPage() {
     } catch { showToast("Could not record signature"); }
   };
   const canSignOwn = (p) => !!(me?.email && p?.email && me.email.toLowerCase() === p.email.toLowerCase());
+  // ── Phase B: RENAME + SOFT DELETE for plain signDocs uploads ── same read-modify-write
+  // map pattern as signSignDoc above. Soft delete flags the entry IN PLACE — never
+  // arrayRemove, never a Storage delete (the file deliberately stays; History can restore).
+  const renameSignDoc = async (d) => {
+    const name = window.prompt("Rename document", d.name || "");
+    if (name === null) return; // cancelled
+    const clean = name.trim();
+    if (!clean || clean === d.name) return;
+    const next = (profile.signDocs || []).map((x) => x.id === d.id ? { ...x, name: clean } : x);
+    try {
+      await updateDoc(staffDoc(groupId, profile.id), { signDocs: next });
+      setProfile((p) => ({ ...p, signDocs: next }));
+      logDocHistory(profile.id, { action: "rename", kind: "document", itemId: d.id, fileName: clean, previousName: d.name || "" });
+      logChange("staff.doc.rename", `${actorName} renamed a document for ${fullName(profile)}`, { staffId: profile.id }); // NO filename — auditLog is group-readable
+      showToast("Document renamed");
+    } catch { showToast("Could not rename document"); }
+  };
+  const softDeleteSignDoc = async (d) => {
+    const next = (profile.signDocs || []).map((x) => x.id === d.id ? { ...x, deleted: true, deletedAt: new Date().toISOString(), deletedBy: actorName } : x);
+    try {
+      await updateDoc(staffDoc(groupId, profile.id), { signDocs: next });
+      setProfile((p) => ({ ...p, signDocs: next }));
+      logDocHistory(profile.id, { action: "delete", kind: "document", itemId: d.id, fileName: d.name || "" });
+      logChange("staff.doc.delete", `${actorName} deleted a document for ${fullName(profile)}`, { staffId: profile.id }); // NO filename
+      showToast("Document deleted — restorable from Documents history");
+    } catch { showToast("Could not delete document"); }
+  };
   // Signed-contract signDocs entries carry no public fileUrl (pay+PII) — download via the
   // gated callable. Behind SIGNED_UPLOAD_ENABLED until the Storage rule + callables are live.
   const downloadSignedContract = async (contractId) => {
@@ -678,6 +713,7 @@ export default function StaffDirectoryPage() {
       await httpsCallable(getFunctions(undefined, "us-central1"), "uploadSignedContract")({ groupId, contractId: created.id, base64 });
       // audit: file NAME only — never a URL, never contents
       logChange("staff.contract.upload", `${actorName} uploaded a signed contract for ${fullName(profile)}: ${file.name}`, { staffId: profile.id });
+      logDocHistory(profile.id, { action: "upload", kind: "contract", itemId: created.id, fileName: file.name }); // Phase B history line
       showToast("Signed contract uploaded");
       // the callable arrayUnioned a signDocs entry server-side — mirror it locally so the
       // open profile reflects it without a reopen (same shape the server writes)
@@ -693,6 +729,96 @@ export default function StaffDirectoryPage() {
       showToast("Could not upload signed contract");
     } finally { setContractFileBusy(false); }
   };
+  // ── Phase B: RENAME + SOFT DELETE for contracts ── in-place doc updates only: never a
+  // hard delete, never a Storage touch (the locked signed.pdf stays; History can restore).
+  // Rename is EXTERNAL-only — generated contracts have no fileName (their identity is the
+  // templateId), so the Rename button is hidden on generated rows.
+  const renameContract = async (c) => {
+    const name = window.prompt("Rename contract file", c.fileName || "");
+    if (name === null) return; // cancelled
+    const clean = name.trim();
+    if (!clean || clean === c.fileName) return;
+    try {
+      await updateDoc(doc(contractsCol(groupId), c.id), { fileName: clean });
+      logDocHistory(profile.id, { action: "rename", kind: "contract", itemId: c.id, fileName: clean, previousName: c.fileName || "" });
+      logChange("staff.contract.rename", `${actorName} renamed a contract for ${fullName(profile)}`, { staffId: profile.id }); // NO filename
+      showToast("Contract renamed");
+      await loadProfileContracts(profile.id);
+    } catch { showToast("Could not rename contract"); }
+  };
+  const softDeleteContract = async (c) => {
+    try {
+      await updateDoc(doc(contractsCol(groupId), c.id), { deleted: true, deletedAt: serverTimestamp(), deletedBy: actorName });
+      logDocHistory(profile.id, { action: "delete", kind: "contract", itemId: c.id, fileName: c.fileName || c.templateId || "Contract" });
+      logChange("staff.contract.delete", `${actorName} deleted a contract for ${fullName(profile)}`, { staffId: profile.id }); // NO filename
+      showToast("Contract deleted — restorable from Documents history");
+      await loadProfileContracts(profile.id);
+    } catch { showToast("Could not delete contract"); }
+  };
+  // ── Phase B: per-staff document history (the Documents-history tab) ──
+  const [profileDocHistory, setProfileDocHistory] = useState(null); // null = loading, false = read denied
+  const loadDocHistory = async (staffId) => {
+    try {
+      const snap = await getDocs(docHistoryCol(groupId, staffId));
+      setProfileDocHistory(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.at?.seconds || 0) - (a.at?.seconds || 0)));
+    } catch { setProfileDocHistory(false); } // FAIL SOFT — the docHistory rule ships separately; denied until then
+  };
+  useEffect(() => {
+    setProfileDocHistory(null);
+    if (!profile || !groupId || !canContractsView) return;
+    loadDocHistory(profile.id);
+  }, [profile, groupId, canContractsView]); // eslint-disable-line react-hooks/exhaustive-deps
+  const restoreDocItem = async (h) => {
+    try {
+      if (h.kind === "contract") {
+        await updateDoc(doc(contractsCol(groupId), h.itemId), { deleted: false, deletedAt: null, deletedBy: "" });
+        await loadProfileContracts(profile.id);
+      } else {
+        const next = (profile.signDocs || []).map((x) => x.id === h.itemId ? { ...x, deleted: false } : x);
+        await updateDoc(staffDoc(groupId, profile.id), { signDocs: next });
+        setProfile((p) => ({ ...p, signDocs: next }));
+      }
+      logDocHistory(profile.id, { action: "restore", kind: h.kind, itemId: h.itemId, fileName: h.fileName || "" });
+      logChange(h.kind === "contract" ? "staff.contract.restore" : "staff.doc.restore", `${actorName} restored a ${h.kind} for ${fullName(profile)}`, { staffId: profile.id }); // NO filename
+      showToast("Restored");
+      loadDocHistory(profile.id);
+    } catch { showToast("Could not restore"); }
+  };
+  // Documents-history tab body — newest first; renames render "X → Y"; deleted items stay
+  // visible here (that's the point) with a Restore action while still deleted.
+  const renderDocHistory = () => (
+    <div>
+      {profileDocHistory === false ? (
+        <div style={{ fontSize: 13, color: "var(--gray)" }}>
+          Document history isn’t available yet — it needs a permissions update on the server.
+        </div>
+      ) : profileDocHistory === null ? (
+        <div style={{ fontSize: 13, color: "var(--gray)" }}>Loading…</div>
+      ) : profileDocHistory.length === 0 ? (
+        <div style={{ fontSize: 13, color: "var(--gray)" }}>No document activity yet.</div>
+      ) : (
+        profileDocHistory.map((h) => {
+          const stillDeleted = h.action === "delete" && (h.kind === "contract"
+            ? (profileContracts || []).find((c) => c.id === h.itemId)?.deleted === true
+            : (profile.signDocs || []).find((x) => x.id === h.itemId)?.deleted === true);
+          const pill = h.action === "delete" ? "pill-red" : h.action === "restore" ? "pill-green" : h.action === "rename" ? "pill-amber" : "pill-blue";
+          return (
+            <div key={h.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+              <span>
+                <span className={`pill ${pill}`}>{h.action}</span>
+                <span className="pill pill-gray" style={{ marginLeft: 4 }}>{h.kind}</span>{" "}
+                {h.action === "rename" ? <>{h.previousName || "?"} → <strong>{h.fileName}</strong></> : h.fileName}
+              </span>
+              <span style={{ color: "var(--gray)", display: "inline-flex", gap: 6, alignItems: "center" }}>
+                {h.by || ""}{h.at ? ` · ${tsLabel(h.at)}` : ""}
+                {stillDeleted && canContractsEdit && <button className="btn btn-sm" onClick={() => restoreDocItem(h)}>Restore</button>}
+              </span>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
 
   // ── assign training / checklists (from the profile, multi-select, area-aware) ──
   const [assignKind, setAssignKind] = useState(null); // "training" | "checklist" | null
@@ -1460,11 +1586,13 @@ export default function StaffDirectoryPage() {
             {!editing ? (
               <>
                 <div className="tabs" style={{ marginBottom: 12 }}>
-                  {[["profile", "Profile"], ["history", "History"]].map(([id, l]) => (
+                  {/* "Documents history" (Phase B) — owner/storeAdmin only: same gate as the Contracts section */}
+                  {[["profile", "Profile"], ["history", "History"], ...(canContractsView ? [["docs", "Documents history"]] : [])].map(([id, l]) => (
                     <button key={id} className={`tab ${profileTab === id ? "active" : ""}`} onClick={() => setProfileTab(id)}>{l}</button>
                   ))}
                 </div>
                 {profileTab === "history" && renderHistory()}
+                {profileTab === "docs" && canContractsView && renderDocHistory()}
                 {profileTab === "profile" && (
                 <>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -1492,8 +1620,10 @@ export default function StaffDirectoryPage() {
                   {/* contract entries (d.contractId) now render in the dedicated Contracts
                       section below — same gated callable, no duplicate rows here. Plain
                       uploads only. Data untouched: render filter, not a write. */}
-                  {(profile.signDocs || []).filter((d) => !d.contractId).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No documents uploaded.</div>}
-                  {(profile.signDocs || []).filter((d) => !d.contractId).map((d) => (
+                  {/* Phase B: soft-deleted entries (d.deleted) hide here but stay in the doc,
+                      Storage untouched — visible + restorable from the Documents-history tab */}
+                  {(profile.signDocs || []).filter((d) => !d.contractId && !d.deleted).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No documents uploaded.</div>}
+                  {(profile.signDocs || []).filter((d) => !d.contractId && !d.deleted).map((d) => (
                     <div key={d.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                       <span>
                         {d.contractId
@@ -1504,7 +1634,11 @@ export default function StaffDirectoryPage() {
                         {d.signedAt
                           ? <span className="pill pill-green" style={{ marginLeft: 6 }}>Signed {fmtDate(d.signedAt)}{d.signedBy ? ` · ${d.signedBy}` : ""}</span>
                           : <span className="pill pill-amber" style={{ marginLeft: 6 }}>Awaiting signature</span>}</span>
-                      {!d.signedAt && (canEdit || canSignOwn(profile)) && <button className="btn btn-sm btn-primary" onClick={() => signSignDoc(d)}>Acknowledge &amp; sign</button>}
+                      <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                        {!d.signedAt && (canEdit || canSignOwn(profile)) && <button className="btn btn-sm btn-primary" onClick={() => signSignDoc(d)}>Acknowledge &amp; sign</button>}
+                        {canEdit && <button className="btn btn-sm" onClick={() => renameSignDoc(d)}>Rename</button>}
+                        {canEdit && <button className="btn btn-sm btn-danger" onClick={() => softDeleteSignDoc(d)}>Delete</button>}
+                      </span>
                     </div>
                   ))}
                   {canEdit && (
@@ -1534,8 +1668,10 @@ export default function StaffDirectoryPage() {
                       <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>
                     ) : (
                       <>
-                        {profileContracts.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No contracts for this person yet.</div>}
-                        {profileContracts.map((c) => (
+                        {/* Phase B: soft-deleted contracts hide here (doc + locked PDF untouched) —
+                            visible + restorable from the Documents-history tab */}
+                        {profileContracts.filter((c) => !c.deleted).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No contracts for this person yet.</div>}
+                        {profileContracts.filter((c) => !c.deleted).map((c) => (
                           <div key={c.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                             <span>
                               📄 {c.source === "external" ? (c.fileName || "Uploaded contract") : (c.templateId || "Contract")}
@@ -1545,6 +1681,9 @@ export default function StaffDirectoryPage() {
                             <span style={{ display: "inline-flex", gap: 6, alignItems: "center", color: "var(--gray)" }}>
                               {tsLabel(c.createdAt)}{c.source === "external" && c.createdBy ? ` · ${c.createdBy}` : ""}
                               {c.status === "signed" && SIGNED_UPLOAD_ENABLED && <button className="btn btn-sm" onClick={() => downloadSignedContract(c.id)}>Download</button>}
+                              {/* rename is EXTERNAL-only — generated contracts have no fileName */}
+                              {c.source === "external" && canContractsEdit && <button className="btn btn-sm" onClick={() => renameContract(c)}>Rename</button>}
+                              {canContractsEdit && <button className="btn btn-sm btn-danger" onClick={() => softDeleteContract(c)}>Delete</button>}
                             </span>
                           </div>
                         ))}

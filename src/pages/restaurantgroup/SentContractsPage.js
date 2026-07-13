@@ -53,7 +53,9 @@ export default function SentContractsPage() {
   }, [groupId]);
 
   const rows = useMemo(
-    () => [...(contracts || [])].sort((a, b) => ((b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))),
+    // Phase B: soft-deleted contracts (deleted: true) are hidden here too — the doc and
+    // the locked signed PDF remain; restore lives on the staff profile's history tab.
+    () => [...(contracts || [])].filter((c) => !c.deleted).sort((a, b) => ((b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))),
     [contracts]
   );
 
