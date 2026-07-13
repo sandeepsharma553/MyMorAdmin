@@ -112,13 +112,17 @@ export default function SentContractsPage() {
               {rows.map((c) => (
                 <tr key={c.id}>
                   <td style={{ fontWeight: 500 }}>{c.staffName || c.staffId}</td>
-                  <td style={{ fontSize: 12, color: "var(--gray)" }}>{c.templateId}</td>
+                  <td style={{ fontSize: 12, color: "var(--gray)" }}>{c.source === "external" ? `external upload${c.fileName ? ` · ${c.fileName}` : ""}` : c.templateId}</td>
                   <td><span className={`pill ${STATUS_PILL[c.status] || "pill-gray"}`}>{c.status || "draft"}</span></td>
                   <td style={{ fontSize: 11 }}>{fmt(c.createdAt)}</td>
                   <td style={{ fontSize: 11 }}>{fmt(c.sentAt)}</td>
                   <td style={{ fontSize: 11 }}>{fmt(c.signedAt)}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    <button className="btn btn-sm" disabled={busy === c.id} onClick={() => onDownloadGenerated(c)}>Download PDF</button>
+                    {/* renderContractPdf THROWS on a template-less doc ("Contract template
+                        missing") — external uploads have no generated PDF to download */}
+                    {c.source !== "external" && (
+                      <button className="btn btn-sm" disabled={busy === c.id} onClick={() => onDownloadGenerated(c)}>Download PDF</button>
+                    )}
                     {editable && SIGNED_UPLOAD_ENABLED && c.status !== "signed" && (
                       <label className="btn btn-sm btn-primary" style={{ marginLeft: 6, cursor: "pointer" }}>
                         Upload signed

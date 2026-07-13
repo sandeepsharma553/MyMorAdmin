@@ -4,7 +4,7 @@ import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from "firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, publicHolidaysDoc, payrollChangeRequestsCol, payrollChangeRequestDoc } from "../../utils/restaurantGroupPaths";
+import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, publicHolidaysDoc, payrollChangeRequestsCol, payrollChangeRequestDoc, contractsCol } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { defaultPermsForStaffRole, roleToGroupRole, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
@@ -121,6 +121,11 @@ export default function StaffDirectoryPage() {
   const canEdit = can("staff", "edit");
   // Phase 5a: false for the "self" tier — they get ONLY their own read-only profile below.
   const canViewAll = can("staff", "view");
+  // Contracts section — the SAME gate the Contract Generator uses (can("contracts","view")
+  // to see, can("contracts","edit") for actions, mirroring SentContractsPage's `editable`).
+  // Server-side, the callables re-check owner/storeAdmin regardless.
+  const canContractsView = can("contracts", "view");
+  const canContractsEdit = can("contracts", "edit");
   // Sensitive payroll (TFN/bank/super) is restricted to owner/storeAdmin (and super),
   // matching the Firestore rule on staff/{id}/private. Managers manage staff but not payroll.
   const canPayroll = ["owner", "storeAdmin"].includes(me?.groupRole) || me?.type === "superadmin";
@@ -625,6 +630,68 @@ export default function StaffDirectoryPage() {
       a.href = url; a.download = res.data.filename || `signed_${contractId}.pdf`;
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     } catch { showToast("Could not open signed contract"); }
+  };
+
+  // ── Phase A: this staff member's CONTRACTS (generated + external uploads) ──
+  const [profileContracts, setProfileContracts] = useState(null); // null = loading
+  const [contractFileBusy, setContractFileBusy] = useState(false);
+  const loadProfileContracts = async (staffId) => {
+    try {
+      const snap = await getDocs(query(contractsCol(groupId), where("staffId", "==", staffId)));
+      setProfileContracts(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+    } catch { setProfileContracts([]); } // contracts read is owner/storeAdmin-only in rules — fail soft
+  };
+  useEffect(() => {
+    setProfileContracts(null);
+    if (!profile || !groupId || !canContractsView) return;
+    loadProfileContracts(profile.id);
+  }, [profile, groupId, canContractsView]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Upload an EXTERNALLY-signed contract PDF: create a MINIMAL contracts doc, then hand the
+  // bytes to the EXISTING uploadSignedContract callable — it stores the PDF on the LOCKED
+  // Storage path (client can never touch it), flips status → "signed" and adds the staff
+  // signDocs entry itself. NEVER the public staffDocs path — contracts are pay + PII.
+  const uploadExternalContract = async (file) => {
+    if (!file || !profile) return;
+    // mirror SentContractsPage.onUploadSigned guards exactly (PDF only, 15MB cap)
+    if (file.type !== "application/pdf") return showToast("Please choose a PDF file");
+    if (file.size > 15 * 1024 * 1024) return showToast("File too large (max 15MB)");
+    setContractFileBusy(true);
+    let created = null;
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(",")[1]); // strip data: prefix
+        r.onerror = reject; r.readAsDataURL(file);
+      });
+      // MINIMAL external contract doc — NO templateId, NO values, NO basis/area. The
+      // callable only requires the doc to EXIST (audit-confirmed); render/send stay
+      // hidden for source:"external" rows because both throw on a template-less doc.
+      created = await addDoc(contractsCol(groupId), {
+        staffId: profile.id,
+        staffName: profile.displayName || profile.name || "",
+        source: "external",
+        fileName: file.name,
+        status: "draft",
+        createdBy: actorName,
+        createdAt: serverTimestamp(),
+      });
+      await httpsCallable(getFunctions(undefined, "us-central1"), "uploadSignedContract")({ groupId, contractId: created.id, base64 });
+      // audit: file NAME only — never a URL, never contents
+      logChange("staff.contract.upload", `${actorName} uploaded a signed contract for ${fullName(profile)}: ${file.name}`, { staffId: profile.id });
+      showToast("Signed contract uploaded");
+      // the callable arrayUnioned a signDocs entry server-side — mirror it locally so the
+      // open profile reflects it without a reopen (same shape the server writes)
+      const nowISO = new Date().toISOString();
+      setProfile((p) => (p ? { ...p, signDocs: [...(p.signDocs || []), { id: `contract_${created.id}`, name: "Signed employment agreement", contractId: created.id, filePath: `restaurantGroups/${groupId}/contracts/${created.id}/signed.pdf`, fileUrl: "", uploadedAt: nowISO, uploadedBy: actorName, signedAt: nowISO, signedBy: actorName }] } : p));
+      await loadProfileContracts(profile.id);
+    } catch {
+      // step 2d: the callable failed AFTER the doc was created → an orphaned "draft"
+      // external contract (no PDF, can never render) would linger in Sent Contracts.
+      // DELETE it (owner/storeAdmin have contracts write) — retry is simply re-picking
+      // the file, so nothing is lost by removing the shell doc.
+      if (created) { try { await deleteDoc(doc(contractsCol(groupId), created.id)); } catch { /* best-effort */ } }
+      showToast("Could not upload signed contract");
+    } finally { setContractFileBusy(false); }
   };
 
   // ── assign training / checklists (from the profile, multi-select, area-aware) ──
@@ -1422,8 +1489,11 @@ export default function StaffDirectoryPage() {
                 {/* Documents to sign (#8): owner uploads, staff e-acknowledges */}
                 <div style={{ marginTop: 16 }}>
                   <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">Documents to sign</span></div>
-                  {(profile.signDocs || []).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No documents uploaded.</div>}
-                  {(profile.signDocs || []).map((d) => (
+                  {/* contract entries (d.contractId) now render in the dedicated Contracts
+                      section below — same gated callable, no duplicate rows here. Plain
+                      uploads only. Data untouched: render filter, not a write. */}
+                  {(profile.signDocs || []).filter((d) => !d.contractId).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No documents uploaded.</div>}
+                  {(profile.signDocs || []).filter((d) => !d.contractId).map((d) => (
                     <div key={d.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                       <span>
                         {d.contractId
@@ -1444,6 +1514,44 @@ export default function StaffDirectoryPage() {
                     </div>
                   )}
                 </div>
+
+                {/* ── Phase A: CONTRACTS — generated + externally-signed uploads. Signed rows
+                    download via the EXISTING gated callable (downloadSignedContract). External
+                    rows NEVER get render/send — those callables throw on a template-less doc. */}
+                {canContractsView && (
+                  <div style={{ marginTop: 16 }}>
+                    <div className="card-head" style={{ marginBottom: 8 }}>
+                      <span className="card-title">Contracts</span>
+                      {canContractsEdit && SIGNED_UPLOAD_ENABLED && (
+                        <label className="btn btn-sm btn-primary" style={{ cursor: contractFileBusy ? "default" : "pointer", opacity: contractFileBusy ? 0.6 : 1 }}>
+                          {contractFileBusy ? "Uploading…" : "Upload signed contract"}
+                          <input type="file" accept="application/pdf" style={{ display: "none" }} disabled={contractFileBusy}
+                            onChange={(e) => { uploadExternalContract(e.target.files?.[0]); e.target.value = ""; }} />
+                        </label>
+                      )}
+                    </div>
+                    {profileContracts === null ? (
+                      <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>
+                    ) : (
+                      <>
+                        {profileContracts.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No contracts for this person yet.</div>}
+                        {profileContracts.map((c) => (
+                          <div key={c.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                            <span>
+                              📄 {c.source === "external" ? (c.fileName || "Uploaded contract") : (c.templateId || "Contract")}
+                              <span className={`pill ${c.status === "signed" ? "pill-green" : c.status === "sent" ? "pill-blue" : "pill-gray"}`} style={{ marginLeft: 6 }}>{c.status || "draft"}</span>
+                              {c.source === "external" && <span className="pill pill-gray" style={{ marginLeft: 4 }} title="Uploaded externally — no generated PDF, no send">external</span>}
+                            </span>
+                            <span style={{ display: "inline-flex", gap: 6, alignItems: "center", color: "var(--gray)" }}>
+                              {tsLabel(c.createdAt)}{c.source === "external" && c.createdBy ? ` · ${c.createdBy}` : ""}
+                              {c.status === "signed" && SIGNED_UPLOAD_ENABLED && <button className="btn btn-sm" onClick={() => downloadSignedContract(c.id)}>Download</button>}
+                            </span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {canPayroll && (
                   <div style={{ marginTop: 16, ...(pendingProfileReqs.length ? { background: "var(--amber-light, #fffbeb)", border: "1px solid var(--amber)", borderRadius: 10, padding: 10 } : {}) }}>
