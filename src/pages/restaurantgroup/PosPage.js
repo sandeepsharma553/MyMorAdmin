@@ -51,7 +51,8 @@ export default function PosPage() {
   // logged-in user's staff profile (myStaff, resolved by adminUid/email); the
   // server validates the id and stamps staffId/staffName on the order doc,
   // feeding the per-staff sales figures on the Performance page. A login with
-  // no staff profile (e.g. a pure owner account) sells unattributed.
+  // no staff profile (e.g. a pure owner account) can browse but NOT send —
+  // every sale must be attributable (mirrors the Ops PosScreen guard).
   const operator = myStaff || null;
 
   // the ONE shared price resolver (rgStockUtils) — same value the server charges
@@ -68,7 +69,10 @@ export default function PosPage() {
     [categories, resolvedMenuItems]
   );
 
-  const subtotal = lines.reduce((s, l) => s + l.qty * (l.unitPrice + l.modDelta), 0);
+  // inc-GST estimate of what the server will charge: rgSellOrder taxes the WHOLE
+  // line (unit + modifier deltas) by the item's gstApplicable, so incGst per line
+  // then × qty mirrors its subtotal + gst exactly (to rounding).
+  const total = lines.reduce((s, l) => s + l.qty * incGst(l.unitPrice + l.modDelta, l.gstApplicable !== false), 0);
 
   const pushLine = (m, mods) => {
     const id = m.templateId || m.id;
@@ -81,7 +85,8 @@ export default function PosPage() {
         return prev.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l));
       }
       if (prev.length >= MAX_LINES) { showToast(`Max ${MAX_LINES} lines per order (server limit)`); return prev; }
-      return [...prev, { key, menuItemId: id, displayName: m.displayName || id, qty: 1, unitPrice: sellAt(m), modifiers: mods || [], modDelta }];
+      // gstApplicable rides on the rail line so chips can show inc-GST deltas like the tiles
+      return [...prev, { key, menuItemId: id, displayName: m.displayName || id, qty: 1, unitPrice: sellAt(m), modifiers: mods || [], modDelta, gstApplicable: m.gstApplicable !== false }];
     });
   };
   const tapTile = (m) => {
@@ -97,7 +102,8 @@ export default function PosPage() {
   const removeLine = (key) => setLines((prev) => prev.filter((l) => l.key !== key));
 
   const send = async () => {
-    if (!lines.length || sending) return;
+    // !operator: never send an unattributable sale (Ops PosScreen has the same guard)
+    if (!lines.length || sending || !operator) return;
     setSending(true);
     try {
       // The ONE entry point — pricing/deduction/order-write run server-side in
@@ -110,7 +116,7 @@ export default function PosPage() {
           ...(l.modifiers?.length ? { modifiers: l.modifiers.slice(0, MAX_MODS).map((x) => ({ label: x.label })) } : {}),
         })),
         reference: `POS-${Date.now().toString().slice(-6)}`,
-        orderMeta: { serviceMode, ...(operator ? { staff: { id: operator.id } } : {}) },
+        orderMeta: { serviceMode, staff: { id: operator.id } }, // guard above guarantees operator
       });
       if (r.skipped?.length) {
         showToast(`Skipped: ${[...new Set(r.skipped.map((x) => x.reason))].join("; ")}`);
@@ -177,8 +183,13 @@ export default function PosPage() {
         <div style={{ fontSize: 13, fontWeight: 800 }}>Order — {selectedVenueName}</div>
         <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>
           Served by <strong>{operator ? (operator.displayName || operator.name) : (me?.name || me?.email || "this login")}</strong>
-          {operator ? "" : " (no staff profile — sales won't count toward anyone)"}
         </div>
+        {!operator && (
+          <div style={{ fontSize: 11, color: "var(--red)", background: "#fef2f2", borderRadius: 8, padding: "6px 8px", marginBottom: 8 }}>
+            This login has no staff profile, so sales can't be attributed. Ask an owner to link your
+            account to a staff record. You can browse the menu, but sending orders is disabled.
+          </div>
+        )}
         {/* service mode (sent as orderMeta.serviceMode) */}
         <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
           {SERVICE_MODES.map((sm) => (
@@ -191,7 +202,7 @@ export default function PosPage() {
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 600 }}>{l.displayName}</div>
-                  <div style={{ fontSize: 11, color: "var(--gray)" }}>{money(l.unitPrice + l.modDelta)} ex est.</div>
+                  <div style={{ fontSize: 11, color: "var(--gray)" }}>{money(incGst(l.unitPrice + l.modDelta, l.gstApplicable !== false))} each</div>
                 </div>
                 <button className="btn btn-sm" onClick={() => bump(l.key, -1)}>−</button>
                 <span style={{ fontSize: 13, fontWeight: 700, minWidth: 20, textAlign: "center" }}>{l.qty}</span>
@@ -202,7 +213,7 @@ export default function PosPage() {
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 3 }}>
                   {l.modifiers.map((x) => (
                     <span key={x.label} className="pill" style={{ background: "#f4f4f5", fontSize: 10 }}>
-                      {x.label}{x.priceDelta ? ` ${x.priceDelta > 0 ? "+" : "−"}$${Math.abs(x.priceDelta)}` : ""}
+                      {x.label}{x.priceDelta ? ` ${x.priceDelta > 0 ? "+" : "−"}${money(incGst(Math.abs(x.priceDelta), l.gstApplicable !== false))}` : ""}
                     </span>
                   ))}
                 </div>
@@ -213,11 +224,12 @@ export default function PosPage() {
         </div>
         <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 8, marginTop: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8 }}>
-            <span>Subtotal (ex-GST, est.)</span><strong>{money(subtotal)}</strong>
+            <span>Total (inc-GST, est.)</span><strong>{money(total)}</strong>
           </div>
-          <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>{lines.length}/{MAX_LINES} lines · {MODE_LABEL[serviceMode]} · server re-prices &amp; adds GST</div>
-          <button className="btn btn-primary" style={{ width: "100%" }} disabled={!lines.length || sending} onClick={send}>
-            {sending ? "Sending…" : "Send order"}
+          <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>{lines.length}/{MAX_LINES} lines · {MODE_LABEL[serviceMode]} · server re-prices authoritatively</div>
+          <button className="btn btn-primary" style={{ width: "100%" }} disabled={!lines.length || sending || !operator}
+            title={operator ? undefined : "No staff profile linked to this login — sales can't be attributed"} onClick={send}>
+            {sending ? "Sending…" : operator ? "Send order" : "No staff profile — can't send"}
           </button>
         </div>
       </div>
@@ -261,7 +273,7 @@ export default function PosPage() {
                       return (
                         <label key={o.label} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, border: "0.5px solid var(--border)", borderRadius: 8, padding: "4px 8px", cursor: "pointer", background: on ? "#eef2ff" : "transparent" }}>
                           <input type={g.type === "single" ? "radio" : "checkbox"} name={`mod-${gid}`} checked={on} onChange={() => toggle(gid, g, o.label)} />
-                          {o.label}{delta ? <span style={{ color: "var(--gray)" }}>{delta > 0 ? "+" : "−"}${Math.abs(delta)}</span> : null}
+                          {o.label}{delta ? <span style={{ color: "var(--gray)" }}>{delta > 0 ? "+" : "−"}{money(incGst(Math.abs(delta), m.gstApplicable !== false))}</span> : null}
                         </label>
                       );
                     })}
@@ -270,7 +282,7 @@ export default function PosPage() {
               ))}
               {chosen.length > MAX_MODS && <div style={{ fontSize: 11, color: "var(--red)", marginBottom: 6 }}>Max {MAX_MODS} add-ons per line (server limit).</div>}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-                <span style={{ fontSize: 12, color: "var(--gray)" }}>{money(estUnit)} ex est. / each</span>
+                <span style={{ fontSize: 12, color: "var(--gray)" }}>{money(incGst(estUnit, m.gstApplicable !== false))} inc-GST / each</span>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button className="btn btn-sm" onClick={() => setModModal(null)}>Cancel</button>
                   <button className="btn btn-primary btn-sm" disabled={!ok} onClick={() => { pushLine(m, chosen); setModModal(null); }}>
