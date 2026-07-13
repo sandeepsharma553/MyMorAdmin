@@ -140,6 +140,11 @@ export const complianceCol = (groupId) => groupCol(groupId, "compliance");
 export const complianceManualDoc = (groupId) => doc(complianceCol(groupId), "manual");
 export const acknowledgementsCol = (groupId, staffId) => collection(staffDoc(groupId, staffId), "acknowledgements");
 export const acknowledgementDoc = (groupId, staffId, version) => doc(acknowledgementsCol(groupId, staffId), String(version));
+// Payroll change requests (Phase 5b) — per-staff, SELF-submitted money-field changes
+// (tfn/super/bank) awaiting owner/storeAdmin review; the staffer never writes private/
+// directly for these. Docs are kept as history (applied/declined) — never deleted.
+export const payrollChangeRequestsCol = (groupId, staffId) => collection(staffDoc(groupId, staffId), "payrollChangeRequests");
+export const payrollChangeRequestDoc = (groupId, staffId, reqId) => doc(payrollChangeRequestsCol(groupId, staffId), reqId);
 
 /* ── Contract Generator (Documents module) ────────────────────────────
  * Templates are group-level master docs (seeded out-of-band); contract

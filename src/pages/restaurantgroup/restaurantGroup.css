@@ -301,3 +301,18 @@
   .rg-scope .grid-3 { grid-template-columns:1fr; }
   .rg-scope .grid-2 { grid-template-columns:1fr; }
 }
+
+/* Phase 5b: pending payroll-change dot — a GENTLE slow pulse (opacity/scale ease), never a
+   hard blink (flashing UI is an accessibility problem). Same attention family as the
+   payroll card's amber tint. Honours reduced-motion. */
+@keyframes rgPayrollPulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+.rg-scope .payroll-pending-dot {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; align-self: center;
+  background: var(--amber); animation: rgPayrollPulse 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rg-scope .payroll-pending-dot { animation: none; }
+}

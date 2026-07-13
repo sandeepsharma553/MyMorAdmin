@@ -4,7 +4,7 @@ import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from "firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
+import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, publicHolidaysDoc, payrollChangeRequestsCol, payrollChangeRequestDoc } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { defaultPermsForStaffRole, roleToGroupRole, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
@@ -91,6 +91,14 @@ const EMPLOYMENT_TERMS_FIELDS = [
 // One source of truth for the private/details doc shape. The reducers below iterate THIS,
 // so the existing setDoc(..., {merge:true}) write path picks up the new keys unchanged.
 const PRIVATE_FIELDS = [...PAYROLL_FIELDS, ...EMPLOYMENT_TERMS_FIELDS];
+// ── Phase 5b: self-service split of the payroll block ──
+// DIRECT: the staffer writes these to their OWN private/details (the Firestore whitelist
+// is key-for-key: the payload must be EXACTLY these four + updatedAt, nothing else).
+const SELF_DIRECT_KEYS = ["legalName", "dob", "address", "contactEmail"];
+// REVIEW: money fields — the staffer NEVER writes these to private/; they go into a
+// payrollChangeRequests doc that owner/storeAdmin applies (or declines). NB: the
+// employment-terms keys and the stored `password` are in NEITHER list — not self-servable.
+const SELF_REVIEW_KEYS = ["tfn", "superAccount", "superUsi", "bankBsb", "bankAccount"];
 const payrollBlank = () => PRIVATE_FIELDS.reduce((o, f) => { o[f.key] = ""; return o; }, {});
 // String() first: legacy private docs can hold NUMBERS (e.g. rate: 33.05 saved unquoted) —
 // (number).trim() would throw and kill the whole save.
@@ -578,6 +586,128 @@ export default function StaffDirectoryPage() {
     return () => { alive = false; };
   }, [profile, groupId, canPayroll]);
 
+  // ── Phase 5b: self-service payroll (self tier) + owner review of change requests ──
+  // DIRECT keys save straight to private/details (rules whitelist, exact-keys payload);
+  // MONEY keys only ever go to payrollChangeRequests docs — the self view has NO code
+  // path that writes them to private/. Owner applies/declines further below.
+  const [selfPriv, setSelfPriv] = useState(null); // null = loading, false = read denied (rules not live yet)
+  const [selfDirect, setSelfDirect] = useState(null); // form state for the four DIRECT keys
+  const [selfReq, setSelfReq] = useState(() => SELF_REVIEW_KEYS.reduce((o, k) => { o[k] = ""; return o; }, {}));
+  const [selfReqs, setSelfReqs] = useState([]);
+  const [selfBusy, setSelfBusy] = useState(false);
+  useEffect(() => {
+    if (canViewAll || !groupId || !myStaff?.id) return;
+    let alive = true;
+    // fail SOFT: until the private/ self-read rule is published this getDoc is DENIED —
+    // selfPriv === false renders a friendly message instead of crashing the self view.
+    getDoc(staffPrivateDoc(groupId, myStaff.id))
+      .then((d) => {
+        if (!alive) return;
+        const p = d.exists() ? d.data() : {};
+        setSelfPriv(p);
+        setSelfDirect(SELF_DIRECT_KEYS.reduce((o, k) => { o[k] = String(p[k] ?? ""); return o; }, {}));
+      })
+      .catch(() => { if (alive) setSelfPriv(false); });
+    const unsub = onSnapshot(payrollChangeRequestsCol(groupId, myStaff.id),
+      (snap) => { if (alive) setSelfReqs(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); },
+      () => {}); // denied until the rule ships → list stays empty, no crash
+    return () => { alive = false; unsub(); };
+  }, [canViewAll, groupId, myStaff?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const selfPendingReq = selfReqs.find((r) => r.status === "pending") || null;
+  const selfPastReqs = selfReqs.filter((r) => r.status !== "pending").sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+  const saveSelfDirect = async () => {
+    if (!myStaff?.id || !selfDirect) return;
+    setSelfBusy(true);
+    try {
+      // EXACTLY the four whitelisted keys + updatedAt — never spread form state: the rules
+      // whitelist (diff().affectedKeys().hasOnly) rejects the ENTIRE write on any extra key.
+      const payload = {
+        legalName: String(selfDirect.legalName ?? "").trim(),
+        dob: String(selfDirect.dob ?? "").trim(),
+        address: String(selfDirect.address ?? "").trim(),
+        contactEmail: String(selfDirect.contactEmail ?? "").trim(),
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(staffPrivateDoc(groupId, myStaff.id), payload, { merge: true });
+      setSelfPriv((p) => ({ ...(p || {}), ...payload }));
+      showToast("Your details were updated");
+    } catch { showToast("Could not save — your access may not be enabled yet"); }
+    finally { setSelfBusy(false); }
+  };
+  const submitSelfRequest = async () => {
+    if (!myStaff?.id || selfPendingReq) return;
+    const fields = {};
+    SELF_REVIEW_KEYS.forEach((k) => { const v = String(selfReq[k] ?? "").trim(); if (v) fields[k] = v; });
+    if (!Object.keys(fields).length) return showToast("Fill in at least one field to request a change");
+    setSelfBusy(true);
+    try {
+      await addDoc(payrollChangeRequestsCol(groupId, myStaff.id), {
+        fields, submittedAt: serverTimestamp(), submittedBy: myStaff.displayName || fullName(myStaff),
+        status: "pending", decidedAt: null, decidedBy: "",
+      });
+      // audit: field NAMES only — never values (the auditLog is group-readable)
+      logChange("staff.payroll.request", `${myStaff.displayName || fullName(myStaff)} requested payroll changes: ${Object.keys(fields).join(", ")}`, { staffId: myStaff.id });
+      // notify every owner/storeAdmin so the request is seen without opening the profile.
+      // NOT to:"managers" — that broadcast also reaches plain managers, who cannot apply
+      // these (private/ is owner/storeAdmin-only). Recipients = staff docs with an
+      // owner/storeAdmin groupRole (group-readable; feed routing matches n.to === myStaff.id).
+      // Fire-and-forget (sendNotification catches internally) — never fails the submission.
+      // Body is the staff NAME only — payroll values must never enter a notification.
+      staff.filter((x) => ["owner", "storeAdmin"].includes(x.groupRole)).forEach((x) =>
+        sendNotification(groupId, { to: x.id, type: "payroll_change_request", title: "Payroll change requested", body: `${myStaff.displayName || fullName(myStaff)} requested a change to their payroll details`, by: myStaff.displayName || fullName(myStaff) })
+      );
+      setSelfReq(SELF_REVIEW_KEYS.reduce((o, k) => { o[k] = ""; return o; }, {}));
+      showToast("Change request submitted for review");
+    } catch { showToast("Could not submit the request"); }
+    finally { setSelfBusy(false); }
+  };
+  // owner/storeAdmin side: live-listen to the open profile's change requests
+  const [profileReqs, setProfileReqs] = useState([]);
+  useEffect(() => {
+    setProfileReqs([]);
+    if (!profile || !groupId || !canPayroll) return;
+    const unsub = onSnapshot(payrollChangeRequestsCol(groupId, profile.id),
+      (snap) => setProfileReqs(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
+    return () => unsub();
+  }, [profile, groupId, canPayroll]);
+  const pendingProfileReqs = profileReqs.filter((r) => r.status === "pending");
+  const pastProfileReqs = profileReqs.filter((r) => r.status !== "pending").sort((a, b) => (b.decidedAt?.seconds || 0) - (a.decidedAt?.seconds || 0));
+  const applyPayrollRequest = async (r) => {
+    try {
+      // merge ONLY the requested money fields into private/ (owner/storeAdmin write), then
+      // mark the request applied — request docs are KEPT as history, never deleted.
+      await setDoc(staffPrivateDoc(groupId, profile.id), { ...(r.fields || {}), updatedAt: serverTimestamp() }, { merge: true });
+      await updateDoc(payrollChangeRequestDoc(groupId, profile.id, r.id), { status: "applied", decidedAt: serverTimestamp(), decidedBy: actorName });
+      setPayroll((p) => (p ? { ...p, ...(r.fields || {}) } : p));
+      logChange("staff.payroll.apply", `Applied payroll change request for ${fullName(profile)}: ${Object.keys(r.fields || {}).join(", ")}`, { staffId: profile.id });
+      showToast("Change request applied");
+    } catch { showToast("Could not apply the request"); }
+  };
+  const declinePayrollRequest = async (r) => {
+    try {
+      await updateDoc(payrollChangeRequestDoc(groupId, profile.id, r.id), { status: "declined", decidedAt: serverTimestamp(), decidedBy: actorName });
+      logChange("staff.payroll.decline", `Declined payroll change request for ${fullName(profile)}: ${Object.keys(r.fields || {}).join(", ")}`, { staffId: profile.id });
+      showToast("Change request declined");
+    } catch { showToast("Could not decline the request"); }
+  };
+  // ── Phase 5b follow-up: which staff have a PENDING payroll change request? Powers the
+  // directory-card pulse dot (canPayroll only — managers/self never load this). A single
+  // collectionGroup("payrollChangeRequests") query would be ONE read, but the current
+  // rules have no collection-group match for that subcollection (a direct
+  // staff/{id}/payrollChangeRequests rule does NOT authorise collectionGroup queries),
+  // so — mirroring the bulk private-DOB loader above — one small per-staff query instead.
+  // profileReqs in the deps refreshes the dots right after an Apply/Decline.
+  const [pendingReqIds, setPendingReqIds] = useState(() => new Set());
+  useEffect(() => {
+    if (!canPayroll || !groupId || !scopedStaff.length) { setPendingReqIds(new Set()); return; }
+    let alive = true;
+    Promise.all(scopedStaff.map((s) =>
+      getDocs(query(payrollChangeRequestsCol(groupId, s.id), where("status", "==", "pending")))
+        .then((snap) => ({ id: s.id, pending: !snap.empty })).catch(() => ({ id: s.id, pending: false }))))
+      .then((rows) => { if (!alive) return; setPendingReqIds(new Set(rows.filter((r) => r.pending).map((r) => r.id))); });
+    return () => { alive = false; };
+  }, [canPayroll, groupId, staffIdsKey, profileReqs]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // fetch archived training + checklists across the staff member's venues when a profile
   // opens. Both archives now also receive a dated entry on EACH completion (completionArchive),
   // so a training/checklist completed N times shows N dated entries here.
@@ -932,7 +1062,71 @@ export default function StaffDirectoryPage() {
                 ? s.certs.map((c, i) => { const st = certStatus(c.expiry); return <span key={i} className={`pill ${st.pill}`}>{c.name}{c.expiry ? ` · ${c.expiry}` : ""}{st.note ? ` (${st.note})` : ""}</span>; })
                 : <span style={{ fontSize: 12, color: "var(--gray)" }}>None recorded</span>}
             </div>
-            <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 14 }}>Read-only — ask a manager to update any of these details.</div>
+            {/* ── Phase 5b: self-service payroll & personal ── DIRECT keys write straight to
+                private/details (rules whitelist); MONEY keys only ever become a change request. */}
+            <div className="form-label" style={{ marginTop: 14 }}>My payroll &amp; personal details</div>
+            {selfPriv === false ? (
+              <div style={{ fontSize: 12, color: "var(--gray)" }}>
+                Your payroll details aren’t available yet — this needs a permissions update on the server.
+                Ask a manager if this doesn’t change soon.
+              </div>
+            ) : selfPriv === null || !selfDirect ? (
+              <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  {SELF_DIRECT_KEYS.map((k) => {
+                    const f = PAYROLL_FIELDS.find((x) => x.key === k);
+                    return (
+                      <div key={k} className="form-group" style={{ margin: 0, gridColumn: f?.full ? "1 / -1" : "auto" }}>
+                        <label className="form-label">{f?.label || k}</label>
+                        <input className="form-input" type={f?.type || "text"} value={selfDirect[k] || ""} onChange={(e) => setSelfDirect((p) => ({ ...p, [k]: e.target.value }))} placeholder={f?.ph || ""} autoComplete="off" />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="btn-row" style={{ marginTop: 8 }}>
+                  <button className="btn btn-sm btn-primary" disabled={selfBusy} onClick={saveSelfDirect}>{selfBusy ? "Saving…" : "Save my details"}</button>
+                </div>
+                <div className="form-label" style={{ marginTop: 14 }}>Bank / tax / super <span style={{ color: "var(--gray)", fontWeight: 400 }}>(changes need manager approval)</span></div>
+                {selfPendingReq ? (
+                  <div style={{ background: "var(--amber-light, #fffbeb)", border: "1px solid var(--amber)", borderRadius: 8, padding: 10, fontSize: 12 }}>
+                    <strong>Pending review</strong> — {Object.keys(selfPendingReq.fields || {}).map((k) => PAYROLL_FIELDS.find((x) => x.key === k)?.label || k).join(", ")}
+                    {selfPendingReq.submittedAt ? ` · submitted ${tsLabel(selfPendingReq.submittedAt)}` : ""}. You can submit another change once this one is reviewed.
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      {SELF_REVIEW_KEYS.map((k) => {
+                        const f = PAYROLL_FIELDS.find((x) => x.key === k);
+                        return (
+                          <div key={k} className="form-group" style={{ margin: 0 }}>
+                            <label className="form-label">{f?.label || k}</label>
+                            <input className="form-input" type="text" value={selfReq[k] || ""} onChange={(e) => setSelfReq((p) => ({ ...p, [k]: e.target.value }))} placeholder={f?.ph || "Leave blank to keep current"} autoComplete="off" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="btn-row" style={{ marginTop: 8 }}>
+                      <button className="btn btn-sm" disabled={selfBusy} onClick={submitSelfRequest}>Submit for review</button>
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>Only the fields you fill in are submitted; current values stay until a manager approves.</div>
+                  </>
+                )}
+                {selfPastReqs.length > 0 && (
+                  <details style={{ marginTop: 10 }}>
+                    <summary style={{ fontSize: 11, color: "var(--gray)", cursor: "pointer" }}>Past change requests ({selfPastReqs.length})</summary>
+                    {selfPastReqs.map((r) => (
+                      <div key={r.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 11, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                        <span>{Object.keys(r.fields || {}).map((k) => PAYROLL_FIELDS.find((x) => x.key === k)?.label || k).join(", ")}</span>
+                        <span><span className={`pill ${r.status === "applied" ? "pill-green" : "pill-red"}`}>{r.status}</span>{r.decidedAt ? ` ${tsLabel(r.decidedAt)}` : ""}</span>
+                      </div>
+                    ))}
+                  </details>
+                )}
+              </>
+            )}
+            <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 14 }}>Roster &amp; profile details above are read-only — ask a manager to update them.</div>
           </div>
         )}
       </div>
@@ -986,6 +1180,7 @@ export default function StaffDirectoryPage() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 4 }}>
               <div className="staff-avatar" style={{ background: avatarColor(s) }}>{initials(s)}</div>
               <span style={{ display: "inline-flex", gap: 4 }}>
+                {canPayroll && pendingReqIds.has(s.id) && <span className="payroll-pending-dot" title="Pending payroll change request" />}
                 {isUnder18(s) && <span className="pill pill-amber" title="Under 18">Under 18</span>}
                 {s.status === "Left" && <span className="pill pill-gray" title={s.endDate ? `Left ${s.endDate}` : "Left"}>Left</span>}
                 {s.hasAdminLogin && <span className="pill pill-purple" title="Has admin website login">🔑 Admin</span>}
@@ -1133,11 +1328,32 @@ export default function StaffDirectoryPage() {
                 </div>
 
                 {canPayroll && (
-                  <div style={{ marginTop: 16 }}>
+                  <div style={{ marginTop: 16, ...(pendingProfileReqs.length ? { background: "var(--amber-light, #fffbeb)", border: "1px solid var(--amber)", borderRadius: 10, padding: 10 } : {}) }}>
                     <div className="card-head" style={{ marginBottom: 8 }}>
-                      <span className="card-title">Payroll &amp; personal</span>
+                      <span className="card-title">Payroll &amp; personal{pendingProfileReqs.length > 0 && <span className="pill pill-amber" style={{ marginLeft: 8 }}>{pendingProfileReqs.length} pending change{pendingProfileReqs.length > 1 ? "s" : ""} · review</span>}</span>
                       <button className="btn btn-sm" onClick={() => setShowPayroll((s) => !s)}>{showPayroll ? "Hide" : "Show"} sensitive</button>
                     </div>
+                    {/* ── Phase 5b: staff-submitted money-field change requests — review → apply/decline.
+                        Sensitive values respect the SAME Show-sensitive toggle (never unmasked by default). */}
+                    {pendingProfileReqs.map((r) => (
+                      <div key={r.id} style={{ border: "1px solid var(--amber)", background: "#fff", borderRadius: 8, padding: 10, marginBottom: 10 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Change requested by {r.submittedBy || "staff"}{r.submittedAt ? ` · ${tsLabel(r.submittedAt)}` : ""}</div>
+                        {Object.entries(r.fields || {}).map(([k, v]) => {
+                          const f = PAYROLL_FIELDS.find((x) => x.key === k);
+                          const mask = (val) => (val ? (f?.sensitive && !showPayroll ? "•••• " + String(val).slice(-3) : String(val)) : "—");
+                          return (
+                            <div key={k} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
+                              <span style={{ color: "var(--gray)" }}>{f?.label || k}</span>
+                              <span>{mask(payroll?.[k])} → <strong>{mask(v)}</strong></span>
+                            </div>
+                          );
+                        })}
+                        <div className="btn-row" style={{ marginTop: 8 }}>
+                          <button className="btn btn-sm btn-primary" onClick={() => applyPayrollRequest(r)}>Apply</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => declinePayrollRequest(r)}>Decline</button>
+                        </div>
+                      </div>
+                    ))}
                     {payroll === null ? (
                       <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>
                     ) : (
@@ -1152,6 +1368,17 @@ export default function StaffDirectoryPage() {
                           <div><div className="form-label">Login password</div><div style={{ fontSize: 13, fontFamily: "monospace" }}>{payroll.password ? (showPayroll ? payroll.password : "••••••") : "—"}</div></div>
                         )}
                       </div>
+                    )}
+                    {pastProfileReqs.length > 0 && (
+                      <details style={{ marginTop: 10 }}>
+                        <summary style={{ fontSize: 11, color: "var(--gray)", cursor: "pointer" }}>Past change requests ({pastProfileReqs.length})</summary>
+                        {pastProfileReqs.map((r) => (
+                          <div key={r.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 11, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                            <span>{Object.keys(r.fields || {}).map((k) => PAYROLL_FIELDS.find((x) => x.key === k)?.label || k).join(", ")}{r.submittedBy ? ` · ${r.submittedBy}` : ""}</span>
+                            <span><span className={`pill ${r.status === "applied" ? "pill-green" : "pill-red"}`}>{r.status}</span>{r.decidedAt ? ` ${tsLabel(r.decidedAt)} · ${r.decidedBy || ""}` : ""}</span>
+                          </div>
+                        ))}
+                      </details>
                     )}
                   </div>
                 )}
