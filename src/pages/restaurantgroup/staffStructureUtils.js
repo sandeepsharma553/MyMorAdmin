@@ -67,8 +67,8 @@ export const clusterName = (group, clusterId) =>
   groupClusters(group).find((c) => c.id === clusterId)?.name || "";
 // Ordered unique clusterIds for a staffer: their venueIds → each venue's clusterId, nulls
 // (unassigned venues) dropped, deduped, ordered by group.clusters definition order (unknown
-// ids last, first-seen order). The LATER availability poster uses this to decide "no picker
-// (1 cluster)" vs "pick a cluster (2+)" — NOT wired into any poster/planner yet.
+// ids last, first-seen order). The availability poster uses this to decide "no picker
+// (1 cluster)" vs "pick a cluster (2+)" — wired into the poster + planner since Phase 3b/3c.
 export const clustersForStaff = (group, venues, staffMember) => {
   const vids = staffMember?.venueIds?.length ? staffMember.venueIds : (staffMember?.venueId ? [staffMember.venueId] : []);
   const ids = [...new Set(vids.map((vid) => clusterOfVenue(venues, vid)).filter(Boolean))];

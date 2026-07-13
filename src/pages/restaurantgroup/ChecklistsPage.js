@@ -7,7 +7,7 @@ import { RefImageViewer, RefImageEditor } from "./RefImages";
 import { RichItemList, RichText } from "./RichItems";
 import PrepListPanel from "./PrepListPanel";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
-import { trainingStatusPill, progressColor } from "./rgUtils";
+import { trainingStatusPill, progressColor, mkTimes, FULL_DAY_TIMES } from "./rgUtils";
 import { stationsForArea, groupItemsByStation, filterByStation, GENERAL_KEY } from "./itemDrilldown";
 import { showInActiveList } from "./completionWindow";
 import { SLOT_DAYS, toggleSlotLink } from "./shiftSlotPicker";
@@ -33,9 +33,9 @@ const areaOf = (c) => c.area || (/\bboh\b|kitchen|grill|fry|wash|prep|cook|dress
 const nowHHMM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const fmt12 = (t) => { if (!t) return ""; const [h, m] = t.split(":").map(Number); const ap = h >= 12 ? "pm" : "am"; const h12 = h % 12 || 12; return `${h12}:${String(m).padStart(2, "0")}${ap}`; };
 const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "", area: "FOH", stationId: "", autoStations: [], time: "", items: [], days: [], images: [], frequency: "daily", scheduleDay: "mon", scheduleDate: 1, autoRoles: [], autoShiftStart: "", shiftLinks: [], recurring: true });
-// 15-minute time options for linking checklists to shift slots (start/end), full day
-const mkTimes = (from, to) => { const out = []; for (let m = from; m <= to; m += 15) { const h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? "pm" : "am", h12 = (h % 12) || 12; out.push(`${h12}:${String(mm).padStart(2, "0")}${ap}`); } return out; };
-const TIMES = mkTimes(0, 23 * 60 + 45);
+// 15-minute time options for linking checklists to shift slots — from the SHARED rgUtils
+// mkTimes (Phase 3e single source); the local duplicate is gone (byte-identical output).
+const TIMES = FULL_DAY_TIMES; // 12:00am … 11:45pm
 const GRID_TIMES = mkTimes(6 * 60, 22 * 60); // 6:00am … 10:00pm (15-min) for the link-to-shift time grid
 // shift start times offered for auto-assign linking (mirrors ShiftPlanner STARTS)
 const AUTO_STARTS = ["", "7:00am", "7:30am", "8:00am", "9:00am", "10:00am", "11:00am", "12:00pm", "3:00pm", "4:00pm", "5:00pm", "6:00pm"];
