@@ -329,66 +329,72 @@ export default function PosPage() {
     );
   }
 
+  // shared search box (screen A filters the CATEGORY GRID · screen B filters
+  // items within the current category — same displayName+kitchenName predicate).
+  // autoFocus is right on the web POS: a keyboard is always attached, so landing
+  // on the page ready-to-type saves a click. (Ops does NOT autofocus — an iPad
+  // software keyboard would cover the grid.)
+  const searchBox = (
+    <div style={{ position: "relative" }}>
+      <span className="pos-search-icon" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" />
+        </svg>
+      </span>
+      <input className="pos-search" autoFocus value={q} onChange={(e) => { setQ(e.target.value); setSearchAll(false); }}
+        placeholder={cat == null ? "Search categories…" : `Search in ${cat}…`} />
+      {q !== "" && (
+        <button className="pos-search-clear" onClick={() => { setQ(""); setSearchAll(false); }} title="Clear search" aria-label="Clear search">×</button>
+      )}
+    </div>
+  );
+
   return (
     <div className="pos-v2" style={{ display: "flex", gap: 12, alignItems: "stretch", minHeight: "70vh" }}>
       {/* CENTRE — category-first flow: SCREEN A (category grid, POS opens here)
-          → SCREEN B (that category's item grid). The old 25-deep left rail is
-          gone; on screen B a horizontal chip strip switches category in place. */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
-        {cat != null && (
-          <div className="pos-topbar">
-            <button className="pos-back" onClick={backToCats}>← Categories</button>
-            <div className="pos-topbar-div" />
-            <div className="pos-chipstrip">
+          → SCREEN B (vertical category rail on the left + that category's item
+          grid). minWidth: 0 is load-bearing: a flex child defaults to
+          min-width:auto and refuses to shrink below its content, which made the
+          item grid overflow sideways instead of wrapping. */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        {cat == null ? (
+          /* SCREEN A — category tiles: pinned (★) lead, then alphabetical */
+          <>
+            {searchBox}
+            <div className="pos-cat-grid">
+              {catTiles.map((c) => (
+                <div key={c} className="pos-tile pos-tile--tap pos-cat-tile" onClick={() => openCat(c)}>
+                  <div className="pos-cat-tile-name">{pinnedCatSet.has(c) && <span className="pos-cat-star">★ </span>}{c}</div>
+                  <div className="pos-cat-tile-sub">{catCounts[c] || 0} item{(catCounts[c] || 0) === 1 ? "" : "s"}</div>
+                </div>
+              ))}
+              {catTiles.length === 0 && (
+                <div className="pos-tile" style={{ gridColumn: "1 / -1", color: "var(--pos-ink-soft)", fontSize: 13 }}>
+                  No categories match “{q.trim()}”. <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => setQ("")}>Clear search</button>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          /* SCREEN B — vertical category rail (own scroll) + item pane */
+          <div className="pos-b-body">
+            <div className="pos-b-rail">
+              <button className="pos-back" style={{ marginBottom: 6 }} onClick={backToCats}>← Categories</button>
               {orderedCats.map((c) => (
                 <button key={c} className={`pos-cat ${cat === c ? "pos-cat--on" : ""}`} onClick={() => openCat(c)}>
                   {pinnedCatSet.has(c) ? "★ " : ""}{c}
                 </button>
               ))}
             </div>
-          </div>
-        )}
-        {/* autoFocus is right on the web POS: a keyboard is always attached, so
-            landing on the page ready-to-type saves a click. (Ops does NOT autofocus —
-            an iPad software keyboard would cover the grid.)
-            Screen A: filters the CATEGORY GRID · screen B: filters items within
-            the current category (same displayName+kitchenName predicate). */}
-        <div style={{ position: "relative" }}>
-          <span className="pos-search-icon" aria-hidden="true">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" />
-            </svg>
-          </span>
-          <input className="pos-search" autoFocus value={q} onChange={(e) => { setQ(e.target.value); setSearchAll(false); }}
-            placeholder={cat == null ? "Search categories…" : `Search in ${cat}…`} />
-          {q !== "" && (
-            <button className="pos-search-clear" onClick={() => { setQ(""); setSearchAll(false); }} title="Clear search" aria-label="Clear search">×</button>
-          )}
-        </div>
-        {cat == null ? (
-          /* SCREEN A — category tiles: pinned (★) lead, then alphabetical */
-          <div className="pos-cat-grid">
-            {catTiles.map((c) => (
-              <div key={c} className="pos-tile pos-tile--tap pos-cat-tile" onClick={() => openCat(c)}>
-                <div className="pos-cat-tile-name">{pinnedCatSet.has(c) && <span className="pos-cat-star">★ </span>}{c}</div>
-                <div className="pos-cat-tile-sub">{catCounts[c] || 0} item{(catCounts[c] || 0) === 1 ? "" : "s"}</div>
-              </div>
-            ))}
-            {catTiles.length === 0 && (
-              <div className="pos-tile" style={{ gridColumn: "1 / -1", color: "var(--pos-ink-soft)", fontSize: 13 }}>
-                No categories match “{q.trim()}”. <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => setQ("")}>Clear search</button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            {searchAll && q.trim() !== "" && (
-              <div className="pos-searchall-note">
-                Showing matches across all categories.
-                <button className="pos-back" style={{ marginLeft: 8 }} onClick={() => setSearchAll(false)}>Back to {cat}</button>
-              </div>
-            )}
-            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, alignContent: "flex-start" }}>
+            <div className="pos-b-main">
+              {searchBox}
+              {searchAll && q.trim() !== "" && (
+                <div className="pos-searchall-note">
+                  Showing matches across all categories.
+                  <button className="pos-back" style={{ marginLeft: 8 }} onClick={() => setSearchAll(false)}>Back to {cat}</button>
+                </div>
+              )}
+              <div className="pos-item-grid">
             {tiles.map((m) => {
               const off = m.e86 || m.available === false;
               const hasMods = (m.modifierGroupIds || []).length > 0;
@@ -407,17 +413,18 @@ export default function PosPage() {
                 </div>
               );
             })}
-            {tiles.length === 0 && (
-              <div className="pos-tile" style={{ gridColumn: "1 / -1", color: "var(--pos-ink-soft)", fontSize: 13 }}>
-                {q.trim()
-                  ? searchAll
-                    ? <>No items match “{q.trim()}” anywhere. <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => { setQ(""); setSearchAll(false); }}>Clear search</button></>
-                    : <>No matches in {cat} — search all items? <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => setSearchAll(true)}>Search all items</button></>
-                  : <>No items in {cat} at {selectedVenueName}.</>}
+              {tiles.length === 0 && (
+                <div className="pos-tile" style={{ gridColumn: "1 / -1", color: "var(--pos-ink-soft)", fontSize: 13 }}>
+                  {q.trim()
+                    ? searchAll
+                      ? <>No items match “{q.trim()}” anywhere. <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => { setQ(""); setSearchAll(false); }}>Clear search</button></>
+                      : <>No matches in {cat} — search all items? <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => setSearchAll(true)}>Search all items</button></>
+                    : <>No items in {cat} at {selectedVenueName}.</>}
+                </div>
+              )}
               </div>
-            )}
             </div>
-          </>
+          </div>
         )}
       </div>
 

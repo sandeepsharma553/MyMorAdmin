@@ -231,17 +231,30 @@
   padding: 6px 8px; margin-bottom: 8px;
 }
 
-/* ── category-first flow (screen A grid + screen B top bar) ───────────── */
-.pos-v2 .pos-topbar { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+/* ── category-first flow (screen A grid + screen B rail/pane) ─────────── */
 .pos-v2 .pos-back {
   border: 1px solid var(--pos-border); background: var(--pos-surface);
   color: var(--pos-ink); font-size: 12px; font-weight: 700;
   border-radius: 8px; padding: 7px 12px; cursor: pointer; white-space: nowrap;
 }
 .pos-v2 .pos-back:hover { background: var(--pos-tint); }
-.pos-v2 .pos-topbar-div { width: 1px; align-self: stretch; background: var(--pos-border); }
-.pos-v2 .pos-chipstrip { display: flex; gap: 6px; overflow-x: auto; flex: 1; padding-bottom: 2px; }
-.pos-v2 .pos-chipstrip .pos-cat { white-space: nowrap; flex-shrink: 0; padding: 6px 12px; }
+/* screen B: vertical category rail (own scroll) beside the item pane. The
+   min-width: 0 on .pos-b-main matters — without it the flex child keeps
+   min-width:auto, refuses to shrink below its content, and the item grid
+   overflows sideways instead of wrapping. */
+.pos-v2 .pos-b-body { display: flex; gap: 12px; flex: 1; min-height: 0; }
+.pos-v2 .pos-b-rail {
+  width: 150px; flex-shrink: 0; display: flex; flex-direction: column; gap: 4px;
+  overflow-y: auto; min-height: 0; max-height: 78vh;
+  border-right: 1px solid var(--pos-border-soft); padding-right: 8px;
+}
+.pos-v2 .pos-b-rail .pos-cat { text-align: left; flex-shrink: 0; }
+.pos-v2 .pos-b-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.pos-v2 .pos-item-grid {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px; align-content: flex-start;
+}
 .pos-v2 .pos-cat-grid {
   flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 10px; align-content: flex-start;
