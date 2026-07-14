@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRG } from "./RGContext";
 import { sellOrder } from "./sellOrder";
-import { money, incGst, resolvedSellPrice, DEFAULT_MENU_CATEGORIES, resolvePosNotePresets, pinnedFirst } from "./rgStockUtils";
+import { money, incGst, resolvedSellPrice, DEFAULT_MENU_CATEGORIES, resolvePosNotePresets, pinnedFirst, modGroupKind } from "./rgStockUtils";
 import "./PosPage.css";
 
 /* POS Terminal — Phase 2 (order-entry grid + modifier modal + service-mode + send).
@@ -36,19 +36,38 @@ const lineKeyOf = (id, mods) => `${id}|${(mods || []).map((x) => x.label).slice(
 // they stay reachable now that the category-first flow has no "All" view
 const catOf = (m) => m?.category || "Uncategorised";
 
-// ── modifier DISPLAY treatment (COSMETIC ONLY — the payload always carries the
-// FULL STORED LABEL; rgSellOrder prices by exact-label match, so nothing below
-// may ever touch what gets sent). There is NO removal flag in the modifier data
-// model ({label, priceDelta, posId?}), so removal-ness is inferred per OPTION
-// from its label prefix; labels that don't match are treated as additions.
-const REMOVAL_RE = /^(no|remove|without|hold)\s+/i;
-const ADD_PREFIX_RE = /^add\s+/i;
-const isRemovalLabel = (label) => REMOVAL_RE.test(String(label || ""));
-// "Add Bacon" → "Bacon", "No Pickles" → "Pickles" — display only, never sent
-const displayLabel = (label) => {
-  const s = String(label || "");
-  const stripped = s.replace(REMOVAL_RE, "").replace(ADD_PREFIX_RE, "").trim();
-  return stripped || s;
+// ── modifier DISPLAY treatment by GROUP KIND (COSMETIC ONLY — the payload
+// always carries the FULL STORED LABEL; rgSellOrder prices by exact-label
+// match, so nothing below may ever touch what gets sent). The kind comes from
+// modGroupKind(group): explicit group.kind when seeded, else derived from the
+// name prefix — correct on both the seeded test group and the unseeded live one.
+// Verbs: prep is "Set / ✓ Set" (not Set/Set — text alone couldn't show state,
+// so the selected form carries the check plus the filled style); choose is
+// "Choose / ✓ Chosen" for the same reason all selected states carry the check.
+const KIND_VERBS = {
+  add:    ["Add", "✓ Added"],
+  remove: ["Remove", "✓ Removed"],
+  swap:   ["Swap", "✓ Swapped"],
+  prep:   ["Set", "✓ Set"],
+  choose: ["Choose", "✓ Chosen"],
+};
+const KIND_SUMMARY = [ // summary row order + labels + chip class
+  ["add", "Add", "pos-chip-add"],
+  ["swap", "Instead", "pos-chip-swap"],
+  ["remove", "No", "pos-chip-no"],
+  ["prep", "Prep", "pos-chip-prep"],
+  ["choose", "Choose", "pos-chip-choose"],
+];
+// display-only stripping by kind: "Add Bacon"→"Bacon", "No Lettuce"→"Lettuce",
+// "Grilled Chicken Instead"→"Grilled Chicken"; prep/choose labels are already clean
+const displayLabel = (label, kind) => {
+  const s = String(label || "").trim();
+  let out = s;
+  if (kind === "add") out = s.replace(/^add\s+/i, "");
+  else if (kind === "remove") out = s.replace(/^no\s+/i, "");
+  else if (kind === "swap") out = s.replace(/\s+instead$/i, "");
+  out = out.trim();
+  return out || s;
 };
 
 // kitchen note = selected preset chips + free text, composed into ONE string for
@@ -571,8 +590,12 @@ export default function PosPage() {
         // required groups first — the EXISTING minFor()-based comparator, unchanged
         const sorted = [...groups].sort((a, b) => (minFor(a.g) > 0 ? 0 : 1) - (minFor(b.g) > 0 ? 0 : 1));
         const active = sorted.find(({ gid }) => gid === modModal.gid) || sorted[0] || null;
-        const adds = chosen.filter((x) => !isRemovalLabel(x.label));
-        const rems = chosen.filter((x) => isRemovalLabel(x.label));
+        // summary buckets by GROUP kind (display only — chosen/unmet/ok untouched)
+        const kindSel = {}; // kind -> [display labels]
+        for (const { gid, g } of groups) {
+          const k = modGroupKind(g);
+          for (const label of (modModal.sel[gid] || [])) (kindSel[k] = kindSel[k] || []).push(displayLabel(label, k));
+        }
         const qtyN = Math.max(1, Number(modModal.qty) || 1);
         const noteStr = composeNote(modModal.notePresets, modModal.note);
         const optQuery = (modModal.q || "").trim().toLowerCase();
@@ -590,8 +613,9 @@ export default function PosPage() {
                   OWN removable pill (free text too). Display only — on send they
                   still collapse into ONE " · "-joined `notes` string. */}
               <div className="pos-m2-sum">
-                {adds.length > 0 && <span className="pos-chip-add">Add: {adds.map((x) => displayLabel(x.label)).join(", ")}</span>}
-                {rems.length > 0 && <span className="pos-chip-no">No: {rems.map((x) => displayLabel(x.label)).join(", ")}</span>}
+                {KIND_SUMMARY.map(([k, lbl, cls]) => (kindSel[k] || []).length > 0 && (
+                  <span key={k} className={cls}>{lbl}: {kindSel[k].join(", ")}</span>
+                ))}
                 {modModal.notePresets.map((p) => (
                   <span key={p} className="pos-chip-note">✎ {p}
                     <button className="pos-chip-x" aria-label={`Remove note ${p}`}
@@ -604,7 +628,7 @@ export default function PosPage() {
                       onClick={() => setModModal((p) => ({ ...p, note: "" }))}>✕</button>
                   </span>
                 )}
-                {adds.length === 0 && rems.length === 0 && !noteStr && <span className="pos-m2-sum-empty">No changes — served as standard.</span>}
+                {chosen.length === 0 && !noteStr && <span className="pos-m2-sum-empty">No changes — served as standard.</span>}
               </div>
               <div className="pos-m2-body">
                 {/* LEFT — group rail (required first via the existing minFor sort) */}
@@ -612,10 +636,14 @@ export default function PosPage() {
                   {sorted.map(({ gid, g }) => {
                     const n = (modModal.sel[gid] || []).length;
                     const on = active && active.gid === gid;
+                    const k = modGroupKind(g); // colour cue only — ordering stays minFor-first
                     return (
                       <button key={gid} className={`pos-m2-group ${on ? "pos-m2-group--on" : ""}`}
                         onClick={() => setModModal((p) => ({ ...p, gid, q: "" }))}>
-                        <span className="pos-m2-group-name">{g.name}{minFor(g) > 0 && <span className="pos-m2-req">*</span>}</span>
+                        <span className="pos-m2-group-name">
+                          <span className={`pos-kind-dot pos-kind-dot--${k}`} title={k} aria-label={`kind: ${k}`} />
+                          {g.name}{minFor(g) > 0 && <span className="pos-m2-req">*</span>}
+                        </span>
                         {n > 0 && <span className="pos-m2-badge">{n}</span>}
                       </button>
                     );
@@ -637,14 +665,14 @@ export default function PosPage() {
                   {active && activeOpts.map((o) => {
                     const on = (modModal.sel[active.gid] || []).includes(o.label);
                     const delta = optionDelta(m, active.gid, active.g, o.label);
-                    const rem = isRemovalLabel(o.label);
+                    const k = modGroupKind(active.g); // one treatment per GROUP, by kind
                     return (
                       <div key={o.label} className="pos-opt-row" onClick={() => toggle(active.gid, active.g, o.label)}>
-                        <span className="pos-opt-name">{displayLabel(o.label)}</span>
+                        <span className="pos-opt-name">{displayLabel(o.label, k)}</span>
                         <span className="pos-opt-delta">{delta ? `${delta > 0 ? "+" : "−"}${money(incGst(Math.abs(delta), m.gstApplicable !== false))}` : ""}</span>
-                        <button className={`pos-act ${rem ? (on ? "pos-act--removed" : "pos-act--rem") : (on ? "pos-act--added" : "pos-act--add")}`}
+                        <button className={`pos-act pos-act--${k}${on ? " pos-act--on" : ""}`}
                           onClick={(e) => { e.stopPropagation(); toggle(active.gid, active.g, o.label); }}>
-                          {rem ? (on ? "Removed" : "Remove") : (on ? "Added" : "Add")}
+                          {KIND_VERBS[k][on ? 1 : 0]}
                         </button>
                       </div>
                     );
