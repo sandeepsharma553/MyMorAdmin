@@ -6,12 +6,25 @@ import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc
 import { sellOrder } from "./sellOrder";
 import {
   incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost, venueSellPrice, resolvedSellPrice,
-  DEFAULT_MENU_CATEGORIES,
+  DEFAULT_MENU_CATEGORIES, modGroupKind,
 } from "./rgStockUtils";
 
 // POS browse bucket for an uncategorised item — MUST match PosPage's catOf()
 // ("Uncategorised"), since posItemOrder is keyed by the bucket the POS reads.
 const posCatOf = (m) => m?.category || "Uncategorised";
+
+// Modifier-group picker sections, in display order (kind via modGroupKind).
+const KIND_SECTIONS = [
+  ["choose", "Choose", "mandatory serving choices"],
+  ["add", "Add-ons", "paid extras"],
+  ["prep", "Prep", "preparation options"],
+  ["swap", "Instead", "substitutions"],
+  ["remove", "Removals", "per-dish “No” lists"],
+];
+// Same hexes as PosPage.css's --pos-add/--pos-rem/--pos-swap/--pos-prep tokens —
+// duplicated deliberately: those custom properties are scoped to .pos-v2 (the
+// POS root) and are not visible here in the .rg-scope tree.
+const KIND_DOT_COLOR = { add: "#16a34a", remove: "#dc2626", swap: "#d97706", prep: "#2563eb", choose: "#6b7280" };
 
 const E86_REASONS = ["Out of stock", "Quality issue", "Equipment failure"];
 const E86_BACK = ["Unknown", "Later today", "Tomorrow", "2-3 days"];
@@ -208,7 +221,12 @@ export default function MenusPage() {
   // would leak into the template on save). Instance overrides get their own
   // fields (inst/instSellPrice) and their own write path in saveItem.
   const [editor, setEditor] = useState(null);
+  // modifier-group picker UI state (display only — selection still lives in
+  // editor.modifierGroupIds): search text + per-section expand/collapse overrides
+  const [modPickQ, setModPickQ] = useState("");
+  const [modPickOpen, setModPickOpen] = useState({});
   const openItem = (rm) => {
+    setModPickQ(""); setModPickOpen({}); // fresh picker state per open
     const tid = rm ? (rm.templateId || rm.id) : null;
     const m = rm ? (menuItems.find((x) => x.id === tid) || rm) : null;
     setEditor(m ? {
@@ -955,16 +973,71 @@ export default function MenusPage() {
               </div>
             ))}
             <div className="form-label">Modifier groups</div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-              {modifierGroups.map((g) => (
-                <label key={g.id} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
-                  <input type="checkbox" checked={editor.modifierGroupIds.includes(g.id)}
-                    onChange={(e) => setEditor((p) => ({ ...p, modifierGroupIds: e.target.checked ? [...p.modifierGroupIds, g.id] : p.modifierGroupIds.filter((x) => x !== g.id) }))} />
-                  {g.name}
-                </label>
-              ))}
-              {modifierGroups.length === 0 && <span style={{ fontSize: 12, color: "var(--gray)" }}>None yet.</span>}
-            </div>
+            {/* sectioned-by-kind picker (display only — what's SAVED is still
+                editor.modifierGroupIds, the same array of ids as always) */}
+            {(() => {
+              const sel = editor.modifierGroupIds;
+              const byId = Object.fromEntries(modifierGroups.map((g) => [g.id, g]));
+              const query = modPickQ.trim().toLowerCase();
+              const searching = query !== "";
+              const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""));
+              return (
+                <div style={{ marginBottom: 10 }}>
+                  {sel.length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                      {sel.map((id) => (
+                        <span key={id} className="pill" style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "var(--gray-light)" }}>
+                          <span style={{ width: 7, height: 7, borderRadius: "50%", background: KIND_DOT_COLOR[modGroupKind(byId[id])] || "#6b7280", display: "inline-block" }} />
+                          {byId[id]?.name || `${id} (deleted)`}
+                          <button title="Remove from this item" aria-label={`Remove ${byId[id]?.name || id}`}
+                            style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 11, fontWeight: 800, color: "var(--gray)", padding: 0 }}
+                            onClick={() => setEditor((p) => ({ ...p, modifierGroupIds: p.modifierGroupIds.filter((x) => x !== id) }))}>✕</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <input className="form-input" style={{ marginBottom: 6 }} placeholder="Search modifier groups…"
+                    value={modPickQ} onChange={(e) => setModPickQ(e.target.value)} />
+                  {KIND_SECTIONS.map(([k, title, sub]) => {
+                    const all = modifierGroups.filter((g) => modGroupKind(g) === k).sort(byName);
+                    if (all.length === 0) return null;
+                    const hits = all.filter((g) => !query || String(g.name).toLowerCase().includes(query));
+                    const nSel = all.filter((g) => sel.includes(g.id)).length;
+                    // searching → sections with hits open, without hits closed;
+                    // otherwise user toggle wins, else: selected-anywhere opens,
+                    // and every kind but Removals (71 rows of noise) starts open
+                    const open = searching ? hits.length > 0 : (modPickOpen[k] != null ? modPickOpen[k] : (nSel > 0 || k !== "remove"));
+                    return (
+                      <div key={k} style={{ borderTop: "0.5px solid var(--gray-light)", padding: "5px 0" }}>
+                        <div onClick={() => setModPickOpen((p) => ({ ...p, [k]: !open }))}
+                          style={{ cursor: "pointer", userSelect: "none", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 10, color: "var(--gray)" }}>{open ? "▾" : "▸"}</span>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: KIND_DOT_COLOR[k], display: "inline-block" }} />
+                          {title} ({searching ? `${hits.length}/${all.length}` : all.length})
+                          <span style={{ fontWeight: 400, color: "var(--gray)", fontSize: 11 }}>
+                            {sub}{nSel > 0 ? ` · ${nSel} selected` : ""}
+                          </span>
+                        </div>
+                        {open && (
+                          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6, paddingLeft: 18 }}>
+                            {hits.map((g) => (
+                              <label key={g.id} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                                <input type="checkbox" checked={editor.modifierGroupIds.includes(g.id)}
+                                  onChange={(e) => setEditor((p) => ({ ...p, modifierGroupIds: e.target.checked ? [...p.modifierGroupIds, g.id] : p.modifierGroupIds.filter((x) => x !== g.id) }))} />
+                                <span style={{ width: 7, height: 7, borderRadius: "50%", background: KIND_DOT_COLOR[k], display: "inline-block" }} />
+                                {g.name} <span style={{ color: "var(--gray)", fontSize: 11 }}>{(g.options || []).length} options</span>
+                              </label>
+                            ))}
+                            {hits.length === 0 && <span style={{ fontSize: 12, color: "var(--gray)" }}>No matches.</span>}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {modifierGroups.length === 0 && <span style={{ fontSize: 12, color: "var(--gray)" }}>None yet.</span>}
+                </div>
+              );
+            })()}
 
             {/* Variants (sizes) */}
             <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 10, marginTop: 4 }}>
