@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useRG } from "./RGContext";
 import { sellOrder } from "./sellOrder";
 import { money, incGst, resolvedSellPrice, DEFAULT_MENU_CATEGORIES } from "./rgStockUtils";
+import "./PosPage.css";
 
 /* POS Terminal — Phase 2 (order-entry grid + modifier modal + service-mode + send).
  * Payment + discounts are NOT here (no discount model exists yet — verified).
@@ -31,6 +32,28 @@ const optionDelta = (m, gid, group, label) => {
 const minFor = (g) => (g.required ? Math.max(1, Number(g.minSelections) || 0) : (Number(g.minSelections) || 0));
 // one rail line per item+modifier-combination
 const lineKeyOf = (id, mods) => `${id}|${(mods || []).map((x) => x.label).slice().sort().join("+")}`;
+
+// ── tile avatar (DISPLAY ONLY — no behaviour) ─────────────────────────────
+// initials: first letter of the first two words of displayName, uppercased.
+const initialsOf = (name) => String(name || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase();
+// fixed tint pairs — pale bg + a DARK shade of the SAME hue (never black/grey).
+// The pair is picked by hashing the item id, so the same item always renders
+// the same colour on every device and every render.
+const TILE_TINTS = [
+  { bg: "#F7DCFA", fg: "#7A1486" }, // violet
+  { bg: "#FCE7F3", fg: "#9D174D" }, // pink
+  { bg: "#FFEDD5", fg: "#9A3412" }, // orange
+  { bg: "#FEF3C7", fg: "#92400E" }, // amber
+  { bg: "#DCFCE7", fg: "#166534" }, // green
+  { bg: "#CCFBF1", fg: "#115E59" }, // teal
+  { bg: "#DBEAFE", fg: "#1E40AF" }, // blue
+  { bg: "#E0E7FF", fg: "#3730A3" }, // indigo
+];
+const tintOf = (id) => {
+  let h = 0;
+  for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return TILE_TINTS[h % TILE_TINTS.length];
+};
 
 export default function PosPage() {
   const {
@@ -79,6 +102,10 @@ export default function PosPage() {
   // line (unit + modifier deltas) by the item's gstApplicable, so incGst per line
   // then × qty mirrors its subtotal + gst exactly (to rounding).
   const total = lines.reduce((s, l) => s + l.qty * incGst(l.unitPrice + l.modDelta, l.gstApplicable !== false), 0);
+  // DISPLAY-ONLY breakdown rows: ex-GST sum of the same line values, and GST as
+  // the difference from the untouched inc-GST total — no new tax math introduced.
+  const subtotalEx = lines.reduce((s, l) => s + l.qty * (l.unitPrice + l.modDelta), 0);
+  const gstEst = total - subtotalEx;
 
   const pushLine = (m, mods) => {
     const id = m.templateId || m.id;
@@ -154,12 +181,13 @@ export default function PosPage() {
   }
 
   return (
-    <div style={{ display: "flex", gap: 12, alignItems: "stretch", minHeight: "70vh" }}>
+    <div className="pos-v2" style={{ display: "flex", gap: 12, alignItems: "stretch", minHeight: "70vh" }}>
       {/* LEFT — category chips */}
       <div style={{ width: 150, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-        <button className={`btn btn-sm ${cat === "" ? "btn-primary" : ""}`} style={{ justifyContent: "flex-start" }} onClick={() => setCat("")}>All</button>
+        <div className="pos-cat-label">Categories</div>
+        <button className={`pos-cat ${cat === "" ? "pos-cat--on" : ""}`} onClick={() => setCat("")}>All</button>
         {liveCats.map((c) => (
-          <button key={c} className={`btn btn-sm ${cat === c ? "btn-primary" : ""}`} style={{ justifyContent: "flex-start" }} onClick={() => setCat(c)}>{c}</button>
+          <button key={c} className={`pos-cat ${cat === c ? "pos-cat--on" : ""}`} onClick={() => setCat(c)}>{c}</button>
         ))}
       </div>
 
@@ -169,34 +197,39 @@ export default function PosPage() {
             landing on the page ready-to-type saves a click. (Ops does NOT autofocus —
             an iPad software keyboard would cover the grid.) */}
         <div style={{ position: "relative" }}>
-          <input className="form-input" autoFocus value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder={`Search items${cat ? ` in ${cat}` : ""}…`} style={{ width: "100%", paddingRight: 30 }} />
+          <span className="pos-search-icon" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" />
+            </svg>
+          </span>
+          <input className="pos-search" autoFocus value={q} onChange={(e) => setQ(e.target.value)}
+            placeholder={`Search items${cat ? ` in ${cat}` : ""}…`} />
           {q !== "" && (
-            <button onClick={() => setQ("")} title="Clear search" aria-label="Clear search"
-              style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", cursor: "pointer", fontSize: 15, color: "var(--gray)", padding: 0 }}>×</button>
+            <button className="pos-search-clear" onClick={() => setQ("")} title="Clear search" aria-label="Clear search">×</button>
           )}
         </div>
         <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, alignContent: "flex-start" }}>
         {tiles.map((m) => {
           const off = m.e86 || m.available === false;
           const hasMods = (m.modifierGroupIds || []).length > 0;
+          const tint = tintOf(m.templateId || m.id);
           return (
-            <div key={m.templateId || m.id} className="card"
-              onClick={() => !off && tapTile(m)}
-              style={{ cursor: off ? "not-allowed" : "pointer", opacity: off ? 0.4 : 1, padding: 12, userSelect: "none" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.25, textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</div>
-              <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>
-                {money(incGst(sellAt(m), m.gstApplicable !== false))}
-                {hasMods && !off ? " · +add-ons" : ""}
-                {m.e86 ? " · 86’d" : m.available === false ? " · hidden" : ""}
-              </div>
+            <div key={m.templateId || m.id} className={`pos-tile ${off ? "pos-tile--off" : "pos-tile--tap"}`}
+              onClick={() => !off && tapTile(m)}>
+              <div className="pos-avatar" style={{ background: tint.bg, color: tint.fg }}>{initialsOf(m.displayName)}</div>
+              <div className="pos-tile-name" style={{ textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</div>
+              <div className="pos-tile-price">{money(incGst(sellAt(m), m.gstApplicable !== false))}</div>
+              {hasMods && !off ? <span className="pos-addons">+add-ons</span> : null}
+              {(m.e86 || m.available === false) && (
+                <div className="pos-tile-flag">{m.e86 ? "86’d" : m.available === false ? "hidden" : ""}</div>
+              )}
             </div>
           );
         })}
         {tiles.length === 0 && (
-          <div className="card" style={{ gridColumn: "1 / -1", color: "var(--gray)", fontSize: 13 }}>
+          <div className="pos-tile" style={{ gridColumn: "1 / -1", color: "var(--pos-ink-soft)", fontSize: 13 }}>
             {q.trim()
-              ? <>No items match “{q.trim()}”{cat ? ` in ${cat}` : ""}. <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => setQ("")}>Clear search</button></>
+              ? <>No items match “{q.trim()}”{cat ? ` in ${cat}` : ""}. <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => setQ("")}>Clear search</button></>
               : <>No items{cat ? ` in ${cat}` : ""} at {selectedVenueName}.</>}
           </div>
         )}
@@ -204,13 +237,13 @@ export default function PosPage() {
       </div>
 
       {/* RIGHT — order rail */}
-      <div className="card" style={{ width: 320, flexShrink: 0, display: "flex", flexDirection: "column", padding: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 800 }}>Order — {selectedVenueName}</div>
-        <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>
+      <div className="pos-rail">
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--pos-ink)" }}>Order — {selectedVenueName}</div>
+        <div style={{ fontSize: 11, color: "var(--pos-ink-soft)", marginBottom: 6 }}>
           Served by <strong>{operator ? (operator.displayName || operator.name) : (me?.name || me?.email || "this login")}</strong>
         </div>
         {!operator && (
-          <div style={{ fontSize: 11, color: "var(--red)", background: "#fef2f2", borderRadius: 8, padding: "6px 8px", marginBottom: 8 }}>
+          <div className="pos-banner">
             This login has no staff profile, so sales can't be attributed. Ask an owner to link your
             account to a staff record. You can browse the menu, but sending orders is disabled.
           </div>
@@ -218,26 +251,26 @@ export default function PosPage() {
         {/* service mode (sent as orderMeta.serviceMode) */}
         <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
           {SERVICE_MODES.map((sm) => (
-            <button key={sm} className={`btn btn-sm ${serviceMode === sm ? "btn-primary" : ""}`} onClick={() => setServiceMode(sm)}>{MODE_LABEL[sm]}</button>
+            <button key={sm} className={`pos-mode ${serviceMode === sm ? "pos-mode--on" : ""}`} onClick={() => setServiceMode(sm)}>{MODE_LABEL[sm]}</button>
           ))}
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
           {lines.map((l) => (
-            <div key={l.key} style={{ padding: "6px 0", borderBottom: "0.5px solid var(--border)" }}>
+            <div key={l.key} className="pos-line">
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>{l.displayName}</div>
-                  <div style={{ fontSize: 11, color: "var(--gray)" }}>{money(incGst(l.unitPrice + l.modDelta, l.gstApplicable !== false))} each</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--pos-ink)" }}>{l.displayName}</div>
+                  <div style={{ fontSize: 11, color: "var(--pos-ink-soft)" }}>{money(incGst(l.unitPrice + l.modDelta, l.gstApplicable !== false))} each</div>
                 </div>
-                <button className="btn btn-sm" onClick={() => bump(l.key, -1)}>−</button>
-                <span style={{ fontSize: 13, fontWeight: 700, minWidth: 20, textAlign: "center" }}>{l.qty}</span>
-                <button className="btn btn-sm" onClick={() => bump(l.key, 1)}>+</button>
-                <button className="btn btn-sm" style={{ color: "var(--red)" }} onClick={() => removeLine(l.key)}>✕</button>
+                <button className="pos-step" onClick={() => bump(l.key, -1)}>−</button>
+                <span style={{ fontSize: 13, fontWeight: 700, minWidth: 20, textAlign: "center", color: "var(--pos-ink)" }}>{l.qty}</span>
+                <button className="pos-step" onClick={() => bump(l.key, 1)}>+</button>
+                <button className="pos-step pos-remove" onClick={() => removeLine(l.key)}>✕</button>
               </div>
               {l.modifiers.length > 0 && (
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 3 }}>
+                <div className="pos-line-mods">
                   {l.modifiers.map((x) => (
-                    <span key={x.label} className="pill" style={{ background: "#f4f4f5", fontSize: 10 }}>
+                    <span key={x.label} style={{ marginRight: 6 }}>
                       {x.label}{x.priceDelta ? ` ${x.priceDelta > 0 ? "+" : "−"}${money(incGst(Math.abs(x.priceDelta), l.gstApplicable !== false))}` : ""}
                     </span>
                   ))}
@@ -245,14 +278,16 @@ export default function PosPage() {
               )}
             </div>
           ))}
-          {lines.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", padding: "16px 0" }}>Tap items to add them.</div>}
+          {lines.length === 0 && <div style={{ fontSize: 12, color: "var(--pos-ink-soft)", padding: "16px 0" }}>Tap items to add them.</div>}
         </div>
-        <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 8, marginTop: 8 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8 }}>
-            <span>Total (inc-GST, est.)</span><strong>{money(total)}</strong>
+        <div className="pos-foot">
+          <div className="pos-sub-row"><span>Subtotal (ex-GST, est.)</span><span>{money(subtotalEx)}</span></div>
+          <div className="pos-sub-row"><span>GST (est.)</span><span>{money(gstEst)}</span></div>
+          <div className="pos-total-row">
+            <span className="pos-total-label">Total (inc-GST, est.)</span><strong>{money(total)}</strong>
           </div>
-          <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>{lines.length}/{MAX_LINES} lines · {MODE_LABEL[serviceMode]} · server re-prices authoritatively</div>
-          <button className="btn btn-primary" style={{ width: "100%" }} disabled={!lines.length || sending || !operator}
+          <div style={{ fontSize: 11, color: "var(--pos-ink-soft)", marginBottom: 8 }}>{lines.length}/{MAX_LINES} lines · {MODE_LABEL[serviceMode]} · server re-prices authoritatively</div>
+          <button className="pos-send" disabled={!lines.length || sending || !operator}
             title={operator ? undefined : "No staff profile linked to this login — sales can't be attributed"} onClick={send}>
             {sending ? "Sending…" : operator ? "Send order" : "No staff profile — can't send"}
           </button>

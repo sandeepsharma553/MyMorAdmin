@@ -1,0 +1,123 @@
+/* POS-only skin — scoped under .pos-v2 (the PosPage root). A deliberate departure
+   from the .rg-scope cream/brick back-office palette: the POS is its own tool.
+   These custom properties are NOT global — nothing outside PosPage.js uses them. */
+.pos-v2 {
+  --pos-violet: #9A1BA8;       /* buttons, selected states, prices — carries white text */
+  --pos-neon: #C026D3;         /* live accents: search icon, tile hover ring, focus */
+  --pos-tint: #F7DCFA;         /* pale washes: pills, badges, chips */
+  --pos-ink: #210A26;          /* primary text */
+  --pos-ink-soft: #96829A;     /* secondary text */
+  --pos-surface: #FFFFFF;
+  --pos-surface-alt: #FAF4FB;  /* rail + ticket panel — warm violet-tinted, not grey */
+  --pos-border: #EDDDEF;
+  --pos-border-soft: #F3E9F4;
+  --pos-disabled: #CDBFCF;
+  color: var(--pos-ink);
+}
+
+/* ── 1. category rail ─────────────────────────────────────────────────── */
+.pos-v2 .pos-cat-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--pos-ink-soft); padding: 2px 6px;
+}
+.pos-v2 .pos-cat {
+  font-size: 12px; text-align: left; border: none; background: transparent;
+  color: var(--pos-ink); border-radius: 999px; padding: 7px 12px; cursor: pointer;
+}
+.pos-v2 .pos-cat:hover { background: var(--pos-tint); }
+.pos-v2 .pos-cat--on, .pos-v2 .pos-cat--on:hover { background: var(--pos-violet); color: #fff; }
+
+/* ── 2. search ────────────────────────────────────────────────────────── */
+.pos-v2 .pos-search {
+  width: 100%; height: 34px; box-sizing: border-box;
+  background: var(--pos-surface-alt); border: 1px solid var(--pos-border);
+  border-radius: 8px; padding: 0 30px 0 32px; font-size: 13px;
+  color: var(--pos-ink); outline: none;
+}
+.pos-v2 .pos-search::placeholder { color: var(--pos-ink-soft); }
+.pos-v2 .pos-search:focus { border-color: var(--pos-neon); box-shadow: 0 0 0 2px var(--pos-tint); }
+.pos-v2 .pos-search-icon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--pos-neon); display: flex; pointer-events: none;
+}
+.pos-v2 .pos-search-clear {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  border: none; background: transparent; cursor: pointer;
+  font-size: 15px; color: var(--pos-ink-soft); padding: 0;
+}
+
+/* ── 3. item tiles ────────────────────────────────────────────────────── */
+.pos-v2 .pos-tile {
+  background: var(--pos-surface); border: 1px solid var(--pos-border);
+  border-radius: 12px; padding: 12px; user-select: none;
+  transition: border-color 0.12s ease, transform 0.08s ease;
+}
+.pos-v2 .pos-tile--tap { cursor: pointer; }
+.pos-v2 .pos-tile--tap:hover { border-color: var(--pos-neon); }
+.pos-v2 .pos-tile--tap:active { transform: scale(0.97); }
+.pos-v2 .pos-tile--off { cursor: not-allowed; opacity: 0.4; }
+.pos-v2 .pos-avatar {
+  width: 52px; height: 52px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 800; margin-bottom: 8px;
+}
+.pos-v2 .pos-tile-name { font-size: 12px; font-weight: 700; line-height: 1.25; color: var(--pos-ink); }
+.pos-v2 .pos-tile-price { font-size: 12px; font-weight: 700; color: var(--pos-violet); margin-top: 4px; }
+.pos-v2 .pos-addons {
+  display: inline-block; margin-top: 6px; padding: 2px 8px;
+  background: var(--pos-tint); color: var(--pos-violet);
+  font-size: 10px; font-weight: 700; border-radius: 999px;
+}
+.pos-v2 .pos-tile-flag { font-size: 10px; color: var(--pos-ink-soft); margin-top: 4px; }
+
+/* ── 4. ticket panel (order rail) ─────────────────────────────────────── */
+.pos-v2 .pos-rail {
+  width: 320px; flex-shrink: 0; display: flex; flex-direction: column;
+  padding: 12px; background: var(--pos-surface-alt);
+  border: 1px solid var(--pos-border); border-radius: 12px;
+}
+.pos-v2 .pos-line { padding: 6px 0; border-bottom: 1px solid var(--pos-border-soft); }
+.pos-v2 .pos-line-mods { font-size: 10px; color: var(--pos-ink-soft); margin-top: 3px; }
+.pos-v2 .pos-step {
+  border: 1px solid var(--pos-border); background: var(--pos-surface);
+  color: var(--pos-ink); border-radius: 8px; min-width: 24px; height: 24px;
+  font-size: 13px; line-height: 1; cursor: pointer;
+}
+.pos-v2 .pos-step:hover { background: var(--pos-tint); }
+.pos-v2 .pos-remove { color: var(--pos-ink-soft); }
+.pos-v2 .pos-remove:hover { color: var(--pos-violet); background: var(--pos-tint); }
+
+/* service-mode chips (inside the ticket panel) */
+.pos-v2 .pos-mode {
+  font-size: 11px; border: 1px solid var(--pos-border); background: var(--pos-surface);
+  color: var(--pos-ink); border-radius: 999px; padding: 4px 10px; cursor: pointer;
+}
+.pos-v2 .pos-mode:hover { background: var(--pos-tint); }
+.pos-v2 .pos-mode--on, .pos-v2 .pos-mode--on:hover {
+  background: var(--pos-violet); border-color: var(--pos-violet); color: #fff;
+}
+
+/* ── 5. totals ────────────────────────────────────────────────────────── */
+.pos-v2 .pos-foot { border-top: 1px solid var(--pos-border-soft); padding-top: 8px; margin-top: 8px; }
+.pos-v2 .pos-sub-row {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--pos-ink-soft); margin-bottom: 2px;
+}
+.pos-v2 .pos-total-row { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 0 8px; }
+.pos-v2 .pos-total-row .pos-total-label { font-size: 12px; font-weight: 700; color: var(--pos-ink); }
+.pos-v2 .pos-total-row strong { font-size: 24px; color: var(--pos-ink); }
+
+/* ── 6. send button ───────────────────────────────────────────────────── */
+.pos-v2 .pos-send {
+  width: 100%; border: none; border-radius: 8px; padding: 12px;
+  background: var(--pos-violet); color: #fff;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.pos-v2 .pos-send:disabled { background: var(--pos-disabled); cursor: not-allowed; }
+
+/* ── 7. "no staff profile" blocking banner ────────────────────────────── */
+.pos-v2 .pos-banner {
+  font-size: 11px; color: var(--pos-violet); background: var(--pos-tint);
+  border: 1px solid var(--pos-border); border-radius: 8px;
+  padding: 6px 8px; margin-bottom: 8px;
+}
