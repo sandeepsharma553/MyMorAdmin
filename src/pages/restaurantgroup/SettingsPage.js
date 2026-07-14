@@ -5,7 +5,7 @@ import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc, publi
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS } from "./rgConfig";
 import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaGetsBreak, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, empTypeIsSalaried } from "./staffStructureUtils";
-import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS } from "./rgStockUtils";
+import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS, resolvePosNotePresets } from "./rgStockUtils";
 
 const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
 
@@ -298,6 +298,29 @@ export default function SettingsPage() {
     await saveLeaveTypes(next);
   };
 
+  // ── POS kitchen-note presets ── group.posNotePresets = string[] (mirror Leave types:
+  // whole-array writes; order here = chip order on the POS; resolver seeds defaults).
+  const posNotePresets = resolvePosNotePresets(group);
+  const [newNotePreset, setNewNotePreset] = useState("");
+  const [dragNote, setDragNote] = useState(null); // index being dragged
+  const saveNotePresets = async (next) => {
+    try { await updateDoc(groupDoc(groupId), { posNotePresets: next }); }
+    catch { showToast("Could not save POS note presets"); }
+  };
+  const addNotePreset = async () => {
+    const next = addToList(posNotePresets, newNotePreset);
+    setNewNotePreset("");
+    if (next === posNotePresets) return; // empty or duplicate — nothing to save
+    await saveNotePresets(next); showToast("Preset added");
+  };
+  const removeNotePreset = async (t) => { await saveNotePresets(removeFromList(posNotePresets, t)); };
+  const dropNotePreset = async (to) => {
+    const from = dragNote; setDragNote(null);
+    if (from === null || from === to) return;
+    const next = [...posNotePresets]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
+    await saveNotePresets(next);
+  };
+
   // ── Employment types ── (same shape as Areas/Roles: an editable group-doc list)
   const [newEmpType, setNewEmpType] = useState("");
   const saveEmpTypes = async (next) => {
@@ -562,6 +585,25 @@ export default function SettingsPage() {
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <input className="form-input" value={newLeaveType} onChange={(e) => setNewLeaveType(e.target.value)} placeholder="New leave type (e.g. Parental Leave)" onKeyDown={(e) => e.key === "Enter" && addLeaveType()} />
                   <button className="btn btn-primary" onClick={addLeaveType}>Add</button>
+                </div>
+              )}
+            </div>
+            {/* POS NOTE PRESETS — tap-to-add kitchen notes on the POS (global, all venues).
+                Same editable group-doc list pattern as Leave types above. */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">POS note presets</span><span className="card-sub">Tap-to-add kitchen notes on the POS — drag to reorder · free text is always available too</span></div></div>
+              {posNotePresets.map((t, i) => (
+                <div key={t} className="staff-meta-row" draggable={editable}
+                  onDragStart={() => setDragNote(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropNotePreset(i)} onDragEnd={() => setDragNote(null)}
+                  style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)", cursor: editable ? "grab" : "default", opacity: dragNote === i ? 0.5 : 1 }}>
+                  <span style={{ fontSize: 13 }}>{editable && <span style={{ color: "var(--gray)", marginRight: 6 }} title="Drag to reorder">⠿</span>}{t}</span>
+                  {editable && posNotePresets.length > 1 && <button className="btn btn-sm btn-danger" title="Remove the chip (existing order lines keep their stored note)" onClick={() => removeNotePreset(t)}>✕</button>}
+                </div>
+              ))}
+              {editable && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <input className="form-input" value={newNotePreset} onChange={(e) => setNewNotePreset(e.target.value)} placeholder="New preset (e.g. Sauce on the side)" onKeyDown={(e) => e.key === "Enter" && addNotePreset()} />
+                  <button className="btn btn-primary" onClick={addNotePreset}>Add</button>
                 </div>
               )}
             </div>

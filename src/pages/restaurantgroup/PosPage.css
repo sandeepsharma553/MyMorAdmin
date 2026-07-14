@@ -12,6 +12,11 @@
   --pos-border: #EDDDEF;
   --pos-border-soft: #F3E9F4;
   --pos-disabled: #CDBFCF;
+  /* semantic action colours (modifier picker): add = green, removal = red */
+  --pos-add: #16a34a;
+  --pos-add-tint: #f0fdf4;
+  --pos-rem: #dc2626;
+  --pos-rem-tint: #fef2f2;
   color: var(--pos-ink);
 }
 
@@ -121,3 +126,96 @@
   border: 1px solid var(--pos-border); border-radius: 8px;
   padding: 6px 8px; margin-bottom: 8px;
 }
+
+/* ── two-pane modifier picker ─────────────────────────────────────────── */
+.pos-v2 .pos-m2 { max-width: 680px; width: 92vw; }
+.pos-v2 .pos-m2-sum { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; min-height: 22px; }
+.pos-v2 .pos-chip-add, .pos-v2 .pos-chip-no, .pos-v2 .pos-chip-note {
+  font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 10px;
+}
+.pos-v2 .pos-chip-add { background: var(--pos-add-tint); color: var(--pos-add); border: 1px solid var(--pos-add); }
+.pos-v2 .pos-chip-no { background: var(--pos-rem-tint); color: var(--pos-rem); border: 1px solid var(--pos-rem); }
+.pos-v2 .pos-chip-note { background: var(--pos-tint); color: var(--pos-violet); border: 1px solid var(--pos-border); }
+.pos-v2 .pos-m2-sum-empty { font-size: 11px; color: var(--pos-ink-soft); padding: 3px 0; }
+.pos-v2 .pos-m2-body { display: flex; gap: 10px; min-height: 220px; max-height: 46vh; }
+.pos-v2 .pos-m2-groups {
+  width: 150px; flex-shrink: 0; display: flex; flex-direction: column; gap: 4px;
+  overflow-y: auto; border-right: 1px solid var(--pos-border-soft); padding-right: 8px;
+}
+.pos-v2 .pos-m2-group {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  border: none; background: transparent; color: var(--pos-ink); text-align: left;
+  font-size: 12px; font-weight: 600; border-radius: 8px; padding: 9px 10px; cursor: pointer;
+}
+.pos-v2 .pos-m2-group:hover { background: var(--pos-tint); }
+.pos-v2 .pos-m2-group--on, .pos-v2 .pos-m2-group--on:hover { background: var(--pos-ink); color: #fff; }
+.pos-v2 .pos-m2-req { color: var(--pos-rem); margin-left: 2px; }
+.pos-v2 .pos-m2-group--on .pos-m2-req { color: #fff; }
+.pos-v2 .pos-m2-badge {
+  background: var(--pos-violet); color: #fff; font-size: 10px; font-weight: 800;
+  border-radius: 999px; min-width: 18px; height: 18px; display: inline-flex;
+  align-items: center; justify-content: center; padding: 0 5px; flex-shrink: 0;
+}
+.pos-v2 .pos-m2-opts { flex: 1; overflow-y: auto; }
+.pos-v2 .pos-m2-rule { font-size: 11px; color: var(--pos-ink-soft); margin-bottom: 6px; }
+.pos-v2 .pos-m2-none { font-size: 12px; color: var(--pos-ink-soft); padding: 12px 0; }
+.pos-v2 .pos-opt-row {
+  display: flex; align-items: center; gap: 10px; min-height: 56px;
+  border-bottom: 1px solid var(--pos-border-soft); cursor: pointer; padding: 4px 2px;
+}
+.pos-v2 .pos-opt-row:hover { background: var(--pos-surface-alt); }
+.pos-v2 .pos-opt-name { flex: 1; font-size: 13px; font-weight: 600; color: var(--pos-ink); }
+.pos-v2 .pos-opt-delta { font-size: 12px; font-weight: 700; color: var(--pos-violet); }
+.pos-v2 .pos-act {
+  min-width: 84px; font-size: 12px; font-weight: 700; border-radius: 8px;
+  padding: 8px 12px; cursor: pointer; background: transparent;
+}
+.pos-v2 .pos-act--add { border: 1px solid var(--pos-add); color: var(--pos-add); }
+.pos-v2 .pos-act--added { border: 1px solid var(--pos-add); background: var(--pos-add); color: #fff; }
+.pos-v2 .pos-act--rem { border: 1px solid var(--pos-rem); color: var(--pos-rem); }
+.pos-v2 .pos-act--removed { border: 1px solid var(--pos-rem); background: var(--pos-rem); color: #fff; }
+
+/* ── kitchen note (picker + rail editor) ──────────────────────────────── */
+.pos-v2 .pos-m2-notes { border-top: 1px solid var(--pos-border-soft); padding-top: 8px; margin-top: 8px; }
+.pos-v2 .pos-note-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.pos-v2 .pos-note-chip {
+  font-size: 11px; font-weight: 600; border: 1px solid var(--pos-border);
+  background: var(--pos-surface); color: var(--pos-ink); border-radius: 999px;
+  padding: 5px 10px; cursor: pointer;
+}
+.pos-v2 .pos-note-chip:hover { background: var(--pos-tint); }
+.pos-v2 .pos-note-chip--on, .pos-v2 .pos-note-chip--on:hover {
+  background: var(--pos-violet); border-color: var(--pos-violet); color: #fff;
+}
+.pos-v2 .pos-note-input {
+  width: 100%; box-sizing: border-box; height: 32px; font-size: 12px;
+  background: var(--pos-surface-alt); border: 1px solid var(--pos-border);
+  border-radius: 8px; padding: 0 10px; color: var(--pos-ink); outline: none;
+}
+.pos-v2 .pos-note-input:focus { border-color: var(--pos-neon); }
+
+/* ── picker footer + qty stepper ──────────────────────────────────────── */
+.pos-v2 .pos-m2-foot { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.pos-v2 .pos-qty { display: flex; align-items: center; gap: 8px; }
+.pos-v2 .pos-qty-n { font-size: 14px; font-weight: 800; min-width: 22px; text-align: center; color: var(--pos-ink); }
+.pos-v2 .pos-m2-total { flex: 1; font-size: 14px; font-weight: 800; color: var(--pos-ink); }
+
+/* ── rail line editor sheet ───────────────────────────────────────────── */
+.pos-v2 .pos-line--tap { cursor: pointer; }
+.pos-v2 .pos-line--tap:hover { background: var(--pos-tint); }
+.pos-v2 .pos-line-note { font-size: 10px; color: var(--pos-violet); margin-top: 3px; font-style: italic; }
+.pos-v2 .pos-sheet { max-width: 420px; }
+.pos-v2 .pos-sheet-mods { font-size: 11px; color: var(--pos-ink-soft); margin-bottom: 8px; }
+.pos-v2 .pos-sheet-row { display: flex; align-items: center; justify-content: space-between; }
+.pos-v2 .pos-sheet-lbl { font-size: 11px; font-weight: 700; color: var(--pos-ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+.pos-v2 .pos-sheet-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.pos-v2 .pos-sheet-btn {
+  font-size: 12px; font-weight: 700; border: 1px solid var(--pos-border);
+  background: var(--pos-surface); color: var(--pos-ink); border-radius: 8px;
+  padding: 9px 14px; cursor: pointer;
+}
+.pos-v2 .pos-sheet-btn:hover { background: var(--pos-tint); }
+.pos-v2 .pos-sheet-btn--primary, .pos-v2 .pos-sheet-btn--primary:hover { background: var(--pos-violet); border-color: var(--pos-violet); color: #fff; }
+.pos-v2 .pos-sheet-btn--primary:disabled { background: var(--pos-disabled); border-color: var(--pos-disabled); cursor: not-allowed; }
+.pos-v2 .pos-sheet-btn--danger { border-color: var(--pos-rem); color: var(--pos-rem); }
+.pos-v2 .pos-sheet-btn--danger:hover { background: var(--pos-rem-tint); }

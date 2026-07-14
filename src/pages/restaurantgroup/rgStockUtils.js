@@ -204,3 +204,11 @@ export const stockCategoryColor = (cat) => ({
   Protein: "#C8392A", Produce: "#2D6A3F", Dairy: "#1A55A0", "Dry goods": "#B86A10",
   Sauces: "#B86A10", Frozen: "#6B3FA0", Seafood: "#1A55A0", "Asian grocery": "#B86A10", Packaging: "#8C867E",
 }[cat] || "#8C867E");
+
+// ── POS kitchen-note presets ── group.posNotePresets = string[] (owner-editable in
+// Settings, whole-array writes — mirrors the leaveTypes/empTypes pattern exactly).
+// Resolver falls back to the seed list when the group has none configured. Presets
+// are tap-to-add shortcuts only: the POS composes them (plus free text) into ONE
+// string sent as the line's `notes` — the server (rgSellOrder) trims and caps at 200.
+export const DEFAULT_POS_NOTE_PRESETS = ["No cutlery", "Extra napkins", "Allergy — check", "Well done", "Cut in half", "Rush"];
+export const resolvePosNotePresets = (group) => (group?.posNotePresets?.length ? group.posNotePresets : DEFAULT_POS_NOTE_PRESETS);

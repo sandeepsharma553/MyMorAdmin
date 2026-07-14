@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRG } from "./RGContext";
 import { sellOrder } from "./sellOrder";
-import { money, incGst, resolvedSellPrice, DEFAULT_MENU_CATEGORIES } from "./rgStockUtils";
+import { money, incGst, resolvedSellPrice, DEFAULT_MENU_CATEGORIES, resolvePosNotePresets } from "./rgStockUtils";
 import "./PosPage.css";
 
 /* POS Terminal — Phase 2 (order-entry grid + modifier modal + service-mode + send).
@@ -32,6 +32,34 @@ const optionDelta = (m, gid, group, label) => {
 const minFor = (g) => (g.required ? Math.max(1, Number(g.minSelections) || 0) : (Number(g.minSelections) || 0));
 // one rail line per item+modifier-combination
 const lineKeyOf = (id, mods) => `${id}|${(mods || []).map((x) => x.label).slice().sort().join("+")}`;
+
+// ── modifier DISPLAY treatment (COSMETIC ONLY — the payload always carries the
+// FULL STORED LABEL; rgSellOrder prices by exact-label match, so nothing below
+// may ever touch what gets sent). There is NO removal flag in the modifier data
+// model ({label, priceDelta, posId?}), so removal-ness is inferred per OPTION
+// from its label prefix; labels that don't match are treated as additions.
+const REMOVAL_RE = /^(no|remove|without|hold)\s+/i;
+const ADD_PREFIX_RE = /^add\s+/i;
+const isRemovalLabel = (label) => REMOVAL_RE.test(String(label || ""));
+// "Add Bacon" → "Bacon", "No Pickles" → "Pickles" — display only, never sent
+const displayLabel = (label) => {
+  const s = String(label || "");
+  const stripped = s.replace(REMOVAL_RE, "").replace(ADD_PREFIX_RE, "").trim();
+  return stripped || s;
+};
+
+// kitchen note = selected preset chips + free text, composed into ONE string for
+// the line's `notes` (server trims + caps at 200; we pre-cap to match)
+const composeNote = (presets, free) => [...(presets || []), String(free || "").trim()].filter(Boolean).join(" · ").slice(0, 200);
+// split a stored note back into { sel: presets it contains, free: the rest } —
+// used to preload the rail line editor and the Modify flow
+const splitNote = (notes, presetList) => {
+  const parts = String(notes || "").split(" · ").map((s) => s.trim()).filter(Boolean);
+  return {
+    sel: parts.filter((p) => presetList.includes(p)),
+    free: parts.filter((p) => !presetList.includes(p)).join(" · "),
+  };
+};
 
 // ── tile avatar (DISPLAY ONLY — no behaviour) ─────────────────────────────
 // initials: first letter of the first two words of displayName, uppercased.
@@ -67,7 +95,9 @@ export default function PosPage() {
   const [lines, setLines] = useState([]); // [{ key, menuItemId, displayName, qty, unitPrice, modifiers:[{label,priceDelta}], modDelta }]
   const [serviceMode, setServiceMode] = useState("dinein");
   const [sending, setSending] = useState(false);
-  const [modModal, setModModal] = useState(null); // { item, sel: { [gid]: [labels] } }
+  const [modModal, setModModal] = useState(null); // { item, sel:{[gid]:[labels]}, gid, q, qty, note, notePresets[], editKey }
+  const [editSheet, setEditSheet] = useState(null); // { key, presets: [], free: "" } — rail line editor
+  const notePresetList = resolvePosNotePresets(group); // global tap-to-add kitchen notes (Settings)
 
   // WHO is taking the order — on the admin web app everyone signs in with their
   // OWN account, so the login IS the identity: no name+PIN gate here (that gate
@@ -107,32 +137,90 @@ export default function PosPage() {
   const subtotalEx = lines.reduce((s, l) => s + l.qty * (l.unitPrice + l.modDelta), 0);
   const gstEst = total - subtotalEx;
 
-  const pushLine = (m, mods) => {
+  // opts = { qty, note } — both optional. qty N goes through the SAME merge/create
+  // branch as N single taps (so modal-qty ≡ tapping the tile N times); the note
+  // rides in the key so "same item+mods, different note" stays its own rail line.
+  const pushLine = (m, mods, opts = {}) => {
     const id = m.templateId || m.id;
     const modDelta = (mods || []).reduce((s, x) => s + x.priceDelta, 0);
-    const key = lineKeyOf(id, mods);
+    const note = String(opts.note || "").trim().slice(0, 200);
+    const n = Math.max(1, Math.min(MAX_QTY, Number(opts.qty) || 1));
+    const key = `${lineKeyOf(id, mods)}${note ? `|n:${note}` : ""}`;
     setLines((prev) => {
       const ex = prev.find((l) => l.key === key);
       if (ex) {
         if (ex.qty >= MAX_QTY) { showToast(`Max ${MAX_QTY} per line`); return prev; }
-        return prev.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l));
+        return prev.map((l) => (l.key === key ? { ...l, qty: Math.min(MAX_QTY, l.qty + n) } : l));
       }
       if (prev.length >= MAX_LINES) { showToast(`Max ${MAX_LINES} lines per order (server limit)`); return prev; }
       // gstApplicable rides on the rail line so chips can show inc-GST deltas like the tiles
-      return [...prev, { key, menuItemId: id, displayName: m.displayName || id, qty: 1, unitPrice: sellAt(m), modifiers: mods || [], modDelta, gstApplicable: m.gstApplicable !== false }];
+      return [...prev, { key, menuItemId: id, displayName: m.displayName || id, qty: n, unitPrice: sellAt(m), modifiers: mods || [], modDelta, gstApplicable: m.gstApplicable !== false, ...(note ? { notes: note } : {}) }];
+    });
+  };
+  // rail editor "Modify" flow: swap one line's config in place (same shape as
+  // pushLine); if the new config equals another existing line, merge into it
+  // instead of leaving two lines with the same key.
+  const replaceLine = (oldKey, m, mods, opts = {}) => {
+    const id = m.templateId || m.id;
+    const modDelta = (mods || []).reduce((s, x) => s + x.priceDelta, 0);
+    const note = String(opts.note || "").trim().slice(0, 200);
+    const n = Math.max(1, Math.min(MAX_QTY, Number(opts.qty) || 1));
+    const key = `${lineKeyOf(id, mods)}${note ? `|n:${note}` : ""}`;
+    setLines((prev) => {
+      const idx = prev.findIndex((l) => l.key === oldKey);
+      if (idx === -1) return prev;
+      const twin = prev.find((l) => l.key === key && l.key !== oldKey);
+      if (twin) {
+        return prev.filter((l) => l.key !== oldKey)
+          .map((l) => (l.key === key ? { ...l, qty: Math.min(MAX_QTY, l.qty + n) } : l));
+      }
+      const next = [...prev];
+      next[idx] = { key, menuItemId: id, displayName: m.displayName || id, qty: n, unitPrice: sellAt(m), modifiers: mods || [], modDelta, gstApplicable: m.gstApplicable !== false, ...(note ? { notes: note } : {}) };
+      return next;
     });
   };
   const tapTile = (m) => {
     if (m.e86 || m.available === false) return;
-    // items with RESOLVED modifier groups open the modal; others add straight to the rail
+    // items with RESOLVED modifier groups open the modal; others add straight to
+    // the rail — the ONE-TAP fast path for no-modifier items is unchanged (notes
+    // for those are added afterwards via the rail line editor).
     const gids = (m.modifierGroupIds || []).filter((gid) => modifierGroups.some((g) => g.id === gid));
-    if (gids.length) setModModal({ item: m, sel: {}, open: {} }); // open = per-group expand/collapse (display only)
+    if (gids.length) setModModal({ item: m, sel: {}, gid: null, q: "", qty: 1, note: "", notePresets: [], editKey: null });
     else pushLine(m, []);
   };
   const bump = (key, d) => setLines((prev) => prev
     .map((l) => (l.key === key ? { ...l, qty: Math.min(MAX_QTY, l.qty + d) } : l))
     .filter((l) => l.qty > 0));
   const removeLine = (key) => setLines((prev) => prev.filter((l) => l.key !== key));
+  // rail editor: update one line's note in place. The key is NOT recomputed on a
+  // note edit (stable React identity while the sheet is open); key-borne notes
+  // only matter for merge-on-add, which this path never does.
+  const setLineNote = (key, note) => setLines((prev) => prev.map((l) => {
+    if (l.key !== key) return l;
+    const { notes: _drop, ...rest } = l;
+    const v = String(note || "").trim().slice(0, 200);
+    return v ? { ...rest, notes: v } : rest;
+  }));
+  const editLine = editSheet ? lines.find((l) => l.key === editSheet.key) : null;
+  useEffect(() => { // line stepped to zero / removed while the sheet is open → close it
+    if (editSheet && !lines.some((l) => l.key === editSheet.key)) setEditSheet(null);
+  }, [lines, editSheet]);
+  // "Modify" — reopen the two-pane picker with the line's EXISTING selections
+  // preloaded (rebuilt from its stored FULL labels; first group carrying the
+  // label wins, mirroring the server's pricing lookup order).
+  const openModify = (l) => {
+    const mi = resolvedMenuItems.find((x) => (x.templateId || x.id) === l.menuItemId);
+    if (!mi) { showToast("This item is no longer on the venue menu"); return; }
+    const gids = (mi.modifierGroupIds || []).filter((gid) => modifierGroups.some((g) => g.id === gid));
+    const sel = {};
+    for (const x of l.modifiers || []) {
+      const gid = gids.find((gd) => (((modifierGroups.find((g) => g.id === gd) || {}).options) || []).some((o) => o.label === x.label));
+      if (gid) sel[gid] = [...(sel[gid] || []), x.label];
+    }
+    const { sel: presets, free } = splitNote(l.notes, notePresetList);
+    setEditSheet(null);
+    setModModal({ item: mi, sel, gid: null, q: "", qty: l.qty, note: free, notePresets: presets, editKey: l.key });
+  };
 
   const send = async () => {
     // !operator: never send an unattributable sale (Ops PosScreen has the same guard)
@@ -146,7 +234,10 @@ export default function PosPage() {
         venueId: selectedVenue,
         lines: lines.map((l) => ({
           menuItemId: l.menuItemId, qty: l.qty,
+          // FULL stored labels — display-side stripping is cosmetic only; the
+          // server prices by exact-label match against the modifier group
           ...(l.modifiers?.length ? { modifiers: l.modifiers.slice(0, MAX_MODS).map((x) => ({ label: x.label })) } : {}),
+          ...(l.notes ? { notes: l.notes } : {}), // kitchen note — server trims/caps at 200
         })),
         reference: `POS-${Date.now().toString().slice(-6)}`,
         orderMeta: { serviceMode, staff: { id: operator.id } }, // guard above guarantees operator
@@ -256,16 +347,19 @@ export default function PosPage() {
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
           {lines.map((l) => (
-            <div key={l.key} className="pos-line">
+            /* tap the line → editor sheet (qty / notes / modify / remove); the
+               steppers stopPropagation so they keep working without opening it */
+            <div key={l.key} className="pos-line pos-line--tap"
+              onClick={() => setEditSheet({ key: l.key, ...splitNote(l.notes, notePresetList) })}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: "var(--pos-ink)" }}>{l.displayName}</div>
                   <div style={{ fontSize: 11, color: "var(--pos-ink-soft)" }}>{money(incGst(l.unitPrice + l.modDelta, l.gstApplicable !== false))} each</div>
                 </div>
-                <button className="pos-step" onClick={() => bump(l.key, -1)}>−</button>
+                <button className="pos-step" onClick={(e) => { e.stopPropagation(); bump(l.key, -1); }}>−</button>
                 <span style={{ fontSize: 13, fontWeight: 700, minWidth: 20, textAlign: "center", color: "var(--pos-ink)" }}>{l.qty}</span>
-                <button className="pos-step" onClick={() => bump(l.key, 1)}>+</button>
-                <button className="pos-step pos-remove" onClick={() => removeLine(l.key)}>✕</button>
+                <button className="pos-step" onClick={(e) => { e.stopPropagation(); bump(l.key, 1); }}>+</button>
+                <button className="pos-step pos-remove" onClick={(e) => { e.stopPropagation(); removeLine(l.key); }}>✕</button>
               </div>
               {l.modifiers.length > 0 && (
                 <div className="pos-line-mods">
@@ -276,6 +370,7 @@ export default function PosPage() {
                   ))}
                 </div>
               )}
+              {l.notes && <div className="pos-line-note">✎ {l.notes}</div>}
             </div>
           ))}
           {lines.length === 0 && <div style={{ fontSize: 12, color: "var(--pos-ink-soft)", padding: "16px 0" }}>Tap items to add them.</div>}
@@ -294,8 +389,62 @@ export default function PosPage() {
         </div>
       </div>
 
-      {/* MODIFIER MODAL — selection rules enforced HERE (server prices labels only,
-          it does NOT validate single/required/min/max — verified in rgSellOrder) */}
+      {/* RAIL LINE EDITOR — small sheet: qty, kitchen notes, Modify (reopen picker
+          preloaded), Remove. This is also how NO-modifier items (a coffee) get a
+          note: they still add in one tap, then the line is edited here. */}
+      {editSheet && editLine && (() => {
+        const l = editLine;
+        const applyNote = (presets, free) => {
+          setEditSheet((p) => ({ ...p, presets, free }));
+          setLineNote(l.key, composeNote(presets, free));
+        };
+        return (
+          <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setEditSheet(null)}>
+            <div className="rg-modal pos-sheet">
+              <div className="modal-head"><span className="modal-title">{l.displayName}</span><button className="modal-close" onClick={() => setEditSheet(null)}>✕</button></div>
+              {l.modifiers.length > 0 && (
+                <div className="pos-sheet-mods">
+                  {l.modifiers.map((x) => x.label).join(" · ")}
+                </div>
+              )}
+              <div className="pos-sheet-row">
+                <span className="pos-sheet-lbl">Quantity</span>
+                <div className="pos-qty">
+                  <button className="pos-step" onClick={() => bump(l.key, -1)}>−</button>
+                  <span className="pos-qty-n">{l.qty}</span>
+                  <button className="pos-step" onClick={() => bump(l.key, 1)}>+</button>
+                </div>
+              </div>
+              <div className="pos-sheet-lbl" style={{ marginTop: 10 }}>Kitchen note</div>
+              <div className="pos-note-chips">
+                {notePresetList.map((p) => {
+                  const on = editSheet.presets.includes(p);
+                  return (
+                    <button key={p} className={`pos-note-chip ${on ? "pos-note-chip--on" : ""}`}
+                      onClick={() => applyNote(on ? editSheet.presets.filter((x) => x !== p) : [...editSheet.presets, p], editSheet.free)}>
+                      {p}
+                    </button>
+                  );
+                })}
+              </div>
+              <input className="pos-note-input" value={editSheet.free} maxLength={200} placeholder="Free-text note for the kitchen…"
+                onChange={(e) => applyNote(editSheet.presets, e.target.value)} />
+              <div className="pos-sheet-actions">
+                <button className="pos-sheet-btn pos-sheet-btn--danger" onClick={() => { removeLine(l.key); setEditSheet(null); }}>Remove from order</button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="pos-sheet-btn" onClick={() => openModify(l)}>Modify</button>
+                  <button className="pos-sheet-btn pos-sheet-btn--primary" onClick={() => setEditSheet(null)}>Done</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODIFIER PICKER (two-pane) — selection rules enforced HERE (server prices
+          labels only, it does NOT validate single/required/min/max — verified in
+          rgSellOrder). toggle/minFor/unmet/ok are the EXISTING predicates, reused
+          verbatim; everything two-pane is display arrangement around them. */}
       {modModal && (() => {
         const m = modModal.item;
         const groups = (m.modifierGroupIds || [])
@@ -313,54 +462,106 @@ export default function PosPage() {
         const unmet = groups.filter(({ gid, g }) => (modModal.sel[gid] || []).length < minFor(g));
         const ok = unmet.length === 0 && chosen.length <= MAX_MODS;
         const estUnit = sellAt(m) + chosen.reduce((s, x) => s + x.priceDelta, 0);
+        // required groups first — the EXISTING minFor()-based comparator, unchanged
+        const sorted = [...groups].sort((a, b) => (minFor(a.g) > 0 ? 0 : 1) - (minFor(b.g) > 0 ? 0 : 1));
+        const active = sorted.find(({ gid }) => gid === modModal.gid) || sorted[0] || null;
+        const adds = chosen.filter((x) => !isRemovalLabel(x.label));
+        const rems = chosen.filter((x) => isRemovalLabel(x.label));
+        const qtyN = Math.max(1, Number(modModal.qty) || 1);
+        const noteStr = composeNote(modModal.notePresets, modModal.note);
+        const optQuery = (modModal.q || "").trim().toLowerCase();
+        const activeOpts = active ? (active.g.options || []).filter((o) => !optQuery || String(o.label).toLowerCase().includes(optQuery)) : [];
+        const confirm = () => {
+          if (modModal.editKey) replaceLine(modModal.editKey, m, chosen, { qty: qtyN, note: noteStr });
+          else pushLine(m, chosen, { qty: qtyN, note: noteStr });
+          setModModal(null);
+        };
         return (
           <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setModModal(null)}>
-            <div className="rg-modal" style={{ maxWidth: 480 }}>
+            <div className="rg-modal pos-m2">
               <div className="modal-head"><span className="modal-title">{m.displayName}</span><button className="modal-close" onClick={() => setModModal(null)}>✕</button></div>
-              {/* DISPLAY ordering/collapse only — selection rules (toggle/minFor/unmet/ok)
-                  are untouched. Required groups (minFor > 0) first + always expanded;
-                  optional groups collapse by default but auto-expand once they hold
-                  selections (never hide the user's own choices). */}
-              {[...groups].sort((a, b) => (minFor(a.g) > 0 ? 0 : 1) - (minFor(b.g) > 0 ? 0 : 1)).map(({ gid, g }) => {
-                const req = minFor(g) > 0;
-                const selCount = (modModal.sel[gid] || []).length;
-                const expanded = req || (modModal.open?.[gid] != null ? modModal.open[gid] : selCount > 0);
-                return (
-                <div key={gid} style={{ marginBottom: 12, ...(req ? { borderLeft: "3px solid var(--red)", paddingLeft: 8 } : {}) }}>
-                  <div className="form-label" style={req ? {} : { cursor: "pointer", userSelect: "none" }}
-                    onClick={req ? undefined : () => setModModal((p) => ({ ...p, open: { ...p.open, [gid]: !expanded } }))}>
-                    {!req && <span style={{ marginRight: 4, fontSize: 10, color: "var(--gray)" }}>{expanded ? "▾" : "▸"}</span>}
-                    {g.name}
-                    <span style={{ fontWeight: 400, color: "var(--gray)", marginLeft: 6, fontSize: 11 }}>
-                      {g.type === "single" ? "pick one" : g.maxSelections != null ? `up to ${g.maxSelections}` : "any"}
-                      {minFor(g) > 0 ? ` · min ${minFor(g)}` : ""}{g.required ? " · required" : ""}
-                      {!expanded ? ` · ${(g.options || []).length} options${selCount ? ` · ${selCount} selected` : ""}` : ""}
-                    </span>
-                  </div>
-                  {expanded && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {(g.options || []).map((o) => {
-                      const on = (modModal.sel[gid] || []).includes(o.label);
-                      const delta = optionDelta(m, gid, g, o.label);
-                      return (
-                        <label key={o.label} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, border: "0.5px solid var(--border)", borderRadius: 8, padding: "4px 8px", cursor: "pointer", background: on ? "#eef2ff" : "transparent" }}>
-                          <input type={g.type === "single" ? "radio" : "checkbox"} name={`mod-${gid}`} checked={on} onChange={() => toggle(gid, g, o.label)} />
-                          {o.label}{delta ? <span style={{ color: "var(--gray)" }}>{delta > 0 ? "+" : "−"}{money(incGst(Math.abs(delta), m.gstApplicable !== false))}</span> : null}
-                        </label>
-                      );
-                    })}
-                  </div>
-                  )}
+              {/* summary — additions green, removals red; note echoed when set */}
+              <div className="pos-m2-sum">
+                {adds.length > 0 && <span className="pos-chip-add">Add: {adds.map((x) => displayLabel(x.label)).join(", ")}</span>}
+                {rems.length > 0 && <span className="pos-chip-no">No: {rems.map((x) => displayLabel(x.label)).join(", ")}</span>}
+                {noteStr && <span className="pos-chip-note">✎ {noteStr}</span>}
+                {adds.length === 0 && rems.length === 0 && !noteStr && <span className="pos-m2-sum-empty">No changes — served as standard.</span>}
+              </div>
+              <div className="pos-m2-body">
+                {/* LEFT — group rail (required first via the existing minFor sort) */}
+                <div className="pos-m2-groups">
+                  {sorted.map(({ gid, g }) => {
+                    const n = (modModal.sel[gid] || []).length;
+                    const on = active && active.gid === gid;
+                    return (
+                      <button key={gid} className={`pos-m2-group ${on ? "pos-m2-group--on" : ""}`}
+                        onClick={() => setModModal((p) => ({ ...p, gid, q: "" }))}>
+                        <span className="pos-m2-group-name">{g.name}{minFor(g) > 0 && <span className="pos-m2-req">*</span>}</span>
+                        {n > 0 && <span className="pos-m2-badge">{n}</span>}
+                      </button>
+                    );
+                  })}
+                  {sorted.length === 0 && <div className="pos-m2-none">No modifier groups</div>}
                 </div>
-                );
-              })}
-              {chosen.length > MAX_MODS && <div style={{ fontSize: 11, color: "var(--red)", marginBottom: 6 }}>Max {MAX_MODS} add-ons per line (server limit).</div>}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-                <span style={{ fontSize: 12, color: "var(--gray)" }}>{money(incGst(estUnit, m.gstApplicable !== false))} inc-GST / each</span>
+                {/* RIGHT — the active group's options as full-width rows */}
+                <div className="pos-m2-opts">
+                  {active && (
+                    <div className="pos-m2-rule">
+                      {active.g.type === "single" ? "pick one" : active.g.maxSelections != null ? `up to ${active.g.maxSelections}` : "any"}
+                      {minFor(active.g) > 0 ? ` · min ${minFor(active.g)}` : ""}{active.g.required ? " · required" : ""}
+                    </div>
+                  )}
+                  {active && (active.g.options || []).length > 12 && (
+                    <input className="pos-note-input" style={{ marginBottom: 6 }} value={modModal.q}
+                      placeholder={`Search ${active.g.name}…`} onChange={(e) => setModModal((p) => ({ ...p, q: e.target.value }))} />
+                  )}
+                  {active && activeOpts.map((o) => {
+                    const on = (modModal.sel[active.gid] || []).includes(o.label);
+                    const delta = optionDelta(m, active.gid, active.g, o.label);
+                    const rem = isRemovalLabel(o.label);
+                    return (
+                      <div key={o.label} className="pos-opt-row" onClick={() => toggle(active.gid, active.g, o.label)}>
+                        <span className="pos-opt-name">{displayLabel(o.label)}</span>
+                        <span className="pos-opt-delta">{delta ? `${delta > 0 ? "+" : "−"}${money(incGst(Math.abs(delta), m.gstApplicable !== false))}` : ""}</span>
+                        <button className={`pos-act ${rem ? (on ? "pos-act--removed" : "pos-act--rem") : (on ? "pos-act--added" : "pos-act--add")}`}
+                          onClick={(e) => { e.stopPropagation(); toggle(active.gid, active.g, o.label); }}>
+                          {rem ? (on ? "Removed" : "Remove") : (on ? "Added" : "Add")}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {active && activeOpts.length === 0 && <div className="pos-m2-none">No options match.</div>}
+                </div>
+              </div>
+              {/* kitchen note — presets from Settings (group.posNotePresets) + free text */}
+              <div className="pos-m2-notes">
+                <div className="pos-sheet-lbl">Kitchen note</div>
+                <div className="pos-note-chips">
+                  {notePresetList.map((p) => {
+                    const on = modModal.notePresets.includes(p);
+                    return (
+                      <button key={p} className={`pos-note-chip ${on ? "pos-note-chip--on" : ""}`}
+                        onClick={() => setModModal((pr) => ({ ...pr, notePresets: on ? pr.notePresets.filter((x) => x !== p) : [...pr.notePresets, p] }))}>
+                        {p}
+                      </button>
+                    );
+                  })}
+                </div>
+                <input className="pos-note-input" value={modModal.note} maxLength={200} placeholder="Free-text note for the kitchen…"
+                  onChange={(e) => setModModal((p) => ({ ...p, note: e.target.value }))} />
+              </div>
+              {chosen.length > MAX_MODS && <div style={{ fontSize: 11, color: "var(--pos-rem)", marginBottom: 6 }}>Max {MAX_MODS} add-ons per line (server limit).</div>}
+              <div className="pos-m2-foot">
+                <div className="pos-qty">
+                  <button className="pos-step" onClick={() => setModModal((p) => ({ ...p, qty: Math.max(1, qtyN - 1) }))}>−</button>
+                  <span className="pos-qty-n">{qtyN}</span>
+                  <button className="pos-step" onClick={() => setModModal((p) => ({ ...p, qty: Math.min(MAX_QTY, qtyN + 1) }))}>+</button>
+                </div>
+                <span className="pos-m2-total">{money(incGst(estUnit, m.gstApplicable !== false) * qtyN)} inc-GST</span>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-sm" onClick={() => setModModal(null)}>Cancel</button>
-                  <button className="btn btn-primary btn-sm" disabled={!ok} onClick={() => { pushLine(m, chosen); setModModal(null); }}>
-                    {unmet.length ? `Pick ${unmet.map((u) => u.g.name).join(", ")}` : "Add to order"}
+                  <button className="pos-sheet-btn" onClick={() => setModModal(null)}>Cancel</button>
+                  <button className="pos-sheet-btn pos-sheet-btn--primary" disabled={!ok} onClick={confirm}>
+                    {unmet.length ? `Pick ${unmet.map((u) => u.g.name).join(", ")}` : modModal.editKey ? "Update line" : "Add to order"}
                   </button>
                 </div>
               </div>
