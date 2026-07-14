@@ -1,13 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, setDoc, serverTimestamp, writeBatch, deleteField, getDocs } from "firebase/firestore";
+import { addDoc, setDoc, serverTimestamp, writeBatch, deleteField, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useRG } from "./RGContext";
-import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc, menuItemsCol, venueMenuItemsCol, venueMenuItemDoc } from "../../utils/restaurantGroupPaths";
+import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc, menuItemsCol, venueMenuItemsCol, venueMenuItemDoc, groupDoc } from "../../utils/restaurantGroupPaths";
 import { sellOrder } from "./sellOrder";
 import {
   incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost, venueSellPrice, resolvedSellPrice,
   DEFAULT_MENU_CATEGORIES,
 } from "./rgStockUtils";
+
+// POS browse bucket for an uncategorised item — MUST match PosPage's catOf()
+// ("Uncategorised"), since posItemOrder is keyed by the bucket the POS reads.
+const posCatOf = (m) => m?.category || "Uncategorised";
 
 const E86_REASONS = ["Out of stock", "Quality issue", "Equipment failure"];
 const E86_BACK = ["Unknown", "Later today", "Tomorrow", "2-3 days"];
@@ -61,6 +65,94 @@ export default function MenusPage() {
       .filter((m) => (!ql || (m.displayName || "").toLowerCase().includes(ql)) && (!fCat || m.category === fCat))
       .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
   }, [resolvedMenuItems, q, fCat]);
+
+  // ── POS pinning (group.posCategoryOrder / group.posItemOrder) ── the POS
+  // reads these via rgStockUtils.pinnedFirst (pinned lead in list order, rest
+  // alphabetical, absent = pure alphabetical). This is the ONLY writer. Same
+  // whole-array/whole-map updateDoc pattern as the Settings picklists
+  // (leaveTypes / posNotePresets) — never dot-notation: category names are
+  // free text and would break Firestore field paths.
+  const posCategoryOrder = useMemo(
+    () => (Array.isArray(group?.posCategoryOrder) ? group.posCategoryOrder.map(String) : []),
+    [group]
+  );
+  const posItemOrder = useMemo(
+    () => (group?.posItemOrder && typeof group.posItemOrder === "object" && !Array.isArray(group.posItemOrder) ? group.posItemOrder : {}),
+    [group]
+  );
+  // the id the POS resolver keys on: pinnedFirst(..., (m) => m.templateId || m.id, ...)
+  const itemPinKey = (m) => m.templateId || m.id;
+  // every pinnable category: the configured list + stray item-borne ones
+  // (incl. "Uncategorised"), same derivation as the POS's category universe
+  const pinnableCats = useMemo(() => {
+    const stray = [...new Set(menuItems.map(posCatOf))]
+      .filter((c) => !categories.includes(c))
+      .sort((a, b) => a.localeCompare(b));
+    return [...categories, ...stray];
+  }, [categories, menuItems]);
+  const savePosCategoryOrder = async (next) => {
+    if (!canEdit) return; // write-time re-check, same hard rule as patchItem
+    try { await updateDoc(groupDoc(groupId), { posCategoryOrder: next }); }
+    catch (e) { showToast(`Could not save POS category order: ${e?.code || e?.message || "error"}`); }
+  };
+  const savePosItemOrder = async (nextMap) => {
+    if (!canEdit) return;
+    try { await updateDoc(groupDoc(groupId), { posItemOrder: nextMap }); }
+    catch (e) { showToast(`Could not save POS item order: ${e?.code || e?.message || "error"}`); }
+  };
+  const toggleCatPin = (c) => {
+    if (!canEdit) return;
+    savePosCategoryOrder(posCategoryOrder.includes(c) ? posCategoryOrder.filter((x) => x !== c) : [...posCategoryOrder, c]);
+  };
+  const isItemPinned = (m) => (Array.isArray(posItemOrder[posCatOf(m)]) ? posItemOrder[posCatOf(m)] : []).includes(String(itemPinKey(m)));
+  const toggleItemPin = (m) => {
+    if (!canEdit) return;
+    const ck = posCatOf(m);
+    const id = String(itemPinKey(m));
+    const cur = Array.isArray(posItemOrder[ck]) ? posItemOrder[ck].map(String) : [];
+    const nextList = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+    const next = { ...posItemOrder };
+    if (nextList.length) next[ck] = nextList; else delete next[ck]; // never leave empty arrays behind
+    savePosItemOrder(next);
+  };
+  // picker-row unpin: removes from the PICKER's category key explicitly — an
+  // item whose category changed after pinning still lives under its OLD key,
+  // and toggleItemPin (keyed by current category) would touch the wrong bucket.
+  const unpinFromCat = (id, ck) => {
+    if (!canEdit) return;
+    const cur = Array.isArray(posItemOrder[ck]) ? posItemOrder[ck].map(String) : [];
+    const nextList = cur.filter((x) => x !== String(id));
+    const next = { ...posItemOrder };
+    if (nextList.length) next[ck] = nextList; else delete next[ck];
+    savePosItemOrder(next);
+  };
+  // drag-to-reorder (pinned rows only) — mirrors the Settings dropLeaveType pattern
+  const [dragPinCat, setDragPinCat] = useState(null);
+  const dropPinCat = async (to) => {
+    const from = dragPinCat; setDragPinCat(null);
+    if (from === null || from === to) return;
+    const next = [...posCategoryOrder]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
+    await savePosCategoryOrder(next);
+  };
+  const [pinItemsCat, setPinItemsCat] = useState("");
+  const pinCat = pinItemsCat || pinnableCats[0] || "";
+  // pinned item rows for the picker — resolved to TEMPLATE docs (pinning is
+  // group-global); ids that no longer resolve (deleted items) render NO ghost
+  // row and stay orphaned in the array until the next reorder rewrites it.
+  const pinnedItemRows = useMemo(() => {
+    const ids = Array.isArray(posItemOrder[pinCat]) ? posItemOrder[pinCat].map(String) : [];
+    return ids.map((id) => ({ id, m: menuItems.find((x) => x.id === id) })).filter((r) => r.m);
+  }, [posItemOrder, pinCat, menuItems]);
+  const [dragPinItem, setDragPinItem] = useState(null);
+  const dropPinItem = async (to) => {
+    const from = dragPinItem; setDragPinItem(null);
+    if (from === null || from === to) return;
+    // rewritten from the RENDERED (valid) rows — a reorder therefore also
+    // prunes any orphaned ids of deleted items in this category
+    const next = pinnedItemRows.map((r) => r.id);
+    const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
+    await savePosItemOrder({ ...posItemOrder, [pinCat]: next });
+  };
 
   const foodCostOf = (m) => menuItemFoodCost(m, resolvedRecipeByMenuItemId, itemById);
   // Price at the selected venue — the ONE shared resolver (rgStockUtils), mirrors
@@ -492,13 +584,70 @@ export default function MenusPage() {
       )}
 
       {tab === "overview" && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          {/* POS LAYOUT — writes group.posCategoryOrder / group.posItemOrder,
+              the two arrays the POS's pinnedFirst() reads. Same editable-list
+              pattern as the Settings picklists: whole-array writes, drag to
+              reorder, ✕ to unpin. Read-only view when !canEdit. */}
+          <div className="card-head"><div><span className="card-title">POS layout</span><span className="card-sub">Pinned categories &amp; items lead on the POS, in this order — everything unpinned stays alphabetical</span></div></div>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 280px", minWidth: 260 }}>
+              <div className="form-label">Pinned categories (★ lead the category grid)</div>
+              {posCategoryOrder.filter((c) => pinnableCats.includes(c)).map((c, i) => (
+                <div key={c} className="staff-meta-row" draggable={canEdit}
+                  onDragStart={() => setDragPinCat(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropPinCat(i)} onDragEnd={() => setDragPinCat(null)}
+                  style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)", cursor: canEdit ? "grab" : "default", opacity: dragPinCat === i ? 0.5 : 1 }}>
+                  <span style={{ fontSize: 13 }}>{canEdit && <span style={{ color: "var(--gray)", marginRight: 6 }} title="Drag to reorder">⠿</span>}★ {c}</span>
+                  {canEdit && <button className="btn btn-sm btn-danger" title="Unpin (falls back into the alphabetical run)" onClick={() => toggleCatPin(c)}>✕</button>}
+                </div>
+              ))}
+              {posCategoryOrder.filter((c) => pinnableCats.includes(c)).length === 0 && (
+                <div style={{ fontSize: 12, color: "var(--gray)", padding: "6px 0" }}>None pinned — the POS category grid is alphabetical.</div>
+              )}
+              {canEdit && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                  {pinnableCats.filter((c) => !posCategoryOrder.includes(c)).map((c) => (
+                    <button key={c} className="btn btn-sm" title="Pin to the top of the POS" onClick={() => toggleCatPin(c)}>☆ {c}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ flex: "1 1 280px", minWidth: 260 }}>
+              <div className="form-label">Pinned items within a category</div>
+              <select className="form-input" style={{ width: 200, marginBottom: 8 }} value={pinCat} onChange={(e) => setPinItemsCat(e.target.value)}>
+                {pinnableCats.map((c) => <option key={c} value={c}>{c}{(posItemOrder[c] || []).length ? ` (${(posItemOrder[c] || []).length}★)` : ""}</option>)}
+              </select>
+              {pinnedItemRows.map((r, i) => (
+                <div key={r.id} className="staff-meta-row" draggable={canEdit}
+                  onDragStart={() => setDragPinItem(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropPinItem(i)} onDragEnd={() => setDragPinItem(null)}
+                  style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)", cursor: canEdit ? "grab" : "default", opacity: dragPinItem === i ? 0.5 : 1 }}>
+                  <span style={{ fontSize: 13 }}>{canEdit && <span style={{ color: "var(--gray)", marginRight: 6 }} title="Drag to reorder">⠿</span>}★ {r.m.displayName}</span>
+                  {canEdit && <button className="btn btn-sm btn-danger" title="Unpin (falls back into the alphabetical run)" onClick={() => unpinFromCat(r.id, pinCat)}>✕</button>}
+                </div>
+              ))}
+              {pinnedItemRows.length === 0 && (
+                <div style={{ fontSize: 12, color: "var(--gray)", padding: "6px 0" }}>
+                  No pinned items in {pinCat || "this category"} — star items with ★ in the table below.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {tab === "overview" && (
         <div className="card">
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
-              <thead><tr><th>Item</th><th>Category</th><th>POS ID</th><th>Sell inc-GST</th><th>Food cost</th><th>Margin</th><th>Recipe</th><th>Available</th><th>86</th><th></th></tr></thead>
+              <thead><tr><th title="Pinned to the top of its POS category">★</th><th>Item</th><th>Category</th><th>POS ID</th><th>Sell inc-GST</th><th>Food cost</th><th>Margin</th><th>Recipe</th><th>Available</th><th>86</th><th></th></tr></thead>
               <tbody>
                 {vItems.map((m) => (
                   <tr key={m.id} style={{ opacity: m.e86 ? 0.55 : 1 }}>
+                    <td>
+                      <button className="btn btn-sm" disabled={!canEdit}
+                        title={isItemPinned(m) ? "Unpin from the POS" : "Pin to the top of its POS category"}
+                        style={{ border: "none", background: "transparent", fontSize: 14, color: isItemPinned(m) ? "#9A1BA8" : "var(--gray)", padding: "2px 4px" }}
+                        onClick={() => toggleItemPin(m)}>{isItemPinned(m) ? "★" : "☆"}</button>
+                    </td>
                     <td><strong style={{ textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</strong>
                       {m.hasVariants && <span className="pill" style={{ marginLeft: 6, background: "#eef2ff", color: "#4338ca" }}>{(m.variants || []).length} sizes</span>}
                       {m.isCombo && <span className="pill" style={{ marginLeft: 6, background: "#ecfeff", color: "#0e7490" }}>Combo</span>}
@@ -521,7 +670,7 @@ export default function MenusPage() {
                     <td>{canEdit && <button className="btn btn-sm" onClick={() => openItem(m)}>Edit</button>}</td>
                   </tr>
                 ))}
-                {vItems.length === 0 && <tr><td colSpan={10} style={{ color: "var(--gray)" }}>No menu items for {selectedVenueName}.</td></tr>}
+                {vItems.length === 0 && <tr><td colSpan={11} style={{ color: "var(--gray)" }}>No menu items for {selectedVenueName}.</td></tr>}
               </tbody>
             </table>
           </div>
