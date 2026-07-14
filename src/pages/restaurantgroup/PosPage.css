@@ -230,3 +230,25 @@
   border: 1px solid var(--pos-border-soft); border-radius: 8px;
   padding: 6px 8px; margin-bottom: 8px;
 }
+
+/* ── category-first flow (screen A grid + screen B top bar) ───────────── */
+.pos-v2 .pos-topbar { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+.pos-v2 .pos-back {
+  border: 1px solid var(--pos-border); background: var(--pos-surface);
+  color: var(--pos-ink); font-size: 12px; font-weight: 700;
+  border-radius: 8px; padding: 7px 12px; cursor: pointer; white-space: nowrap;
+}
+.pos-v2 .pos-back:hover { background: var(--pos-tint); }
+.pos-v2 .pos-topbar-div { width: 1px; align-self: stretch; background: var(--pos-border); }
+.pos-v2 .pos-chipstrip { display: flex; gap: 6px; overflow-x: auto; flex: 1; padding-bottom: 2px; }
+.pos-v2 .pos-chipstrip .pos-cat { white-space: nowrap; flex-shrink: 0; padding: 6px 12px; }
+.pos-v2 .pos-cat-grid {
+  flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px; align-content: flex-start;
+}
+.pos-v2 .pos-cat-tile { min-height: 72px; display: flex; flex-direction: column; justify-content: center; }
+.pos-v2 .pos-cat-tile-name { font-size: 13px; font-weight: 800; color: var(--pos-ink); }
+.pos-v2 .pos-cat-star { color: var(--pos-violet); }
+.pos-v2 .pos-cat-tile-sub { font-size: 11px; color: var(--pos-ink-soft); margin-top: 4px; }
+.pos-v2 .pos-tile-cat { font-size: 10px; color: var(--pos-ink-soft); margin-top: 2px; }
+.pos-v2 .pos-searchall-note { font-size: 11px; color: var(--pos-ink-soft); display: flex; align-items: center; }

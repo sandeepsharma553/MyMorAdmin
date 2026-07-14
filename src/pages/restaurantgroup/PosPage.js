@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRG } from "./RGContext";
 import { sellOrder } from "./sellOrder";
-import { money, incGst, resolvedSellPrice, DEFAULT_MENU_CATEGORIES, resolvePosNotePresets } from "./rgStockUtils";
+import { money, incGst, resolvedSellPrice, DEFAULT_MENU_CATEGORIES, resolvePosNotePresets, pinnedFirst } from "./rgStockUtils";
 import "./PosPage.css";
 
 /* POS Terminal — Phase 2 (order-entry grid + modifier modal + service-mode + send).
@@ -32,6 +32,9 @@ const optionDelta = (m, gid, group, label) => {
 const minFor = (g) => (g.required ? Math.max(1, Number(g.minSelections) || 0) : (Number(g.minSelections) || 0));
 // one rail line per item+modifier-combination
 const lineKeyOf = (id, mods) => `${id}|${(mods || []).map((x) => x.label).slice().sort().join("+")}`;
+// an item's browse bucket — items with no category land in "Uncategorised" so
+// they stay reachable now that the category-first flow has no "All" view
+const catOf = (m) => m?.category || "Uncategorised";
 
 // ── modifier DISPLAY treatment (COSMETIC ONLY — the payload always carries the
 // FULL STORED LABEL; rgSellOrder prices by exact-label match, so nothing below
@@ -90,8 +93,12 @@ export default function PosPage() {
   } = useRG();
   const categories = group?.menuCategories?.length ? group.menuCategories : DEFAULT_MENU_CATEGORIES;
 
-  const [cat, setCat] = useState(""); // "" = all categories
-  const [q, setQ] = useState(""); // search — filters WITHIN the selected category
+  // category-first flow: cat === null → SCREEN A (category grid, the POS opens
+  // here); cat set → SCREEN B (that category's item grid). There is no "All"
+  // browse anymore; cross-category reach is the search-all fallback below.
+  const [cat, setCat] = useState(null);
+  const [q, setQ] = useState(""); // screen A: filters categories · screen B: filters items in the category
+  const [searchAll, setSearchAll] = useState(false); // screen B fallback: run the query across ALL items
   const [lines, setLines] = useState([]); // [{ key, menuItemId, displayName, qty, unitPrice, modifiers:[{label,priceDelta}], modDelta }]
   const [serviceMode, setServiceMode] = useState("dinein");
   const [sending, setSending] = useState(false);
@@ -119,21 +126,59 @@ export default function PosPage() {
   // the ONE shared price resolver (rgStockUtils) — same value the server charges
   const sellAt = (m) => resolvedSellPrice(m, { menuInstanceById, menuItems, selectedVenue });
 
-  // search composes with the category filter; alphabetical order is kept —
-  // predictable beats relevance-ranking on a POS grid.
+  // item tiles (SCREEN B). The search predicate is UNCHANGED — case-insensitive
+  // substring on displayName + kitchenName; only the pool it runs over follows
+  // the category-first flow now. Pinned items (group.posItemOrder — read-time
+  // only, the POS never writes it) lead within the category, rest alphabetical;
+  // an absent list is today's pure-alphabetical behaviour.
   const tiles = useMemo(() => {
+    if (cat == null) return []; // screen A shows categories, not items
     const query = q.trim().toLowerCase();
-    return resolvedMenuItems
-      .filter((m) => !cat || m.category === cat)
-      .filter((m) => !query
-        || (m.displayName || "").toLowerCase().includes(query)
-        || (m.kitchenName || "").toLowerCase().includes(query))
-      .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
-  }, [resolvedMenuItems, cat, q]);
-  const liveCats = useMemo(
-    () => categories.filter((c) => resolvedMenuItems.some((m) => m.category === c)),
-    [categories, resolvedMenuItems]
+    const matches = (m) => !query
+      || (m.displayName || "").toLowerCase().includes(query)
+      || (m.kitchenName || "").toLowerCase().includes(query);
+    if (searchAll && query) {
+      // fallback: same query across ALL items — plain alphabetical, mixed
+      // categories (each tile carries its category label in this mode)
+      return resolvedMenuItems.filter(matches)
+        .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
+    }
+    return pinnedFirst(
+      resolvedMenuItems.filter((m) => catOf(m) === cat).filter(matches),
+      group?.posItemOrder?.[cat],
+      (m) => m.templateId || m.id,
+      (m) => m.displayName || ""
+    );
+  }, [resolvedMenuItems, cat, q, searchAll, group]);
+  // the EXISTING category source of truth (group.menuCategories → defaults),
+  // filtered to categories that have items — plus any stray item-borne
+  // categories appended, so no item is unreachable now that "All" is gone.
+  const liveCats = useMemo(() => {
+    const configured = categories.filter((c) => resolvedMenuItems.some((m) => catOf(m) === c));
+    const stray = [...new Set(resolvedMenuItems.map(catOf))]
+      .filter((c) => !categories.includes(c))
+      .sort((a, b) => a.localeCompare(b));
+    return [...configured, ...stray];
+  }, [categories, resolvedMenuItems]);
+  // pinned categories lead (group.posCategoryOrder — read-time only), rest alphabetical
+  const orderedCats = useMemo(
+    () => pinnedFirst(liveCats, group?.posCategoryOrder, (c) => c, (c) => c),
+    [liveCats, group]
   );
+  const pinnedCatSet = useMemo(
+    () => new Set((Array.isArray(group?.posCategoryOrder) ? group.posCategoryOrder : []).map(String)),
+    [group]
+  );
+  const catCounts = useMemo(() => {
+    const mp = {};
+    resolvedMenuItems.forEach((m) => { const c = catOf(m); mp[c] = (mp[c] || 0) + 1; });
+    return mp;
+  }, [resolvedMenuItems]);
+  // SCREEN A tiles: search filters the CATEGORY GRID (substring on the name)
+  const catQuery = q.trim().toLowerCase();
+  const catTiles = cat == null ? orderedCats.filter((c) => !catQuery || c.toLowerCase().includes(catQuery)) : [];
+  const openCat = (c) => { setCat(c); setQ(""); setSearchAll(false); };
+  const backToCats = () => { setCat(null); setQ(""); setSearchAll(false); };
 
   // inc-GST estimate of what the server will charge: rgSellOrder taxes the WHOLE
   // line (unit + modifier deltas) by the item's gstApplicable, so incGst per line
@@ -286,58 +331,94 @@ export default function PosPage() {
 
   return (
     <div className="pos-v2" style={{ display: "flex", gap: 12, alignItems: "stretch", minHeight: "70vh" }}>
-      {/* LEFT — category chips */}
-      <div style={{ width: 150, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-        <div className="pos-cat-label">Categories</div>
-        <button className={`pos-cat ${cat === "" ? "pos-cat--on" : ""}`} onClick={() => setCat("")}>All</button>
-        {liveCats.map((c) => (
-          <button key={c} className={`pos-cat ${cat === c ? "pos-cat--on" : ""}`} onClick={() => setCat(c)}>{c}</button>
-        ))}
-      </div>
-
-      {/* CENTRE — search + item tiles (venue-resolved; e86/unavailable greyed + non-tappable) */}
+      {/* CENTRE — category-first flow: SCREEN A (category grid, POS opens here)
+          → SCREEN B (that category's item grid). The old 25-deep left rail is
+          gone; on screen B a horizontal chip strip switches category in place. */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+        {cat != null && (
+          <div className="pos-topbar">
+            <button className="pos-back" onClick={backToCats}>← Categories</button>
+            <div className="pos-topbar-div" />
+            <div className="pos-chipstrip">
+              {orderedCats.map((c) => (
+                <button key={c} className={`pos-cat ${cat === c ? "pos-cat--on" : ""}`} onClick={() => openCat(c)}>
+                  {pinnedCatSet.has(c) ? "★ " : ""}{c}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {/* autoFocus is right on the web POS: a keyboard is always attached, so
             landing on the page ready-to-type saves a click. (Ops does NOT autofocus —
-            an iPad software keyboard would cover the grid.) */}
+            an iPad software keyboard would cover the grid.)
+            Screen A: filters the CATEGORY GRID · screen B: filters items within
+            the current category (same displayName+kitchenName predicate). */}
         <div style={{ position: "relative" }}>
           <span className="pos-search-icon" aria-hidden="true">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" />
             </svg>
           </span>
-          <input className="pos-search" autoFocus value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder={`Search items${cat ? ` in ${cat}` : ""}…`} />
+          <input className="pos-search" autoFocus value={q} onChange={(e) => { setQ(e.target.value); setSearchAll(false); }}
+            placeholder={cat == null ? "Search categories…" : `Search in ${cat}…`} />
           {q !== "" && (
-            <button className="pos-search-clear" onClick={() => setQ("")} title="Clear search" aria-label="Clear search">×</button>
+            <button className="pos-search-clear" onClick={() => { setQ(""); setSearchAll(false); }} title="Clear search" aria-label="Clear search">×</button>
           )}
         </div>
-        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, alignContent: "flex-start" }}>
-        {tiles.map((m) => {
-          const off = m.e86 || m.available === false;
-          const hasMods = (m.modifierGroupIds || []).length > 0;
-          const tint = tintOf(m.templateId || m.id);
-          return (
-            <div key={m.templateId || m.id} className={`pos-tile ${off ? "pos-tile--off" : "pos-tile--tap"}`}
-              onClick={() => !off && tapTile(m)}>
-              <div className="pos-avatar" style={{ background: tint.bg, color: tint.fg }}>{initialsOf(m.displayName)}</div>
-              <div className="pos-tile-name" style={{ textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</div>
-              <div className="pos-tile-price">{money(incGst(sellAt(m), m.gstApplicable !== false))}</div>
-              {hasMods && !off ? <span className="pos-addons">+add-ons</span> : null}
-              {(m.e86 || m.available === false) && (
-                <div className="pos-tile-flag">{m.e86 ? "86’d" : m.available === false ? "hidden" : ""}</div>
-              )}
-            </div>
-          );
-        })}
-        {tiles.length === 0 && (
-          <div className="pos-tile" style={{ gridColumn: "1 / -1", color: "var(--pos-ink-soft)", fontSize: 13 }}>
-            {q.trim()
-              ? <>No items match “{q.trim()}”{cat ? ` in ${cat}` : ""}. <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => setQ("")}>Clear search</button></>
-              : <>No items{cat ? ` in ${cat}` : ""} at {selectedVenueName}.</>}
+        {cat == null ? (
+          /* SCREEN A — category tiles: pinned (★) lead, then alphabetical */
+          <div className="pos-cat-grid">
+            {catTiles.map((c) => (
+              <div key={c} className="pos-tile pos-tile--tap pos-cat-tile" onClick={() => openCat(c)}>
+                <div className="pos-cat-tile-name">{pinnedCatSet.has(c) && <span className="pos-cat-star">★ </span>}{c}</div>
+                <div className="pos-cat-tile-sub">{catCounts[c] || 0} item{(catCounts[c] || 0) === 1 ? "" : "s"}</div>
+              </div>
+            ))}
+            {catTiles.length === 0 && (
+              <div className="pos-tile" style={{ gridColumn: "1 / -1", color: "var(--pos-ink-soft)", fontSize: 13 }}>
+                No categories match “{q.trim()}”. <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => setQ("")}>Clear search</button>
+              </div>
+            )}
           </div>
+        ) : (
+          <>
+            {searchAll && q.trim() !== "" && (
+              <div className="pos-searchall-note">
+                Showing matches across all categories.
+                <button className="pos-back" style={{ marginLeft: 8 }} onClick={() => setSearchAll(false)}>Back to {cat}</button>
+              </div>
+            )}
+            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, alignContent: "flex-start" }}>
+            {tiles.map((m) => {
+              const off = m.e86 || m.available === false;
+              const hasMods = (m.modifierGroupIds || []).length > 0;
+              const tint = tintOf(m.templateId || m.id);
+              return (
+                <div key={m.templateId || m.id} className={`pos-tile ${off ? "pos-tile--off" : "pos-tile--tap"}`}
+                  onClick={() => !off && tapTile(m)}>
+                  <div className="pos-avatar" style={{ background: tint.bg, color: tint.fg }}>{initialsOf(m.displayName)}</div>
+                  <div className="pos-tile-name" style={{ textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</div>
+                  {searchAll && q.trim() !== "" && <div className="pos-tile-cat">{catOf(m)}</div>}
+                  <div className="pos-tile-price">{money(incGst(sellAt(m), m.gstApplicable !== false))}</div>
+                  {hasMods && !off ? <span className="pos-addons">+add-ons</span> : null}
+                  {(m.e86 || m.available === false) && (
+                    <div className="pos-tile-flag">{m.e86 ? "86’d" : m.available === false ? "hidden" : ""}</div>
+                  )}
+                </div>
+              );
+            })}
+            {tiles.length === 0 && (
+              <div className="pos-tile" style={{ gridColumn: "1 / -1", color: "var(--pos-ink-soft)", fontSize: 13 }}>
+                {q.trim()
+                  ? searchAll
+                    ? <>No items match “{q.trim()}” anywhere. <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => { setQ(""); setSearchAll(false); }}>Clear search</button></>
+                    : <>No matches in {cat} — search all items? <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => setSearchAll(true)}>Search all items</button></>
+                  : <>No items in {cat} at {selectedVenueName}.</>}
+              </div>
+            )}
+            </div>
+          </>
         )}
-        </div>
       </div>
 
       {/* RIGHT — order rail */}

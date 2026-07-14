@@ -212,3 +212,19 @@ export const stockCategoryColor = (cat) => ({
 // string sent as the line's `notes` — the server (rgSellOrder) trims and caps at 200.
 export const DEFAULT_POS_NOTE_PRESETS = ["No cutlery", "Extra napkins", "Allergy — check", "Well done", "Cut in half", "Rush"];
 export const resolvePosNotePresets = (group) => (group?.posNotePresets?.length ? group.posNotePresets : DEFAULT_POS_NOTE_PRESETS);
+
+// ── POS pinned-first ordering ── group.posCategoryOrder = string[] (categories)
+// and group.posItemOrder = { [category]: string[] } (item ids) — read-time only,
+// the POS never writes them. Anything in `pinned` leads IN LIST ORDER; everything
+// else follows alphabetically by nameOf. Pure + total: a missing/absent list means
+// pure alphabetical (legacy behaviour), a stale entry (deleted item, renamed
+// category) simply drops out — no crash, no hole — and duplicates are ignored.
+export const pinnedFirst = (arr, pinned, idOf, nameOf) => {
+  const list = [...new Set((Array.isArray(pinned) ? pinned : []).map(String))];
+  const byId = new Map((arr || []).map((x) => [String(idOf(x)), x]));
+  const head = list.map((id) => byId.get(id)).filter((x) => x !== undefined);
+  const headSet = new Set(head);
+  const tail = (arr || []).filter((x) => !headSet.has(x))
+    .sort((a, b) => String(nameOf(a)).localeCompare(String(nameOf(b))));
+  return [...head, ...tail];
+};
