@@ -219,3 +219,14 @@
 .pos-v2 .pos-sheet-btn--primary:disabled { background: var(--pos-disabled); border-color: var(--pos-disabled); cursor: not-allowed; }
 .pos-v2 .pos-sheet-btn--danger { border-color: var(--pos-rem); color: var(--pos-rem); }
 .pos-v2 .pos-sheet-btn--danger:hover { background: var(--pos-rem-tint); }
+
+/* ── note pills (summary) + quiet admin-sale note ─────────────────────── */
+.pos-v2 .pos-chip-x {
+  border: none; background: transparent; color: inherit; cursor: pointer;
+  font-size: 10px; font-weight: 800; padding: 0 0 0 6px; line-height: 1;
+}
+.pos-v2 .pos-note-quiet {
+  font-size: 11px; color: var(--pos-ink-soft); background: var(--pos-surface);
+  border: 1px solid var(--pos-border-soft); border-radius: 8px;
+  padding: 6px 8px; margin-bottom: 8px;
+}

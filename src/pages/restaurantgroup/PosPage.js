@@ -104,10 +104,17 @@ export default function PosPage() {
   // lives on the shared-device Ops iPad POS). Orders are attributed to the
   // logged-in user's staff profile (myStaff, resolved by adminUid/email); the
   // server validates the id and stamps staffId/staffName on the order doc,
-  // feeding the per-staff sales figures on the Performance page. A login with
-  // no staff profile (e.g. a pure owner account) can browse but NOT send —
-  // every sale must be attributable (mirrors the Ops PosScreen guard).
+  // feeding the per-staff sales figures on the Performance page.
+  // Sell rule: an operator (linked staff doc) always sells attributed. An OWNER
+  // or STORE ADMIN with no staff doc sells DELIBERATELY UNATTRIBUTED (no staff
+  // key; orderMeta.soldByRole marks it as an intentional admin sale). A
+  // staff-role login with no staff doc stays BLOCKED — that's a setup error;
+  // their sales must attribute to them.
   const operator = myStaff || null;
+  // same tier test the server's isAdminTier uses (owner|storeAdmin) — the
+  // canPayroll idiom from StaffDirectoryPage, not a new predicate
+  const adminSeller = !operator && ["owner", "storeAdmin"].includes(me?.groupRole);
+  const canSend = !!operator || adminSeller;
 
   // the ONE shared price resolver (rgStockUtils) — same value the server charges
   const sellAt = (m) => resolvedSellPrice(m, { menuInstanceById, menuItems, selectedVenue });
@@ -223,8 +230,9 @@ export default function PosPage() {
   };
 
   const send = async () => {
-    // !operator: never send an unattributable sale (Ops PosScreen has the same guard)
-    if (!lines.length || sending || !operator) return;
+    // canSend = operator (attributed) OR owner/storeAdmin (deliberate admin sale);
+    // a staff-role login with no staff doc is still blocked (setup error)
+    if (!lines.length || sending || !canSend) return;
     setSending(true);
     try {
       // The ONE entry point — pricing/deduction/order-write run server-side in
@@ -240,7 +248,12 @@ export default function PosPage() {
           ...(l.notes ? { notes: l.notes } : {}), // kitchen note — server trims/caps at 200
         })),
         reference: `POS-${Date.now().toString().slice(-6)}`,
-        orderMeta: { serviceMode, staff: { id: operator.id } }, // guard above guarantees operator
+        // operator → attributed exactly as before. Admin sale → NO staff key;
+        // soldByRole marks it deliberate. (rgSellOrder currently consumes only
+        // serviceMode/staff/customer/tableNumber/covers from orderMeta, so
+        // soldByRole is NOT persisted until the server learns it — sent now so
+        // clients are ready the day it does.)
+        orderMeta: { serviceMode, ...(operator ? { staff: { id: operator.id } } : { soldByRole: me?.groupRole }) },
       });
       if (r.skipped?.length) {
         showToast(`Skipped: ${[...new Set(r.skipped.map((x) => x.reason))].join("; ")}`);
@@ -333,12 +346,17 @@ export default function PosPage() {
         <div style={{ fontSize: 11, color: "var(--pos-ink-soft)", marginBottom: 6 }}>
           Served by <strong>{operator ? (operator.displayName || operator.name) : (me?.name || me?.email || "this login")}</strong>
         </div>
-        {!operator && (
+        {!operator && (adminSeller ? (
+          /* quiet note, not a warning — an owner selling is deliberate */
+          <div className="pos-note-quiet">
+            Selling as {me?.groupRole === "owner" ? "owner" : "store admin"} — this sale won't be attributed to a staff member.
+          </div>
+        ) : (
           <div className="pos-banner">
             This login has no staff profile, so sales can't be attributed. Ask an owner to link your
             account to a staff record. You can browse the menu, but sending orders is disabled.
           </div>
-        )}
+        ))}
         {/* service mode (sent as orderMeta.serviceMode) */}
         <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
           {SERVICE_MODES.map((sm) => (
@@ -382,9 +400,9 @@ export default function PosPage() {
             <span className="pos-total-label">Total (inc-GST, est.)</span><strong>{money(total)}</strong>
           </div>
           <div style={{ fontSize: 11, color: "var(--pos-ink-soft)", marginBottom: 8 }}>{lines.length}/{MAX_LINES} lines · {MODE_LABEL[serviceMode]} · server re-prices authoritatively</div>
-          <button className="pos-send" disabled={!lines.length || sending || !operator}
-            title={operator ? undefined : "No staff profile linked to this login — sales can't be attributed"} onClick={send}>
-            {sending ? "Sending…" : operator ? "Send order" : "No staff profile — can't send"}
+          <button className="pos-send" disabled={!lines.length || sending || !canSend}
+            title={canSend ? undefined : "No staff profile linked to this login — sales can't be attributed"} onClick={send}>
+            {sending ? "Sending…" : canSend ? "Send order" : "No staff profile — can't send"}
           </button>
         </div>
       </div>
@@ -480,11 +498,24 @@ export default function PosPage() {
           <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setModModal(null)}>
             <div className="rg-modal pos-m2">
               <div className="modal-head"><span className="modal-title">{m.displayName}</span><button className="modal-close" onClick={() => setModModal(null)}>✕</button></div>
-              {/* summary — additions green, removals red; note echoed when set */}
+              {/* summary — additions green, removals red; each note preset is its
+                  OWN removable pill (free text too). Display only — on send they
+                  still collapse into ONE " · "-joined `notes` string. */}
               <div className="pos-m2-sum">
                 {adds.length > 0 && <span className="pos-chip-add">Add: {adds.map((x) => displayLabel(x.label)).join(", ")}</span>}
                 {rems.length > 0 && <span className="pos-chip-no">No: {rems.map((x) => displayLabel(x.label)).join(", ")}</span>}
-                {noteStr && <span className="pos-chip-note">✎ {noteStr}</span>}
+                {modModal.notePresets.map((p) => (
+                  <span key={p} className="pos-chip-note">✎ {p}
+                    <button className="pos-chip-x" aria-label={`Remove note ${p}`}
+                      onClick={() => setModModal((pr) => ({ ...pr, notePresets: pr.notePresets.filter((x) => x !== p) }))}>✕</button>
+                  </span>
+                ))}
+                {modModal.note.trim() !== "" && (
+                  <span className="pos-chip-note">✎ {modModal.note.trim()}
+                    <button className="pos-chip-x" aria-label="Remove free-text note"
+                      onClick={() => setModModal((p) => ({ ...p, note: "" }))}>✕</button>
+                  </span>
+                )}
                 {adds.length === 0 && rems.length === 0 && !noteStr && <span className="pos-m2-sum-empty">No changes — served as standard.</span>}
               </div>
               <div className="pos-m2-body">
