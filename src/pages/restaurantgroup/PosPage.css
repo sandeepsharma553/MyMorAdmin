@@ -293,3 +293,33 @@
 .pos-v2 .pos-cat-tile-sub { font-size: 11px; color: var(--pos-ink-soft); margin-top: 4px; }
 .pos-v2 .pos-tile-cat { font-size: 10px; color: var(--pos-ink-soft); margin-top: 2px; }
 .pos-v2 .pos-searchall-note { font-size: 11px; color: var(--pos-ink-soft); display: flex; align-items: center; }
+
+/* ── nested summary: one tinted container per kind, white pills inside ──
+   Colours REUSE the existing kind tokens: container bg = the kind's -tint,
+   kind label + pill text = the kind's dark token, pill border = the same
+   tint (hairline against the white pill). choose has no tint token — it
+   reuses the neutral set (--pos-surface-alt / --pos-ink / --pos-border). */
+.pos-v2 .pos-m2-sum2 { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.pos-v2 .pos-sumbox { display: flex; align-items: flex-start; gap: 8px; border-radius: 10px; padding: 6px 8px; }
+.pos-v2 .pos-sumbox-label { font-size: 9px; font-weight: 800; letter-spacing: 0.06em; padding-top: 4px; min-width: 52px; }
+.pos-v2 .pos-sumbox-pills { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+.pos-v2 .pos-sumpill {
+  display: inline-flex; align-items: center; gap: 4px; background: #fff;
+  border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 600;
+}
+.pos-v2 .pos-sumpill-x { border: none; background: transparent; cursor: pointer; font-size: 10px; font-weight: 800; padding: 0; color: inherit; }
+.pos-v2 .pos-sumbox--add { background: var(--pos-add-tint); }
+.pos-v2 .pos-sumbox--add .pos-sumbox-label, .pos-v2 .pos-sumbox--add .pos-sumpill { color: var(--pos-add); }
+.pos-v2 .pos-sumbox--add .pos-sumpill { border: 1px solid var(--pos-add-tint); }
+.pos-v2 .pos-sumbox--swap { background: var(--pos-swap-tint); }
+.pos-v2 .pos-sumbox--swap .pos-sumbox-label, .pos-v2 .pos-sumbox--swap .pos-sumpill { color: var(--pos-swap); }
+.pos-v2 .pos-sumbox--swap .pos-sumpill { border: 1px solid var(--pos-swap-tint); }
+.pos-v2 .pos-sumbox--remove { background: var(--pos-rem-tint); }
+.pos-v2 .pos-sumbox--remove .pos-sumbox-label, .pos-v2 .pos-sumbox--remove .pos-sumpill { color: var(--pos-rem); }
+.pos-v2 .pos-sumbox--remove .pos-sumpill { border: 1px solid var(--pos-rem-tint); }
+.pos-v2 .pos-sumbox--prep { background: var(--pos-prep-tint); }
+.pos-v2 .pos-sumbox--prep .pos-sumbox-label, .pos-v2 .pos-sumbox--prep .pos-sumpill { color: var(--pos-prep); }
+.pos-v2 .pos-sumbox--prep .pos-sumpill { border: 1px solid var(--pos-prep-tint); }
+.pos-v2 .pos-sumbox--choose { background: var(--pos-surface-alt); }
+.pos-v2 .pos-sumbox--choose .pos-sumbox-label, .pos-v2 .pos-sumbox--choose .pos-sumpill { color: var(--pos-ink); }
+.pos-v2 .pos-sumbox--choose .pos-sumpill { border: 1px solid var(--pos-border); }

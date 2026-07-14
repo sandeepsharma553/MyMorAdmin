@@ -51,12 +51,12 @@ const KIND_VERBS = {
   prep:   ["Set", "✓ Set"],
   choose: ["Choose", "✓ Chosen"],
 };
-const KIND_SUMMARY = [ // summary row order + labels + chip class
-  ["add", "Add", "pos-chip-add"],
-  ["swap", "Instead", "pos-chip-swap"],
-  ["remove", "No", "pos-chip-no"],
-  ["prep", "Prep", "pos-chip-prep"],
-  ["choose", "Choose", "pos-chip-choose"],
+const KIND_SUMMARY = [ // summary container order + uppercase labels (class = pos-sumbox--<kind>)
+  ["add", "ADD"],
+  ["swap", "INSTEAD"],
+  ["remove", "NO"],
+  ["prep", "PREP"],
+  ["choose", "CHOOSE"],
 ];
 // display-only stripping by kind: "Add Bacon"→"Bacon", "No Lettuce"→"Lettuce",
 // "Grilled Chicken Instead"→"Grilled Chicken"; prep/choose labels are already clean
@@ -590,11 +590,13 @@ export default function PosPage() {
         // required groups first — the EXISTING minFor()-based comparator, unchanged
         const sorted = [...groups].sort((a, b) => (minFor(a.g) > 0 ? 0 : 1) - (minFor(b.g) > 0 ? 0 : 1));
         const active = sorted.find(({ gid }) => gid === modModal.gid) || sorted[0] || null;
-        // summary buckets by GROUP kind (display only — chosen/unmet/ok untouched)
-        const kindSel = {}; // kind -> [display labels]
+        // summary buckets by GROUP kind (display only — chosen/unmet/ok untouched).
+        // Entries keep { gid, g, label } so each pill's ✕ can call the SAME
+        // toggle() the option rows use — no second deselect path.
+        const kindSel = {}; // kind -> [{ gid, g, label }]
         for (const { gid, g } of groups) {
           const k = modGroupKind(g);
-          for (const label of (modModal.sel[gid] || [])) (kindSel[k] = kindSel[k] || []).push(displayLabel(label, k));
+          for (const label of (modModal.sel[gid] || [])) (kindSel[k] = kindSel[k] || []).push({ gid, g, label });
         }
         const qtyN = Math.max(1, Number(modModal.qty) || 1);
         const noteStr = composeNote(modModal.notePresets, modModal.note);
@@ -609,13 +611,32 @@ export default function PosPage() {
           <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setModModal(null)}>
             <div className="rg-modal pos-m2">
               <div className="modal-head"><span className="modal-title">{m.displayName}</span><button className="modal-close" onClick={() => setModModal(null)}>✕</button></div>
-              {/* summary — additions green, removals red; each note preset is its
-                  OWN removable pill (free text too). Display only — on send they
-                  still collapse into ONE " · "-joined `notes` string. */}
+              {/* summary — one tinted CONTAINER per kind (Add · Instead · No ·
+                  Prep · Choose), the selected options nested inside as white
+                  pills whose ✕ calls the SAME toggle() as the option rows.
+                  Display only — payload keeps full labels; notes unchanged. */}
+              <div className="pos-m2-sum2">
+                {KIND_SUMMARY.map(([k, lbl]) => {
+                  const items = kindSel[k] || [];
+                  if (!items.length) return null;
+                  return (
+                    <div key={k} className={`pos-sumbox pos-sumbox--${k}`}>
+                      <span className="pos-sumbox-label">{lbl}</span>
+                      <div className="pos-sumbox-pills">
+                        {items.map(({ gid, g, label }) => (
+                          <span key={`${gid}|${label}`} className="pos-sumpill">
+                            {displayLabel(label, k)}
+                            <button className="pos-sumpill-x" aria-label={`Deselect ${label}`}
+                              onClick={() => toggle(gid, g, label)}>✕</button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* note pills (own removable pill each, free text too) + empty state */}
               <div className="pos-m2-sum">
-                {KIND_SUMMARY.map(([k, lbl, cls]) => (kindSel[k] || []).length > 0 && (
-                  <span key={k} className={cls}>{lbl}: {kindSel[k].join(", ")}</span>
-                ))}
                 {modModal.notePresets.map((p) => (
                   <span key={p} className="pos-chip-note">✎ {p}
                     <button className="pos-chip-x" aria-label={`Remove note ${p}`}
