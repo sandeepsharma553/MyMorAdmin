@@ -213,6 +213,36 @@ export const stockCategoryColor = (cat) => ({
 export const DEFAULT_POS_NOTE_PRESETS = ["No cutlery", "Extra napkins", "Allergy — check", "Well done", "Cut in half", "Rush"];
 export const resolvePosNotePresets = (group) => (group?.posNotePresets?.length ? group.posNotePresets : DEFAULT_POS_NOTE_PRESETS);
 
+// ── modifier-group KIND ── semantic category of a modifier group. The imported
+// MobiPOS data carries no kind field — the name prefix is the only signal
+// (audited 14 Jul 2026: "No …" = free removals, "Add On …" = paid extras,
+// "Instead …" = free substitutions, "MOD …" = preparation of an included
+// component, "OPT …" = mandatory serving choice). modGroupKind prefers an
+// explicit group.kind and DERIVES from the prefix otherwise, so readers work
+// with or without the seed migration — no migration dependency.
+export const MOD_KINDS = ["add", "remove", "swap", "prep", "choose"];
+export const modGroupKind = (g) => {
+  if (g && MOD_KINDS.includes(g.kind)) return g.kind;
+  const s = String(g?.name || "").trim();
+  if (/^no\b/i.test(s)) return "remove";        // "No Mad Benji", "No A"…
+  if (/^add\s*on\b/i.test(s)) return "add";     // "Add On Burger"…
+  if (/^instead\b/i.test(s)) return "swap";     // "Instead Meat"…
+  if (/^mod\b/i.test(s)) return "prep";         // "MOD Coffee"…
+  if (/^opt\b/i.test(s)) return "choose";       // "OPT Egg Types"…
+  if (/^cooking\b/i.test(s)) return "prep";     // "Cooking Instructions" behaves like MOD
+  return "add"; // unmatched (e.g. "Dietary(B)") — safest default: optional + visibly priced
+};
+// Behaviour DEFAULTS each kind implies — for the group-template feature later.
+// DEFINITIONS ONLY: nothing applies these yet; existing groups keep their own
+// stored type/required/priceDelta untouched.
+export const MOD_KIND_DEFAULTS = {
+  add:    { type: "multi",  required: false, pricing: "priced" },
+  remove: { type: "multi",  required: false, pricing: "free" },
+  swap:   { type: "multi",  required: false, pricing: "free" },
+  prep:   { type: "multi",  required: false, pricing: "free-or-small" },
+  choose: { type: "single", required: true,  pricing: "free" },
+};
+
 // ── POS pinned-first ordering ── group.posCategoryOrder = string[] (categories)
 // and group.posItemOrder = { [category]: string[] } (item ids) — read-time only,
 // the POS never writes them. Anything in `pinned` leads IN LIST ORDER; everything
