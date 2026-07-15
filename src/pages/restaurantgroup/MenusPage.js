@@ -850,18 +850,29 @@ export default function MenusPage() {
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
-              <thead><tr><th>Group</th><th>Type</th><th>Required</th><th>Options</th><th>Attached items</th></tr></thead>
+              <thead><tr><th>Group</th><th>Kind</th><th>Type</th><th>Required</th><th>Options</th><th>Attached items</th></tr></thead>
               <tbody>
-                {modifierGroups.map((g) => (
+                {modifierGroups.map((g) => {
+                  const k = modGroupKind(g); // explicit kind, else name-prefix derivation
+                  const kindLabel = (KIND_EDITOR.find(([kk]) => kk === k) || [])[1] || k;
+                  return (
                   <tr key={g.id} onClick={() => canEdit && openMod(g)} style={{ cursor: canEdit ? "pointer" : "default" }}>
                     <td><strong>{g.name}</strong></td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: KIND_DOT_COLOR[k], display: "inline-block", marginRight: 5 }} />
+                      {kindLabel}
+                    </td>
                     <td>{g.type === "single" ? "Single-select" : "Multi-select"}</td>
                     <td>{g.required ? <span className="pill pill-red">Required</span> : <span className="pill">Optional</span>}</td>
-                    <td style={{ fontSize: 12 }}>{(g.options || []).map((o) => o.priceDelta ? `${o.label} ${o.priceDelta > 0 ? "+" : "−"}$${Math.abs(o.priceDelta)}` : o.label).join(", ")}</td>
+                    {/* deltas shown inc-GST via money(incGst(…, true)) — assume-taxable,
+                        the SAME basis as every POS delta render (gstApplicable !== false
+                        defaults true; a shared group has no single item to consult) */}
+                    <td style={{ fontSize: 12 }}>{(g.options || []).map((o) => o.priceDelta ? `${o.label} ${o.priceDelta > 0 ? "+" : "−"}${money(incGst(Math.abs(Number(o.priceDelta) || 0), true))}` : o.label).join(", ")}</td>
                     <td>{attachedCount(g)}</td>
                   </tr>
-                ))}
-                {modifierGroups.length === 0 && <tr><td colSpan={5} style={{ color: "var(--gray)" }}>No modifier groups yet.</td></tr>}
+                  );
+                })}
+                {modifierGroups.length === 0 && <tr><td colSpan={6} style={{ color: "var(--gray)" }}>No modifier groups yet.</td></tr>}
               </tbody>
             </table>
           </div>
