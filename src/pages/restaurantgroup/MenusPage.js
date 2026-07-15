@@ -236,8 +236,11 @@ export default function MenusPage() {
   // editor.modifierGroupIds): search text + per-section expand/collapse overrides
   const [modPickQ, setModPickQ] = useState("");
   const [modPickOpen, setModPickOpen] = useState({});
+  // item-editor modal tab (LAYOUT only — same fields/controls/writes, six tabs)
+  const [editorTab, setEditorTab] = useState("basics");
   const openItem = (rm) => {
     setModPickQ(""); setModPickOpen({}); // fresh picker state per open
+    setEditorTab("basics");
     const tid = rm ? (rm.templateId || rm.id) : null;
     const m = rm ? (menuItems.find((x) => x.id === tid) || rm) : null;
     setEditor(m ? {
@@ -915,6 +918,26 @@ export default function MenusPage() {
         <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setEditor(null)}>
           <div className="rg-modal" style={{ maxWidth: 620 }}>
             <div className="modal-head"><span className="modal-title">{editor.id ? "Edit menu item" : "New menu item"}</span><button className="modal-close" onClick={() => setEditor(null)}>✕</button></div>
+            {/* modal tabs — LAYOUT ONLY: each tab renders the same section markup
+                that used to stack vertically. Badges are read-only cues derived
+                from existing state (.tab-badge = the app's brick primary). */}
+            <div className="tabs" style={{ marginBottom: 10, flexWrap: "wrap" }}>
+              {[
+                ["basics", "Basics", null],
+                ["pricing", "Pricing", editor.gstApplicable ? "GST" : null],
+                ["venues", "Venues", editor.venueIds.length || null],
+                ["modifiers", "Modifiers", editor.modifierGroupIds.length || null],
+                ["sizes", "Sizes", editor.hasVariants ? "✓" : null],
+                ["combo", "Combo", editor.isCombo ? "✓" : null],
+              ].map(([t, label, badge]) => (
+                <button key={t} className={`tab ${editorTab === t ? "active" : ""}`}
+                  style={editorTab === t ? { color: "var(--red)" } : undefined}
+                  onClick={() => setEditorTab(t)}>
+                  {label}{badge != null && <span className="tab-badge">{badge}</span>}
+                </button>
+              ))}
+            </div>
+            {editorTab === "basics" && (
             <div className="grid-2" style={{ gap: 10 }}>
               <div><div className="form-label">Display name</div><input className="form-input" value={editor.displayName} onChange={(e) => setEditor((p) => ({ ...p, displayName: e.target.value }))} /></div>
               <div><div className="form-label">Kitchen name (dockets)</div><input className="form-input" value={editor.kitchenName} onChange={(e) => setEditor((p) => ({ ...p, kitchenName: e.target.value }))} /></div>
@@ -923,6 +946,10 @@ export default function MenusPage() {
                   {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select></div>
               <div><div className="form-label">POS ID</div><input className="form-input" value={editor.posId} onChange={(e) => setEditor((p) => ({ ...p, posId: e.target.value }))} /></div>
+            </div>
+            )}
+            {editorTab === "pricing" && (<>
+            <div className="grid-2" style={{ gap: 10 }}>
               <div>
                 <div className="form-label">Sell price ex-GST ($)</div>
                 <input className="form-input" type="number" step="0.01" value={editor.sellPrice} disabled={editor.hasVariants} onChange={(e) => setEditor((p) => ({ ...p, sellPrice: e.target.value }))} />
@@ -942,6 +969,8 @@ export default function MenusPage() {
             <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, margin: "10px 0" }}>
               <input type="checkbox" checked={!!editor.gstApplicable} onChange={(e) => setEditor((p) => ({ ...p, gstApplicable: e.target.checked }))} /> GST applies (10%)
             </label>
+            </>)}
+            {editorTab === "venues" && (<>
             <div className="form-label">Venues</div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
               {venues.map((v) => (
@@ -1001,6 +1030,8 @@ export default function MenusPage() {
                 Not sold at {selectedVenueName} — use “+ Add items to venue” to add it.
               </div>
             ))}
+            </>)}
+            {editorTab === "modifiers" && (<>
             <div className="form-label">Modifier groups</div>
             {/* sectioned-by-kind picker (display only — what's SAVED is still
                 editor.modifierGroupIds, the same array of ids as always) */}
@@ -1067,8 +1098,10 @@ export default function MenusPage() {
                 </div>
               );
             })()}
+            </>)}
 
             {/* Variants (sizes) */}
+            {editorTab === "sizes" && (
             <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 10, marginTop: 4 }}>
               <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
                 <input type="checkbox" checked={!!editor.hasVariants}
@@ -1118,8 +1151,10 @@ export default function MenusPage() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Combo / set meal */}
+            {editorTab === "combo" && (
             <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 10, marginTop: 10 }}>
               <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
                 <input type="checkbox" checked={!!editor.isCombo}
@@ -1166,7 +1201,9 @@ export default function MenusPage() {
                 </div>
               )}
             </div>
+            )}
 
+            {/* footer — OUTSIDE the tabs: always visible, unchanged saveItem */}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
               <button className="btn btn-sm" onClick={() => setEditor(null)}>Cancel</button>
               <button className="btn btn-primary btn-sm" onClick={saveItem}>Save</button>
