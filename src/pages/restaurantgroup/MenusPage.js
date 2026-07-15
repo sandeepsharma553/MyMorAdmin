@@ -6,7 +6,7 @@ import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc
 import { sellOrder } from "./sellOrder";
 import {
   incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost, venueSellPrice, resolvedSellPrice,
-  DEFAULT_MENU_CATEGORIES, modGroupKind,
+  DEFAULT_MENU_CATEGORIES, modGroupKind, MOD_KINDS, MOD_KIND_DEFAULTS,
 } from "./rgStockUtils";
 
 // POS browse bucket for an uncategorised item — MUST match PosPage's catOf()
@@ -25,6 +25,17 @@ const KIND_SECTIONS = [
 // duplicated deliberately: those custom properties are scoped to .pos-v2 (the
 // POS root) and are not visible here in the .rg-scope tree.
 const KIND_DOT_COLOR = { add: "#16a34a", remove: "#dc2626", swap: "#d97706", prep: "#2563eb", choose: "#6b7280" };
+// Kind editor rows: value, plain-English label, one-line hint. kind is
+// GROUP-LEVEL (shared across venues) — a group's MEANING ("these are paid
+// extras") is the same everywhere; only prices differ per venue, and that's
+// a separate feature (instance.modifierOverrides.optionPrices).
+const KIND_EDITOR = [
+  ["add", "Add-on", "Paid extras"],
+  ["remove", "Removal", "Free removals"],
+  ["swap", "Instead", "Substitutions"],
+  ["prep", "Prep", "How it's prepared"],
+  ["choose", "Choose", "A required choice"],
+];
 
 const E86_REASONS = ["Out of stock", "Quality issue", "Equipment failure"];
 const E86_BACK = ["Unknown", "Later today", "Tomorrow", "2-3 days"];
@@ -509,9 +520,24 @@ export default function MenusPage() {
 
   // ── modifier groups ──
   const [modForm, setModForm] = useState(null);
-  const openMod = (g) => setModForm(g ? { ...g, options: (g.options || []).map((o) => ({ ...o })) } : {
-    id: null, name: "", type: "multi", required: false, minSelections: 0, maxSelections: null, printer: "kitchen",
+  // kind seeds from modGroupKind: an unseeded group shows its DERIVED kind, and
+  // saving the form makes that explicit on the doc.
+  const openMod = (g) => setModForm(g ? { ...g, kind: modGroupKind(g), options: (g.options || []).map((o) => ({ ...o })) } : {
+    id: null, name: "", kind: "add", type: "multi", required: false, minSelections: 0, maxSelections: null, printer: "kitchen",
     options: [{ label: "", priceDelta: 0 }],
+  });
+  // "Apply these" — the ONLY path where a kind's template touches type/required.
+  // Selecting a kind by itself never rewrites a live group's selection rules
+  // (settled decision: suggest, never overwrite). MOD_KIND_DEFAULTS specifies no
+  // min/max, so they stay — except the form's own required→min≥1 invariant
+  // (mirrors the Required checkbox's onChange).
+  const applyKindDefaults = () => setModForm((p) => {
+    const tpl = MOD_KIND_DEFAULTS[p.kind];
+    if (!tpl) return p;
+    return {
+      ...p, type: tpl.type, required: tpl.required,
+      minSelections: tpl.required ? Math.max(1, Number(p.minSelections) || 0) : p.minSelections,
+    };
   });
   const saveMod = async () => {
     if (!canEdit || !modForm) return;
@@ -528,6 +554,9 @@ export default function MenusPage() {
       minSelections: Number(modForm.minSelections) || 0,
       maxSelections: modForm.maxSelections === null || modForm.maxSelections === "" ? null : Number(modForm.maxSelections),
       printer: modForm.printer || "kitchen", options,
+      // GROUP-LEVEL semantic category (see KIND_EDITOR comment) — never derived
+      // again once saved; falls back to derivation only for malformed values
+      kind: MOD_KINDS.includes(modForm.kind) ? modForm.kind : modGroupKind(modForm),
     };
     try {
       if (modForm.id) await setDoc(modifierGroupDoc(groupId, modForm.id), data, { merge: true });
@@ -1240,6 +1269,38 @@ export default function MenusPage() {
             <div className="modal-head"><span className="modal-title">{modForm.id ? "Edit modifier group" : "New modifier group"}</span><button className="modal-close" onClick={() => setModForm(null)}>✕</button></div>
             <div className="grid-2" style={{ gap: 10 }}>
               <div><div className="form-label">Group name</div><input className="form-input" value={modForm.name} onChange={(e) => setModForm((p) => ({ ...p, name: e.target.value }))} /></div>
+              {/* KIND — group-level semantic category. Selecting a kind changes
+                  ONLY modForm.kind; the template hint below SUGGESTS matching
+                  selection rules and applies them only via its button. */}
+              {(() => {
+                const tpl = MOD_KIND_DEFAULTS[modForm.kind] || null;
+                const row = KIND_EDITOR.find(([k]) => k === modForm.kind);
+                const mismatch = tpl && (modForm.type !== tpl.type || !!modForm.required !== tpl.required);
+                return (
+                  <div style={{ marginTop: 8 }}>
+                    <div className="form-label">Kind</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      {KIND_EDITOR.map(([k, label, hint]) => (
+                        <label key={k} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, cursor: canEdit ? "pointer" : "default" }}>
+                          <input type="radio" name="mod-kind" disabled={!canEdit} checked={modForm.kind === k}
+                            onChange={() => setModForm((p) => ({ ...p, kind: k }))} />
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: KIND_DOT_COLOR[k], display: "inline-block" }} />
+                          <strong>{label}</strong>
+                          <span style={{ color: "var(--gray)", fontSize: 11 }}>— {hint}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {mismatch && canEdit && (
+                      <div style={{ fontSize: 11, color: "var(--gray)", background: "var(--gray-light)", borderRadius: 8, padding: "6px 8px", marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                        <span>
+                          {row ? row[1] : modForm.kind} groups are usually {tpl.type === "single" ? "single-select" : "multi-select"} and {tpl.required ? "required" : "optional"}.
+                        </span>
+                        <button className="btn btn-sm" onClick={applyKindDefaults}>Apply these</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               <div><div className="form-label">Type</div>
                 <select className="form-input" value={modForm.type} onChange={(e) => setModForm((p) => ({ ...p, type: e.target.value }))}>
                   <option value="multi">Multi-select</option>
