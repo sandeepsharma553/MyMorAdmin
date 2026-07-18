@@ -3,7 +3,7 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot, deleteF
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
-import { fullName, downloadCsv, weekKeyOf, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel } from "./rgUtils";
+import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel } from "./rgUtils";
 import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import StaffCapabilityCard from "./StaffCapabilityCard";
@@ -99,7 +99,9 @@ export default function ShiftPlannerPage() {
   // Hide DEPARTED staff from the planner (keep Active / On leave). Real status values are
   // "Active"/"Inactive"/"On leave"/"Left"; also treat a past endDate as departed. Filtered
   // LOCALLY (not in RGContext.scopedStaff) so other pages are unaffected.
-  const todayISO = new Date().toISOString().slice(0, 10);
+  // LOCAL today — toISOString() named YESTERDAY before ~10am AEST, keeping
+  // departed staff visible for the first hours of their first day gone
+  const todayISO = localDateKey(new Date());
   const hasLeft = (s) => {
     const st = (s.status || "Active").toLowerCase();
     if (["inactive", "left"].includes(st)) return true;
@@ -151,7 +153,11 @@ export default function ShiftPlannerPage() {
     } catch { showToast("Could not record time"); }
   };
   // admin punch edit: set a clock field to a time-of-day on the shift's own date, or clear it
-  const shiftDateObj = (sh) => { const d = new Date(`${sh.weekKey || curWk}T00:00:00`); d.setDate(d.getDate() + (sh.day || 0)); return d; };
+  // CLOCK edits only touch TODAY's shifts of the CURRENT week (myToday filters
+  // weekKey === curWk), so the local current-week Monday is the correct anchor.
+  // Never re-parse the stored weekKey — it's UTC-shifted, which anchored the
+  // written clock timestamps one day early.
+  const shiftDateObj = (sh) => { const d = mondayOf(0); d.setDate(d.getDate() + (sh.day || 0)); return d; };
   const hhmm = (iso) => { if (!iso) return ""; const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
   const setClock = async (sh, field, timeStr) => {
     try {
@@ -205,11 +211,14 @@ export default function ShiftPlannerPage() {
     return () => unsub();
   }, [groupId]);
   const holidays = (phDoc && phDoc.length) ? phDoc : AU_PUBLIC_HOLIDAYS_SEED;
-  // 7 local YYYY-MM-DD strings for the current week — SAME construction as saveShift's shiftDate.
+  // 7 local YYYY-MM-DD strings for the current week — built from the LOCAL
+  // monday Date, NEVER by re-parsing wk (the stored weekKey is UTC-shifted:
+  // "2026-07-19" for Monday 20 Jul AEST, which put every column one day
+  // behind). SAME construction as saveShift's shiftDate.
   const weekDates = useMemo(() => DAYS.map((_, i) => {
-    const d = new Date(`${wk}T00:00:00`); d.setDate(d.getDate() + i);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }), [wk]);
+    const d = new Date(monday); d.setDate(monday.getDate() + i);
+    return localDateKey(d);
+  }), [offset]); // eslint-disable-line react-hooks/exhaustive-deps -- monday derives 1:1 from offset
   // single venue → that venue's state; "all venues" → PH if it's a holiday in ANY venue state.
   // venueState: top-level state OR address.state, normalised to a code ("Victoria" → "VIC")
   const phState = selectedVenue !== "all" ? venueState(venues.find((v) => v.id === selectedVenue)) : null;
@@ -452,8 +461,11 @@ export default function ShiftPlannerPage() {
       && ns < parseTime(sh.end) && parseTime(sh.start) < ne);
     if (clash) return showToast(`Already rostered ${clash.start}–${clash.end} at ${clash.venue} that day — can't double-book.`);
     // approved leave blocks rostering across ALL venues (leave is group-wide for the person)
-    const sd = new Date(`${wk}T00:00:00`); sd.setDate(sd.getDate() + dayIdx);
-    const shiftDate = `${sd.getFullYear()}-${String(sd.getMonth() + 1).padStart(2, "0")}-${String(sd.getDate()).padStart(2, "0")}`;
+    // REAL calendar date of the shift, from the LOCAL monday (not the shifted
+    // weekKey) — leave startDate/endDate are real local YYYY-MM-DD strings, so
+    // this now compares like-for-like instead of one day early.
+    const sd = new Date(monday); sd.setDate(monday.getDate() + dayIdx);
+    const shiftDate = localDateKey(sd);
     const onLeave = (leave || []).find((l) => l.status === "Approved" && l.staffId === form.staffId && (l.startDate || "") <= shiftDate && (l.endDate || l.startDate || "") >= shiftDate);
     if (onLeave) return showToast(`${fullName(st)} is on approved ${leaveLabel(onLeave)} that day (${onLeave.dates}) — on leave across all venues.`);
     const type = parseTime(form.start) >= 15 ? "evening" : "morning";

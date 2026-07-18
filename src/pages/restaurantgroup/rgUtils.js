@@ -134,6 +134,13 @@ export const weekKeyOf = (date = new Date()) => {
 };
 export const weekDayIndex = (date = new Date()) => (new Date(date).getDay() + 6) % 7; // 0 = Monday
 export const currentWeekKey = () => weekKeyOf();
+// LOCAL business-date string (YYYY-MM-DD) — the ONLY correct way to turn a local
+// Date into a calendar-date key. NEVER use toISOString() for a business date: in
+// UTC+10 it names the PREVIOUS day for anything before 10am (and for any local
+// midnight). weekKeyOf above is the deliberate legacy exception — its shifted
+// format is load-bearing for stored shift keys and must not be "fixed" silently.
+export const localDateKey = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 // ── Phase 3e: unified time options + venue-hours bounding (single source — replaces the
 // planner/poster local mkTimes/TIMES copies) ──
