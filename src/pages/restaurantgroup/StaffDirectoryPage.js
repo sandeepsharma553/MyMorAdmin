@@ -39,7 +39,8 @@ const SHIST_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const SHIST_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shiftDateLabel = (sh) => {
   if (!sh.weekKey) return SHIST_DAYS[sh.day] || "";
-  const d = new Date(sh.weekKey); d.setDate(d.getDate() + (sh.day || 0));
+  // real local Monday — bare new Date(weekKey) parses UTC and dated rows a day early
+  const d = mondayFromWeekKey(sh.weekKey); d.setDate(d.getDate() + (sh.day || 0));
   return `${SHIST_DAYS[sh.day] || ""} ${d.getDate()} ${SHIST_MONTHS[d.getMonth()]}`;
 };
 const CERT_OPTIONS = ["RSA", "Food Safety Supervisor", "Food Handler", "First Aid / CPR", "Working with Children", "Barista Certificate", "Allergen Awareness", "Other"];

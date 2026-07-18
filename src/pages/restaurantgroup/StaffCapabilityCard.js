@@ -1,12 +1,13 @@
 import React, { useMemo } from "react";
-import { fullName, certStatus, shiftHours, trainingStatusPill } from "./rgUtils";
+import { fullName, certStatus, shiftHours, trainingStatusPill, mondayFromWeekKey } from "./rgUtils";
 import { staffAreas } from "./staffStructureUtils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shiftDate = (sh) => {
   if (!sh.weekKey) return DAYS[sh.day] || "";
-  const d = new Date(sh.weekKey); d.setDate(d.getDate() + (sh.day || 0));
+  // real local Monday — bare new Date(weekKey) parses UTC and dated rows a day early
+  const d = mondayFromWeekKey(sh.weekKey); d.setDate(d.getDate() + (sh.day || 0));
   return `${DAYS[sh.day] || ""} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 };
 const isMistake = (t) => /mistake|coaching|warning|incident/i.test(t || "");
