@@ -48,6 +48,18 @@ const GATE_LABELS = [
   "stock items", "menu items", "recipes", "modifier groups", "suppliers",
   "purchase orders", "award rates", "compliance manual", "labour targets", "availability",
 ];
+// Manager+-read collections per the LIVE rules — a staff-tier user is DENIED
+// these, so we never subscribe (an always-on "expected denial" banner teaches
+// people to ignore it). A never-subscribed label can also never ANSWER, so the
+// gate and the watchdog both use gateLabelsFor(): gating a staff login on
+// these would hold `loading` true for the full 8s and then spray phantom
+// "(timed out)" entries. (Per-venue manager-only twin: MGR_ONLY_VENUE_COLLS.)
+const MGR_ONLY_GATE_LABELS = ["stock items", "recipes", "suppliers", "purchase orders", "labour targets"];
+const gateLabelsFor = (managerTier) =>
+  managerTier ? GATE_LABELS : GATE_LABELS.filter((l) => !MGR_ONLY_GATE_LABELS.includes(l));
+// stockMovements/stocktakes/batches/production are also manager+ but are
+// screen-subscribed (StockPage/StockExtraTabs), not context fan-out.
+const MGR_ONLY_VENUE_COLLS = ["stock"];
 
 export function RGProvider({ children }) {
   const employee = useSelector((s) => s.auth.employee);
@@ -60,6 +72,12 @@ export function RGProvider({ children }) {
   );
   // user's venue scope ("all" or a venueId)
   const myVenueId = employee?.venueId || "all";
+  // Tier flags — hoisted here (were below myStaff) so the subscription effects
+  // can gate on them; same groupRole/employee.type source the permission map
+  // (defaultPermsForRole → can()) derives from, NOT a new predicate.
+  const isOwnerTier = groupRole === "owner" || employee?.type === "superadmin";
+  const isManagerTier = groupRole === "manager" || groupRole === "storeAdmin";
+  const managerTier = isOwnerTier || isManagerTier; // manager+ (owner/storeAdmin/manager/super)
 
   const [group, setGroup] = useState(null);
   const [venues, setVenues] = useState([]);
@@ -130,15 +148,21 @@ export function RGProvider({ children }) {
       subColl(announcementsCol(groupId), setAnnouncements, undefined, "announcements", noteErr, noteReady),
       subColl(messagesCol(groupId), setMessages, undefined, "messages", noteErr, noteReady),
       subColl(notificationsCol(groupId), setNotifications, undefined, "notifications", noteErr, noteReady),
-      subColl(inventoryItemsCol(groupId), setInventoryItems, undefined, "stock items", noteErr, noteReady),
+      // Manager+-read collections (live rules): a staff-tier user is denied
+      // these, so don't subscribe at all — their state stays []/null exactly as
+      // it did post-denial, no staff screen reads them, and the banner stops
+      // crying wolf about expected denials. gateLabelsFor() excludes their
+      // labels from the ready gate for non-managers (never subscribed = can
+      // never answer). Managers subscribe exactly as before.
+      ...(managerTier ? [subColl(inventoryItemsCol(groupId), setInventoryItems, undefined, "stock items", noteErr, noteReady)] : []),
       subColl(menuItemsCol(groupId), setMenuItems, undefined, "menu items", noteErr, noteReady),
-      subColl(recipesCol(groupId), setRecipes, undefined, "recipes", noteErr, noteReady),
+      ...(managerTier ? [subColl(recipesCol(groupId), setRecipes, undefined, "recipes", noteErr, noteReady)] : []),
       subColl(modifierGroupsCol(groupId), setModifierGroups, undefined, "modifier groups", noteErr, noteReady),
-      subColl(suppliersCol(groupId), setSuppliers, undefined, "suppliers", noteErr, noteReady),
-      subColl(purchaseOrdersCol(groupId), setPurchaseOrders, undefined, "purchase orders", noteErr, noteReady),
+      ...(managerTier ? [subColl(suppliersCol(groupId), setSuppliers, undefined, "suppliers", noteErr, noteReady)] : []),
+      ...(managerTier ? [subColl(purchaseOrdersCol(groupId), setPurchaseOrders, undefined, "purchase orders", noteErr, noteReady)] : []),
       subColl(awardRatesCol(groupId), setAwardRates, undefined, "award rates", noteErr, noteReady),
       onSnapshot(complianceManualDoc(groupId), (d) => { setComplianceManual(d.exists() ? { id: d.id, ...d.data() } : null); noteReady("compliance manual"); }, () => { setComplianceManual(null); noteErr("compliance manual"); }),
-      onSnapshot(labourTargetsDoc(groupId), (d) => { setLabourTargets(d.exists() ? { id: d.id, ...d.data() } : null); noteReady("labour targets"); }, () => { setLabourTargets(null); noteErr("labour targets"); }),
+      ...(managerTier ? [onSnapshot(labourTargetsDoc(groupId), (d) => { setLabourTargets(d.exists() ? { id: d.id, ...d.data() } : null); noteReady("labour targets"); }, () => { setLabourTargets(null); noteErr("labour targets"); })] : []),
     ];
     // WATCHDOG, not the ready mechanism: loading now clears when every gate
     // label answers. If a listener neither fires nor errors within 8s (healthy
@@ -147,11 +171,11 @@ export function RGProvider({ children }) {
     // the gate open and RECORD which listeners never answered, so the banner
     // says so instead of the app silently pretending it loaded.
     const t = setTimeout(() => {
-      GATE_LABELS.filter((l) => !readyRef.current[l]).forEach((l) => noteErr(`${l} (timed out)`));
+      gateLabelsFor(managerTier).filter((l) => !readyRef.current[l]).forEach((l) => noteErr(`${l} (timed out)`));
       setWatchdogTimedOut(true);
     }, 8000);
     return () => { clearTimeout(t); unsubs.forEach((u) => u && u()); };
-  }, [groupId]);
+  }, [groupId, managerTier]); // managerTier: re-subscribe on an actual tier flip (deps [groupId] alone would keep stale-role subscriptions)
 
   // ── Per-venue menu INSTANCES (template+instance model) — subscribed for the
   // SELECTED venue only; at "all" the raw templates are shown (no resolution).
@@ -198,7 +222,9 @@ export function RGProvider({ children }) {
       // "availability" reuses the SAME per-venue onSnapshot machinery (no ad-hoc listener).
       // It lives in restaurantGroupPaths.PER_VENUE_COLLECTIONS conceptually; extended here
       // locally to keep this change within the two in-scope files.
-      [...PER_VENUE_COLLECTIONS, "availability"].forEach((coll) => {
+      [...PER_VENUE_COLLECTIONS, "availability"]
+        .filter((coll) => managerTier || !MGR_ONLY_VENUE_COLLS.includes(coll)) // staff-tier: skip manager+-read venue collections (expected denial)
+        .forEach((coll) => {
         unsubs.push(onSnapshot(
           venueCol(groupId, v.id, coll),
           (snap) => setPv((prev) => ({
@@ -210,7 +236,7 @@ export function RGProvider({ children }) {
       });
     });
     return () => unsubs.forEach((u) => u && u());
-  }, [groupId, venueIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [groupId, venueIdsKey, managerTier]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Cluster-scoped availability (NEW group-level collection) — Phase 3c dual-read ──
   const [clusterAvail, setClusterAvail] = useState([]);
@@ -257,7 +283,10 @@ export function RGProvider({ children }) {
   // (first snapshot or error), forced open by the 8s watchdog above. Same name
   // and boolean meaning consumers always had; just a real signal now, not a
   // 600ms stopwatch that cleared before anything was known.
-  const loading = !!groupId && !watchdogTimedOut && !GATE_LABELS.every((l) => readyLabels[l]);
+  // Role-aware gate: staff-tier users never subscribe to the manager-only
+  // labels, so they are excluded from their gate (a never-subscribed label can
+  // never answer). Managers gate on the full list, unchanged.
+  const loading = !!groupId && !watchdogTimedOut && !gateLabelsFor(managerTier).every((l) => readyLabels[l]);
 
   // ── Toast ─────────────────────────────────────────────
   const [toast, setToast] = useState(null);
@@ -291,8 +320,8 @@ export function RGProvider({ children }) {
     () => staff.find((s) => (s.adminUid && s.adminUid === myUidTop) || (s.email && employee?.email && s.email.toLowerCase() === employee.email.toLowerCase())) || null,
     [staff, myUidTop, employee]
   );
-  const isOwnerTier = groupRole === "owner" || employee?.type === "superadmin";
-  const isManagerTier = groupRole === "manager" || groupRole === "storeAdmin";
+  // (isOwnerTier / isManagerTier are defined near the top with the other
+  // employee-derived flags — the subscription effects gate on them.)
   const myScope = isOwnerTier ? "owner" : isManagerTier ? "manager" : "staff";
   const scopedStaff = useMemo(() => {
     if (isOwnerTier) return staff;
