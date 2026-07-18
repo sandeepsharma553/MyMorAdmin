@@ -16,7 +16,7 @@ import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
 import { staffAreas, stationsForVenue, areaGetsBreak, empTypeIsSalaried, rateSplitFromPrivate } from "./staffStructureUtils";
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
-import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours } from "./rgUtils";
+import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey } from "./rgUtils";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
@@ -1054,7 +1054,9 @@ export default function StaffDirectoryPage() {
     // hours worked by period, split Mon–Fri vs Sat/Sun (shift date = weekKey + day index)
     const now = new Date();
     const startOfWeek = (() => { const d = new Date(now); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
-    const shiftDateOf = (x) => { if (!x.weekKey) return null; const d = new Date(`${x.weekKey}T00:00:00`); d.setDate(d.getDate() + (x.day || 0)); return d; };
+    // real local Monday via mondayFromWeekKey — re-parsing the UTC-shifted key
+    // put every shift a day early, misattributing hours at period boundaries
+    const shiftDateOf = (x) => { if (!x.weekKey) return null; const d = mondayFromWeekKey(x.weekKey); d.setDate(d.getDate() + (x.day || 0)); return d; };
     const dkey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const useRange = !!(hoursRange.from && hoursRange.to);
     const inPeriod = (d) => {

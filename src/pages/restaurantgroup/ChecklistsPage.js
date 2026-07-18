@@ -7,7 +7,7 @@ import { RefImageViewer, RefImageEditor } from "./RefImages";
 import { RichItemList, RichText } from "./RichItems";
 import PrepListPanel from "./PrepListPanel";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
-import { trainingStatusPill, progressColor, mkTimes, FULL_DAY_TIMES } from "./rgUtils";
+import { trainingStatusPill, progressColor, mkTimes, FULL_DAY_TIMES, localDateKey } from "./rgUtils";
 import { stationsForArea, groupItemsByStation, filterByStation, GENERAL_KEY } from "./itemDrilldown";
 import { showInActiveList } from "./completionWindow";
 import { SLOT_DAYS, toggleSlotLink } from "./shiftSlotPicker";
@@ -23,7 +23,9 @@ const dayLabel = (days) => {
   const ordered = WEEKDAYS.filter(([k]) => days.includes(k)).map(([, l]) => l);
   return ordered.join(", ");
 };
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// LOCAL today — toISOString() named YESTERDAY before ~10am AEST: morning ticks
+// didn't count as today and resets logged history to the wrong day
+const todayStr = () => localDateKey(new Date());
 const pushHist = (c) => {
   const done = (c.checked || []).filter(Boolean).length;
   if (!done) return c.history || [];

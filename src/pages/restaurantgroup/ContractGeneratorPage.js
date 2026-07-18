@@ -8,6 +8,7 @@ import { isMinorDob } from "./staffMinorUtils";
 import contractFill from "./contractFill";
 import { awardForVenue, isAwardUsableForLabour, staffIsCasual } from "./rgComplianceUtils";
 import { rateSplitFromPrivate } from "./staffStructureUtils";
+import { localDateKey } from "./rgUtils";
 
 /* ============================================================================
    Contract Generator (Phase 1, Step 4) — READ + RENDER ONLY.
@@ -19,7 +20,8 @@ import { rateSplitFromPrivate } from "./staffStructureUtils";
    button is intentionally disabled here.
    ========================================================================== */
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// LOCAL today — toISOString() put YESTERDAY's offer_date on contracts generated before ~10am AEST
+const todayISO = () => localDateKey(new Date());
 
 // Which source each token prefills from — drives the grouped review form + labels.
 const TOKEN_SOURCE = {

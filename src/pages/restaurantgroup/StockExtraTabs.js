@@ -8,10 +8,12 @@ import {
   recipesCol, recipeDoc, productionCol,
 } from "../../utils/restaurantGroupPaths";
 import { computeStockStatus, stockStatusMeta, marginPct, money, movementTypeLabel, REASON_REQUIRED_TYPES, grossStockQty, venueCost, productionHasCycle } from "./rgStockUtils";
+import { localDateKey } from "./rgUtils";
 
 const round4 = (n) => Math.round((Number(n) || 0) * 10000) / 10000;
 const fmtWhen = (ts) => { try { const d = ts?.toDate ? ts.toDate() : new Date(ts); return d.toLocaleString("en-AU", { day: "numeric", month: "short", year: "numeric" }); } catch { return "—"; } };
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// LOCAL today — toISOString() dated morning stocktakes/batches as YESTERDAY
+const todayISO = () => localDateKey(new Date());
 
 const useVenuePick = () => {
   const { venues, selectedVenue } = useRG();

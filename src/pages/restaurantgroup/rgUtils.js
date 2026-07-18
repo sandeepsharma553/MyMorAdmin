@@ -134,6 +134,20 @@ export const weekKeyOf = (date = new Date()) => {
 };
 export const weekDayIndex = (date = new Date()) => (new Date(date).getDay() + 6) % 7; // 0 = Monday
 export const currentWeekKey = () => weekKeyOf();
+// Invert weekKeyOf: recover the LOCAL Monday Date from a stored weekKey. The
+// stored key is toISOString().slice(0,10) of a LOCAL Monday midnight, so in
+// UTC+X (X>0 — all of Australia) it names the PREVIOUS day. A candidate must
+// be a local Monday AND round-trip through weekKeyOf — exact in any timezone,
+// no hardcoded offset, stored key format untouched. (Ops has the same inverse
+// in its pure timeEntry.js — keep the algorithms in sync.)
+export const mondayFromWeekKey = (weekKey) => {
+  const base = new Date(`${weekKey}T00:00:00`);
+  for (const add of [0, 1]) {
+    const c = new Date(base); c.setDate(base.getDate() + add); c.setHours(0, 0, 0, 0);
+    if (c.getDay() === 1 && weekKeyOf(c) === weekKey) return c;
+  }
+  return base; // unreachable for keys written by weekKeyOf; safe fallback
+};
 // LOCAL business-date string (YYYY-MM-DD) — the ONLY correct way to turn a local
 // Date into a calendar-date key. NEVER use toISOString() for a business date: in
 // UTC+10 it names the PREVIOUS day for anything before 10am (and for any local
