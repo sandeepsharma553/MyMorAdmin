@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp } from "firebase/firestore";
 import { venueCol } from "../../utils/restaurantGroupPaths";
+import { useRG } from "./RGContext";
 
 /**
  * Carryover prep list (per venue). Unlike checklists, prep items are NOT reset
@@ -11,6 +12,7 @@ import { venueCol } from "../../utils/restaurantGroupPaths";
  * assignee's own items are highlighted in their view.
  */
 export default function PrepListPanel({ groupId, venueId, venueLabel, canEdit, staffList = [], myStaffId, showToast }) {
+  const { noteErr } = useRG(); // failure-banner recorder — everything else stays prop-driven
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(true);
   const [text, setText] = useState("");
@@ -26,8 +28,8 @@ export default function PrepListPanel({ groupId, venueId, venueLabel, canEdit, s
       const list = s.docs.map((d) => ({ id: d.id, ...d.data() }));
       list.sort((a, b) => (a.done === b.done ? (a.order ?? 0) - (b.order ?? 0) : a.done ? 1 : -1));
       setItems(list);
-    }, () => setItems([]));
-  }, [groupId, venueId]);
+    }, () => { setItems([]); noteErr("prep list"); });
+  }, [groupId, venueId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const col = () => venueCol(groupId, venueId, "prepList");
   const doneCount = useMemo(() => items.filter((i) => i.done).length, [items]);

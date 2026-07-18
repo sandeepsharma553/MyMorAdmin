@@ -118,7 +118,7 @@ const blankForm = (defaultVenue) => ({
 });
 
 export default function StaffDirectoryPage() {
-  const { groupId, group, staff, draftStaff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, areas, empTypes, selectedVenue, showToast, can, me, myStaff } = useRG();
+  const { groupId, group, staff, draftStaff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, areas, empTypes, selectedVenue, showToast, can, me, myStaff, noteErr } = useRG();
   const canEdit = can("staff", "edit");
   // Phase 5a: false for the "self" tier — they get ONLY their own read-only profile below.
   const canViewAll = can("staff", "view");
@@ -210,9 +210,11 @@ export default function StaffDirectoryPage() {
   const [phDoc, setPhDoc] = useState(null);
   useEffect(() => {
     if (!groupId) return;
-    const unsub = onSnapshot(publicHolidaysDoc(groupId), (d) => setPhDoc(d.exists() ? (d.data().holidays || []) : []), () => {});
+    // On error phDoc stays null DELIBERATELY (null → AU seed fallback; [] means "doc
+    // exists, no holidays") — but record it: seed dates may differ from the group's own.
+    const unsub = onSnapshot(publicHolidaysDoc(groupId), (d) => setPhDoc(d.exists() ? (d.data().holidays || []) : []), () => noteErr("public holidays (using AU defaults)"));
     return () => unsub();
-  }, [groupId]);
+  }, [groupId]); // eslint-disable-line react-hooks/exhaustive-deps
   const holidays = (phDoc && phDoc.length) ? phDoc : AU_PUBLIC_HOLIDAYS_SEED;
 
   const venueScoped = useMemo(() => scopedStaff.filter((s) => staffInVenue(s, selectedVenue)), [scopedStaff, selectedVenue]);
@@ -872,7 +874,7 @@ export default function StaffDirectoryPage() {
       .catch(() => { if (alive) setSelfPriv(false); });
     const unsub = onSnapshot(payrollChangeRequestsCol(groupId, myStaff.id),
       (snap) => { if (alive) setSelfReqs(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); },
-      () => {}); // denied until the rule ships → list stays empty, no crash
+      () => { if (alive) setSelfReqs([]); noteErr("payroll requests"); }); // self-read rule is LIVE (Phase 5b) — a denial here is a real failure now
     return () => { alive = false; unsub(); };
   }, [canViewAll, groupId, myStaff?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const selfPendingReq = selfReqs.find((r) => r.status === "pending") || null;
@@ -947,9 +949,9 @@ export default function StaffDirectoryPage() {
     setProfileReqs([]);
     if (!profile || !groupId || !canPayroll) return;
     const unsub = onSnapshot(payrollChangeRequestsCol(groupId, profile.id),
-      (snap) => setProfileReqs(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
+      (snap) => setProfileReqs(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), () => { setProfileReqs([]); noteErr("payroll requests"); });
     return () => unsub();
-  }, [profile, groupId, canPayroll]);
+  }, [profile, groupId, canPayroll]); // eslint-disable-line react-hooks/exhaustive-deps
   const pendingProfileReqs = profileReqs.filter((r) => r.status === "pending");
   const pastProfileReqs = profileReqs.filter((r) => r.status !== "pending").sort((a, b) => (b.decidedAt?.seconds || 0) - (a.decidedAt?.seconds || 0));
   const applyPayrollRequest = async (r) => {

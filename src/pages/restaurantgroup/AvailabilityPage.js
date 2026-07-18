@@ -37,7 +37,7 @@ const dateRange14 = () => {
 const dayLabel = (dstr) => { try { return new Date(`${dstr}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }); } catch { return dstr; } };
 
 export default function AvailabilityPage() {
-  const { groupId, group, venues, myStaff, me, showToast } = useRG();
+  const { groupId, group, venues, myStaff, me, showToast, noteErr } = useRG();
   const days = useMemo(dateRange14, []);
   // cluster resolution — NEVER empty ("__default__" fallback when venues have no cluster)
   const clusterIds = useMemo(() => clustersForStaffDefaulted(group, venues, myStaff), [group, venues, myStaff]);
@@ -62,10 +62,10 @@ export default function AvailabilityPage() {
     const unsub = onSnapshot(
       query(groupAvailabilityCol(groupId), where("staffId", "==", myStaff.id)),
       (snap) => setMyPosts(snap.docs.map((x) => ({ id: x.id, ...x.data() }))),
-      () => setMyPosts([]) // new-collection rules land in Phase 3d — fail soft until then
+      () => { setMyPosts([]); noteErr("availability"); } // group-availability rule is LIVE — a denial here is a real failure now
     );
     return () => unsub();
-  }, [groupId, myStaff?.id]);
+  }, [groupId, myStaff?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // unlinked login (no staff doc via adminUid/email) → no poster, no crash
   if (!myStaff) {

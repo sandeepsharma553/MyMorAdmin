@@ -392,13 +392,13 @@ export function RGProvider({ children }) {
     awardRates, complianceManual, labourTargets, acksByStaff, acknowledgements,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
-    loading, loadErrors, showToast,
+    loading, loadErrors, noteErr, showToast,
   }), [groupId, group, venues, staff, draftStaff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
       inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
       resolvedMenuItems, menuInstanceById, venueMenuInstances,
       awardRates, complianceManual, labourTargets, acksByStaff, acknowledgements,
-      selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, loadErrors, showToast]);
+      selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, loadErrors, noteErr, showToast]);
 
   return (
     <RGContext.Provider value={value}>

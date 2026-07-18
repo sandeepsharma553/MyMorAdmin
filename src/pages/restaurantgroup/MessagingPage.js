@@ -29,7 +29,7 @@ const Attachment = ({ a, mine }) => {
 };
 
 export default function MessagingPage() {
-  const { groupId, staff, venues, me, myScope, can, showToast } = useRG();
+  const { groupId, staff, venues, me, myScope, can, showToast, noteErr } = useRG();
   const canPost = can("messages", "edit");
   const canCreateGroup = myScope !== "staff"; // only managers/owners create custom groups
 
@@ -51,11 +51,11 @@ export default function MessagingPage() {
   const [convos, setConvos] = useState([]); // custom groups
   useEffect(() => {
     if (!groupId) return;
-    const u1 = onSnapshot(announcementsCol(groupId), (s) => setAnns(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => setAnns([]));
-    const u2 = onSnapshot(messagesCol(groupId), (s) => setMsgs(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => setMsgs([]));
-    const u3 = onSnapshot(conversationsCol(groupId), (s) => setConvos(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => setConvos([]));
+    const u1 = onSnapshot(announcementsCol(groupId), (s) => setAnns(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => { setAnns([]); noteErr("announcements"); });
+    const u2 = onSnapshot(messagesCol(groupId), (s) => setMsgs(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => { setMsgs([]); noteErr("messages"); });
+    const u3 = onSnapshot(conversationsCol(groupId), (s) => setConvos(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => { setConvos([]); noteErr("conversations"); });
     return () => { u1(); u2(); u3(); };
-  }, [groupId]);
+  }, [groupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nameOf = (id) => { const s = staff.find((x) => x.id === id); return s ? (s.displayName || s.name) : (id === myId ? myName : ""); };
   const contactable = useMemo(

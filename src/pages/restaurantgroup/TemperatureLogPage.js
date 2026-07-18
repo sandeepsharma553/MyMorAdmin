@@ -10,7 +10,7 @@ const fmtTime = (ts) => { try { const d = ts?.toDate ? ts.toDate() : new Date(ts
 const inRange = (t, mn, mx) => (mn == null || t >= mn) && (mx == null || t <= mx);
 
 export default function TemperatureLogPage() {
-  const { groupId, venues, equipment, staff, me, myScope, selectedVenue, can, showToast } = useRG();
+  const { groupId, venues, equipment, staff, me, myScope, selectedVenue, can, showToast, noteErr } = useRG();
   const canLog = can("temperature", "edit");
 
   const myUid = me?.uid || me?.id;
@@ -38,8 +38,8 @@ export default function TemperatureLogPage() {
       const rows = s.docs.map((d) => ({ id: d.id, ...d.data() }));
       rows.sort((a, b) => (b.at?.seconds || 0) - (a.at?.seconds || 0));
       setLogs(rows);
-    }, () => setLogs([]));
-  }, [groupId, venueTab]);
+    }, () => { setLogs([]); noteErr("temperature logs"); });
+  }, [groupId, venueTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const todayKey = dayKey(new Date());
   const [draft, setDraft] = useState({}); // unitId -> temp string

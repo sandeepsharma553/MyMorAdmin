@@ -28,7 +28,7 @@ const STATUS_FILTERS = [
 const fmtWhen = (ts) => { try { const d = ts?.toDate ? ts.toDate() : new Date(ts); return d.toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
 
 export default function StockPage() {
-  const { groupId, group, venues, inventoryItems, menuItems, recipes, suppliers, stock, selectedVenue, selectedVenueName, can, showToast, me } = useRG();
+  const { groupId, group, venues, inventoryItems, menuItems, recipes, suppliers, stock, selectedVenue, selectedVenueName, can, showToast, me, myScope, noteErr } = useRG();
   const canEdit = can("stock", "edit");
 
   const categories = group?.stockCategories?.length ? group.stockCategories : DEFAULT_STOCK_CATEGORIES;
@@ -108,9 +108,11 @@ export default function StockPage() {
     return onSnapshot(
       query(stockMovementsCol(groupId, movVenue), orderBy("createdAt", "desc"), limit(100)),
       (s) => setMovements(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      () => setMovements([])
+      // stockMovements read is manager+ in rules — for a staff-tier viewer a denial is
+      // EXPECTED, so only record it for tiers the rules actually allow (c1ea20c pattern)
+      () => { setMovements([]); if (myScope !== "staff") noteErr("stock movements"); }
     );
-  }, [groupId, movVenue, tab]);
+  }, [groupId, movVenue, tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // demo POS sale — calls the real rgSellOrder transaction (handoff §6)
   const [selling, setSelling] = useState("");

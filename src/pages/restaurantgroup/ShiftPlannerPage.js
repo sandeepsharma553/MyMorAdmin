@@ -70,7 +70,7 @@ const cellClass = (type) =>
 // from the owner's configured areas (group.areas / areaOrder / areaBreak). See groupedRows.
 
 export default function ShiftPlannerPage() {
-  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope, noteErr } = useRG();
   const canEdit = can("shifts", "edit");
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
@@ -207,9 +207,11 @@ export default function ShiftPlannerPage() {
   const [phDoc, setPhDoc] = useState(null);
   useEffect(() => {
     if (!groupId) return;
-    const unsub = onSnapshot(publicHolidaysDoc(groupId), (d) => setPhDoc(d.exists() ? (d.data().holidays || []) : []), () => {});
+    // On error phDoc stays null DELIBERATELY (null → AU seed fallback; [] means "doc
+    // exists, no holidays") — but record it: seed dates may differ from the group's own.
+    const unsub = onSnapshot(publicHolidaysDoc(groupId), (d) => setPhDoc(d.exists() ? (d.data().holidays || []) : []), () => noteErr("public holidays (using AU defaults)"));
     return () => unsub();
-  }, [groupId]);
+  }, [groupId]); // eslint-disable-line react-hooks/exhaustive-deps
   const holidays = (phDoc && phDoc.length) ? phDoc : AU_PUBLIC_HOLIDAYS_SEED;
   // 7 local YYYY-MM-DD strings for the current week — built from the LOCAL
   // monday Date, NEVER by re-parsing wk (the stored weekKey is UTC-shifted:

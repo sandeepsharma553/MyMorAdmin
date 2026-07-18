@@ -33,7 +33,7 @@ const VenueSelect = ({ value, onChange }) => {
 
 /* ── Stocktake (G3 / T5.1): count ALL items, finalise → audit doc + variance movements ── */
 export function StocktakeTab() {
-  const { groupId, group, staff, inventoryItems, stock, can, showToast, me, myStaff } = useRG();
+  const { groupId, group, staff, inventoryItems, stock, can, showToast, me, myStaff, myScope, noteErr } = useRG();
   const canEdit = can("stock", "edit");
   const actor = myStaff?.displayName || myStaff?.name || me?.name || me?.email || "Admin";
   const [venueId, setVenueId] = useVenuePick();
@@ -49,8 +49,9 @@ export function StocktakeTab() {
   useEffect(() => {
     if (!groupId || !venueId) { setPrev([]); return; }
     return onSnapshot(query(stocktakesCol(groupId, venueId), orderBy("createdAt", "desc"), limit(12)),
-      (s) => setPrev(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => setPrev([]));
-  }, [groupId, venueId]);
+      // manager+-read collection: only record the failure for tiers the rules allow (c1ea20c pattern)
+      (s) => setPrev(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => { setPrev([]); if (myScope !== "staff") noteErr("stocktakes"); });
+  }, [groupId, venueId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stockByItem = useMemo(() => {
     const m = {};
@@ -419,15 +420,16 @@ export function ValuationTab() {
 
 /* ── Expiry & batches (G9) ── */
 export function ExpiryTab() {
-  const { groupId, inventoryItems, can, showToast, me, myStaff } = useRG();
+  const { groupId, inventoryItems, can, showToast, me, myStaff, myScope, noteErr } = useRG();
   const canEdit = can("stock", "edit");
   const actor = myStaff?.displayName || myStaff?.name || me?.name || me?.email || "Admin";
   const [venueId, setVenueId] = useVenuePick();
   const [batches, setBatches] = useState([]);
   useEffect(() => {
     if (!groupId || !venueId) { setBatches([]); return; }
-    return onSnapshot(batchesCol(groupId, venueId), (s) => setBatches(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => setBatches([]));
-  }, [groupId, venueId]);
+    // manager+-read collection: only record the failure for tiers the rules allow (c1ea20c pattern)
+    return onSnapshot(batchesCol(groupId, venueId), (s) => setBatches(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => { setBatches([]); if (myScope !== "staff") noteErr("batches"); });
+  }, [groupId, venueId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [form, setForm] = useState(null);
   // parse the date-only string as LOCAL end-of-day, not UTC midnight (AEST off-by-one)
@@ -572,7 +574,7 @@ export function ScannerTab() {
 
 /* ── Adjustment history (G10) + manual adjustment with MANDATORY reason ── */
 export function AdjustmentsTab() {
-  const { groupId, inventoryItems, can, showToast, me, myStaff } = useRG();
+  const { groupId, inventoryItems, can, showToast, me, myStaff, myScope, noteErr } = useRG();
   const canEdit = can("stock", "edit");
   const actor = myStaff?.displayName || myStaff?.name || me?.name || me?.email || "Admin";
   const [venueId, setVenueId] = useVenuePick();
@@ -581,8 +583,9 @@ export function AdjustmentsTab() {
     if (!groupId || !venueId) { setRows([]); return; }
     return onSnapshot(query(stockMovementsCol(groupId, venueId), orderBy("createdAt", "desc"), limit(200)),
       (s) => setRows(s.docs.map((d) => ({ id: d.id, ...d.data() })).filter((m) => m.type !== "posSale" && m.type !== "delivery")),
-      () => setRows([]));
-  }, [groupId, venueId]);
+      // manager+-read collection: only record the failure for tiers the rules allow (c1ea20c pattern)
+      () => { setRows([]); if (myScope !== "staff") noteErr("stock movements"); });
+  }, [groupId, venueId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [form, setForm] = useState({ itemId: "", type: "manualAdj", qty: "", reason: "" });
   const [adjBusy, setAdjBusy] = useState(false);
