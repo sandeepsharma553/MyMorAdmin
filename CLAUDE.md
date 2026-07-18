@@ -160,3 +160,54 @@ Storage: image uploads (logos, deal posters, event/parcel images). FCM web push 
 | prod | `mymor-one` | `mymor-australia` | `mymor-one.firebasestorage.app` (AU bucket `mymor-one`) |
 
 Firestore is a **named non‑default database** in AU‑Southeast1 — pass the DB id when constructing clients. `restaurantGroups/*` schema changes must be kept in sync with **MyMorOps**.
+
+---
+
+## Dates & timezones (restaurant group) — status as of Jul 2026
+
+### THE INVARIANT — read before touching any date code
+
+- **`weekKeyOf` (src/pages/restaurantgroup/rgUtils.js) is DELIBERATE FROZEN LEGACY.** It returns a
+  UTC‑shifted date string (`toISOString().slice(0,10)` of a LOCAL Monday midnight → in UTC+10 the key
+  names the previous day, e.g. `"2026-07-19"` for Mon 20 Jul). Every stored shift uses it and both
+  repos (Admin + Ops) share the convention. **NEVER "fix" it in passing** — changing it requires a
+  data migration of every stored `weekKey` AND a synchronised Admin+Ops deploy.
+- **Business dates** (a calendar day: roster columns, checklist ticks, stocktake dates, offer dates)
+  must be built from LOCAL getters — `localDateKey` (Admin) / `localBusinessDate` (Ops) — **never**
+  through `toISOString()`. **Moments** (clock‑ins, order timestamps) are genuine instants and SHOULD
+  be ISO timestamps. Do not conflate the two.
+
+### What was fixed (Jul 2026 — Admin `02a869e` + `351a1d1`, Ops `e41b8ab`)
+
+- **The bug class:** `toISOString().slice(0,10)` applied to a LOCAL date yields the PREVIOUS day in
+  UTC+10 (any local time before ~10am, and any weekKey re‑parse).
+- **Admin sites fixed:** Shift Planner (columns, leave‑check, PH flags, clock anchor, todayISO);
+  ChecklistsPage `todayStr`; StockExtraTabs `todayISO` (stocktake date, batch receivedAt);
+  ContractGeneratorPage `todayISO` (offer_date); StaffDirectoryPage `shiftDateOf` (hours‑by‑period).
+  **Ops:** six equivalent sites (rgUtils `shiftDateStr`/`shiftDateLabel`, shiftTimeLink, Calendar,
+  StaffProfile, Checklists).
+- **The helpers:** Admin `localDateKey` + `mondayFromWeekKey` (both in rgUtils, next to `weekKeyOf`);
+  Ops `localBusinessDate` + `mondayFromWeekKey` (in pure `timeEntry.js`, with a frozen mirror of the
+  key function so the jest suite stays firebase‑free). The inverse requires a candidate that IS a
+  local Monday AND round‑trips through the key function. Keep the two algorithms in sync.
+- **Notable:** shift↔time‑entry matching on Ops had NEVER worked (the shift computed Sunday's date,
+  the clock‑in stored Monday's) — fixed by `e41b8ab`.
+
+### Still open
+
+1. **DST (verified 18 Jul 2026 — Melbourne keys survive it, but only by luck of the offset).**
+   Executed check across the Oct 2026 spring‑forward (UTC+10 → UTC+11): both offsets shift the key
+   by exactly one day, so keys stay consistent either side and within the transition week, and all
+   52 Mondays of 2026 round‑trip through `mondayFromWeekKey` (both transitions). The residual risk
+   is real but different: the key is still UTC‑derived, and any timezone whose offset crosses 0
+   across DST (e.g. UK/Ireland UTC+0↔+1) WOULD key the same week differently in summer vs winter.
+   For Australia the format holds; it is safe only as long as the tenant base stays UTC+8…+11.
+2. **Multi‑timezone:** the key depends on the DEVICE's timezone — a Melbourne owner opening the
+   roster while travelling, or a future client in another timezone, keys the same week differently.
+   Blocks multi‑tenant expansion beyond one timezone.
+3. **The real fix (Option B):** `weekKeyOf` builds from local getters + each venue carries a
+   `timeZone` field; moments display in VENUE time, not device time. Requires migrating every stored
+   `weekKey` and a synchronised two‑app deploy. A planned project, not a drive‑by.
+4. **The hostel/university tail:** ~35 more hits of the same class in the admin/university/business
+   modules. Highest priority within it: student DOB normalisation (StudentPage/UniversityStudentPage)
+   — potential stored‑DOB corruption, which the under‑18 compliance logic reads.
