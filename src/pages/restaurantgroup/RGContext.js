@@ -18,7 +18,7 @@ export const useRG = () => useContext(RGContext);
 // Fetch the whole collection and sort client-side. We deliberately avoid
 // Firestore orderBy() here: orderBy silently drops any doc missing the sort
 // field, which would make venues/kpis vanish if a doc was added without one.
-const subColl = (col, setter, sortKey) => onSnapshot(
+const subColl = (col, setter, sortKey, label, noteErr) => onSnapshot(
   col,
   (snap) => {
     let rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -31,7 +31,9 @@ const subColl = (col, setter, sortKey) => onSnapshot(
     }
     setter(rows);
   },
-  () => setter([])
+  // fail-soft stays ([] so screens keep working) — but RECORD the failure so a
+  // rules denial no longer renders identically to a genuinely empty tenant
+  () => { setter([]); if (label && noteErr) noteErr(label); }
 );
 
 export function RGProvider({ children }) {
@@ -79,27 +81,37 @@ export function RGProvider({ children }) {
   const [pv, setPv] = useState({});
   const [selectedVenue, setSelectedVenue] = useState("all"); // "all" | venueId
   const [loading, setLoading] = useState(true);
+  // Listener failures: { [label]: true } for every collection whose listener
+  // errored (rules denial, dropped listener). Data still fail-softs to []/null;
+  // this only makes the failure VISIBLE (persistent banner below). Cleared when
+  // groupId changes, alongside the loading reset.
+  const [loadErrors, setLoadErrors] = useState({});
+  const noteErr = useCallback(
+    (label) => setLoadErrors((prev) => (prev[label] ? prev : { ...prev, [label]: true })),
+    []
+  );
 
   // group doc + venues + staff are group-level
   useEffect(() => {
-    if (!groupId) { setLoading(false); return; }
+    if (!groupId) { setLoading(false); setLoadErrors({}); return; }
     setLoading(true);
+    setLoadErrors({});
     const unsubs = [
-      onSnapshot(groupDoc(groupId), (d) => setGroup(d.exists() ? { id: d.id, ...d.data() } : null), () => setLoading(false)),
-      subColl(venuesCol(groupId), setVenues, "order"),
-      subColl(staffCol(groupId), setStaffAll),
-      subColl(announcementsCol(groupId), setAnnouncements),
-      subColl(messagesCol(groupId), setMessages),
-      subColl(notificationsCol(groupId), setNotifications),
-      subColl(inventoryItemsCol(groupId), setInventoryItems),
-      subColl(menuItemsCol(groupId), setMenuItems),
-      subColl(recipesCol(groupId), setRecipes),
-      subColl(modifierGroupsCol(groupId), setModifierGroups),
-      subColl(suppliersCol(groupId), setSuppliers),
-      subColl(purchaseOrdersCol(groupId), setPurchaseOrders),
-      subColl(awardRatesCol(groupId), setAwardRates),
-      onSnapshot(complianceManualDoc(groupId), (d) => setComplianceManual(d.exists() ? { id: d.id, ...d.data() } : null), () => setComplianceManual(null)),
-      onSnapshot(labourTargetsDoc(groupId), (d) => setLabourTargets(d.exists() ? { id: d.id, ...d.data() } : null), () => setLabourTargets(null)),
+      onSnapshot(groupDoc(groupId), (d) => setGroup(d.exists() ? { id: d.id, ...d.data() } : null), () => { setLoading(false); noteErr("group settings"); }),
+      subColl(venuesCol(groupId), setVenues, "order", "venues", noteErr),
+      subColl(staffCol(groupId), setStaffAll, undefined, "staff", noteErr),
+      subColl(announcementsCol(groupId), setAnnouncements, undefined, "announcements", noteErr),
+      subColl(messagesCol(groupId), setMessages, undefined, "messages", noteErr),
+      subColl(notificationsCol(groupId), setNotifications, undefined, "notifications", noteErr),
+      subColl(inventoryItemsCol(groupId), setInventoryItems, undefined, "stock items", noteErr),
+      subColl(menuItemsCol(groupId), setMenuItems, undefined, "menu items", noteErr),
+      subColl(recipesCol(groupId), setRecipes, undefined, "recipes", noteErr),
+      subColl(modifierGroupsCol(groupId), setModifierGroups, undefined, "modifier groups", noteErr),
+      subColl(suppliersCol(groupId), setSuppliers, undefined, "suppliers", noteErr),
+      subColl(purchaseOrdersCol(groupId), setPurchaseOrders, undefined, "purchase orders", noteErr),
+      subColl(awardRatesCol(groupId), setAwardRates, undefined, "award rates", noteErr),
+      onSnapshot(complianceManualDoc(groupId), (d) => setComplianceManual(d.exists() ? { id: d.id, ...d.data() } : null), () => { setComplianceManual(null); noteErr("compliance manual"); }),
+      onSnapshot(labourTargetsDoc(groupId), (d) => setLabourTargets(d.exists() ? { id: d.id, ...d.data() } : null), () => { setLabourTargets(null); noteErr("labour targets"); }),
     ];
     const t = setTimeout(() => setLoading(false), 600);
     return () => { clearTimeout(t); unsubs.forEach((u) => u && u()); };
@@ -112,9 +124,21 @@ export function RGProvider({ children }) {
   // the venue menu (subColl error callback → setter([])).
   const [venueMenuInstances, setVenueMenuInstances] = useState([]);
   useEffect(() => {
+    // This is the ONLY listener re-subscribed per selected venue, so its stale
+    // failure label clears here (venue A's denial must not flag venue B — a
+    // false alarm trains people to ignore the banner). The per-venue fan-out
+    // labels do NOT clear on venue switch: those listeners subscribe every
+    // venue at once, an errored Firestore listener never fires again, and no
+    // re-subscription happens on switch — clearing them would silently hide a
+    // still-broken listener (a false all-clear).
+    setLoadErrors((prev) => {
+      if (!prev["venue menu"]) return prev;
+      const { "venue menu": _gone, ...rest } = prev;
+      return rest;
+    });
     if (!groupId || selectedVenue === "all") { setVenueMenuInstances([]); return; }
-    return subColl(venueMenuItemsCol(groupId, selectedVenue), setVenueMenuInstances);
-  }, [groupId, selectedVenue]);
+    return subColl(venueMenuItemsCol(groupId, selectedVenue), setVenueMenuInstances, undefined, "venue menu", noteErr);
+  }, [groupId, selectedVenue]); // eslint-disable-line react-hooks/exhaustive-deps
   const menuInstanceById = useMemo(
     () => Object.fromEntries(venueMenuInstances.map((i) => [i.id, i])),
     [venueMenuInstances]
@@ -145,7 +169,7 @@ export function RGProvider({ children }) {
             ...prev,
             [coll]: { ...(prev[coll] || {}), [v.id]: snap.docs.map((d) => ({ id: d.id, venueId: v.id, venue: v.name, ...d.data() })) },
           })),
-          () => setPv((prev) => ({ ...prev, [coll]: { ...(prev[coll] || {}), [v.id]: [] } }))
+          () => { setPv((prev) => ({ ...prev, [coll]: { ...(prev[coll] || {}), [v.id]: [] } })); noteErr(`${coll} (${v.name || v.id})`); }
         ));
       });
     });
@@ -156,7 +180,7 @@ export function RGProvider({ children }) {
   const [clusterAvail, setClusterAvail] = useState([]);
   useEffect(() => {
     if (!groupId) { setClusterAvail([]); return; }
-    return subColl(groupAvailabilityCol(groupId), setClusterAvail); // fail-soft → [] until 3d rules land
+    return subColl(groupAvailabilityCol(groupId), setClusterAvail, undefined, "availability", noteErr); // fail-soft → [] until 3d rules land
   }, [groupId]);
 
   const flat = (coll, sortKey) => {
@@ -251,7 +275,7 @@ export function RGProvider({ children }) {
     const unsubs = ackStaffIds.map((sid) => onSnapshot(
       acknowledgementsCol(groupId, sid),
       (snap) => setAcks((prev) => ({ ...prev, [sid]: snap.docs.map((d) => ({ id: d.id, staffId: sid, ...d.data() })) })),
-      () => setAcks((prev) => ({ ...prev, [sid]: [] }))
+      () => { setAcks((prev) => ({ ...prev, [sid]: [] })); noteErr("acknowledgements"); }
     ));
     return () => unsubs.forEach((u) => u && u());
   }, [groupId, ackStaffKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -297,18 +321,23 @@ export function RGProvider({ children }) {
     awardRates, complianceManual, labourTargets, acksByStaff, acknowledgements,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
-    loading, showToast,
+    loading, loadErrors, showToast,
   }), [groupId, group, venues, staff, draftStaff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
       inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
       resolvedMenuItems, menuInstanceById, venueMenuInstances,
       awardRates, complianceManual, labourTargets, acksByStaff, acknowledgements,
-      selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, showToast]);
+      selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, loadErrors, showToast]);
 
   return (
     <RGContext.Provider value={value}>
       {children}
       {toast && <div className="rg-toast show">{toast}</div>}
+      {Object.keys(loadErrors).length > 0 && (
+        <div className="rg-loaderr" role="alert">
+          Some data couldn't load ({Object.keys(loadErrors).join(", ")}). This may be a permissions issue — try reloading.
+        </div>
+      )}
     </RGContext.Provider>
   );
 }

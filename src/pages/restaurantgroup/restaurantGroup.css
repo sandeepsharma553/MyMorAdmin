@@ -273,6 +273,15 @@
   font-family:'Segoe UI', -apple-system, sans-serif;
 }
 .rg-toast.show { transform:translateX(-50%) translateY(0); }
+/* Persistent listener-failure banner (RGContext loadErrors) — a STATE, not an
+   event like the toast: stays until reload/groupId change. Bottom-right corner
+   card so it never covers page content or the bottom-centre toast. */
+.rg-loaderr {
+  position:fixed; bottom:24px; right:24px; max-width:340px;
+  background:#7f1d1d; color:#fff; padding:10px 14px; border-radius:10px;
+  font-size:12px; line-height:1.5; z-index:9998; box-shadow:0 4px 14px rgba(0,0,0,0.25);
+  font-family:'Segoe UI', -apple-system, sans-serif;
+}
 
 /* ── MODAL ── */
 .rg-modal-overlay {
