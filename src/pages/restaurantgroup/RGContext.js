@@ -18,7 +18,7 @@ export const useRG = () => useContext(RGContext);
 // Fetch the whole collection and sort client-side. We deliberately avoid
 // Firestore orderBy() here: orderBy silently drops any doc missing the sort
 // field, which would make venues/kpis vanish if a doc was added without one.
-const subColl = (col, setter, sortKey, label, noteErr) => onSnapshot(
+const subColl = (col, setter, sortKey, label, noteErr, noteReady) => onSnapshot(
   col,
   (snap) => {
     let rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -30,11 +30,24 @@ const subColl = (col, setter, sortKey, label, noteErr) => onSnapshot(
       });
     }
     setter(rows);
+    if (label && noteReady) noteReady(label); // first snapshot = answered
   },
   // fail-soft stays ([] so screens keep working) — but RECORD the failure so a
   // rules denial no longer renders identically to a genuinely empty tenant
   () => { setter([]); if (label && noteErr) noteErr(label); }
 );
+
+// Labels whose FIRST ANSWER (snapshot or error) gates `loading`. Group-level
+// listeners only: the per-venue fan-out and acks fan-out subscribe only after
+// venues/staff resolve, so gating on them would deadlock the initial load; and
+// "venue menu" subscribes conditionally per selected venue (never at "all"),
+// so gating on it would deadlock too. Their failures still surface via
+// loadErrors — they just don't hold the ready gate.
+const GATE_LABELS = [
+  "group settings", "venues", "staff", "announcements", "messages", "notifications",
+  "stock items", "menu items", "recipes", "modifier groups", "suppliers",
+  "purchase orders", "award rates", "compliance manual", "labour targets", "availability",
+];
 
 export function RGProvider({ children }) {
   const employee = useSelector((s) => s.auth.employee);
@@ -80,40 +93,63 @@ export function RGProvider({ children }) {
   // pv[collection][venueId] = rows[]  — the rest is per-venue
   const [pv, setPv] = useState({});
   const [selectedVenue, setSelectedVenue] = useState("all"); // "all" | venueId
-  const [loading, setLoading] = useState(true);
+  // Ready-state: a listener has ANSWERED once its first snapshot OR its error
+  // callback fires (an error is an answer — noteErr marks ready too). `loading`
+  // is DERIVED from this, not a stopwatch: true until every GATE_LABEL answers.
+  const [readyLabels, setReadyLabels] = useState({});
+  const readyRef = useRef({}); // mirror for the watchdog's fire-time check
+  const [watchdogTimedOut, setWatchdogTimedOut] = useState(false);
+  const noteReady = useCallback((label) => {
+    readyRef.current[label] = true;
+    setReadyLabels((prev) => (prev[label] ? prev : { ...prev, [label]: true }));
+  }, []);
   // Listener failures: { [label]: true } for every collection whose listener
   // errored (rules denial, dropped listener). Data still fail-softs to []/null;
   // this only makes the failure VISIBLE (persistent banner below). Cleared when
   // groupId changes, alongside the loading reset.
   const [loadErrors, setLoadErrors] = useState({});
   const noteErr = useCallback(
-    (label) => setLoadErrors((prev) => (prev[label] ? prev : { ...prev, [label]: true })),
-    []
+    (label) => {
+      setLoadErrors((prev) => (prev[label] ? prev : { ...prev, [label]: true }));
+      noteReady(label); // an error IS an answer — never hold the ready gate on a dead listener
+    },
+    [noteReady]
   );
 
   // group doc + venues + staff are group-level
   useEffect(() => {
-    if (!groupId) { setLoading(false); setLoadErrors({}); return; }
-    setLoading(true);
+    if (!groupId) { setLoadErrors({}); setReadyLabels({}); readyRef.current = {}; setWatchdogTimedOut(false); return; }
     setLoadErrors({});
+    setReadyLabels({});
+    readyRef.current = {};
+    setWatchdogTimedOut(false);
     const unsubs = [
-      onSnapshot(groupDoc(groupId), (d) => setGroup(d.exists() ? { id: d.id, ...d.data() } : null), () => { setLoading(false); noteErr("group settings"); }),
-      subColl(venuesCol(groupId), setVenues, "order", "venues", noteErr),
-      subColl(staffCol(groupId), setStaffAll, undefined, "staff", noteErr),
-      subColl(announcementsCol(groupId), setAnnouncements, undefined, "announcements", noteErr),
-      subColl(messagesCol(groupId), setMessages, undefined, "messages", noteErr),
-      subColl(notificationsCol(groupId), setNotifications, undefined, "notifications", noteErr),
-      subColl(inventoryItemsCol(groupId), setInventoryItems, undefined, "stock items", noteErr),
-      subColl(menuItemsCol(groupId), setMenuItems, undefined, "menu items", noteErr),
-      subColl(recipesCol(groupId), setRecipes, undefined, "recipes", noteErr),
-      subColl(modifierGroupsCol(groupId), setModifierGroups, undefined, "modifier groups", noteErr),
-      subColl(suppliersCol(groupId), setSuppliers, undefined, "suppliers", noteErr),
-      subColl(purchaseOrdersCol(groupId), setPurchaseOrders, undefined, "purchase orders", noteErr),
-      subColl(awardRatesCol(groupId), setAwardRates, undefined, "award rates", noteErr),
-      onSnapshot(complianceManualDoc(groupId), (d) => setComplianceManual(d.exists() ? { id: d.id, ...d.data() } : null), () => { setComplianceManual(null); noteErr("compliance manual"); }),
-      onSnapshot(labourTargetsDoc(groupId), (d) => setLabourTargets(d.exists() ? { id: d.id, ...d.data() } : null), () => { setLabourTargets(null); noteErr("labour targets"); }),
+      onSnapshot(groupDoc(groupId), (d) => { setGroup(d.exists() ? { id: d.id, ...d.data() } : null); noteReady("group settings"); }, () => noteErr("group settings")),
+      subColl(venuesCol(groupId), setVenues, "order", "venues", noteErr, noteReady),
+      subColl(staffCol(groupId), setStaffAll, undefined, "staff", noteErr, noteReady),
+      subColl(announcementsCol(groupId), setAnnouncements, undefined, "announcements", noteErr, noteReady),
+      subColl(messagesCol(groupId), setMessages, undefined, "messages", noteErr, noteReady),
+      subColl(notificationsCol(groupId), setNotifications, undefined, "notifications", noteErr, noteReady),
+      subColl(inventoryItemsCol(groupId), setInventoryItems, undefined, "stock items", noteErr, noteReady),
+      subColl(menuItemsCol(groupId), setMenuItems, undefined, "menu items", noteErr, noteReady),
+      subColl(recipesCol(groupId), setRecipes, undefined, "recipes", noteErr, noteReady),
+      subColl(modifierGroupsCol(groupId), setModifierGroups, undefined, "modifier groups", noteErr, noteReady),
+      subColl(suppliersCol(groupId), setSuppliers, undefined, "suppliers", noteErr, noteReady),
+      subColl(purchaseOrdersCol(groupId), setPurchaseOrders, undefined, "purchase orders", noteErr, noteReady),
+      subColl(awardRatesCol(groupId), setAwardRates, undefined, "award rates", noteErr, noteReady),
+      onSnapshot(complianceManualDoc(groupId), (d) => { setComplianceManual(d.exists() ? { id: d.id, ...d.data() } : null); noteReady("compliance manual"); }, () => { setComplianceManual(null); noteErr("compliance manual"); }),
+      onSnapshot(labourTargetsDoc(groupId), (d) => { setLabourTargets(d.exists() ? { id: d.id, ...d.data() } : null); noteReady("labour targets"); }, () => { setLabourTargets(null); noteErr("labour targets"); }),
     ];
-    const t = setTimeout(() => setLoading(false), 600);
+    // WATCHDOG, not the ready mechanism: loading now clears when every gate
+    // label answers. If a listener neither fires nor errors within 8s (healthy
+    // first snapshots are sub-second warm, low seconds cold — 8s is beyond any
+    // healthy load, short enough that a hung tenant surfaces promptly), force
+    // the gate open and RECORD which listeners never answered, so the banner
+    // says so instead of the app silently pretending it loaded.
+    const t = setTimeout(() => {
+      GATE_LABELS.filter((l) => !readyRef.current[l]).forEach((l) => noteErr(`${l} (timed out)`));
+      setWatchdogTimedOut(true);
+    }, 8000);
     return () => { clearTimeout(t); unsubs.forEach((u) => u && u()); };
   }, [groupId]);
 
@@ -137,7 +173,7 @@ export function RGProvider({ children }) {
       return rest;
     });
     if (!groupId || selectedVenue === "all") { setVenueMenuInstances([]); return; }
-    return subColl(venueMenuItemsCol(groupId, selectedVenue), setVenueMenuInstances, undefined, "venue menu", noteErr);
+    return subColl(venueMenuItemsCol(groupId, selectedVenue), setVenueMenuInstances, undefined, "venue menu", noteErr, noteReady);
   }, [groupId, selectedVenue]); // eslint-disable-line react-hooks/exhaustive-deps
   const menuInstanceById = useMemo(
     () => Object.fromEntries(venueMenuInstances.map((i) => [i.id, i])),
@@ -180,7 +216,7 @@ export function RGProvider({ children }) {
   const [clusterAvail, setClusterAvail] = useState([]);
   useEffect(() => {
     if (!groupId) { setClusterAvail([]); return; }
-    return subColl(groupAvailabilityCol(groupId), setClusterAvail, undefined, "availability", noteErr); // fail-soft → [] until 3d rules land
+    return subColl(groupAvailabilityCol(groupId), setClusterAvail, undefined, "availability", noteErr, noteReady); // fail-soft → [] until 3d rules land
   }, [groupId]);
 
   const flat = (coll, sortKey) => {
@@ -216,6 +252,12 @@ export function RGProvider({ children }) {
   const areas = useMemo(() => resolveAreas(group), [group]);
   // Employment types: group config when present, else Casual/Part-time/Full-time/Junior.
   const empTypes = useMemo(() => resolveEmpTypes(group), [group]);
+
+  // `loading` is DERIVED — true until every group-level gate label has answered
+  // (first snapshot or error), forced open by the 8s watchdog above. Same name
+  // and boolean meaning consumers always had; just a real signal now, not a
+  // 600ms stopwatch that cleared before anything was known.
+  const loading = !!groupId && !watchdogTimedOut && !GATE_LABELS.every((l) => readyLabels[l]);
 
   // ── Toast ─────────────────────────────────────────────
   const [toast, setToast] = useState(null);
