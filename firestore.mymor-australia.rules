@@ -7,7 +7,6 @@ service cloud.firestore {
     function hostelActive(hid) {
       return get(/databases/$(database)/documents/hostel/$(hid)).data.active == true;
     }
-
     // ── Restaurant Groups (multi-venue restaurant clients) ──
     function rgHasEmp() {
       return isSignedIn() && exists(/databases/$(database)/documents/employees/$(request.auth.uid));
@@ -43,21 +42,61 @@ service cloud.firestore {
         || (rgHasEmp() && rgEmp().groupId == gid
             && rgEmp().get('permissions', {}).get('leave', '') == 'approve');
     }
+    // Mirrors rgCanApproveLeave: owner/storeAdmin always, OR an explicit
+    // permissions.availability == 'approve' grant on their employees doc.
+    function rgCanApproveAvailability(gid) {
+      return rgIsGroupAdmin(gid)
+        || (rgHasEmp() && rgEmp().groupId == gid
+            && rgEmp().get('permissions', {}).get('availability', '') == 'approve');
+    }
+     match /restaurantGroups/{groupId} {
 
-    match /restaurantGroups/{groupId} {
       allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
       allow create: if rgIsSuper();
       allow update, delete: if rgIsSuper() || rgIsGroupAdmin(groupId);
-
       match /staff/{staffId} {
         allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
-
         // 🔒 Sensitive payroll (TFN / bank / super) — owner/storeAdmin only.
+        // Phase 5b: a staffer may READ their own private/details, and UPDATE it restricted
+        // to four personal keys. Employment terms (classificationLevel, annualSalary,
+        // hourlyRate, contractedMinHours), the money fields, and `password` are NOT in the
+        // whitelist, so a self-write touching any of them is rejected outright.
+        match /private/details {
+          allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
+          allow create, delete: if rgIsSuper() || rgIsGroupAdmin(groupId);
+          allow update: if rgIsSuper() || rgIsGroupAdmin(groupId)
+            || (rgIsOwnStaff(groupId, staffId)
+                && request.resource.data.diff(resource.data).affectedKeys()
+                     .hasOnly(['legalName', 'dob', 'address', 'contactEmail', 'updatedAt']));
+        }
+        // Any OTHER doc under private/ stays owner/storeAdmin-only.
         match /private/{doc=**} {
           allow read, write: if rgIsSuper() || rgIsGroupAdmin(groupId);
         }
-
+        // Phase 5b: payroll change requests (TFN / super / bank). The staffer submits;
+        // owner/storeAdmin applies. These docs CONTAIN payroll values, so read is
+        // owner/storeAdmin or the staffer themselves — NOT plain managers.
+        // `fields` is whitelisted to the five money keys, so a crafted request cannot
+        // smuggle a salary/rate change through the owner's Apply button.
+        match /payrollChangeRequests/{reqId} {
+          allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
+          allow create: if rgIsSuper() || rgIsGroupAdmin(groupId)
+            || (rgIsOwnStaff(groupId, staffId)
+                && request.resource.data.status == 'pending'
+                && request.resource.data.fields.keys()
+                     .hasOnly(['tfn', 'superAccount', 'superUsi', 'bankBsb', 'bankAccount']));
+          allow update, delete: if rgIsSuper() || rgIsGroupAdmin(groupId);
+        }
+        // Phase B: per-staff document history (uploads / renames / deletes / restores).
+        // Carries FILE NAMES, which can themselves be sensitive ("final_warning.pdf") —
+        // so this is NOT group-readable like auditLog. Owner/storeAdmin, or the staffer
+        // themselves. Client writes are append-only; no edits, no deletes.
+        match /docHistory/{entryId} {
+          allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
+          allow create: if rgIsSuper() || rgIsGroupAdmin(groupId);
+          allow update, delete: if rgIsSuper();
+        }
         // Per-staff acknowledgements — the staff member, or a manager/owner.
         match /acknowledgements/{version} {
           allow read:           if rgIsSuper() || rgCanManageStaff(groupId) || rgIsOwnStaff(groupId, staffId);
@@ -79,8 +118,8 @@ service cloud.firestore {
          allow read, write: if rgIsSuper() || rgIsGroupAdmin(groupId);
       }
       match /settings/contractClassifications {
-  			allow read, write: if rgIsSuper() || rgIsGroupAdmin(groupId);
-			}
+        allow read, write: if rgIsSuper() || rgIsGroupAdmin(groupId);
+      }
       match /settings/legalEntities {
         allow read, write: if rgIsSuper() || rgIsGroupAdmin(groupId);
       }
@@ -88,19 +127,26 @@ service cloud.firestore {
         allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
         allow write: if rgIsSuper() || rgIsGroupAdmin(groupId);
       }
+      // Labour targets ($/hr + weekly revenue) — gated settings doc so staff can't read
+      // them (the group doc is group-readable). Read: manager+ (labour % on Shift Planner).
+      // Write: owner/storeAdmin only (managers are read-only).
+      match /settings/labourTargets {
+        allow read:  if rgIsSuper() || rgCanManageStaff(groupId);
+        allow write: if rgIsSuper() || rgIsGroupAdmin(groupId);
+      }
       match /venues/{venueId} {
         allow read, write: if rgIsSuper() || rgIsGroupMember(groupId);
-
         // Operational per-venue data (checklists, tempLogs, shifts, stations, equipment,
         // trainingModules/Assignments, checklistAssignments, kpis, performanceNotes, …) —
         // any group member. EXCLUDES leaveRequests and the cost/stock collections, which
         // each have their own tighter block below. (Firestore ORs overlapping matches, so
         // the only way to NARROW is to exclude here — same pattern as leaveRequests.)
         match /{coll}/{docId=**} {
-          allow read, write: if (rgIsSuper() || rgIsGroupMember(groupId))
-            && !(coll in ['leaveRequests', 'shifts', 'timeEntries', 'availability', 'stock', 'stockMovements', 'stocktakes', 'batches', 'production']);
-        }
 
+
+          allow read, write: if (rgIsSuper() || rgIsGroupMember(groupId))
+            && !(coll in ['leaveRequests', 'shifts', 'timeEntries', 'availability', 'stock', 'stockMovements', 'stocktakes', 'batches', 'production', 'orders', 'menuItems']); // ⬅ ADDED 'menuItems'
+        }
         // ── Stock / cost collections — manager+ ONLY (matches can('stock') =
         // owner/storeAdmin/manager; staff is stock:none). Holds cost, weighted-avg,
         // variance $, production cost. Server (rgSellOrder, Admin SDK) bypasses rules.
@@ -109,7 +155,20 @@ service cloud.firestore {
         match /stocktakes/{docId=**}     { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
         match /batches/{docId=**}        { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
         match /production/{docId=**}     { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
-
+        // ── Per-venue MENU INSTANCES (template+instance model) — member-READ (POS/floor
+        // need sellPrice/variants/86/availability), manager+ WRITE (no staff price-forging).
+        // Mirrors the group-level menuItems gate. Server (rgSellOrder, Admin SDK) bypasses.
+        match /menuItems/{docId=**} {
+          allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
+          allow write: if rgIsSuper() || rgCanManageStaff(groupId);
+        }
+        // ── Orders (POS) — server-write-only, manager-read. Orders are created ONLY by
+        // rgSellOrder (Admin SDK, bypasses rules) inside its stock transaction. No client
+        // may write/forge an order. Managers+ may READ for the live-orders view.
+        match /orders/{docId=**} {
+          allow read: if rgIsSuper() || rgCanManageStaff(groupId);
+          allow write: if false;
+        }
         // ── CHANGED BLOCK ── approve/update now requires leave-approve permission
         // (owner/storeAdmin, or an explicit permissions.leave=='approve' grant),
         // matching the app's `approve` permission level. Submit-your-own unchanged.
@@ -120,7 +179,6 @@ service cloud.firestore {
           allow update, delete: if rgIsSuper() || rgCanApproveLeave(groupId);
         }
         // ── END CHANGED BLOCK ──
-
         // ── Availability feature (kiosk clock + availability + assignment) ──
         // Roster (shifts): any group member READS; only managers+ WRITE. Closes the
         // previous open hole where any member could write any shift via the catch-all.
@@ -132,26 +190,51 @@ service cloud.firestore {
         // on behalf of staff (identity is the in-app PIN, NOT auth.uid). So create/update are
         // group-member; delete is managers+. (Manager "approve" is an update by a manager.)
         match /timeEntries/{entryId} {
-          allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
+
+        allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
           allow create: if rgIsSuper() || rgIsGroupMember(groupId);
           allow update: if rgIsSuper() || rgIsGroupMember(groupId);
           allow delete: if rgIsSuper() || rgCanManageStaff(groupId);
-
           match /breaks/{breakId} {
             allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
             allow write: if rgIsSuper() || rgIsGroupMember(groupId);
           }
         }
-        // Availability posting: same shared-terminal model — group-member create/update,
-        // managers+ delete.
+        // Availability posting: shared-kiosk model — the device account posts on behalf of
+        // PIN-identified staff, so create/update stay group-member. A non-approver may only
+        // write status 'pending' (post / re-post resets review) or leave status unchanged;
+        // setting accepted/rejected requires the availability-approve grant.
+        // COUNTER-PROPOSE: a group member may also move a doc a manager set to 'proposed'
+       // → 'accepted' or 'declined' (the staffer answering on the iPad). Bounded to that
+        // exact stored→incoming transition, so it can't jump pending→accepted.
         match /availability/{availId} {
           allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
-          allow create: if rgIsSuper() || rgIsGroupMember(groupId);
-          allow update: if rgIsSuper() || rgIsGroupMember(groupId);
+          allow create: if rgIsSuper()
+            || (rgIsGroupMember(groupId)
+                && (request.resource.data.get('status', 'pending') == 'pending'
+                    || rgCanApproveAvailability(groupId)));
+          allow update: if rgIsSuper()
+            || (rgIsGroupMember(groupId)
+                && (request.resource.data.get('status', 'pending') == 'pending'
+                    || request.resource.data.get('status', 'pending') == resource.data.get('status', 'pending')
+                    || rgCanApproveAvailability(groupId)
+                    || (resource.data.get('status', '') == 'proposed'
+                        && request.resource.data.get('status', '') in ['accepted', 'declined'])));
           allow delete: if rgIsSuper() || rgCanManageStaff(groupId);
         }
       }
-
+      // ── Availability (Phase 3 — cluster-scoped, group-level, INFORMATIONAL-ONLY) ──
+      // Staff post when they're free to a GROUP-level collection keyed
+      // {staffId}_{clusterId}_{date}. No status / accept / reject / propose — the doc is
+      // pure information; managers READ it and roster manually. This REPLACES the old
+      // per-venue availability state machine under venues/, which is intentionally LEFT
+      // in place (still readable) for the 14-day dual-read cutover, then removed in the
+      // post-cutover cleanup along with the legacy read.
+      match /availability/{availId} {
+        allow read:           if rgIsSuper() || rgIsGroupMember(groupId);
+        allow create, update: if rgIsSuper() || rgIsGroupMember(groupId);
+        allow delete:         if rgIsSuper() || rgCanManageStaff(groupId);
+      }
       // ── Stock / Menus / Supplier (Module #2) — group-level shared collections ──
       // Inventory / suppliers / POs: manager+ (cost & supplier-pricing data).
       // Menu / modifier groups: readable by group members (floor/POS need them); writes manager+.
@@ -165,6 +248,7 @@ service cloud.firestore {
         allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
+
       match /recipes/{recipeId} {
         // Read tightened to manager+: recipes reveal food-cost build (ingredient qty ×
         // inventory cost). No staff client screen reads them; POS deducts server-side.
@@ -172,6 +256,11 @@ service cloud.firestore {
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
       match /modifierGroups/{modId} {
+        // ⬅ CHANGED: read was rgCanManageStaff — that denial made every POS item look like
+        // it had NO modifiers for staff-tier users (both clients filter modifierGroupIds
+        // against this collection), so required choices bypassed and paid add-ons vanished,
+        // silently, at base price. Holds no cost data — only priceDelta, a price the POS
+        // already shows the customer. Now mirrors the menuItems gate. Write unchanged.
         allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
@@ -188,17 +277,15 @@ service cloud.firestore {
         allow read:  if rgIsSuper() || rgCanManageStaff(groupId);
         allow write: if rgIsSuper() || rgIsGroupAdmin(groupId);
       }
-
       // ── Compliance & Award (your recent work) — read: members; write: manager+ ──
       match /awardRates/{awardCode} {
         allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
-      match /compliance/{docId} {
+       match /compliance/{docId} {
         allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
-
       // ── Messaging / notifications (group members) ──
       match /notifications/{notificationId} {
         allow read, write: if rgIsSuper() || rgIsGroupMember(groupId);
@@ -206,23 +293,20 @@ service cloud.firestore {
       match /conversations/{conversationId}/{rest=**} {
         allow read, write: if rgIsSuper() || rgIsGroupMember(groupId);
       }
-
       match /auditLog/{docId}      { allow read, write: if rgIsSuper() || rgIsGroupMember(groupId); }
       match /announcements/{docId} { allow read, write: if rgIsSuper() || rgIsGroupMember(groupId); }
       match /messages/{docId}      { allow read, write: if rgIsSuper() || rgIsGroupMember(groupId); }
     }
-
     match /hostel/{hid} {
       allow read:           if isSignedIn() && request.auth.token.role == 'superadmin';
       allow create, update: if isSignedIn() && (request.auth.token.role == 'superadmin' || request.auth.token.type == 'superadmin');
       allow delete:         if isSignedIn() && (request.auth.token.role == 'superadmin' || resource.data.adminUID == null);
     }
-
     match /adminMenuState/{uid}/menus/{menuKey} {
       allow read, write: if isSignedIn() && request.auth.uid == uid;
     }
 
-    match /employees/{empId} {
+      match /employees/{empId} {
       allow read, write: if isSignedIn() && userHostelId() != null
         && resource.data.hostelid == userHostelId()
         && hostelActive(userHostelId());
@@ -230,7 +314,6 @@ service cloud.firestore {
       allow create: if rgIsSuper() || rgCanManageStaff(request.resource.data.groupId);
       allow update: if rgIsSuper() || rgCanManageStaff(resource.data.groupId);
     }
-
     match /users/{uid} {
       allow read, write: if isSignedIn() && userHostelId() != null
         && resource.data.hostelid == userHostelId()
@@ -239,24 +322,20 @@ service cloud.firestore {
       allow create: if rgIsSuper() || rgCanManageStaff(request.resource.data.groupId);
       allow update: if rgIsSuper() || rgCanManageStaff(resource.data.groupId) || request.auth.uid == uid;
     }
-
     // Locked: confirmed unused by every app/function (real verification runs
     // through Cloud Functions writing emailOtps via the Admin SDK).
     match /emailVerifications/{email} { allow read, write: if false; }
-
     // OTP collections are written/read ONLY by Cloud Functions (Admin SDK, which
     // bypasses rules). Deny all client access so email + code hash aren't exposed
     // to signed-in users via the bottom catch-all.
     match /emailOtps/{id}         { allow read, write: if false; }
     match /passwordResetOtps/{id} { allow read, write: if false; }
-
-    match /events/{eventId}           { allow read: if request.auth != null; }
+     match /events/{eventId}           { allow read: if request.auth != null; }
     match /eventBookings/{docId}      { allow read: if request.auth != null && request.auth.uid == resource.data.userId; }
     match /User/{userId}              { allow read: if request.auth.uid == userId; }
     match /eventcategory/{docId}      { allow read: if true; }
     match /University/{document}      { allow read:  if true; allow write: if isSignedIn(); }
     match /discoverfile/{uid}/{allPaths=**} { allow write: if request.auth.uid == uid; }
-
     match /{coll}/{rest=**} {
       allow read, write: if isSignedIn() && coll != 'restaurantGroups' && !rgIsGroupUser();
     }
