@@ -3,7 +3,7 @@ import { doc, writeBatch, onSnapshot, query, where, serverTimestamp } from "fire
 import { db } from "../../firebase";
 import { useRG } from "./RGContext";
 import { groupAvailabilityCol, availabilityDocId } from "../../utils/restaurantGroupPaths";
-import { parseShiftTime, boundedTimes, clusterEnvelopeForDay, dayKeyOfDate } from "./rgUtils";
+import { parseShiftTime, boundedTimes, clusterEnvelopeForDay, dayKeyOfDate, currentWeekKey, mondayFromWeekKey } from "./rgUtils";
 import { clustersForStaffDefaulted, clusterName, DEFAULT_CLUSTER_ID } from "./staffStructureUtils";
 
 /* Staff-SELF availability (web) — CLUSTER-SCOPED + INFORMATIONAL-ONLY (Phase 3b).
@@ -26,19 +26,31 @@ const endAfterStart = (s, e) => parseShiftTime(e) > parseShiftTime(s);
 const windowsOverlap = (a, b) =>
   parseShiftTime(a.start) < parseShiftTime(b.end) && parseShiftTime(b.start) < parseShiftTime(a.end);
 
-// 14 LOCAL dates as YYYY-MM-DD built from local year/month/day parts (NOT a UTC ISO
-// slice) — mirrors Ops lib/availabilityModel.dateRange14 so both apps key the same days.
-const dkey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const dateRange14 = () => {
-  const out = []; const now = new Date();
-  for (let i = 0; i < 14; i++) out.push(dkey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + i)));
+// CROSS-REPO SHARED HELPER — must stay BYTE-IDENTICAL to Ops lib/availabilityModel's
+// availabilityWindow (modGroupKind/staffSeesAll convention; this copy lives in-page).
+// The ROLLING 3-WEEK posting window (client issue 6): 21 LOCAL dates ascending from the
+// given WEEK-MONDAY anchor. The CALLER derives the anchor from the EXISTING week helpers
+// (Ops mondayOf(0) / Admin mondayFromWeekKey(currentWeekKey())) — no new week-start math
+// lives here. Mid-week the window still starts at THIS week's Monday (matching the
+// planner), so someone on Wednesday can still change Saturday; it advances only when the
+// week does. Dates are built from LOCAL year/month/day parts (never a UTC ISO slice) so
+// both apps key the same days. Docs that roll OUT of the window are KEPT, never deleted —
+// managers rostered against them; they just stop rendering (and stop being editable).
+const availabilityWindow = (monday) => {
+  const out = [];
+  for (let i = 0; i < 21; i++) {
+    const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+  }
   return out;
 };
 const dayLabel = (dstr) => { try { return new Date(`${dstr}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }); } catch { return dstr; } };
 
 export default function AvailabilityPage() {
   const { groupId, group, venues, myStaff, me, showToast, noteErr } = useRG();
-  const days = useMemo(dateRange14, []);
+  // anchor = THIS week's real local Monday via the existing frozen-key round-trip
+  // (currentWeekKey ∘ mondayFromWeekKey — the exported pair the date fixes proved exact)
+  const days = useMemo(() => availabilityWindow(mondayFromWeekKey(currentWeekKey())), []);
   // cluster resolution — NEVER empty ("__default__" fallback when venues have no cluster)
   const clusterIds = useMemo(() => clustersForStaffDefaulted(group, venues, myStaff), [group, venues, myStaff]);
   const [chosenCluster, setChosenCluster] = useState("");
@@ -154,7 +166,7 @@ export default function AvailabilityPage() {
       {/* header: cluster (only when the staffer spans 2+ clusters) + save */}
       <div className="card" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>My availability — next 14 days</div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>My availability — next 3 weeks</div>
           <div style={{ fontSize: 12, color: "var(--gray)" }}>Post when you can work — your manager sees it on the roster.</div>
         </div>
         {clusterIds.length > 1 ? (
