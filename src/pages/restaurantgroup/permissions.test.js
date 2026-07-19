@@ -55,19 +55,28 @@ describe("levelMeta renders the new level distinctly", () => {
   });
 });
 
-describe("seeded defaults — leave:approve only where intended", () => {
+describe("seeded defaults — approve only where intended", () => {
   test("owner + storeAdmin get leave:approve; manager edit; staff view", () => {
     expect(DEFAULT_PERMISSIONS.owner.leave).toBe("approve");
     expect(DEFAULT_PERMISSIONS.storeAdmin.leave).toBe("approve");
     expect(DEFAULT_PERMISSIONS.manager.leave).toBe("edit");
     expect(DEFAULT_PERMISSIONS.staff.leave).toBe("view");
   });
-  test("approve was NOT seeded onto any OTHER module for any role", () => {
+  test("approve is seeded ONLY on the modules whose rules consume it (leave, availability)", () => {
+    // The rules enforce approve via rgCanApproveLeave + rgCanApproveAvailability —
+    // exactly these two modules. Approve anywhere else would silently act as edit,
+    // so an accidental seeding on a third module must fail here.
+    const APPROVE_MODULES = ["leave", "availability"];
     for (const role of Object.keys(DEFAULT_PERMISSIONS)) {
       for (const [mod, lvl] of Object.entries(DEFAULT_PERMISSIONS[role])) {
-        if (mod !== "leave") expect(lvl).not.toBe("approve");
+        if (!APPROVE_MODULES.includes(mod)) expect(lvl).not.toBe("approve");
       }
     }
+    // and the availability seeding itself is the intended set (incl. manager)
+    expect(DEFAULT_PERMISSIONS.owner.availability).toBe("approve");
+    expect(DEFAULT_PERMISSIONS.storeAdmin.availability).toBe("approve");
+    expect(DEFAULT_PERMISSIONS.manager.availability).toBe("approve");
+    expect(DEFAULT_PERMISSIONS.staff.availability).toBe("view");
   });
   test("other modules' edit defaults unchanged (spot-checks)", () => {
     expect(DEFAULT_PERMISSIONS.owner.staff).toBe("edit");
