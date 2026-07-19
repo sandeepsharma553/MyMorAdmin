@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { fullName, certStatus, shiftHours, trainingStatusPill, mondayFromWeekKey } from "./rgUtils";
+import { fullName, certStatus, shiftHours, trainingStatusPill, mondayFromWeekKey, fmtHours } from "./rgUtils";
 import { staffAreas } from "./staffStructureUtils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -80,7 +80,7 @@ export default function StaffCapabilityCard({ staff: s, assignments, shifts, per
           {myShifts.length ? myShifts.map((sh) => (
             <div key={sh.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)", fontSize: 12 }}>
               <span>{shiftDate(sh)} · <strong>{sh.start}–{sh.end}</strong></span>
-              <span style={{ color: "var(--gray)" }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""} · {sh.venue} · {shiftHours(sh).toFixed(1)}h</span>
+              <span style={{ color: "var(--gray)" }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""} · {sh.venue} · {fmtHours(shiftHours(sh))}h</span>
             </div>
           )) : <Empty>No shift history.</Empty>}
         </Section>

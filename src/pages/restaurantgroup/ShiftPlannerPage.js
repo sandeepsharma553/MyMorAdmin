@@ -3,7 +3,7 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot, deleteF
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
-import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel } from "./rgUtils";
+import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel, fmtHours } from "./rgUtils";
 import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import StaffCapabilityCard from "./StaffCapabilityCard";
@@ -615,7 +615,7 @@ export default function ShiftPlannerPage() {
                             <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff" }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                               <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                               <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}</div>
-                              {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{b.grossHours.toFixed(1)}h gross · {b.paidHours.toFixed(1)}h paid · {b.unpaidHours.toFixed(1)}h unpaid</div> : null; })()}
+                              {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{fmtHours(b.grossHours)}h gross · {fmtHours(b.paidHours)}h paid · {fmtHours(b.unpaidHours)}h unpaid</div> : null; })()}
                             </div>
                           ))}
                           {avs.map((a) => renderAvailChip(a))}
@@ -633,7 +633,7 @@ export default function ShiftPlannerPage() {
           </table>
         </div>
         <div style={{ padding: "8px 12px", background: "var(--gray-light)", borderTop: "0.5px solid var(--border)", fontSize: 11 }}>
-          <span style={{ color: "var(--gray)" }}>Paid hours this week: </span><strong>{gh.toFixed(1)}</strong>
+          <span style={{ color: "var(--gray)" }}>Paid hours this week: </span><strong>{fmtHours(gh)}</strong>
         </div>
       </div>
     );
@@ -670,7 +670,7 @@ export default function ShiftPlannerPage() {
                 <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff", boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                   <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                   <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
-                  {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{b.grossHours.toFixed(1)}h gross · {b.paidHours.toFixed(1)}h paid · {b.unpaidHours.toFixed(1)}h unpaid</div> : null; })()}
+                  {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{fmtHours(b.grossHours)}h gross · {fmtHours(b.paidHours)}h paid · {fmtHours(b.unpaidHours)}h unpaid</div> : null; })()}
                 </div>
               ))}
               {avs.map((a) => renderAvailChip(a))}
@@ -691,8 +691,8 @@ export default function ShiftPlannerPage() {
           }, { gross: 0, paid: 0, unpaid: 0 });
           return (
             <>
-              <div>{t.paid.toFixed(1)}h</div>
-              <div style={{ fontSize: 9, fontWeight: 400, color: "var(--gray)" }}>{t.gross.toFixed(1)}h gross · {t.unpaid.toFixed(1)}h unpaid</div>
+              <div>{fmtHours(t.paid)}h</div>
+              <div style={{ fontSize: 9, fontWeight: 400, color: "var(--gray)" }}>{fmtHours(t.gross)}h gross · {fmtHours(t.unpaid)}h unpaid</div>
             </>
           );
         })()}
@@ -715,7 +715,7 @@ export default function ShiftPlannerPage() {
           {canEdit && <button className="btn btn-sm btn-primary" onClick={() => openAdd("", 0)}>+ Add shift</button>}
           <button className="btn btn-sm" onClick={() => {
             // Gross / Paid / Unpaid per shift (effective break) — replaces the single "Hours" column
-            const rows = [["Staff", "Day", "Start", "End", "Role", "Station", "Venue", "Gross", "Paid", "Unpaid"], ...weekShifts.slice().sort((a, b) => (a.day - b.day) || a.start.localeCompare(b.start)).map((sh) => { const b = effectiveBreak(sh); return [sh.staffName, FULL_DAYS[sh.day] || "", sh.start, sh.end, sh.role, sh.station || "", sh.venue, b.grossHours.toFixed(1), b.paidHours.toFixed(1), b.unpaidHours.toFixed(1)]; })];
+            const rows = [["Staff", "Day", "Start", "End", "Role", "Station", "Venue", "Gross", "Paid", "Unpaid"], ...weekShifts.slice().sort((a, b) => (a.day - b.day) || a.start.localeCompare(b.start)).map((sh) => { const b = effectiveBreak(sh); return [sh.staffName, FULL_DAYS[sh.day] || "", sh.start, sh.end, sh.role, sh.station || "", sh.venue, fmtHours(b.grossHours), fmtHours(b.paidHours), fmtHours(b.unpaidHours)]; })];
             downloadCsv(`roster-${wk}.csv`, rows); showToast("Roster exported");
           }}>Export</button>
         </div>
@@ -838,7 +838,7 @@ export default function ShiftPlannerPage() {
           </table>
         </div>
         <div style={{ padding: "12px 14px", background: "var(--gray-light)", borderTop: "0.5px solid var(--border)", display: "flex", gap: 20, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Total paid hours this week: </span><strong>{totalHours.toFixed(1)}</strong></div>
+          <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Total paid hours this week: </span><strong>{fmtHours(totalHours)}</strong></div>
           {/* labour $ / % are management info — shifts:edit only (staff still sees hours + break split below) */}
           {canEdit && (
             <>
@@ -847,8 +847,8 @@ export default function ShiftPlannerPage() {
             </>
           )}
           <div style={{ fontSize: 11, width: "100%", color: "var(--gray)" }}>
-            Mon–Fri <strong>{hoursByType.mf.toFixed(1)}h</strong> · Sat <strong>{hoursByType.sat.toFixed(1)}h</strong> · Sun <strong>{hoursByType.sun.toFixed(1)}h</strong> · PH <strong>{hoursByType.ph.toFixed(1)}h</strong> · Paid <strong>{weekSplit.paid.toFixed(1)}h</strong> · Unpaid <strong>{weekSplit.unpaid.toFixed(1)}h</strong>
-            <span style={{ marginLeft: 16 }}>Fortnight paid total: <strong>{fortnightHours.toFixed(1)}h</strong></span>
+            Mon–Fri <strong>{fmtHours(hoursByType.mf)}h</strong> · Sat <strong>{fmtHours(hoursByType.sat)}h</strong> · Sun <strong>{fmtHours(hoursByType.sun)}h</strong> · PH <strong>{fmtHours(hoursByType.ph)}h</strong> · Paid <strong>{fmtHours(weekSplit.paid)}h</strong> · Unpaid <strong>{fmtHours(weekSplit.unpaid)}h</strong>
+            <span style={{ marginLeft: 16 }}>Fortnight paid total: <strong>{fmtHours(fortnightHours)}h</strong></span>
           </div>
           {/* per-type approved-leave days for the visible week (Phase 4c) — only types present */}
           {Object.keys(weekLeave).length > 0 && (
@@ -912,10 +912,10 @@ export default function ShiftPlannerPage() {
               return (
                 <div style={{ fontSize: 11, color: "var(--gray)", margin: "2px 0 8px" }}>
                   {b.breakMins > 0
-                    ? `${b.paidHours.toFixed(1)}h paid · ${b.unpaidHours.toFixed(1)}h unpaid (${b.breakMins} min break ${b.manual ? "· manual override" : `auto — ${fArea}`})`
+                    ? `${fmtHours(b.paidHours)}h paid · ${fmtHours(b.unpaidHours)}h unpaid (${b.breakMins} min break ${b.manual ? "· manual override" : `auto — ${fArea}`})`
                     : b.manual
-                      ? `${b.grossHours.toFixed(1)}h · no break (manual override)`
-                      : `${b.grossHours.toFixed(1)}h · no auto break${why}`}
+                      ? `${fmtHours(b.grossHours)}h · no break (manual override)`
+                      : `${fmtHours(b.grossHours)}h · no auto break${why}`}
                 </div>
               );
             })()}
@@ -947,8 +947,8 @@ export default function ShiftPlannerPage() {
                   : area ? (areaGetsBreak(group, area) ? `auto — ${area}` : `auto — ${area}: breaks off`)
                   : "auto — no station/area";
                 return b.breakMins > 0
-                  ? `${b.grossHours.toFixed(1)}h gross · ${b.paidHours.toFixed(1)}h paid · ${b.unpaidHours.toFixed(1)}h unpaid (${b.breakMins} min break · ${src})`
-                  : `${b.grossHours.toFixed(1)}h gross · ${b.paidHours.toFixed(1)}h paid · no break (${src})`;
+                  ? `${fmtHours(b.grossHours)}h gross · ${fmtHours(b.paidHours)}h paid · ${fmtHours(b.unpaidHours)}h unpaid (${b.breakMins} min break · ${src})`
+                  : `${fmtHours(b.grossHours)}h gross · ${fmtHours(b.paidHours)}h paid · no break (${src})`;
               })()}
             </div>
             {/* manual break override — 0..60 in 15-min steps; "Automatic" clears the field so

@@ -208,12 +208,25 @@ export const clusterEnvelopeForDay = (venues, clusterId, dayKey) => {
   return { openMin: Math.min(...envs.map((e) => e.openMin)), closeMin: Math.max(...envs.map((e) => e.closeMin)) };
 };
 // total hours rostered to this staff member in the CURRENT week
+// LOSSLESS (byte-identical to Ops): pay follows rostered times, so this is a
+// payroll-adjacent figure — no rounding at the source; format at display via
+// fmtHours below. (The old Math.round(total*10)/10 turned 38.25h into 38.3h.)
 export const weeklyHours = (staffId, shifts) => {
   const wk = currentWeekKey();
-  const total = (shifts || [])
-    .filter((sh) => sh.staffId === staffId && (sh.weekKey || wk) === wk)
-    .reduce((a, sh) => a + shiftHours(sh), 0);
-  return Math.round(total * 10) / 10;
+  return (shifts || []).filter((s) => s.staffId === staffId && (s.weekKey || wk) === wk).reduce((a, s) => a + shiftHours(s), 0);
+};
+// CROSS-REPO SHARED PREDICATE — must stay BYTE-IDENTICAL to Ops lib/rgUtils
+// (modGroupKind/staffSeesAll convention). Hours are payroll-adjacent and shifts
+// sit on a 15-minute grid, so real totals are exact quarter-hours — display
+// them EXACTLY, decimals only when needed: 38 · 38.5 · 38.25 · 38.75. No
+// trailing "h" (callers add their own suffix — cards, planner rows, CSV
+// columns). Two-decimal cap so a hand-edited non-grid value can't render
+// 38.333333…; null/undefined/NaN → "0" (every site embeds in `${…}h`
+// templates, where "NaNh" is worse than a plain zero).
+export const fmtHours = (n) => {
+  const v = Number(n);
+  if (!isFinite(v)) return "0";
+  return String(Math.round(v * 100) / 100);
 };
 
 // ── certificate expiry status ──

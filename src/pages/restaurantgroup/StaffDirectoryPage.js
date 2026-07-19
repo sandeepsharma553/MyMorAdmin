@@ -16,7 +16,7 @@ import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
 import { staffAreas, stationsForVenue, areaGetsBreak, empTypeIsSalaried, rateSplitFromPrivate } from "./staffStructureUtils";
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
-import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey } from "./rgUtils";
+import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, fmtHours } from "./rgUtils";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
@@ -1131,21 +1131,21 @@ export default function StaffDirectoryPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          <Stat n={`${(mf + sat + sun + ph).toFixed(1)}h`} l="Total" />
-          <Stat n={`${mf.toFixed(1)}h`} l="Mon–Fri" />
-          <Stat n={`${sat.toFixed(1)}h`} l="Saturday" />
-          <Stat n={`${sun.toFixed(1)}h`} l="Sunday" />
-          <Stat n={`${ph.toFixed(1)}h`} l="Public Holiday" />
+          <Stat n={`${fmtHours(mf + sat + sun + ph)}h`} l="Total" />
+          <Stat n={`${fmtHours(mf)}h`} l="Mon–Fri" />
+          <Stat n={`${fmtHours(sat)}h`} l="Saturday" />
+          <Stat n={`${fmtHours(sun)}h`} l="Sunday" />
+          <Stat n={`${fmtHours(ph)}h`} l="Public Holiday" />
         </div>
         {/* rostered break split for the same period — EFFECTIVE (override ?? area-driven ≥5h rule), display-only */}
         <div style={{ fontSize: 11, color: "var(--gray)", margin: "-8px 0 14px" }}>
-          Rostered <strong>{grossTot.toFixed(1)}h</strong> · Breaks <strong>{breakTot} min</strong> · <strong>{paidTot.toFixed(1)}h</strong> paid · <strong>{unpaidTot.toFixed(1)}h</strong> unpaid
+          Rostered <strong>{fmtHours(grossTot)}h</strong> · Breaks <strong>{breakTot} min</strong> · <strong>{fmtHours(paidTot)}h</strong> paid · <strong>{fmtHours(unpaidTot)}h</strong> unpaid
         </div>
         <Head t="Shift history" />
         {sh.length ? sh.slice(0, 40).map((x) => (
           <div key={x.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
             <span>{shiftDateLabel(x)} · <strong>{x.start}–{x.end}</strong></span>
-            <span style={{ color: "var(--gray)" }}>{(x.role || "").replace(/^(FOH|BOH) — /, "")}{x.station ? ` · ${x.station}` : ""} · {x.venue} · {shiftHours(x).toFixed(1)}h</span>
+            <span style={{ color: "var(--gray)" }}>{(x.role || "").replace(/^(FOH|BOH) — /, "")}{x.station ? ` · ${x.station}` : ""} · {x.venue} · {fmtHours(shiftHours(x))}h</span>
           </div>
         )) : <div style={{ fontSize: 12, color: "var(--gray)" }}>No shifts recorded yet.</div>}
         <Head t="Completed training" top />
@@ -1339,7 +1339,7 @@ export default function StaffDirectoryPage() {
             <KV k="Phone" v={s.phone} />
             <KV k="Start date" v={s.start} />
             <KV k="POS PIN" v={s.pin} />
-            <KV k="Rostered this week" v={`${weeklyHours(s.id, shifts)}h`} />
+            <KV k="Rostered this week" v={`${fmtHours(weeklyHours(s.id, shifts))}h`} />
             <div className="form-label" style={{ marginTop: 12 }}>Certificates</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {(s.certs || []).length
@@ -1511,7 +1511,7 @@ export default function StaffDirectoryPage() {
                   </span>
                 ))}
               </div>
-              <div className="staff-meta-row">🕐 {s.type}{weeklyHours(s.id, shifts) ? ` · ${weeklyHours(s.id, shifts)}h this wk` : ""}</div>
+              <div className="staff-meta-row">🕐 {s.type}{weeklyHours(s.id, shifts) ? ` · ${fmtHours(weeklyHours(s.id, shifts))}h this wk` : ""}</div>
               <div className="staff-meta-row" style={{ gap: 6 }}>
                 <span className={`pill ${certPill(s.cert)}`}>{s.cert}</span>
                 {s.pin && <span className="pill pill-blue" title="POS PIN">PIN {s.pin}</span>}
@@ -1610,7 +1610,7 @@ export default function StaffDirectoryPage() {
                         {pCerts.map((c, i) => { const st = certStatus(c.expiry); return <span key={i} className={`pill ${st.pill}`}>{c.name}{c.expiry ? ` · ${c.expiry}` : ""}{st.note ? ` (${st.note})` : ""}</span>; })}
                       </span>
                     ) : "Not yet obtained";
-                    return [["Employment", profile.type], ["Weekly hours", hoursWk ? `${hoursWk}h · this week` : "— (no shifts)"], ["Start date", profile.start || "—"],
+                    return [["Employment", profile.type], ["Weekly hours", hoursWk ? `${fmtHours(hoursWk)}h · this week` : "— (no shifts)"], ["Start date", profile.start || "—"],
                       ["End date", profile.endDate || "—"], ["Status", profile.status || "Active"], ["Phone", profile.phone || "—"],
                       ["Stations", (profile.stationNames || []).join(", ") || "—"],
                       ["Certificates", certCell], ["POS PIN", profile.pin || "— (none)"], ["Admin login", profile.hasAdminLogin ? (profile.email || "yes") : "No"]];
@@ -1937,7 +1937,7 @@ export default function StaffDirectoryPage() {
                   <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={edit.start} onChange={setE("start")} /></div>
                   <div className="form-group"><label className="form-label">End date (if leaving)</label><input type="date" className="form-input" value={edit.endDate} onChange={setE("endDate")} /></div>
                   <div className="form-group"><label className="form-label">Status</label><select className="form-input" value={edit.status} onChange={setE("status")}><option>Active</option><option>Inactive</option><option>On leave</option><option>Left</option></select></div>
-                  <div className="form-group"><label className="form-label">Weekly hours</label><div className="form-input" style={{ color: "var(--gray)", background: "var(--gray-light)" }}>{weeklyHours(profile.id, shifts)}h · auto from roster</div></div>
+                  <div className="form-group"><label className="form-label">Weekly hours</label><div className="form-input" style={{ color: "var(--gray)", background: "var(--gray-light)" }}>{fmtHours(weeklyHours(profile.id, shifts))}h · auto from roster</div></div>
                   <div className="form-group"><label className="form-label">POS PIN</label>
                     <div style={{ display: "flex", gap: 6 }}>
                       <input className="form-input" maxLength={4} value={edit.pin} onChange={(e) => setEdit((p) => ({ ...p, pin: e.target.value.replace(/\D/g, "").slice(0, 4) }))} />
