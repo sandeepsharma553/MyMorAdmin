@@ -100,10 +100,15 @@ export const snapshotForChecklist = (c) => {
 };
 
 // average ticked-progress across a staff member's assignments (reflects items done)
+// CROSS-REPO SHARED PREDICATE — must stay BYTE-IDENTICAL to Ops lib/rgUtils
+// (modGroupKind/staffSeesAll convention). typeof guard, not `|| 0`: a string
+// progress ("50") would string-CONCATENATE through the reduce — two strings
+// give "05030" / 2 = 2515% and a 2515%-wide progress bar. All writers store
+// numbers today, so this is a latent-data guard, identical on real data.
 export const trainingPct = (staffId, assignments) => {
   const list = (assignments || []).filter((a) => a.staffId === staffId);
   if (!list.length) return 0;
-  return Math.round(list.reduce((a, x) => a + (x.progress || 0), 0) / list.length);
+  return Math.round(list.reduce((a, x) => a + (typeof x.progress === "number" ? x.progress : 0), 0) / list.length);
 };
 // ── shift hours → auto weekly hours (mirrors ShiftPlannerPage) ──
 export const parseShiftTime = (t) => {
@@ -212,19 +217,24 @@ export const weeklyHours = (staffId, shifts) => {
 };
 
 // ── certificate expiry status ──
+// CROSS-REPO SHARED PREDICATE — logic must stay IDENTICAL to Ops lib/rgUtils
+// (modGroupKind/staffSeesAll convention); ONLY the pill VALUES differ by
+// platform (CSS classes here, {bg,fg} hex objects on Ops — deliberate).
+// ceil, not round: a day-countdown counts a partial remaining day as a day
+// ("1d left" the evening before, "0d left" on expiry day). The isNaN guard
+// stops a malformed expiry rendering GREEN (NaN fails every comparison).
 export const certStatus = (expiry) => {
   if (!expiry) return { pill: "pill-gray", note: "" };
   const days = Math.ceil((new Date(expiry) - new Date()) / 86400000);
+  if (isNaN(days)) return { pill: "pill-gray", note: "" };
   if (days < 0) return { pill: "pill-red", note: "expired" };
   if (days <= 30) return { pill: "pill-amber", note: `${days}d left` };
   return { pill: "pill-green", note: "" };
 };
 
-export const checklistPct = (staffId, checklistAssignments) => {
-  const list = (checklistAssignments || []).filter((a) => a.staffId === staffId);
-  if (!list.length) return 0;
-  return Math.round(list.reduce((a, x) => a + (x.progress || 0), 0) / list.length);
-};
+// Delegates like Ops's copy: the body was a byte-for-byte duplicate of
+// trainingPct and had already drifted once (kept `|| 0` when the guard landed).
+export const checklistPct = (staffId, assignments) => trainingPct(staffId, assignments);
 
 // Download an array-of-rows as a CSV file (rows[0] is the header row).
 // CSV string from rows (shared by plain + encrypted export).
