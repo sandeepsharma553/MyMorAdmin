@@ -66,7 +66,10 @@ function resolveTemplate(staff, templatesById, forcedArea) {
   if (!staff) return { status: "EMPTY" };
   if (staff.type === "Junior")
     return { status: "BLOCK", reason: "No Junior template yet — generation is blocked for this person." };
-  if (isManager(staff) || (staff.areas || []).includes("Mgmt"))
+  // exact role gate only — the legacy areas[].includes("Mgmt") clause was removed as
+  // redundant (audited: everyone carrying that string has role "Manager", so isManager
+  // already blocks them; nobody's block lifted)
+  if (isManager(staff))
     return { status: "BLOCK", reason: "No Manager template yet — the manager contract isn’t loaded." };
 
   let area = forcedArea || null;
@@ -77,7 +80,7 @@ function resolveTemplate(staff, templatesById, forcedArea) {
       return { status: "NEEDS_CHOICE", reason: "This person is assigned to both FOH and BOH — choose which contract to generate.", choices: ["FOH", "BOH"] };
     area = hasFOH ? "FOH" : hasBOH ? "BOH" : null;
   }
-  if (!area) return { status: "BLOCK", reason: "Could not resolve an area (no FOH / BOH / Mgmt) — not guessing." };
+  if (!area) return { status: "BLOCK", reason: "Could not resolve an area (no FOH / BOH) — not guessing." };
   if (!["Full-time", "Part-time", "Casual"].includes(staff.type))
     return { status: "BLOCK", reason: `Unrecognised employment type “${staff.type || "—"}”.` };
 

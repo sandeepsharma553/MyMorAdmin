@@ -104,8 +104,8 @@ const AREA_CASES = [
   ["BOH — Kitchen", "BOH"],
   ["Chef", "BOH"],
   ["Central Kitchen", "BOH"], // a CK *role* is kitchen work → BOH (CK is a venue, not an area)
-  ["Store Manager", "Mgmt"],
-  ["FOH Supervisor", "Mgmt"],
+  ["Store Manager", ""],      // managerial → "" (legacy "Mgmt" token removed; seesAll covers them)
+  ["FOH Supervisor", ""],     // managerial beats the FOH keyword — still "", never "FOH"
   ["Junior", ""],             // unknown → "" so it never blocks
   ["", ""],
 ];

@@ -53,6 +53,27 @@ export const areaExclusive = (group, areaName) => (group?.areaExclusive || {})[a
 // No keyword/substring area guessing here — role fallbacks are the CALLER's call.
 export const shiftAreaOf = (sh, stations) =>
   (stations || []).find((x) => x.id === sh?.stationId && x.venueId === sh?.venueId)?.area || null;
+// CROSS-REPO SHARED PREDICATE — must stay BYTE-IDENTICAL to Ops staffStructureUtils
+// (modGroupKind/staffSeesAll convention). Role→area inference against the group's
+// CONFIGURED areas: classify the role by keyword, then return the owner's OWN spelling
+// of the first configured area in that class — "" when none matches. This replaced the
+// legacy hardcoded "Mgmt" token: a group that configured "Management" gets "Management",
+// one that configured "Leadership" gets "Leadership"; nothing baked in, no alias bridges.
+// Class order mirrors the old areaFromRole precedence (managerial first — a "BOH In
+// Charge" is management, not BOH) and stops at the first ROLE match: a managerial role
+// in a group with no management-flavoured area resolves to "", never to FOH/BOH.
+export const roleConfiguredArea = (role, areas) => {
+  const r = String(role || "");
+  const classes = [
+    [/manager|owner|admin|supervisor|in charge/i, /manage|mgmt|lead|admin|supervis/i],
+    [/foh|floor|\bbar\b|barista|counter|service/i, /^foh$|front|floor|service/i],
+    [/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i, /^boh$|back|kitchen/i],
+  ];
+  for (const [roleRe, areaRe] of classes) {
+    if (roleRe.test(r)) return (areas || []).find((a) => areaRe.test(a)) || "";
+  }
+  return "";
+};
 export const orderedAreas = (group) => {
   const areas = resolveAreas(group);
   const order = (Array.isArray(group?.areaOrder) ? group.areaOrder : []).filter((a) => areas.includes(a));
@@ -106,30 +127,6 @@ export const removeFromList = (list, value) => (list || []).filter((x) => x !== 
 export const staffAreas = (s) =>
   (Array.isArray(s?.areas) && s.areas.length) ? s.areas : (s?.area ? [s.area] : []);
 
-// Bucket a staff member into ONE area for the categorized roster. There is NO
-// "CK"/"Kitchen" bucket — Central Kitchen is a venue; its staff carry their real
-// FOH/BOH/Mgmt area and are reached via the venue filter. (Kept for callers that
-// need a single primary bucket; multi-area grouping uses staffAreaBuckets below.)
-export const staffAreaBucket = (s) => {
-  if (s?.area === "FOH" || s?.area === "BOH" || s?.area === "Mgmt") return s.area;
-  const r = s?.role || "";
-  if (/manager|owner|admin|supervisor|in charge/i.test(r)) return "Mgmt";
-  if (/foh|floor|\bbar\b|barista|counter|service/i.test(r)) return "FOH";
-  if (/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i.test(r)) return "BOH";
-  return s?.area || "Other";
-};
-
-// Normalise one area value to a roster bucket (FOH/BOH/Mgmt/Other). Custom areas
-// (e.g. "Kitchen") fold to a known bucket by name (Kitchen → BOH), else "Other".
-const bucketOfArea = (area) => {
-  if (area === "FOH" || area === "BOH" || area === "Mgmt") return area;
-  const a = area || "";
-  if (/manager|owner|admin|supervisor|in charge/i.test(a)) return "Mgmt";
-  if (/foh|floor|\bbar\b|barista|counter|service/i.test(a)) return "FOH";
-  if (/boh|kitchen|chef|grill|fry|wash|prep|cook|dish/i.test(a)) return "BOH";
-  return "Other";
-};
-
 // ── Venue → Area → Station authoring (Settings linked flow) ──
 // Stations of one venue within one area — for the in-context authoring lists.
 export const stationsInVenueArea = (stations, venueId, area) =>
@@ -162,12 +159,3 @@ export const staffAtStation = (s, stationId, weekShifts) => {
 // venue's stations. Always scoped to the one venue (caller renders one block per venue).
 export const stationsForVenue = (stations, venueId, selectedAreas) =>
   (stations || []).filter((st) => st.venueId === venueId && (!(selectedAreas || []).length || selectedAreas.includes(st.area)));
-
-// ALL the roster buckets a staff member belongs to — a multi-area person appears
-// under EACH of their area groups. Falls back to the single role-based bucket when
-// no areas are set, so they're never dropped from the roster.
-export const staffAreaBuckets = (s) => {
-  const list = staffAreas(s);
-  if (!list.length) return [staffAreaBucket(s)];
-  return [...new Set(list.map(bucketOfArea))];
-};

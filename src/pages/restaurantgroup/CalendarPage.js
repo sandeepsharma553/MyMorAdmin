@@ -4,8 +4,7 @@ import { useRG } from "./RGContext";
 import { staffPrivateDoc } from "../../utils/restaurantGroupPaths";
 import { fullName, weekKeyOf, weekDayIndex, leaveLabel, parseShiftTime } from "./rgUtils";
 import { isJuniorType, isMinorDob, parseDob } from "./staffMinorUtils";
-import { orderedAreas, areaPinned, shiftAreaOf } from "./staffStructureUtils";
-import { areaFromRole } from "./assignmentUtils";
+import { orderedAreas, areaPinned, shiftAreaOf, roleConfiguredArea } from "./staffStructureUtils";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -118,18 +117,17 @@ export default function CalendarPage() {
 
   // Day-detail SHIFT sections (client issue 8): grouped by AREA, time-sorted within.
   // The shift doc stores no area — resolve per shift: station's area when the station
-  // resolves (shiftAreaOf, exact id+venue), else derived from the role (areaFromRole →
-  // "Mgmt"/"FOH"/"BOH"), else "Other". Role-derived "Mgmt" maps onto the group's own
-  // spelling ("Management") so ranking and headers use the owner's label. Section order
-  // mirrors the planner's convention: PINNED areas first (areaPinned — "Management" is
-  // pinned live), then orderedAreas order, then unknowns, then "Other".
+  // resolves (shiftAreaOf, exact id+venue), else inferred from the rostered role against
+  // the group's CONFIGURED areas (roleConfiguredArea — returns the owner's own spelling,
+  // so the old Mgmt↔Management alias bridge is gone), else "Other". Section order mirrors
+  // the planner's convention: PINNED areas first (areaPinned — "Management" is pinned
+  // live), then orderedAreas order, then unknowns, then "Other".
   const detailShiftSections = (list) => {
     const ordered = orderedAreas(group);
     const areaOfShift = (s) => {
-      const raw = shiftAreaOf(s, stations) || areaFromRole(s.role);
+      const raw = shiftAreaOf(s, stations) || roleConfiguredArea(s.role, ordered);
       if (!raw) return "Other";
-      return ordered.find((a) => a.toLowerCase() === raw.toLowerCase()
-        || (/^(mgmt|management)$/i.test(a) && /^(mgmt|management)$/i.test(raw))) || raw;
+      return ordered.find((a) => a.toLowerCase() === raw.toLowerCase()) || raw;
     };
     const idx = (a) => { const i = ordered.indexOf(a); return i === -1 ? ordered.length : i; };
     const rank = (a) => (a === "Other" ? [2, 0] : [areaPinned(group, a) ? 0 : 1, idx(a)]);

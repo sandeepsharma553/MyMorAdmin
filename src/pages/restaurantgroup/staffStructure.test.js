@@ -2,14 +2,14 @@
  * Covers: areas/roles read from config with fallback; Settings add/remove logic;
  * Junior present in defaults; no phantom CK anywhere; no staff mis-bucketed to CK;
  * config resolution never mutates the group doc (existing data untouched by the seed). */
-import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreaBucket, staffAreas, staffAreaBuckets, stationsForVenue, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, staffAtStation } from "./staffStructureUtils";
+import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreas, roleConfiguredArea, stationsForVenue, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, staffAtStation } from "./staffStructureUtils";
 import { DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES } from "./rgConfig";
 
 describe("config resolution with fallback", () => {
   test("falls back to defaults when the group has no areas/roles", () => {
-    expect(resolveAreas(null)).toEqual(["FOH", "BOH", "Mgmt"]);
-    expect(resolveAreas({})).toEqual(["FOH", "BOH", "Mgmt"]);
-    expect(resolveAreas({ areas: [] })).toEqual(["FOH", "BOH", "Mgmt"]);
+    expect(resolveAreas(null)).toEqual(["FOH", "BOH"]);
+    expect(resolveAreas({})).toEqual(["FOH", "BOH"]);
+    expect(resolveAreas({ areas: [] })).toEqual(["FOH", "BOH"]);
     expect(resolveRoles({ roles: [] })).toEqual(DEFAULT_ROLES);
     expect(resolveRoles(null)).toEqual(DEFAULT_ROLES);
   });
@@ -29,9 +29,9 @@ describe("defaults", () => {
   test("Junior is in the default roles, exactly once", () => {
     expect(DEFAULT_ROLES.filter((r) => r === "Junior")).toEqual(["Junior"]);
   });
-  test("default areas are exactly FOH/BOH/Mgmt — no CK/Kitchen anywhere", () => {
-    expect(DEFAULT_AREAS).toEqual(["FOH", "BOH", "Mgmt"]);
-    expect([...DEFAULT_AREAS, ...DEFAULT_ROLES].some((x) => /^ck$|kitchen/i.test(x))).toBe(false);
+  test("default areas are exactly FOH/BOH — no CK/Kitchen and no legacy Mgmt token", () => {
+    expect(DEFAULT_AREAS).toEqual(["FOH", "BOH"]);
+    expect([...DEFAULT_AREAS, ...DEFAULT_ROLES].some((x) => /^ck$|kitchen|^mgmt$/i.test(x))).toBe(false);
   });
 });
 
@@ -45,7 +45,7 @@ describe("Settings add/remove list logic", () => {
     expect(addToList(list, "")).toBe(list);
   });
   test("removeFromList removes the value (existing entries kept)", () => {
-    expect(removeFromList(["FOH", "BOH", "Mgmt"], "Mgmt")).toEqual(["FOH", "BOH"]);
+    expect(removeFromList(["FOH", "BOH", "Bar"], "Bar")).toEqual(["FOH", "BOH"]);
   });
   test("seeding 'Junior' into an existing roles[] keeps every existing role", () => {
     const live = ["Manager", "FOH", "BOH", "Chef"];
@@ -72,29 +72,30 @@ describe("Settings: employment-types editor logic mirrors Areas/Roles", () => {
   });
 });
 
-describe("staffAreaBucket — phantom CK removed", () => {
-  // the 7 distinct live staff.role values from the read-only data check
-  const LIVE_ROLES = ["FOH", "BOH", "Chef", "FOH Supervisor", "BOH / Manager", "Manager", "BOH In Charge"];
-  test("never returns CK/Kitchen for any live role", () => {
-    for (const role of LIVE_ROLES) expect(staffAreaBucket({ role })).not.toMatch(/ck|kitchen/i);
+// (staffAreaBucket / staffAreaBuckets tests removed with the helpers — the caller-less
+// keyword-bucket layer was deleted in the legacy-"Mgmt" removal. Inference is now
+// roleConfiguredArea below: it matches the group's CONFIGURED areas and returns the
+// owner's own spelling, never a baked-in token.)
+// ⚠ KEEP this describe identical in spirit to the Ops staffStructureUtils.test.js block.
+describe("roleConfiguredArea — role inference against CONFIGURED areas", () => {
+  const LIVE = ["FOH", "BOH", "Management"]; // the live group's config
+  test("managerial roles find the group's own management spelling", () => {
+    expect(roleConfiguredArea("Manager", LIVE)).toBe("Management");
+    expect(roleConfiguredArea("FOH Supervisor", LIVE)).toBe("Management"); // managerial beats FOH
+    expect(roleConfiguredArea("Manager", ["FOH", "BOH", "Leadership"])).toBe("Leadership");
   });
-  test("buckets kitchen/chef → BOH, managers/supervisors → Mgmt, FOH → FOH", () => {
-    expect(staffAreaBucket({ role: "Chef" })).toBe("BOH");
-    expect(staffAreaBucket({ role: "Kitchen Hand" })).toBe("BOH");
-    expect(staffAreaBucket({ role: "Manager" })).toBe("Mgmt");
-    expect(staffAreaBucket({ role: "BOH In Charge" })).toBe("Mgmt");
-    expect(staffAreaBucket({ role: "FOH Supervisor" })).toBe("Mgmt");
-    expect(staffAreaBucket({ role: "FOH" })).toBe("FOH");
+  test("no management-flavoured area configured → '' (never falls through to FOH/BOH)", () => {
+    expect(roleConfiguredArea("Manager", ["FOH", "BOH"])).toBe("");
   });
-  test("explicit FOH/BOH/Mgmt area passes through", () => {
-    expect(staffAreaBucket({ area: "Mgmt", role: "FOH" })).toBe("Mgmt");
-    expect(staffAreaBucket({ area: "BOH", role: "Manager" })).toBe("BOH");
-    expect(staffAreaBucket({ area: "FOH", role: "Chef" })).toBe("FOH");
+  test("FOH/BOH roles resolve to the configured FOH/BOH", () => {
+    expect(roleConfiguredArea("FOH", LIVE)).toBe("FOH");
+    expect(roleConfiguredArea("Grill Chef", LIVE)).toBe("BOH");
+    expect(roleConfiguredArea("Barista", LIVE)).toBe("FOH");
   });
-  test("a legacy area:'CK' no longer sticks — it re-buckets by role, never to CK", () => {
-    expect(staffAreaBucket({ area: "CK", role: "Chef" })).toBe("BOH");
-    expect(staffAreaBucket({ area: "CK", role: "FOH" })).toBe("FOH");
-    expect(staffAreaBucket({ area: "CK", role: "Manager" })).toBe("Mgmt");
+  test("unknown role or empty config → ''", () => {
+    expect(roleConfiguredArea("Junior", LIVE)).toBe("");
+    expect(roleConfiguredArea("Manager", [])).toBe("");
+    expect(roleConfiguredArea("", LIVE)).toBe("");
   });
 });
 
@@ -107,20 +108,6 @@ describe("staffAreas — list with backward-compat fallback", () => {
   });
 });
 
-describe("staffAreaBuckets — a multi-area person appears under EACH group", () => {
-  test("multi-area → one bucket per area", () => {
-    expect(staffAreaBuckets({ areas: ["FOH", "BOH"] }).sort()).toEqual(["BOH", "FOH"]);
-    expect(staffAreaBuckets({ areas: ["FOH", "BOH", "Mgmt"] }).sort()).toEqual(["BOH", "FOH", "Mgmt"]);
-  });
-  test("single area → single bucket; custom 'Kitchen' folds to BOH", () => {
-    expect(staffAreaBuckets({ areas: ["FOH"] })).toEqual(["FOH"]);
-    expect(staffAreaBuckets({ areas: ["Kitchen"] })).toEqual(["BOH"]); // custom area → known bucket
-  });
-  test("no areas → falls back to the single role-based bucket (never dropped)", () => {
-    expect(staffAreaBuckets({ role: "Chef" })).toEqual(["BOH"]);
-    expect(staffAreaBuckets({ area: "FOH" })).toEqual(["FOH"]); // legacy single still works
-  });
-});
 
 describe("stationsForVenue — Add-staff cascade (area + venue filter, fixes the bugs)", () => {
   const stations = [

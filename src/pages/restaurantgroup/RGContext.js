@@ -275,7 +275,7 @@ export function RGProvider({ children }) {
     ...clusterAvail.map((a) => ({ ...a, _src: "cluster" })),
   ], [pv.availability, clusterAvail]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => resolveRoles(group), [group]);
-  // Staff areas: group config when present, else the seed defaults (FOH/BOH/Mgmt).
+  // Staff areas: group config when present, else the seed defaults (FOH/BOH).
   const areas = useMemo(() => resolveAreas(group), [group]);
   // Employment types: group config when present, else Casual/Part-time/Full-time/Junior.
   const empTypes = useMemo(() => resolveEmpTypes(group), [group]);

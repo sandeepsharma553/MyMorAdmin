@@ -43,8 +43,11 @@ export const CHECKLISTS_NAV_LABEL = "Checklists";
 export const DEFAULT_ROLES = ["Manager", "FOH Supervisor", "FOH In Charge", "FOH", "BOH In Charge", "BOH", "Chef", "Junior"];
 // Staff areas. Editable in Settings (group.areas[]); these are the seed defaults.
 // NB: "CK"/"Kitchen" is NOT an area — Central Kitchen is a VENUE; its staff carry
-// their real FOH/BOH area and are found via the venue filter.
-export const DEFAULT_AREAS = ["FOH", "BOH", "Mgmt"];
+// their real FOH/BOH area and are found via the venue filter. The legacy "Mgmt"
+// token is GONE: a management area exists only if the owner configures one
+// (e.g. "Management"), and role→area inference matches against that config
+// (roleConfiguredArea) instead of emitting a baked-in string.
+export const DEFAULT_AREAS = ["FOH", "BOH"];
 // Employment types. Editable in Settings (group.empTypes[]); seed defaults.
 export const DEFAULT_EMP_TYPES = ["Casual", "Part-time", "Full-time", "Junior"];
 // Leave types. Editable in Settings (group.leaveTypes[]); seed defaults. "Other" is NOT
@@ -96,8 +99,8 @@ export const defaultPermsForStaffRole = (role) => defaultPermsForRole(roleToGrou
 // Exact "Manager" test — the SINGLE source of truth for "is this person a manager?",
 // shared by the employment-terms editor (payBasis visibility) and the Contract Generator's
 // §4 template selection, so the entry surface and selection surface can never diverge.
-// Deliberately EXACT (role === "Manager"): areaOf()/staffStructureUtils map supervisor /
-// in-charge → "Mgmt", and those hourly staff must NOT be treated as managers here.
+// Deliberately EXACT (role === "Manager"): the role keywords elsewhere (supervisor /
+// in-charge) classify as management, and those hourly staff must NOT be managers here.
 export const isManager = (staff) => (staff?.role || "") === "Manager";
 
 // Step 7 ROLLOUT GATE: signed-contract upload/download UI stays dark until the Storage

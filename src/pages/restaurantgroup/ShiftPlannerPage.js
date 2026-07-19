@@ -76,7 +76,7 @@ export default function ShiftPlannerPage() {
   const [modal, setModal] = useState(null); // { staffId, day } | true
   const [shiftDetail, setShiftDetail] = useState(null);
   const [capStaff, setCapStaff] = useState(null); // staff capability card
-  const [areaFilter, setAreaFilter] = useState("all"); // all | FOH | BOH | Mgmt
+  const [areaFilter, setAreaFilter] = useState("all"); // "all" | any of the group's configured areas
   const [sortBy, setSortBy] = useState("az"); // az | za | newest | oldest — staff order within each section
   const [planStation, setPlanStation] = useState("all"); // Area→Station drill-down: all | stationId
   const [splitMode, setSplitMode] = useState(false);

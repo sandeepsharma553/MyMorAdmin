@@ -196,7 +196,7 @@ export default function SettingsPage() {
   };
   const removeRole = async (r) => { await saveRoles(removeFromList(roles, r)); };
 
-  // ── Areas ── (same shape as Roles: an editable group-doc list, FOH/BOH/Mgmt by default).
+  // ── Areas ── (same shape as Roles: an editable group-doc list, FOH/BOH by default).
   // Companion fields (group.areas STAYS a string[]): areaBreak — per-area rostered-break
   // flag (missing entry → ON), and areaOrder — explicit display order (drag to reorder).
   const [newArea, setNewArea] = useState("");

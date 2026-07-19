@@ -16,7 +16,7 @@ import {
   isAssignmentLocked, ROLE_WEIGHT,
 } from "./assignmentUtils";
 import { moduleForStaff, checklistForStaff, snapshotForAssign } from "./rgUtils";
-import { resolveAreas, resolveRoles, resolveEmpTypes, staffAreaBucket, addToList } from "./staffStructureUtils";
+import { resolveAreas, resolveRoles, resolveEmpTypes, roleConfiguredArea, addToList } from "./staffStructureUtils";
 import {
   DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES, RG_MODULES, RG_MODULE_KEYS,
   SOPS_NAV, CHECKLISTS_NAV_LABEL,
@@ -192,12 +192,14 @@ describe("Scenario 3: config resolves with fallback, overrides when present, and
     expect(hasCK(DEFAULT_AREAS)).toBe(false);
     expect(hasCK(DEFAULT_ROLES)).toBe(false);
     expect(hasCK(DEFAULT_EMP_TYPES)).toBe(false);
-    // shift-planner bucketing: a "Central Kitchen" ROLE is kitchen work → BOH, never "CK"
+    // area derivation: a "Central Kitchen" ROLE is kitchen work → BOH, never "CK" —
+    // both for the rostered-shift path (areaFromRole) and the configured-matching
+    // path (roleConfiguredArea, which replaced the deleted staffAreaBucket layer)
     for (const r of ["FOH", "BOH", "Chef", "Central Kitchen", "Store Manager", "Junior", "Kitchen Hand"]) {
-      expect(staffAreaBucket({ role: r })).not.toMatch(/ck|kitchen/i);
+      expect(roleConfiguredArea(r, ["FOH", "BOH", "Management"])).not.toMatch(/^ck$|kitchen/i);
       expect(areaFromRole(r)).not.toMatch(/ck|kitchen/i);
     }
-    expect(staffAreaBucket({ role: "Central Kitchen" })).toBe("BOH");
+    expect(roleConfiguredArea("Central Kitchen", ["FOH", "BOH", "Management"])).toBe("BOH");
     expect(areaFromRole("Central Kitchen")).toBe("BOH");
   });
 });

@@ -13,7 +13,7 @@ import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
 import { isJuniorType, isMinorDob } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
-import { staffAreas, stationsForVenue, areaGetsBreak, empTypeIsSalaried, rateSplitFromPrivate } from "./staffStructureUtils";
+import { staffAreas, roleConfiguredArea, stationsForVenue, areaGetsBreak, empTypeIsSalaried, rateSplitFromPrivate } from "./staffStructureUtils";
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, fmtHours } from "./rgUtils";
@@ -46,8 +46,6 @@ const shiftDateLabel = (sh) => {
 const CERT_OPTIONS = ["RSA", "Food Safety Supervisor", "Food Handler", "First Aid / CPR", "Working with Children", "Barista Certificate", "Allergen Awareness", "Other"];
 const DAY_IDX = (new Date().getDay() + 6) % 7;
 const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e || "").trim());
-
-const areaOf = (role) => /manager/i.test(role) ? "Mgmt" : /boh|chef|kitchen|wash|fry/i.test(role) ? "BOH" : "FOH";
 
 const genPin = (list) => {
   const used = new Set(list.map((s) => s.pin).filter(Boolean));
@@ -230,7 +228,10 @@ export default function StaffDirectoryPage() {
     } else {
       list = list.filter((s) => s.status !== "Left");
       if (roleFilter !== "all") list = list.filter((s) => {
-        const sa = staffAreas(s).length ? staffAreas(s) : [areaOf(s.role)];
+        // area-less docs: infer against the group's CONFIGURED areas (no legacy token);
+        // no configured match → matches no area chip (Managers/Left still role-based)
+        const inferred = roleConfiguredArea(s.role, areas);
+        const sa = staffAreas(s).length ? staffAreas(s) : (inferred ? [inferred] : []);
         return sa.some((a) => a.toLowerCase() === roleFilter.toLowerCase()) || (roleFilter === "manager" && /manager|supervisor|in charge/i.test(s.role));
       });
       // station drill-down within the selected area (mirrors Training's station filter)
@@ -405,7 +406,7 @@ export default function StaffDirectoryPage() {
       }
       const payload = {
         name: form.name.trim(), displayName, role: primaryRole,
-        areas: unionAreas, area: unionAreas[0] || areaOf(primaryRole), // legacy single — backward-compat
+        areas: unionAreas, area: unionAreas[0] || "", // legacy single — backward-compat mirror of the list
         groupRole: roleToGroupRole(primaryRole), permissions, venueRoles: form.venueRoles || {},
         venueIds: form.venueIds, venueNames: form.venueIds.map(venueName),
         stationRefs: refsClean(form.stationRefs, form.venueIds), stationIds: refsToStationIds(refsClean(form.stationRefs, form.venueIds)), stationNames: refsToStationNames(refsClean(form.stationRefs, form.venueIds)),
@@ -496,7 +497,7 @@ export default function StaffDirectoryPage() {
   const startEdit = () => {
     setEdit({
       name: profile.name || profile.displayName, role: profile.role,
-      areas: staffAreas(profile).length ? staffAreas(profile) : [areaOf(profile.role)],
+      areas: staffAreas(profile).length ? staffAreas(profile) : (roleConfiguredArea(profile.role, areas) ? [roleConfiguredArea(profile.role, areas)] : []),
       venueIds: profile.venueIds || (profile.venueId ? [profile.venueId] : []),
       phone: profile.phone || "", start: profile.start || "", endDate: profile.endDate || "", type: profile.type || "Casual",
       cert: profile.cert || "Not yet obtained", stationIds: profile.stationIds || [],
@@ -553,7 +554,7 @@ export default function StaffDirectoryPage() {
       }
       const patch = {
         name: edit.name.trim(), displayName, role: primaryRole,
-        areas: unionAreas, area: unionAreas[0] || areaOf(primaryRole), // legacy single — backward-compat
+        areas: unionAreas, area: unionAreas[0] || "", // legacy single — backward-compat mirror of the list
         venueRoles: edit.venueRoles || {},
         venueIds: edit.venueIds, venueNames: edit.venueIds.map(venueName),
         stationRefs: refsClean(edit.stationRefs, edit.venueIds), stationIds: refsToStationIds(refsClean(edit.stationRefs, edit.venueIds)), stationNames: refsToStationNames(refsClean(edit.stationRefs, edit.venueIds)),
@@ -1262,7 +1263,11 @@ export default function StaffDirectoryPage() {
     const order = f.venueIds || [];
     const primaryRole = order.map((vid) => f.venueRoles?.[vid]?.role).find(Boolean) || f.role || roles[0] || "";
     const set = new Set(); order.forEach((vid) => (f.venueRoles?.[vid]?.areas || []).forEach((a) => set.add(a)));
-    const unionAreas = set.size ? [...set] : ((f.areas && f.areas.length) ? f.areas : [areaOf(primaryRole)]);
+    // nothing ticked anywhere: infer against the group's CONFIGURED areas (owner's own
+    // spelling — e.g. "Management"); no configured match → save with NO areas (the legacy
+    // "Mgmt" token is gone, so we never write a string the group didn't configure)
+    const inferred = roleConfiguredArea(primaryRole, areas);
+    const unionAreas = set.size ? [...set] : ((f.areas && f.areas.length) ? f.areas : (inferred ? [inferred] : []));
     return { primaryRole, unionAreas };
   };
   // One box per selected venue containing Role → Areas → Stations (filtered by that venue's areas).
