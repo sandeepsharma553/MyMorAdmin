@@ -211,3 +211,55 @@ Firestore is a **named non‑default database** in AU‑Southeast1 — pass the 
 4. **The hostel/university tail:** ~35 more hits of the same class in the admin/university/business
    modules. Highest priority within it: student DOB normalisation (StudentPage/UniversityStudentPage)
    — potential stored‑DOB corruption, which the under‑18 compliance logic reads.
+
+---
+
+## Areas (restaurant group) — status as of Jul 2026 (`a1bfced` / Ops `0e31737` / Function `e4c0c84`)
+
+### The model — areas are OWNER‑CONFIGURED, never baked in
+
+- **Areas live on the group doc:** `group.areas` (string[]) plus `areaOrder` (string[]) and the maps
+  `areaPinned` / `areaExclusive` / `areaBreak`, each keyed by area NAME. All authored in Settings
+  (both repos). **Whole‑map writes, never dot‑notation** — area names are free text and may contain
+  dots.
+- **The planner groups by those configured strings** (`groupRowsFor`): an EXCLUSIVE area captures its
+  holders out of Multi‑area; PINNED areas rank first; `orderedAreas` = `areaOrder` order, then any
+  unmentioned areas in `group.areas` order. Live group: `["FOH","BOH","Management"]` with Management
+  pinned + exclusive → sections read Management → FOH → BOH.
+- **The legacy hardcoded `"Mgmt"` token is GONE from all three repos.** `DEFAULT_AREAS` is now
+  `["FOH","BOH"]` — the seed for a group that has configured nothing. A management area exists only
+  if the owner creates one, under whatever name they choose.
+
+### The deliberate debt — `roleConfiguredArea` (read before "improving" it)
+
+- **A shift stores no area.** When it also has no station, the Calendar's day detail infers one by
+  matching the rostered ROLE against the group's CONFIGURED area names — `roleConfiguredArea`, in
+  `staffStructureUtils.js` next to `shiftAreaOf`, **byte‑identical in both repos** (drift‑guard
+  convention). It returns the owner's own spelling, which is why 15 live manager shifts (Mei/Ryan/Ben,
+  all station‑less) still group under Management. The staff‑save fallback (nothing ticked in the form)
+  uses the same matcher and writes `areas: []` when nothing matches — it never invents a string the
+  group didn't configure.
+- **Three stated limitations — do not rediscover these the hard way:**
+  1. It matches **ENGLISH keywords** (`/manage|mgmt|lead|admin|supervis/`, `/front|floor|service/`,
+     `/back|kitchen/`). An area named "Duty", "Leads", or anything non‑English gets no match and its
+     station‑less shifts fall to "Other".
+  2. If a group configures TWO areas matching the same class (e.g. "Management" and "Managers
+     Office"), it returns whichever comes **FIRST in `group.areas`** — deterministic but arbitrary.
+     No live group does this today.
+  3. It is **INFERENCE**, which the configured‑areas model exists to avoid. It survives only because
+     removing it would drop those 15 live shifts into "Other".
+- **The exit:** give manager shifts a STATION when rostering. `shiftAreaOf` then resolves them from
+  the station's area and `roleConfiguredArea` can be deleted with nothing to regress.
+
+### Related facts (so nobody wires the past back in)
+
+- **`areaFromRole`** (byte‑identical triplet: Admin/Ops `assignmentUtils.js` + Function
+  `rgAutoAssign.js`) now has **NO production callers in either client** — it survives only as the
+  Function's documented twin (the rostered auto‑assign identity, where its managerial arm returning
+  `""` is provably inert: `seesAll` uses the same word list). **Don't wire it back into client code.**
+- **The bucket helpers** (`staffAreaBucket` / `staffAreaBuckets` / `classifyArea`) were **DELETED** —
+  zero callers. The roster groups by configured area strings, never keyword buckets.
+- **Live data still carries orphaned area strings** (match nothing configured): `"Mgmt"` on two
+  test‑group docs (Mei also holds "Management"; **Ryan lacks a replacement**), and `"BOTH"` on SEVEN
+  live‑group staff (all of whom also hold real FOH+BOH). **Data tidy pending** — until then, orphaned
+  strings simply match no chip/section and pad Multi‑area membership.
