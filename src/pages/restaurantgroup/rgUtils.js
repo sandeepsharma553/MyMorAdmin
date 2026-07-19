@@ -79,12 +79,12 @@ export const moduleForStaff = (m, s) => {
   return m?.cat === "All" || staffAreas(s).includes(m?.cat);
 };
 
-export const checklistForStaff = (c, s) => {
-  if (!(s?.venueIds || []).includes(c?.venueId)) return false;
-  if (staffSeesAll(s)) return true;
-  const a = c?.area || "All";
-  return a === "All" || staffAreas(s).includes(a);
-};
+// CROSS-REPO SHARED PREDICATE — must stay BYTE-IDENTICAL to Ops lib/rgUtils
+// (same convention as modGroupKind/pinnedFirst/staffSeesAll). A checklist with
+// NO area matches nobody but see-all users: a missing area is an oversight,
+// not an implicit "everyone" — only an explicit area === "All" is universal.
+export const checklistForStaff = (c, s) =>
+  Array.isArray(s?.venueIds) && s.venueIds.includes(c.venueId) && (staffSeesAll(s) || c.area === "All" || staffAreas(s).includes(c.area));
 
 // snapshot a module's step items onto an assignment so the assignee ticks each
 export const stepsItemCount = (steps) => (steps || []).reduce((a, s) => a + ((s.items || []).length), 0);
