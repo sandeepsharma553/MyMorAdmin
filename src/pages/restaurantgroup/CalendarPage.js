@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { getDoc } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { staffPrivateDoc } from "../../utils/restaurantGroupPaths";
-import { fullName, weekKeyOf, weekDayIndex, leaveLabel } from "./rgUtils";
+import { fullName, weekKeyOf, weekDayIndex, leaveLabel, parseShiftTime } from "./rgUtils";
 import { isJuniorType, isMinorDob, parseDob } from "./staffMinorUtils";
+import { orderedAreas, areaPinned, shiftAreaOf } from "./staffStructureUtils";
+import { areaFromRole } from "./assignmentUtils";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -14,7 +16,7 @@ const cellWeekInfo = (d) => ({ weekKey: weekKeyOf(d), dayIdx: weekDayIndex(d) })
 const shortRole = (r) => (r || "").replace(/^(FOH|BOH) — /, "");
 
 export default function CalendarPage() {
-  const { groupId, shifts, leave, assignments, venues, staff, scopedStaff, myStaff, myScope, selectedVenue, can } = useRG();
+  const { groupId, group, stations, shifts, leave, assignments, venues, staff, scopedStaff, myStaff, myScope, selectedVenue, can } = useRG();
   const isStaff = myScope === "staff";
   // under-18 by DOB (private — owner/storeAdmin/managers; rules gate the read). Mirrors Staff
   // Directory so a DOB-under-18 staffer counts as "under-18 birthday" even if type isn't "Junior".
@@ -113,6 +115,32 @@ export default function CalendarPage() {
   );
 
   const detail = dayOpen ? eventsFor(dayOpen) : null;
+
+  // Day-detail SHIFT sections (client issue 8): grouped by AREA, time-sorted within.
+  // The shift doc stores no area — resolve per shift: station's area when the station
+  // resolves (shiftAreaOf, exact id+venue), else derived from the role (areaFromRole →
+  // "Mgmt"/"FOH"/"BOH"), else "Other". Role-derived "Mgmt" maps onto the group's own
+  // spelling ("Management") so ranking and headers use the owner's label. Section order
+  // mirrors the planner's convention: PINNED areas first (areaPinned — "Management" is
+  // pinned live), then orderedAreas order, then unknowns, then "Other".
+  const detailShiftSections = (list) => {
+    const ordered = orderedAreas(group);
+    const areaOfShift = (s) => {
+      const raw = shiftAreaOf(s, stations) || areaFromRole(s.role);
+      if (!raw) return "Other";
+      return ordered.find((a) => a.toLowerCase() === raw.toLowerCase()
+        || (/^(mgmt|management)$/i.test(a) && /^(mgmt|management)$/i.test(raw))) || raw;
+    };
+    const idx = (a) => { const i = ordered.indexOf(a); return i === -1 ? ordered.length : i; };
+    const rank = (a) => (a === "Other" ? [2, 0] : [areaPinned(group, a) ? 0 : 1, idx(a)]);
+    const m = new Map();
+    [...list].sort((a, b) => parseShiftTime(a.start) - parseShiftTime(b.start))
+      .forEach((s) => { const a = areaOfShift(s); if (!m.has(a)) m.set(a, []); m.get(a).push(s); });
+    return [...m.entries()].sort((x, y) => {
+      const rx = rank(x[0]), ry = rank(y[0]);
+      return (rx[0] - ry[0]) || (rx[1] - ry[1]) || x[0].localeCompare(y[0]);
+    });
+  };
 
   if (!can("calendar", "view")) {
     return <div className="card" style={{ margin: 24, color: "var(--gray)", fontSize: 14 }}>You don’t have access to the calendar.</div>;
@@ -229,7 +257,10 @@ export default function CalendarPage() {
             {detail.bd.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Birthdays 🎂</div>
               {detail.bd.map((s) => { const j = isUnder18(s); const age = ageTurningOn(s.id, dayOpen); return <div key={s.id} style={{ fontSize: 13, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill" style={{ background: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }}>{j ? "🎉 Turning 18" : "🎂 Happy birthday"}</span> {nameOf(s.id)}{age != null ? ` — turning ${age} (${age - 1} → ${age})` : (j ? " — turning 18 today" : "")}</div>; })}</>}
             {detail.sh.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Shifts</div>
-              {detail.sh.map((s) => <div key={s.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span><strong>{s.start}–{s.end}</strong> · {nameOf(s.staffId)}</span><span style={{ color: "var(--gray)" }}>{shortRole(s.role)}{s.station ? ` · ${s.station}` : ""} · {s.venue}</span></div>)}</>}
+              {detailShiftSections(detail.sh).map(([area, rows]) => <React.Fragment key={area}>
+                <div className="form-label" style={{ marginTop: 6, fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: 0.4 }}>{area} · {rows.length}</div>
+                {rows.map((s) => <div key={s.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span><strong>{s.start}–{s.end}</strong> · {nameOf(s.staffId)}</span><span style={{ color: "var(--gray)" }}>{shortRole(s.role)}{s.station ? ` · ${s.station}` : ""} · {s.venue}</span></div>)}
+              </React.Fragment>)}</>}
             {detail.lv.length > 0 && <><div className="form-label" style={{ marginTop: 10 }}>Approved leave</div>
               {detail.lv.map((l) => <div key={l.id} style={{ fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill pill-amber">{leaveLabel(l)}</span> {nameOf(l.staffId)} <span style={{ color: "var(--gray)" }}>· {l.dates}</span></div>)}</>}
             {detail.tr.length > 0 && <><div className="form-label" style={{ marginTop: 10 }}>Training due</div>

@@ -47,6 +47,12 @@ export const areaPinned = (group, areaName) => (group?.areaPinned || {})[areaNam
 // area are shown ONLY under that area's section, ignoring their other areas
 // (group.areaExclusive: {areaName: bool}). Missing entry → false.
 export const areaExclusive = (group, areaName) => (group?.areaExclusive || {})[areaName] === true;
+// CROSS-REPO SHARED PREDICATE — must stay BYTE-IDENTICAL to Ops staffStructureUtils
+// (modGroupKind/staffSeesAll convention). A shift's area comes ONLY from its
+// station (exact id + venue match → station.area); no station or no area → null.
+// No keyword/substring area guessing here — role fallbacks are the CALLER's call.
+export const shiftAreaOf = (sh, stations) =>
+  (stations || []).find((x) => x.id === sh?.stationId && x.venueId === sh?.venueId)?.area || null;
 export const orderedAreas = (group) => {
   const areas = resolveAreas(group);
   const order = (Array.isArray(group?.areaOrder) ? group.areaOrder : []).filter((a) => areas.includes(a));
