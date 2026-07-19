@@ -32,6 +32,19 @@ const optionDelta = (m, gid, group, label) => {
 const minFor = (g) => (g.required ? Math.max(1, Number(g.minSelections) || 0) : (Number(g.minSelections) || 0));
 // one rail line per item+modifier-combination
 const lineKeyOf = (id, mods) => `${id}|${(mods || []).map((x) => x.label).slice().sort().join("+")}`;
+// CROSS-REPO SHARED PREDICATE — must stay BYTE-IDENTICAL to the Ops PosScreen copy
+// (modGroupKind/staffSeesAll convention). An item that DECLARES modifier groups
+// which don't all RESOLVE must NOT sell as if it had none: unmet/ok filter over
+// the RESOLVED list, so a missing group — possibly the required one — passes
+// vacuously, and rgSellOrder does not validate requiredness (the picker is the
+// ONLY enforcement point in the system). missing > 0 ⇒ block the sale.
+const resolveModGroups = (m, modifierGroups) => {
+  const declared = (m?.modifierGroupIds || []).filter(Boolean);
+  const resolved = declared
+    .map((gid) => ({ gid, g: (modifierGroups || []).find((x) => x.id === gid) }))
+    .filter((x) => x.g);
+  return { resolved, missing: declared.length - resolved.length };
+};
 // an item's browse bucket — items with no category land in "Uncategorised" so
 // they stay reachable now that the category-first flow has no "All" view
 const catOf = (m) => m?.category || "Uncategorised";
@@ -108,7 +121,7 @@ const tintOf = (id) => {
 export default function PosPage() {
   const {
     groupId, group, menuItems, resolvedMenuItems, menuInstanceById, modifierGroups,
-    selectedVenue, selectedVenueName, showToast, myStaff, me,
+    selectedVenue, selectedVenueName, showToast, myStaff, me, loading,
   } = useRG();
   const categories = group?.menuCategories?.length ? group.menuCategories : DEFAULT_MENU_CATEGORIES;
 
@@ -255,8 +268,17 @@ export default function PosPage() {
     // items with RESOLVED modifier groups open the modal; others add straight to
     // the rail — the ONE-TAP fast path for no-modifier items is unchanged (notes
     // for those are added afterwards via the rail line editor).
-    const gids = (m.modifierGroupIds || []).filter((gid) => modifierGroups.some((g) => g.id === gid));
-    if (gids.length) setModModal({ item: m, sel: {}, gid: null, q: "", qty: 1, note: "", notePresets: [], editKey: null });
+    const { resolved, missing } = resolveModGroups(m, modifierGroups);
+    // Declared-but-unresolved groups: BLOCK the sale — one-tapping would bypass
+    // required choices. `loading` (real ready-state, bc03a93) tells first-moment
+    // load apart from a genuine failure (denied listener / deleted group).
+    if (missing > 0) {
+      showToast(loading
+        ? `Menu still loading — try “${m.displayName || "this item"}” again in a moment`
+        : `Couldn't load options for ${m.displayName || "this item"}. Reload before selling this item.`);
+      return;
+    }
+    if (resolved.length) setModModal({ item: m, sel: {}, gid: null, q: "", qty: 1, note: "", notePresets: [], editKey: null });
     else pushLine(m, []);
   };
   const bump = (key, d) => setLines((prev) => prev
@@ -282,7 +304,17 @@ export default function PosPage() {
   const openModify = (l) => {
     const mi = resolvedMenuItems.find((x) => (x.templateId || x.id) === l.menuItemId);
     if (!mi) { showToast("This item is no longer on the venue menu"); return; }
-    const gids = (mi.modifierGroupIds || []).filter((gid) => modifierGroups.some((g) => g.id === gid));
+    const { resolved: reGroups, missing: reMissing } = resolveModGroups(mi, modifierGroups);
+    // BLOCK (not open-with-warning): confirming a picker that lost a group would
+    // REWRITE the line without that group's modifiers — silent data loss on an
+    // existing order line. Blocking leaves the line untouched.
+    if (reMissing > 0) {
+      showToast(loading
+        ? `Menu still loading — try “${mi.displayName || "this item"}” again in a moment`
+        : `Couldn't load options for ${mi.displayName || "this item"}. Reload before modifying this line.`);
+      return;
+    }
+    const gids = reGroups.map((x) => x.gid);
     const sel = {};
     for (const x of l.modifiers || []) {
       const gid = gids.find((gd) => (((modifierGroups.find((g) => g.id === gd) || {}).options) || []).some((o) => o.label === x.label));
@@ -572,9 +604,7 @@ export default function PosPage() {
           verbatim; everything two-pane is display arrangement around them. */}
       {modModal && (() => {
         const m = modModal.item;
-        const groups = (m.modifierGroupIds || [])
-          .map((gid) => ({ gid, g: modifierGroups.find((x) => x.id === gid) }))
-          .filter((x) => x.g);
+        const { resolved: groups, missing: missingGroups } = resolveModGroups(m, modifierGroups);
         const toggle = (gid, g, label) => setModModal((p) => {
           const cur = p.sel[gid] || [];
           if (g.type === "single") return { ...p, sel: { ...p.sel, [gid]: cur[0] === label ? [] : [label] } };
@@ -585,7 +615,9 @@ export default function PosPage() {
         });
         const chosen = groups.flatMap(({ gid, g }) => (modModal.sel[gid] || []).map((label) => ({ label, priceDelta: optionDelta(m, gid, g, label) })));
         const unmet = groups.filter(({ gid, g }) => (modModal.sel[gid] || []).length < minFor(g));
-        const ok = unmet.length === 0 && chosen.length <= MAX_MODS;
+        // missingGroups: declared groups that didn't resolve — keeps Add disabled
+        // (ok gates the button and confirm); selling would silently skip them.
+        const ok = unmet.length === 0 && chosen.length <= MAX_MODS && missingGroups === 0;
         const estUnit = sellAt(m) + chosen.reduce((s, x) => s + x.priceDelta, 0);
         // required groups first — the EXISTING minFor()-based comparator, unchanged
         const sorted = [...groups].sort((a, b) => (minFor(a.g) > 0 ? 0 : 1) - (minFor(b.g) > 0 ? 0 : 1));
@@ -719,6 +751,7 @@ export default function PosPage() {
                   onChange={(e) => setModModal((p) => ({ ...p, note: e.target.value }))} />
               </div>
               {chosen.length > MAX_MODS && <div style={{ fontSize: 11, color: "var(--pos-rem)", marginBottom: 6 }}>Max {MAX_MODS} add-ons per line (server limit).</div>}
+              {missingGroups > 0 && <div style={{ fontSize: 11, color: "var(--pos-rem)", marginBottom: 6 }}>{loading ? "Menu still loading — options incomplete." : "Couldn't load some options for this item. Reload before selling it."}</div>}
               <div className="pos-m2-foot">
                 <div className="pos-qty">
                   <button className="pos-step" onClick={() => setModModal((p) => ({ ...p, qty: Math.max(1, qtyN - 1) }))}>−</button>
