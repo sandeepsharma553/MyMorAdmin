@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol } from "../../utils/restaurantGroupPaths";
-import { fullName, leaveTypePill, leaveStatusPill, leaveLabel, avatarColor, initials, downloadCsv } from "./rgUtils";
+import { fullName, leaveTypePill, leaveStatusPill, leaveLabel, avatarColor, initials, downloadCsv, mondayFromWeekKey, localDateKey } from "./rgUtils";
 import { resolveLeaveTypes } from "./staffStructureUtils";
 import { sendNotification } from "./notify";
 
@@ -25,7 +25,7 @@ const daysBetween = (s, e) => {
 };
 
 export default function LeaveRequestsPage() {
-  const { groupId, group, staff, venues, leave, selectedVenue, matchVenue, showToast, can, me, myStaff, myScope, scopedStaff } = useRG();
+  const { groupId, group, staff, venues, leave, shifts, selectedVenue, matchVenue, showToast, can, me, myStaff, myScope, scopedStaff } = useRG();
   // Approving others' requests needs the `approve` permission. The owner/superadmin tier is
   // full-access and ALWAYS approves (even if their stored permissions predate the approve
   // level). Submitting stays scoped (see submit() — your own team only).
@@ -62,6 +62,49 @@ export default function LeaveRequestsPage() {
     });
     return [...map.entries()];
   }, [history]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Issue 4: approver actions on APPROVED history rows ──────────────────────
+  // Both gate on the SAME canApprove the Approve/Decline buttons use — matching
+  // the live rule (rgCanApproveLeave) exactly, so no denied writes.
+  // Cancel = terminal "Cancelled" (never back to Pending — the record shows what
+  // happened); every functional reader tests status === "Approved" explicitly
+  // (planner block/saveShift guard/weekLeave/calendar — verified), so the roster
+  // block clears with no reader changes.
+  const cancelLeave = async (l) => {
+    if (!canApprove) return;
+    if (!window.confirm(`Cancel ${l.staffName}'s approved ${leaveLabel(l)} (${l.dates})? The roster block is removed.`)) return;
+    try {
+      await updateDoc(doc(venueCol(groupId, l.venueId, "leaveRequests"), l.id), { status: "Cancelled", approvedBy: actorName, decidedAt: serverTimestamp() });
+      showToast("Leave cancelled — no longer blocks the roster");
+      sendNotification(groupId, { to: l.staffId, type: "leave", title: "Leave cancelled", body: `${leaveLabel(l)} ${l.dates} — cancelled by ${actorName}`, venueId: l.venueId, by: actorName });
+    } catch { showToast("Could not cancel request"); }
+  };
+  // Edit dates on an Approved request: stays Approved (the approver is editing —
+  // no re-approval loop). editedBy/editedAt are NEW fields so the original
+  // approval record (approvedBy/decidedAt) survives intact.
+  const [editLeave, setEditLeave] = useState(null); // { l, start, end }
+  const dateOfShift = (sh) => { if (!sh.weekKey) return ""; const d = mondayFromWeekKey(sh.weekKey); d.setDate(d.getDate() + (sh.day || 0)); return localDateKey(d); };
+  const saveLeaveEdit = async () => {
+    if (!canApprove || !editLeave) return;
+    const { l } = editLeave;
+    const s = editLeave.start, e = editLeave.end || editLeave.start;
+    if (!s) return showToast("Choose a start date");
+    if (e < s) return showToast("End date is before the start date");
+    // roster warning — same shifts array the planner uses; warn, never block
+    const n = shifts.filter((sh) => sh.staffId === l.staffId && (() => { const k = dateOfShift(sh); return k && s <= k && k <= e; })()).length;
+    if (n > 0 && !window.confirm(`${n} shift${n === 1 ? "" : "s"} exist on the new dates for ${l.staffName}. Save anyway? (The planner will show the leave block over them.)`)) return;
+    try {
+      await updateDoc(doc(venueCol(groupId, l.venueId, "leaveRequests"), l.id), {
+        startDate: s, endDate: e,
+        // derived fields recomputed — they must describe the NEW range
+        dates: fmtRange(s, e), days: daysBetween(s, e),
+        editedBy: actorName, editedAt: serverTimestamp(),
+      });
+      showToast("Leave dates updated — still approved");
+      sendNotification(groupId, { to: l.staffId, type: "leave", title: "Leave dates changed", body: `${leaveLabel(l)} now ${fmtRange(s, e)} — updated by ${actorName}`, venueId: l.venueId, by: actorName });
+      setEditLeave(null);
+    } catch { showToast("Could not update dates"); }
+  };
 
   const decide = async (l, status) => {
     try {
@@ -188,25 +231,47 @@ export default function LeaveRequestsPage() {
         <div className="card-head"><span className="card-title">Leave history</span><button className="btn btn-sm" onClick={() => { downloadCsv("leave-history.csv", [["Staff", "Venue", "Type", "Dates", "Days", "Status", "Approved by"], ...history.map((l) => [l.staffName, l.venue, leaveLabel(l), l.dates, l.days, l.status, l.approvedBy || ""])]); showToast("Leave history exported (CSV)"); }}>Export</button></div>
         <div style={{ overflowX: "auto" }}>
           <table className="data-table">
-            <thead><tr><th>Staff</th><th>Venue</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Approved by</th></tr></thead>
+            <thead><tr><th>Staff</th><th>Venue</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Approved by</th>{canApprove && <th></th>}</tr></thead>
             <tbody>
               {/* per-type sections (Phase 4c) — ONE "Other" section; CSV above stays flat */}
               {historySections.map(([t, rows]) => (
                 <React.Fragment key={t}>
-                  <tr><td colSpan={7} style={{ padding: "6px 10px", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", textTransform: "uppercase", letterSpacing: 0.4 }}>{t} <span style={{ fontWeight: 400 }}>· {rows.length}</span></td></tr>
+                  <tr><td colSpan={canApprove ? 8 : 7} style={{ padding: "6px 10px", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", textTransform: "uppercase", letterSpacing: 0.4 }}>{t} <span style={{ fontWeight: 400 }}>· {rows.length}</span></td></tr>
                   {rows.map((l) => (
                     <tr key={l.id}>
                       <td>{l.staffName}</td><td>{l.venue}</td><td>{leaveLabel(l)}</td><td>{l.dates}</td><td>{l.days}</td>
                       <td><span className={`pill ${leaveStatusPill(l.status)}`}>{l.status}</span></td><td>{l.approvedBy || "—"}</td>
+                      {canApprove && <td style={{ whiteSpace: "nowrap" }}>{l.status === "Approved" ? <>
+                        <button className="btn btn-sm" onClick={() => setEditLeave({ l, start: l.startDate || "", end: l.endDate || "" })}>Edit dates</button>{" "}
+                        <button className="btn btn-sm btn-danger" onClick={() => cancelLeave(l)}>Cancel</button>
+                      </> : null}</td>}
                     </tr>
                   ))}
                 </React.Fragment>
               ))}
-              {history.length === 0 && <tr><td colSpan={7} style={{ color: "var(--gray)" }}>No leave history yet.</td></tr>}
+              {history.length === 0 && <tr><td colSpan={canApprove ? 8 : 7} style={{ color: "var(--gray)" }}>No leave history yet.</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Edit approved-leave dates (issue 4) — approver-gated; stays Approved */}
+      {editLeave && (
+        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setEditLeave(null)}>
+          <div className="rg-modal" style={{ maxWidth: 420 }}>
+            <div className="card-head"><span className="card-title">Edit leave dates</span></div>
+            <div style={{ fontSize: 13, marginBottom: 10 }}>{editLeave.l.staffName} · <span className={`pill ${leaveTypePill(editLeave.l.type)}`}>{leaveLabel(editLeave.l)}</span> <span style={{ color: "var(--gray)" }}>· currently {editLeave.l.dates}</span></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={editLeave.start} onChange={(e) => setEditLeave((p) => ({ ...p, start: e.target.value }))} /></div>
+              <div className="form-group"><label className="form-label">End date</label><input type="date" className="form-input" value={editLeave.end} onChange={(e) => setEditLeave((p) => ({ ...p, end: e.target.value }))} /></div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+              <button className="btn btn-sm" onClick={() => setEditLeave(null)}>Cancel</button>
+              <button className="btn btn-sm btn-primary" onClick={saveLeaveEdit}>Save — stays approved</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

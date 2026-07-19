@@ -30,6 +30,7 @@ export const leaveTypePill = (type) => {
 export const leaveStatusPill = (status) => {
   if (status === "Approved") return "pill-green";
   if (status === "Declined") return "pill-red";
+  if (status === "Cancelled") return "pill-gray"; // terminal — must NOT read as the amber "still waiting"
   return "pill-amber";
 };
 
