@@ -658,8 +658,10 @@ export default function ShiftPlannerPage() {
         const avs = availAll(s.id, date); // ALL availability docs for this date (one per venue)
         const closedDay = dayClosedForSelected(day); // muted cell + no "+"; existing shifts still render
         const lv = leaveFor(s.id, date); // APPROVED leave covering this day (Phase 4b) — read-only block, no "+"
+        // PH wash (visual only) — badge amber #b45309 at 5% so solid shift/leave
+        // chips on top stay true; closed-day spread AFTER so closed still wins
         return (
-          <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top", ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
+          <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top", ...(dayIsPH(day) ? { background: "rgba(180, 83, 9, 0.05)" } : {}), ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {lv && (
                 <div key={`leave-${lv.id}`} style={{ background: "var(--amber-light, #fffbeb)", border: "1px solid #f59e0b", color: "#92400e", fontSize: 10, fontWeight: 600, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={`Approved leave — ${leaveLabel(lv)}${lv.dates ? ` (${lv.dates})` : ""}`}>
@@ -742,7 +744,7 @@ export default function ShiftPlannerPage() {
 
       {/* Legend */}
       <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-        {[["#e0f2fe", "Morning"], ["#f3e8ff", "Afternoon / evening"], ["#fffbeb", "Open (needs fill)"], ["#f4f4f5", "Day off / RDO"]].map(([bg, lbl]) => (
+        {[["#e0f2fe", "Morning"], ["#f3e8ff", "Afternoon / evening"], ["#fffbeb", "Open (needs fill)"], ["#f4f4f5", "Day off / RDO"], ["#fef3c7", "Public holiday"]].map(([bg, lbl]) => (
           <span key={lbl} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
             <span style={{ width: 12, height: 12, borderRadius: 3, background: bg, border: "1px solid var(--border)", display: "inline-block" }} />{lbl}
           </span>
@@ -806,7 +808,7 @@ export default function ShiftPlannerPage() {
               <tr style={{ background: "var(--gray-light)" }}>
                 <th style={{ ...thSticky, textAlign: "left", width: 130, padding: "10px 14px" }}>Staff</th>
                 {DAYS.map((d, i) => (
-                  <th key={d} style={{ ...thSticky, ...(dayClosedForSelected(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (dayClosedForSelected(i) ? "Venue closed this day" : undefined)}>
+                  <th key={d} style={{ ...thSticky, ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(dayClosedForSelected(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (dayClosedForSelected(i) ? "Venue closed this day" : undefined)}>
                     <div>{d}{weekDates[i] ? ` ${Number(weekDates[i].slice(8, 10))}` : ""}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 4 }}>PH</span>}{dayClosedForSelected(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "var(--gray)", marginLeft: 4 }}>Closed</span>}</div>
                     <div style={{ fontSize: 10, fontWeight: 600, color: "var(--gray)" }}>{dayHeadcount(i)} on</div>
                   </th>
