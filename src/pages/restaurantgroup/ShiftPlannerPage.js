@@ -576,7 +576,9 @@ export default function ShiftPlannerPage() {
             <thead>
               <tr style={{ background: "var(--gray-light)" }}>
                 <th style={{ ...th, textAlign: "left", width: 100, padding: "8px 10px" }}>Staff</th>
-                {DAYS.map((d, i) => <th key={d} style={{ ...th, padding: "8px 4px", ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={vClosed(i) ? "Venue closed this day" : undefined}>{d}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</th>)}
+                {/* PH header treatment mirrors the MAIN grid (8fd1887): #fef3c7 wash + 9px
+                    #b45309 "PH" badge, spread BEFORE closed so closed's opacity still wins */}
+                {DAYS.map((d, i) => <th key={d} style={{ ...th, padding: "8px 4px", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (vClosed(i) ? "Venue closed this day" : undefined)}>{d}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 3 }}>PH</span>}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -603,8 +605,10 @@ export default function ShiftPlannerPage() {
                     const avs = availAll(s.id, weekDates[day]).filter((a) => a._src === "cluster" || a.venueId === vid);
                     const closedDay = vClosed(day); // muted cell + no "+"; existing shifts still render
                     const lv = leaveFor(s.id, weekDates[day]); // APPROVED leave (Phase 4b) — read-only block, no "+"
+                    // PH wash (visual only) — same 5% amber as the main grid, spread
+                    // BEFORE the closed-day spread so closed still wins
                     return (
-                      <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top", ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
+                      <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top", ...(dayIsPH(day) ? { background: "rgba(180, 83, 9, 0.05)" } : {}), ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                           {lv && (
                             <div key={`leave-${lv.id}`} style={{ background: "var(--amber-light, #fffbeb)", border: "1px solid #f59e0b", color: "#92400e", fontSize: 10, fontWeight: 600, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={`Approved leave — ${leaveLabel(lv)}${lv.dates ? ` (${lv.dates})` : ""}`}>
