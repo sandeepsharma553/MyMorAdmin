@@ -13,7 +13,7 @@ import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
 import { isJuniorType, isMinorDob } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
-import { staffAreas, roleConfiguredArea, stationsForVenue, areaGetsBreak, empTypeIsSalaried, rateSplitFromPrivate } from "./staffStructureUtils";
+import { staffAreas, roleConfiguredArea, isMultiArea, stationsForVenue, areaGetsBreak, empTypeIsSalaried, rateSplitFromPrivate } from "./staffStructureUtils";
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, fmtHours } from "./rgUtils";
@@ -216,8 +216,8 @@ export default function StaffDirectoryPage() {
   const holidays = (phDoc && phDoc.length) ? phDoc : AU_PUBLIC_HOLIDAYS_SEED;
 
   const venueScoped = useMemo(() => scopedStaff.filter((s) => staffInVenue(s, selectedVenue)), [scopedStaff, selectedVenue]);
-  // area→station drill-down: when an actual area is selected (not All/Managers/Left), show its stations
-  const areaForFilter = (roleFilter !== "all" && roleFilter !== "manager" && roleFilter !== "left") ? roleFilter : null;
+  // area→station drill-down: when an actual area is selected (not All/Managers/Multi-area/Left), show its stations
+  const areaForFilter = (roleFilter !== "all" && roleFilter !== "manager" && roleFilter !== "multi" && roleFilter !== "left") ? roleFilter : null;
   const drillStations = useMemo(() => (areaForFilter ? stationsForArea(stations, areaForFilter, selectedVenue) : []), [areaForFilter, stations, selectedVenue]);
   const filtered = useMemo(() => {
     let list = venueScoped;
@@ -227,7 +227,11 @@ export default function StaffDirectoryPage() {
       list = list.filter((s) => s.status === "Left");
     } else {
       list = list.filter((s) => s.status !== "Left");
-      if (roleFilter !== "all") list = list.filter((s) => {
+      // Multi-area chip (issue 5): the PLANNER's bucket (2+ areas, none exclusive —
+      // isMultiArea), not an area string, so it gets its own branch and never enters
+      // the .some() area predicate below
+      if (roleFilter === "multi") list = list.filter((s) => isMultiArea(s, group));
+      else if (roleFilter !== "all") list = list.filter((s) => {
         // area-less docs: infer against the group's CONFIGURED areas (no legacy token);
         // no configured match → matches no area chip (Managers/Left still role-based)
         const inferred = roleConfiguredArea(s.role, areas);
@@ -263,7 +267,7 @@ export default function StaffDirectoryPage() {
       : sortBy === "oldest" ? (a, b) => createdMs(a) - createdMs(b)
       : (a, b) => azName(a).localeCompare(azName(b));
     return list.slice().sort(cmp);
-  }, [venueScoped, roleFilter, search, stationFilter, areaForFilter, drillStations, sortBy, under18Only, canPayroll, minorIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [venueScoped, roleFilter, search, stationFilter, areaForFilter, drillStations, sortBy, under18Only, canPayroll, minorIds, group, areas]); // eslint-disable-line react-hooks/exhaustive-deps
   const leftCount = useMemo(() => venueScoped.filter((s) => s.status === "Left").length, [venueScoped]);
 
   const onShiftToday = useMemo(() => {
@@ -1438,6 +1442,8 @@ export default function StaffDirectoryPage() {
         <FilterBtn id="manager">Managers</FilterBtn>
         {/* area filters from the group's configured areas (mirrors training/sop/checklist filters) */}
         {areas.map((a) => <FilterBtn key={a} id={a}>{a}</FilterBtn>)}
+        {/* the planner's Multi-area bucket (2+ areas, none exclusive) — reserved key like all/manager/left */}
+        <FilterBtn id="multi">Multi-area</FilterBtn>
         {/* archive view — one of the mutually-exclusive filters (clicking another clears it) */}
         <FilterBtn id="left">🗄 Left{leftCount ? ` (${leftCount})` : ""}</FilterBtn>
         {/* area → station drill-down (same as Training) */}

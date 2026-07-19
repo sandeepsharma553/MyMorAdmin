@@ -74,6 +74,16 @@ export const roleConfiguredArea = (role, areas) => {
   }
   return "";
 };
+// CROSS-REPO SHARED PREDICATE — must stay BYTE-IDENTICAL to Ops staffStructureUtils
+// (modGroupKind/staffSeesAll convention). The Shift Planner's Multi-area MEMBERSHIP
+// (groupRowsFor): 2+ distinct areas AND none of them exclusive — an exclusive-area
+// holder is captured OUT into that area's own section (Mei: FOH+BOH+Management with
+// Management exclusive belongs under Management, never Multi-area). The directory's
+// Multi-area chip uses this same predicate so the two surfaces can never disagree.
+export const isMultiArea = (s, group) => {
+  const sAreas = [...new Set(staffAreas(s).filter(Boolean))];
+  return sAreas.length > 1 && !sAreas.some((a) => areaExclusive(group, a));
+};
 export const orderedAreas = (group) => {
   const areas = resolveAreas(group);
   const order = (Array.isArray(group?.areaOrder) ? group.areaOrder : []).filter((a) => areas.includes(a));

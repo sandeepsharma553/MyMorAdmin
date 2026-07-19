@@ -2,7 +2,7 @@
  * Covers: areas/roles read from config with fallback; Settings add/remove logic;
  * Junior present in defaults; no phantom CK anywhere; no staff mis-bucketed to CK;
  * config resolution never mutates the group doc (existing data untouched by the seed). */
-import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreas, roleConfiguredArea, stationsForVenue, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, staffAtStation } from "./staffStructureUtils";
+import { resolveAreas, resolveRoles, resolveEmpTypes, addToList, removeFromList, staffAreas, roleConfiguredArea, isMultiArea, stationsForVenue, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, staffAtStation } from "./staffStructureUtils";
 import { DEFAULT_AREAS, DEFAULT_ROLES, DEFAULT_EMP_TYPES } from "./rgConfig";
 
 describe("config resolution with fallback", () => {
@@ -96,6 +96,33 @@ describe("roleConfiguredArea — role inference against CONFIGURED areas", () =>
     expect(roleConfiguredArea("Junior", LIVE)).toBe("");
     expect(roleConfiguredArea("Manager", [])).toBe("");
     expect(roleConfiguredArea("", LIVE)).toBe("");
+  });
+});
+
+// ⚠ KEEP identical in Admin staffStructure.test.js / Ops staffStructureUtils.test.js.
+// Twin contract: isMultiArea must stay equivalent to groupRowsFor's __multi__ branch
+// (ShiftPlannerPage :355-361 — 2+ DISTINCT areas AND none of them exclusive), because
+// the directory's Multi-area chip and the planner's Multi-area section must bucket the
+// SAME person the SAME way; nothing else enforces that equivalence.
+describe("isMultiArea — the planner's Multi-area membership (2+ distinct areas, none exclusive)", () => {
+  const G = { areas: ["FOH", "BOH", "Management"], areaExclusive: { Management: true } }; // live shape
+  test("2+ non-exclusive areas → multi", () => {
+    expect(isMultiArea({ areas: ["FOH", "BOH"] }, G)).toBe(true);
+  });
+  test("exclusive capture: any exclusive area pulls them OUT of Multi-area (Mei)", () => {
+    expect(isMultiArea({ areas: ["FOH", "BOH", "Management"] }, G)).toBe(false);
+    expect(isMultiArea({ areas: ["Management"] }, G)).toBe(false); // single AND exclusive
+  });
+  test("single or no areas → not multi", () => {
+    expect(isMultiArea({ areas: ["FOH"] }, G)).toBe(false);
+    expect(isMultiArea({ areas: [] }, G)).toBe(false);
+  });
+  test("dedupe + Boolean filter mirror groupRowsFor's sAreas", () => {
+    expect(isMultiArea({ areas: ["FOH", "FOH"] }, G)).toBe(false);    // same area twice is not multi
+    expect(isMultiArea({ areas: ["FOH", "", null] }, G)).toBe(false); // falsy entries dropped first
+  });
+  test("no exclusives configured at all → 2+ areas is multi", () => {
+    expect(isMultiArea({ areas: ["FOH", "BOH", "Management"] }, { areas: ["FOH", "BOH", "Management"] })).toBe(true);
   });
 });
 
