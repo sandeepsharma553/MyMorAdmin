@@ -141,3 +141,12 @@ describe("rostered-role basis — assign off the shift's role/area, NOT the home
     expect(shouldAutoAssign(clFOHrole, rostered, "v1")).toBe(false);
   });
 });
+
+// ⚠ KEEP identical in all four parity test files (Admin ×2, Ops, Functions).
+describe("missing-area ruling — neither cat nor area is NOT an implicit 'All'", () => {
+  test("an item with neither cat nor area auto-assigns to nobody but see-all", () => {
+    const orphan = {}; // no cat, no area, no autoAssign — an authoring oversight
+    expect(shouldAutoAssign(orphan, { areas: ["FOH"], role: "FOH", venueIds: ["v1"] }, "v1")).toBe(false);
+    expect(shouldAutoAssign(orphan, { area: "FOH", role: "FOH Supervisor", venueIds: ["v1"] }, "v1")).toBe(true);
+  });
+});
