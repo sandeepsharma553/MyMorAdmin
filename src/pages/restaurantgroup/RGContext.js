@@ -179,9 +179,10 @@ export function RGProvider({ children }) {
 
   // ── Per-venue menu INSTANCES (template+instance model) — subscribed for the
   // SELECTED venue only; at "all" the raw templates are shown (no resolution).
-  // ⚠ RULES DEFERRED for venues/{v}/menuItems: until the rules block lands this
-  // collection is group-member writable, and any rules error will silently EMPTY
-  // the venue menu (subColl error callback → setter([])).
+  // Rules are LIVE for venues/{v}/menuItems (member read, manager+ write;
+  // excluded from the venue catch-all). A denial still empties the venue menu
+  // via the fail-soft (subColl error → setter([])) — but it is now a REAL
+  // failure, and the loadErrors banner surfaces it under "venue menu".
   const [venueMenuInstances, setVenueMenuInstances] = useState([]);
   useEffect(() => {
     // This is the ONLY listener re-subscribed per selected venue, so its stale

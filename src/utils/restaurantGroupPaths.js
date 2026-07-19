@@ -118,9 +118,10 @@ export const orderDoc = (groupId, venueId, orderId) => doc(ordersCol(groupId, ve
 // Per-venue menu INSTANCE — same doc id as the group-level template menuItem.
 // Holds only per-venue overrides (price/variants/86/availability/recipe). linked:true
 // inherits the template; separate (linked:false) instances carry their own values.
-// ⚠ RULES DEFERRED: until a rules block lands, this collection is group-member
-// writable via the venues wildcard, and a rules error silently EMPTIES the menu
-// (RGContext subColl error → setter([])).
+// Rules are LIVE: member read, manager+ write, and 'menuItems' is excluded from
+// the venue catch-all. A denial here still empties the venue menu — but that is
+// now a REAL failure, not an expected one, and the loadErrors banner surfaces
+// it under the "venue menu" label (a34bae3 / e539173).
 export const venueMenuItemsCol = (groupId, venueId) => venueCol(groupId, venueId, "menuItems");
 export const venueMenuItemDoc = (groupId, venueId, templateId) => doc(venueMenuItemsCol(groupId, venueId), String(templateId));
 // Central-kitchen production log (Phase 4) — per venue, covered by the existing
