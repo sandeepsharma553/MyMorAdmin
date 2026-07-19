@@ -259,7 +259,15 @@ Firestore is a **named non‑default database** in AU‑Southeast1 — pass the 
   `""` is provably inert: `seesAll` uses the same word list). **Don't wire it back into client code.**
 - **The bucket helpers** (`staffAreaBucket` / `staffAreaBuckets` / `classifyArea`) were **DELETED** —
   zero callers. The roster groups by configured area strings, never keyword buckets.
-- **Live data still carries orphaned area strings** (match nothing configured): `"Mgmt"` on two
-  test‑group docs (Mei also holds "Management"; **Ryan lacks a replacement**), and `"BOTH"` on SEVEN
-  live‑group staff (all of whom also hold real FOH+BOH). **Data tidy pending** — until then, orphaned
-  strings simply match no chip/section and pad Multi‑area membership.
+- **The orphaned area strings are TIDIED (20 Jul 2026, nine docs, verified by re‑read):** no `"Mgmt"`
+  or `"BOTH"` area string remains anywhere in Firestore. Live group: `"BOTH"` removed from `areas`
+  AND every `venueRoles[*].areas` on seven staff (legacy `area` untouched — all held real values);
+  two deliberate split‑view corrections — Bowser@mad‑benji and Chloe@mad‑benji moved Multi‑area →
+  BOH/FOH ("BOTH" had inflated a single‑area venue entry into Multi‑area). Test group: Ryan's `"Mgmt"`
+  SWAPPED to `"Management"` (areas, both venueRoles, legacy area — it was his only management‑ish
+  string); Mei's STRIPPED (she already held "Management"; her venueRoles keep it only where it was
+  already configured — removing a dead token must not add an area that wasn't there).
+- **The non‑obvious rule for any future orphan cleanup:** orphan tokens live in BOTH `areas` and
+  `venueRoles[*].areas`. The staff form renders toggles only for CONFIGURED areas — an orphan is
+  invisible and untoggleable — and the save path UNIONS `venueRoles` back into `areas`, so cleaning
+  `areas` alone gets undone by the next form save. **Any orphan cleanup must touch both.**
