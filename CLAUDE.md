@@ -271,3 +271,54 @@ Firestore is a **named non‑default database** in AU‑Southeast1 — pass the 
   `venueRoles[*].areas`. The staff form renders toggles only for CONFIGURED areas — an orphan is
   invisible and untoggleable — and the save path UNIONS `venueRoles` back into `areas`, so cleaning
   `areas` alone gets undone by the next form save. **Any orphan cleanup must touch both.**
+
+---
+
+## Firestore listeners & the loadErrors banner — the convention (Jul 2026)
+
+### THE RULE — every new listener records its failure
+
+A listener whose error arm silently resets to `[]`/`null` renders a denial as EMPTY DATA — the
+bug class `a34bae3`/`78c3750` (Ops `e539173`/`7dfc523`) closed by hand, screen by screen. Nothing
+enforces it mechanically, so every NEW `onSnapshot` must follow one of the two patterns:
+
+- **RGContext‑level collections** go through `subColl` — the label drives BOTH the ready gate and
+  the failure banner:
+  ```js
+  const subColl = (col, setter, sortKey, label, noteErr, noteReady) => onSnapshot(…)
+  // e.g. subColl(staffCol(groupId), setStaffAll, undefined, "staff", noteErr, noteReady)
+  ```
+- **Standalone screen listeners** keep their fail‑soft reset and ADD `noteErr` with a
+  human‑readable label (the copyable example is the public‑holidays listener, identical on
+  four surfaces across both repos):
+  ```js
+  const unsub = onSnapshot(publicHolidaysDoc(groupId),
+    (d) => setPhDoc(d.exists() ? (d.data().holidays || []) : []),
+    () => noteErr("public holidays (using AU defaults)"));
+  ```
+
+**Manager‑only collections must role‑gate the recording** (`c1ea20c`): either skip subscribing for
+staff tier entirely (RGContext's `managerTier ? [subColl(…)] : []` / the `MGR_ONLY_VENUE_COLLS`
+filter) or gate the record — `() => { setRows([]); if (myScope !== "staff") noteErr("stocktakes"); }`
+— otherwise a staff‑tier user pins a PERMANENT banner for a denial the rules intend.
+
+**Ops mirrors Admin's labels verbatim** ("group settings", "staff", "public holidays (using AU
+defaults)", …) so a support screenshot reads the same on both devices.
+
+### What the banner does NOT cover — and what covers it instead
+
+- **One‑shot reads** (`getDoc`/`getDocs`): no error arm feeds the banner; they fail as
+  empty/absent results (blank private fields, missing under‑18 badges, empty archives) the user
+  can't distinguish from real data. Audited Jul 2026 — every site is caught‑and‑silent or has its
+  own on‑page error state (Contract pages' `loadErr`); a change of policy here is a separate pass.
+- **WRITES**: a denied write NEVER reaches the banner. User‑action writes surface through their own
+  `try/catch` → toast (Admin) / `Alert.alert` (Ops); side‑channel writes (notifications, audit
+  logs, doc history, completion archives, read receipts) are deliberately fire‑and‑forget with
+  silent `.catch(() => {})` — a denial there is invisible everywhere, by design.
+- **Cloud Function errors** — separate surface entirely (function logs / their own callers).
+- **Most importantly, LOGIC BUGS**: when the data arrives and the code does the wrong thing with
+  it, the banner sees nothing. The shift↔time‑entry date mismatch that started this whole line of
+  work (`e41b8ab`) would NOT have been caught by the banner. That class is covered by
+  **byte‑identical cross‑repo predicates** (the drift‑guard convention) and **parity tests**
+  (`assignmentParity` / `rgAutoAssign` truth tables, the twin describes) — not by runtime error
+  reporting. Keep both disciplines; they catch disjoint failure classes.
