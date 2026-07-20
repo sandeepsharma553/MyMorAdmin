@@ -89,6 +89,10 @@ export const orderedAreas = (group) => {
   const order = (Array.isArray(group?.areaOrder) ? group.areaOrder : []).filter((a) => areas.includes(a));
   return [...order, ...areas.filter((a) => !order.includes(a))];
 };
+// CROSS-REPO SHARED PREDICATE — must stay BYTE-IDENTICAL to Ops
+// MyMorOps/src/lib/staffStructureUtils.js (modGroupKind/staffSeesAll convention); both
+// copies are locked by twin test files (shiftSectionArea.test.js in each repo), so a
+// divergence fails tests rather than shipping silently.
 // Which ONE area section a single SHIFT belongs to on shift-level surfaces (the
 // Calendar day detail). STRICT AREA-ONLY: for any staffer WITH areas this mirrors
 // ShiftPlannerPage groupRowsFor:355-361 EXACTLY — the shift's station and role play
