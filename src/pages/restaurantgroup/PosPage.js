@@ -88,12 +88,20 @@ const displayLabel = (label, kind) => {
 const composeNote = (presets, free) => [...(presets || []), String(free || "").trim()].filter(Boolean).join(" · ").slice(0, 200);
 // split a stored note back into { sel: presets it contains, free: the rest } —
 // used to preload the rail line editor and the Modify flow
-const splitNote = (notes, presetList) => {
+export const splitNote = (notes, presetList) => {
   const parts = String(notes || "").split(" · ").map((s) => s.trim()).filter(Boolean);
   return {
     sel: parts.filter((p) => presetList.includes(p)),
     free: parts.filter((p) => !presetList.includes(p)).join(" · "),
   };
+};
+// the rail editor's seed — the sheet reads `presets`, so splitNote's `sel` is RENAMED
+// here (same destructure as openModify). Spreading splitNote's result unrenamed was a
+// crash: editSheet.presets.includes threw on the sheet's first render (device repro).
+// Exported for the regression lock (posRailSeed.test.js). ⚠ KEEP identical to Ops PosScreen.
+export const editSheetSeed = (line, presetList) => {
+  const { sel: presets, free } = splitNote(line.notes, presetList);
+  return { key: line.key, presets, free };
 };
 
 // ── tile avatar (DISPLAY ONLY — no behaviour) ─────────────────────────────
@@ -507,7 +515,7 @@ export default function PosPage() {
             /* tap the line → editor sheet (qty / notes / modify / remove); the
                steppers stopPropagation so they keep working without opening it */
             <div key={l.key} className="pos-line pos-line--tap"
-              onClick={() => setEditSheet({ key: l.key, ...splitNote(l.notes, notePresetList) })}>
+              onClick={() => setEditSheet(editSheetSeed(l, notePresetList))}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: "var(--pos-ink)" }}>{l.displayName}</div>
