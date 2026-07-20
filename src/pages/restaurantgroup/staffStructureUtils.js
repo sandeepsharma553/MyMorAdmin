@@ -89,6 +89,32 @@ export const orderedAreas = (group) => {
   const order = (Array.isArray(group?.areaOrder) ? group.areaOrder : []).filter((a) => areas.includes(a));
   return [...order, ...areas.filter((a) => !order.includes(a))];
 };
+// Which ONE area section a single SHIFT belongs to on shift-level surfaces (the
+// Calendar day detail). STRICT AREA-ONLY: for any staffer WITH areas this mirrors
+// ShiftPlannerPage groupRowsFor:355-361 EXACTLY — the shift's station and role play
+// no part in the decision. Station/role survive ONLY in the no-staff-doc fallback,
+// so a shift is never dropped from the popup. Precedence:
+//   1. sAreas = the staffer's areas for THIS venue (venueRoles[shift.venueId].areas
+//      when non-empty) else the cross-venue union staffAreas(staffDoc) — the same
+//      source order as ShiftPlannerPage's split/main grids.
+//   2. No staff doc / no areas → the legacy shift-identity fallback: station's area
+//      (shiftAreaOf) else role inference (roleConfiguredArea), else "__none__".
+//      Never crashes, never drops a shift.
+//   3. EXCLUSIVE capture — first exclusive in orderedAreas order (tie: localeCompare);
+//      exactly groupRowsFor:357-358. Outranks everything, including a resolved station.
+//   4. Exactly one area → that area.
+//   5. 2+ areas, none exclusive → "__multi__" (the planner's Multi-area membership).
+//      No station arbitration, no role arbitration.
+export const shiftSectionArea = (shift, staffDoc, stations, group) => {
+  const ordered = orderedAreas(group);
+  const idx = (a) => { const i = ordered.indexOf(a); return i === -1 ? ordered.length : i; };
+  const perVenue = staffDoc?.venueRoles?.[shift?.venueId]?.areas;
+  const sAreas = [...new Set(((perVenue && perVenue.length) ? perVenue : staffAreas(staffDoc)).filter(Boolean))];
+  if (!sAreas.length) return shiftAreaOf(shift, stations) || roleConfiguredArea(shift?.role, ordered) || "__none__";
+  const exclusives = sAreas.filter((a) => areaExclusive(group, a)).sort((a, b) => (idx(a) - idx(b)) || a.localeCompare(b));
+  if (exclusives.length) return exclusives[0];
+  return sAreas.length === 1 ? sAreas[0] : "__multi__";
+};
 
 // ── Clusters (Phase 3a) — a cluster is a NAMED LABOUR POOL holding a set of venues; a
 // venue belongs to EXACTLY ONE cluster via venue.clusterId ("" / absent = Unassigned).

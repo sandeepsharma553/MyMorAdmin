@@ -4,7 +4,7 @@ import { useRG } from "./RGContext";
 import { staffPrivateDoc } from "../../utils/restaurantGroupPaths";
 import { fullName, weekKeyOf, weekDayIndex, leaveLabel, parseShiftTime } from "./rgUtils";
 import { isJuniorType, isMinorDob, parseDob } from "./staffMinorUtils";
-import { orderedAreas, areaPinned, shiftAreaOf, roleConfiguredArea } from "./staffStructureUtils";
+import { orderedAreas, areaPinned, shiftSectionArea } from "./staffStructureUtils";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -115,29 +115,34 @@ export default function CalendarPage() {
 
   const detail = dayOpen ? eventsFor(dayOpen) : null;
 
-  // Day-detail SHIFT sections (client issue 8): grouped by AREA, time-sorted within.
-  // The shift doc stores no area — resolve per shift: station's area when the station
-  // resolves (shiftAreaOf, exact id+venue), else inferred from the rostered role against
-  // the group's CONFIGURED areas (roleConfiguredArea — returns the owner's own spelling,
-  // so the old Mgmt↔Management alias bridge is gone), else "Other". Section order mirrors
-  // the planner's convention: PINNED areas first (areaPinned — "Management" is pinned
-  // live), then orderedAreas order, then unknowns, then "Other".
+  // Day-detail SHIFT sections: grouped by the STAFFER'S area (shiftSectionArea — the
+  // planner's staff semantics per shift: venue areas → exclusive capture → single →
+  // Multi-area; station/role fallback only when the staff doc has
+  // no areas), time-sorted within. Section ORDER and LABELS mirror ShiftPlannerPage's
+  // rank exactly: pinned areas first (orderedAreas order), then unpinned, then
+  // "Multi-area", then "No area assigned". Every shift lands in exactly one section.
   const detailShiftSections = (list) => {
     const ordered = orderedAreas(group);
-    const areaOfShift = (s) => {
-      const raw = shiftAreaOf(s, stations) || roleConfiguredArea(s.role, ordered);
-      if (!raw) return "Other";
-      return ordered.find((a) => a.toLowerCase() === raw.toLowerCase()) || raw;
+    // staff doc for a shift: full staff list first, then scopedStaff, else null
+    const staffOf = (sid) => staff.find((x) => x.id === sid) || scopedStaff.find((x) => x.id === sid) || null;
+    const sectionOf = (s) => {
+      const raw = shiftSectionArea(s, staffOf(s.staffId), stations, group);
+      if (raw === "__multi__" || raw === "__none__") return raw;
+      // normalise a station-cased fallback onto the configured spelling (unchanged rule)
+      return ordered.find((a) => a.toLowerCase() === String(raw).toLowerCase()) || raw;
     };
     const idx = (a) => { const i = ordered.indexOf(a); return i === -1 ? ordered.length : i; };
-    const rank = (a) => (a === "Other" ? [2, 0] : [areaPinned(group, a) ? 0 : 1, idx(a)]);
+    // mirrors ShiftPlannerPage groupRowsFor's rank: __none__ [3], __multi__ [2],
+    // real areas [areaPinned ? 0 : 1, orderedAreas idx], ties by localeCompare
+    const rank = (a) => (a === "__none__" ? [3, 0] : a === "__multi__" ? [2, 0] : [areaPinned(group, a) ? 0 : 1, idx(a)]);
+    const label = (a) => (a === "__multi__" ? "Multi-area" : a === "__none__" ? "No area assigned" : a);
     const m = new Map();
     [...list].sort((a, b) => parseShiftTime(a.start) - parseShiftTime(b.start))
-      .forEach((s) => { const a = areaOfShift(s); if (!m.has(a)) m.set(a, []); m.get(a).push(s); });
+      .forEach((s) => { const a = sectionOf(s); if (!m.has(a)) m.set(a, []); m.get(a).push(s); });
     return [...m.entries()].sort((x, y) => {
       const rx = rank(x[0]), ry = rank(y[0]);
       return (rx[0] - ry[0]) || (rx[1] - ry[1]) || x[0].localeCompare(y[0]);
-    });
+    }).map(([a, rows]) => [label(a), rows]);
   };
 
   if (!can("calendar", "view")) {
