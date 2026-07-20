@@ -15,7 +15,7 @@ const NOTE_TYPES = ["Recognition", "Coaching", "Warning", "Note"];
 const monthLabel = () => { const d = new Date(); return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
 
 export default function PerformancePage() {
-  const { groupId, staff, venues, perfNotes, kpis, selectedVenue, matchVenue, showToast, can, me } = useRG();
+  const { groupId, staff, venues, perfNotes, kpis, selectedVenue, matchVenue, showToast, can, me, myScope, noteErr } = useRG();
   const canEdit = can("performance", "edit");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ staffId: "", type: "Recognition", note: "" });
@@ -81,11 +81,15 @@ export default function PerformancePage() {
         }));
         setSales(Object.values(by).sort((a, b) => b.total - a.total));
       } catch {
+        // fail-soft stays [] (renders as "No POS orders this month") but RECORD it —
+        // a failed read must not masquerade as a quiet month on the screen managers
+        // judge staff by. orders is manager+-read in rules, so gate on tier (c1ea20c).
         if (!dead) setSales([]);
+        if (myScope !== "staff") noteErr("POS sales");
       }
     })();
     return () => { dead = true; };
-  }, [groupId, selectedVenue, venues]);
+  }, [groupId, selectedVenue, venues]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
     if (!form.staffId) return showToast("Select a staff member");

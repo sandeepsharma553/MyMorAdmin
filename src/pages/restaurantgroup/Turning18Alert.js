@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getDoc, setDoc, doc, serverTimestamp } from "firebase/firestore";
 import { staffPrivateDoc, auditLogCol, notificationsCol } from "../../utils/restaurantGroupPaths";
+import { useRG } from "./RGContext";
 import { parseDob, nthBirthday, daysToEighteen, isMinorDob, isJuniorType } from "./staffMinorUtils";
 
 const fmt = (d) => d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
@@ -16,6 +17,7 @@ const whenLbl = (days, t18) => (days < 0 ? "has turned 18" : days === 0 ? "turns
  *    no new fields — just visibility of what already exists.
  */
 export default function Turning18Alert({ groupId, staff, actorName }) {
+  const { noteErr } = useRG(); // failure-banner recorder — everything else stays prop-driven
   const [flagged, setFlagged] = useState([]);
   const [minors, setMinors] = useState([]); // read-only: under-18 (not imminent) or Junior-type
   const notified = useRef(new Set());
@@ -66,7 +68,7 @@ export default function Turning18Alert({ groupId, staff, actorName }) {
             summary: `${f.name} is turning 18 (${fmt(f.t18)}) — pay rate & compliance review`,
             staffId: f.id, notifySuperAdmin: true, seenBySuper: false, by: actorName || "System", at: serverTimestamp(),
           });
-        } catch { /* */ }
+        } catch { noteErr("audit log"); } // non-blocking, but RECORDED — a log that silently stops recording looks complete
         // in-app bell notification for managers/owner — written once (deterministic id) so it's
         // visible without needing browser-notification permission or being on this page.
         try {

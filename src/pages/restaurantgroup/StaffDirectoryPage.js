@@ -135,7 +135,7 @@ export default function StaffDirectoryPage() {
         action, summary, by: actorName, byRole: me?.groupRole || "",
         at: serverTimestamp(), notifySuperAdmin: true, seenBySuper: false, ...extra,
       });
-    } catch { /* non-blocking */ }
+    } catch { noteErr("audit log"); } // non-blocking, but RECORDED — a log that silently stops recording looks complete
   };
   // ── Phase B: per-staff document history (staff/{id}/docHistory) ── file NAMES only,
   // never a URL, never contents. Fire-and-forget: the tight docHistory rule ships

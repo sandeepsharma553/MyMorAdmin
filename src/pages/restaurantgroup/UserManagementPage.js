@@ -15,7 +15,7 @@ const LEVEL_OPTS = [["none", "✕ None"], ["view", "👁 View"], ["edit", "✏ E
 const LEVEL_OPTS_STAFF = [["none", "✕ None"], ["self", "👤 Self (own profile)"], ["view", "👁 View"], ["edit", "✏ Edit"], ["approve", "✓ Approve"]];
 
 export default function UserManagementPage() {
-  const { groupId, group, staff, venues, can, showToast, me } = useRG();
+  const { groupId, group, staff, venues, can, showToast, me, noteErr } = useRG();
   const editable = can("usermgmt", "edit");
   const actorName = me?.displayName || me?.name || me?.email || "Admin";
   const [showCreds, setShowCreds] = useState(false);
@@ -50,7 +50,7 @@ export default function UserManagementPage() {
         action: "perms.update", summary: `Permissions changed for ${permUser.displayName || permUser.name}${changed.length ? `: ${changed.join(", ")}` : ""}`,
         by: actorName, byRole: me?.groupRole || "", staffId: permUser.id, at: serverTimestamp(), notifySuperAdmin: true, seenBySuper: false,
       });
-    } catch { /* non-blocking */ }
+    } catch { noteErr("audit log"); } // non-blocking, but RECORDED — a log that silently stops recording looks complete
     showToast(permUser.adminUid ? "Permissions saved & applied to their login" : "Permissions saved (applies when they get a login)");
     setPermUser(null);
   };

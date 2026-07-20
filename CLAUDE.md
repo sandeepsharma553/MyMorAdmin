@@ -311,10 +311,13 @@ defaults)", …) so a support screenshot reads the same on both devices.
   empty/absent results (blank private fields, missing under‑18 badges, empty archives) the user
   can't distinguish from real data. Audited Jul 2026 — every site is caught‑and‑silent or has its
   own on‑page error state (Contract pages' `loadErr`); a change of policy here is a separate pass.
-- **WRITES**: a denied write NEVER reaches the banner. User‑action writes surface through their own
-  `try/catch` → toast (Admin) / `Alert.alert` (Ops); side‑channel writes (notifications, audit
-  logs, doc history, completion archives, read receipts) are deliberately fire‑and‑forget with
-  silent `.catch(() => {})` — a denial there is invisible everywhere, by design.
+- **WRITES**: a denied write does NOT reach the banner. User‑action writes surface through their own
+  `try/catch` → toast (Admin) / `Alert.alert` (Ops); side‑channel writes (notifications, doc
+  history, completion archives, read receipts) are deliberately fire‑and‑forget with silent
+  `.catch(() => {})` — a denial there is invisible everywhere, by design. **ONE deliberate
+  exception: the AUDIT LOG.** A log that silently stops recording is worse than no log (it looks
+  complete), so every `auditLog` write's catch records `noteErr("audit log")` while staying
+  non‑blocking — the underlying action still never fails. Both repos, all six write sites.
 - **Cloud Function errors** — separate surface entirely (function logs / their own callers).
 - **Most importantly, LOGIC BUGS**: when the data arrives and the code does the wrong thing with
   it, the banner sees nothing. The shift↔time‑entry date mismatch that started this whole line of
