@@ -39,7 +39,23 @@ export const rateSplitFromPrivate = (p) => ({
 // Missing areaBreak entry → TRUE (breaks on by default). areaOrder is intersected with the
 // live areas list, then any areas it doesn't mention append in group.areas order — a stale
 // or partial order can never hide an area.
-export const areaGetsBreak = (group, areaName) => (group?.areaBreak || {})[areaName] !== false;
+// ── Per-area break RULE (issue 2) — group.areaBreak[area] now holds { mins, afterHours }
+// (e.g. FOH 30 after 5h; Kitchen 45 after 6h; mins 0 → never automatic). MIGRATION-ON-READ,
+// no batch write: the live map still holds BOOLEANS — true/MISSING → the legacy default
+// (30 after 5h, today's exact behaviour), false → never; an object → its own values
+// (afterHours absent/invalid → 5). Old entries convert whenever Settings next saves that
+// area. ⚠ KEEP areaBreakRule + LEGACY_BREAK_RULE byte-identical to Ops staffStructureUtils.
+export const LEGACY_BREAK_RULE = { mins: 30, afterHours: 5 };
+export const areaBreakRule = (group, areaName) => {
+  const v = (group?.areaBreak || {})[areaName];
+  if (v === false) return { mins: 0, afterHours: LEGACY_BREAK_RULE.afterHours };
+  if (v == null || v === true) return { ...LEGACY_BREAK_RULE };
+  const mins = Number(v.mins) || 0;
+  const afterHours = Number(v.afterHours);
+  return { mins, afterHours: Number.isFinite(afterHours) && afterHours >= 0 ? afterHours : LEGACY_BREAK_RULE.afterHours };
+};
+// boolean view of the rule (Settings display, quick checks)
+export const areaGetsBreak = (group, areaName) => areaBreakRule(group, areaName).mins > 0;
 // Pinned areas sort FIRST on the Shift Planner (group.areaPinned: {areaName: bool}).
 // Missing entry → false (not pinned).
 export const areaPinned = (group, areaName) => (group?.areaPinned || {})[areaName] === true;

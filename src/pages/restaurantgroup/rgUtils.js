@@ -1,5 +1,5 @@
 import { venueColor } from "../../utils/restaurantGroupPaths";
-import { staffAreas, areaGetsBreak, shiftAreaOf } from "./staffStructureUtils";
+import { staffAreas, areaBreakRule, LEGACY_BREAK_RULE, shiftAreaOf } from "./staffStructureUtils";
 
 export const fullName = (s) => s?.name || `${s?.first || ""} ${s?.last || ""}`.trim();
 
@@ -129,34 +129,42 @@ export const parseShiftTime = (t) => {
 };
 export const shiftHours = (sh) => Math.max(0, parseShiftTime(sh.end) - parseShiftTime(sh.start));
 
-// ── ROSTERED break rule: AREA-DRIVEN — ⚠ KEEP the three function bodies below identical
-// to Ops (deriveBreak in lib/rgUtils; shiftBreakEligible/effectiveBreak in
-// lib/staffStructureUtils). All three live HERE in Admin because the staffAreas dependency
-// is inverted between the repos (Admin rgUtils imports staffStructureUtils, Ops the
-// reverse) — placing them Ops-style would create the import cycle this file documents
-// avoiding. SINGLE SOURCE for the rule in Admin (was three page-local copies).
-// Eligibility = the shift's station → station.area → group.areaBreak[area] (missing → ON);
-// no station or no area → NO auto break. Eligible AND gross ≥ 5h → 30 min UNPAID;
-// otherwise none. No keyword/substring area guessing. Actual clocked breaks (timeEntries)
-// are a separate system.
-export const deriveBreak = (startStr, endStr, eligible) => {
+// ── ROSTERED break rule (issue 2): PER-AREA mins + trigger from group.areaBreak via
+// areaBreakRule (legacy booleans resolve at read time — see staffStructureUtils). ⚠ KEEP
+// the function bodies below identical to Ops (deriveBreak/shiftDateStr/todayDateKey in
+// lib/rgUtils; shiftBreakRule/effectiveBreak in lib/staffStructureUtils) — the ONLY
+// permitted difference is the date-helper name (Admin localDateKey ≡ Ops
+// localBusinessDate). All of them live HERE in Admin because the staffAreas dependency is
+// inverted between the repos — placing them Ops-style would cycle. SINGLE SOURCE per repo.
+// The rule: a shift's station → station.area → that area's { mins, afterHours }; gross ≥
+// afterHours → mins UNPAID; no station/area or mins 0 → no auto break.
+// FROZEN PAST (settled): shifts dated BEFORE TODAY keep the break they had — the stored
+// breakMins mirror is finally READ (its first consumer); shifts predating the mirror fall
+// back to the LEGACY rule (≥5h → 30), the right answer for old shifts. A manual
+// breakOverrideMins wins for ANY date (null = automatic, 0 = no break, n = n minutes).
+// Actual clocked breaks (timeEntries) are a separate system.
+export const deriveBreak = (startStr, endStr, rule) => {
   const grossHours = Math.max(0, parseShiftTime(endStr) - parseShiftTime(startStr));
-  const breakMins = eligible && grossHours >= 5 ? 30 : 0;
+  const breakMins = rule && rule.mins > 0 && grossHours >= rule.afterHours ? rule.mins : 0;
   const unpaidHours = breakMins / 60;
   return { grossHours, breakMins, unpaidHours, paidHours: Math.max(0, grossHours - unpaidHours) };
 };
-export const shiftBreakEligible = (sh, stations, group) => {
+export const shiftBreakRule = (sh, stations, group) => {
   const a = shiftAreaOf(sh, stations);
-  return !!a && areaGetsBreak(group, a);
+  return a ? areaBreakRule(group, a) : null;
 };
-// EFFECTIVE break: manual breakOverrideMins wins when present (!= null) for ANY area incl.
-// no-area; ABSENT means "derive", so existing shifts need no edit. Same return shape as
-// deriveBreak plus `manual`.
 export const effectiveBreak = (sh, stations, group) => {
-  const d = deriveBreak(sh?.start, sh?.end, shiftBreakEligible(sh, stations, group));
-  if (sh?.breakOverrideMins == null) return { ...d, manual: false };
-  const unpaidHours = sh.breakOverrideMins / 60;
-  return { grossHours: d.grossHours, breakMins: sh.breakOverrideMins, unpaidHours, paidHours: Math.max(0, d.grossHours - unpaidHours), manual: true };
+  const finish = (breakMins, manual) => {
+    const grossHours = Math.max(0, parseShiftTime(sh?.end) - parseShiftTime(sh?.start));
+    const unpaidHours = breakMins / 60;
+    return { grossHours, breakMins, unpaidHours, paidHours: Math.max(0, grossHours - unpaidHours), manual };
+  };
+  if (sh?.breakOverrideMins != null) return finish(sh.breakOverrideMins, true);
+  const dk = sh?.weekKey ? shiftDateStr(sh.weekKey, sh.day || 0) : "";
+  if (dk && dk < todayDateKey()) {
+    return finish(sh?.breakMins != null ? (Number(sh.breakMins) || 0) : deriveBreak(sh?.start, sh?.end, LEGACY_BREAK_RULE).breakMins, false);
+  }
+  return finish(deriveBreak(sh?.start, sh?.end, shiftBreakRule(sh, stations, group)).breakMins, false);
 };
 // SINGLE source of truth for shift week keys. Returns the Monday-of-week key for a date.
 // Kept in the existing `toISOString().slice(0,10)` form so already-stored shift weekKeys
@@ -191,6 +199,17 @@ export const mondayFromWeekKey = (weekKey) => {
 // format is load-bearing for stored shift keys and must not be "fixed" silently.
 export const localDateKey = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// REAL calendar date key of a shift day, from the LOCAL Monday (mondayFromWeekKey) — never
+// by re-parsing the UTC-shifted weekKey. ⚠ KEEP identical to Ops rgUtils.shiftDateStr /
+// todayDateKey — only the date-helper name differs (Admin localDateKey ≡ Ops
+// localBusinessDate). The frozen-past check in effectiveBreak reads these.
+export const shiftDateStr = (weekKey, dayIdx) => {
+  const sd = mondayFromWeekKey(weekKey);
+  sd.setDate(sd.getDate() + (dayIdx || 0));
+  return localDateKey(sd);
+};
+export const todayDateKey = () => localDateKey(new Date());
 
 // ── Phase 3e: unified time options + venue-hours bounding (single source — replaces the
 // planner/poster local mkTimes/TIMES copies) ──

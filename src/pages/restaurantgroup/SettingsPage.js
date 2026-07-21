@@ -4,7 +4,7 @@ import { useRG } from "./RGContext";
 import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS } from "./rgConfig";
-import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaGetsBreak, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, empTypeIsSalaried } from "./staffStructureUtils";
+import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaBreakRule, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, empTypeIsSalaried } from "./staffStructureUtils";
 import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS, resolvePosNotePresets } from "./rgStockUtils";
 
 const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
@@ -214,8 +214,12 @@ export default function SettingsPage() {
   };
   const removeArea = async (a) => { await saveAreas(removeFromList(areas, a)); };
   // whole-map writes (not dot-notation) — area names are free text and may contain dots
-  const toggleAreaBreak = async (name) => {
-    const next = { ...(group?.areaBreak || {}), [name]: !areaGetsBreak(group, name) };
+  // Per-area break RULE (issue 2): { mins, afterHours } replaces the legacy boolean for
+  // this area from the first save on (read-side handles both shapes — areaBreakRule).
+  // Whole-map write, same convention as the toggles.
+  const setAreaBreakRule = async (name, patch) => {
+    const cur = areaBreakRule(group, name);
+    const next = { ...(group?.areaBreak || {}), [name]: { mins: cur.mins, afterHours: cur.afterHours, ...patch } };
     try { await updateDoc(groupDoc(groupId), { areaBreak: next }); }
     catch { showToast("Could not save break setting"); }
   };
@@ -519,9 +523,20 @@ export default function SettingsPage() {
                     <button className={`btn btn-sm ${areaExclusive(group, a) ? "btn-primary" : ""}`} disabled={!editable}
                       title={areaExclusive(group, a) ? "Exclusive — staff holding this area appear ONLY under it on the planner, ignoring their other areas" : "Not exclusive — combines normally into Multi-area"}
                       onClick={() => editable && toggleAreaExclusive(a)}>{areaExclusive(group, a) ? "Exclusive ✓" : "Exclusive ✕"}</button>
-                    <button className={`btn btn-sm ${areaGetsBreak(group, a) ? "btn-primary" : ""}`} disabled={!editable}
-                      title={areaGetsBreak(group, a) ? "Rostered break ON — ≥5h shifts on this area's stations get a 30 min unpaid break" : "Rostered break OFF for this area"}
-                      onClick={() => editable && toggleAreaBreak(a)}>{areaGetsBreak(group, a) ? "Break ✓" : "Break ✕"}</button>
+                    {/* per-area break rule (issue 2): minutes + the shift length that triggers
+                        them. "No break" = never automatic (manual per-shift breaks still work). */}
+                    <span title="Automatic rostered break for this area's stations: the minutes are deducted (unpaid) once a shift reaches the trigger length. No break = never automatic — breaks can still be set per shift on Add Shift or the shift detail.">
+                      <select className="form-input" style={{ width: 96, display: "inline-block", padding: "4px 6px", fontSize: 12 }} disabled={!editable}
+                        value={String(areaBreakRule(group, a).mins)} onChange={(e) => setAreaBreakRule(a, { mins: Number(e.target.value) })}>
+                        {[0, 15, 30, 45, 60].map((m) => <option key={m} value={String(m)}>{m === 0 ? "No break" : `${m} min break`}</option>)}
+                      </select>
+                      {areaBreakRule(group, a).mins > 0 && (
+                        <select className="form-input" style={{ width: 84, display: "inline-block", padding: "4px 6px", fontSize: 12, marginLeft: 4 }} disabled={!editable}
+                          value={String(areaBreakRule(group, a).afterHours)} onChange={(e) => setAreaBreakRule(a, { afterHours: Number(e.target.value) })}>
+                          {[...new Set([4, 5, 6, 8, 10, areaBreakRule(group, a).afterHours])].sort((x, y) => x - y).map((h) => <option key={h} value={String(h)}>after {h}h</option>)}
+                        </select>
+                      )}
+                    </span>
                     {editable && areas.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the picklist (existing staff keep their area)" onClick={() => removeArea(a)}>✕</button>}
                   </span>
                 </div>

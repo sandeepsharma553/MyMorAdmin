@@ -3,8 +3,8 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot, deleteF
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
-import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel, fmtHours, parseShiftTime, deriveBreak, shiftBreakEligible as shiftBreakEligibleShared, effectiveBreak as effectiveBreakShared } from "./rgUtils";
-import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas, shiftSectionArea, shiftAreaOf as shiftAreaOfShared } from "./staffStructureUtils";
+import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel, fmtHours, parseShiftTime, deriveBreak, shiftBreakRule as shiftBreakRuleShared, effectiveBreak as effectiveBreakShared } from "./rgUtils";
+import { staffAreas, staffAtStation, areaBreakRule, areaPinned, areaExclusive, orderedAreas, shiftSectionArea, shiftAreaOf as shiftAreaOfShared } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import { contractedLabelForStaff, contractedWeekStatus, fmtContractedRange } from "./contractedHours";
 import StaffCapabilityCard from "./StaffCapabilityCard";
@@ -164,7 +164,7 @@ export default function ShiftPlannerPage() {
   // local reads it — display/math stay derived).
   const setBreakOverride = async (sh, mins) => {
     try {
-      const eff = mins != null ? mins : deriveBreak(sh.start, sh.end, shiftBreakEligible(sh)).breakMins;
+      const eff = mins != null ? mins : deriveBreak(sh.start, sh.end, shiftBreakRule(sh)).breakMins;
       await updateDoc(doc(venueCol(groupId, sh.venueId, "shifts"), sh.id), {
         breakOverrideMins: mins != null ? mins : deleteField(), breakMins: eff,
       });
@@ -183,11 +183,11 @@ export default function ShiftPlannerPage() {
   const weekShiftsAllVenues = useMemo(() => shifts.filter((sh) => (sh.weekKey || wk) === wk), [shifts, wk]);
   const weekShifts = useMemo(() => weekShiftsAllVenues.filter((sh) => selectedVenue === "all" || sh.venueId === selectedVenue), [weekShiftsAllVenues, selectedVenue]);
 
-  // ── Break resolution — the SHARED rule (rgUtils deriveBreak/shiftBreakEligible/
-  // effectiveBreak). Thin adapters bind this page's stations/group so the dozen call
-  // sites below stay unchanged; the rule itself has ONE implementation per repo.
+  // ── Break resolution — the SHARED rule (rgUtils deriveBreak/shiftBreakRule/
+  // effectiveBreak: per-area mins+trigger, frozen past, manual override). Thin adapters
+  // bind this page's stations/group; the rule itself has ONE implementation per repo.
   const shiftAreaOf = (sh) => shiftAreaOfShared(sh, stations);
-  const shiftBreakEligible = (sh) => shiftBreakEligibleShared(sh, stations, group);
+  const shiftBreakRule = (sh) => shiftBreakRuleShared(sh, stations, group);
   const effectiveBreak = (sh) => effectiveBreakShared(sh, stations, group);
 
   // ── Public holidays (read-only) ── live-listen to the settings doc; fall back to the
@@ -421,7 +421,8 @@ export default function ShiftPlannerPage() {
   const dayHeadcount = (day) => new Set(weekShifts.filter((sh) => sh.day === day && rosteredIds.has(sh.staffId)).map((sh) => sh.staffId)).size;
   const weekHeadcount = new Set(weekShifts.filter((sh) => rosteredIds.has(sh.staffId)).map((sh) => sh.staffId)).size;
 
-  const [form, setForm] = useState({ editId: null, staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: (roles && roles[0]) || ROLES[0], venueId: "", stationId: "", notes: "" });
+  // breakOverrideMins: "" = Automatic (use the area rule); "0".."60" = the manual value
+  const [form, setForm] = useState({ editId: null, staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: (roles && roles[0]) || ROLES[0], venueId: "", stationId: "", notes: "", breakOverrideMins: "" });
   const formStations = useMemo(() => stations.filter((s) => s.venueId === form.venueId), [stations, form.venueId]);
   // Time pickers bounded to the selected venue's trading hours ±1h (Phase 3e — was ±2h)
   // via the shared boundedTimes/hoursEnvelopeForDay; hours missing / day closed /
@@ -464,6 +465,8 @@ export default function ShiftPlannerPage() {
       role: st?.role || (roles && roles.includes(p.role) ? p.role : ((roles && roles[0]) || ROLES[0])),
       venueId: resolvedVenueId,
       stationId: "",
+      breakOverrideMins: "", // new shifts start on Automatic
+
       // venue-hours default (open−1h / close) → previous times
       start: def?.start || p.start,
       end: def?.end || p.end,
@@ -477,6 +480,7 @@ export default function ShiftPlannerPage() {
       editId: sh.id, staffId: sh.staffId, day: FULL_DAYS[sh.day] || "Monday",
       start: sh.start, end: sh.end, role: sh.role || ((roles && roles[0]) || ROLES[0]),
       venueId: sh.venueId, stationId: sh.stationId || "", notes: sh.notes || "",
+      breakOverrideMins: sh.breakOverrideMins != null ? String(sh.breakOverrideMins) : "",
     });
     setShiftDetail(null);
     setModal(true);
@@ -516,20 +520,22 @@ export default function ShiftPlannerPage() {
         day: dayIdx, start: form.start, end: form.end, role: form.role,
         venueId: venue.id, venue: venue.name,
         stationId: station?.id || "", station: station?.name || "",
-        // EFFECTIVE break stored (existing override ?? area-driven ≥5h rule) — for Ops/export
-        // consistency only; nothing local READS this field (display/math stay derived). The
-        // override is carried through so a venue-move (delete + recreate) can't drop it.
-        breakMins: editing?.breakOverrideMins != null ? editing.breakOverrideMins
-          : deriveBreak(form.start, form.end, !!(station?.area && areaGetsBreak(group, station.area))).breakMins,
-        ...(editing?.breakOverrideMins != null ? { breakOverrideMins: editing.breakOverrideMins } : {}),
+        // EFFECTIVE break stored (form's manual value ?? the area's own rule). The mirror
+        // matters now: effectiveBreak READS it for shifts dated before today (frozen past).
+        // The form owns the override (seeded from the shift on edit) — same semantics as
+        // the detail modal's control: null = automatic, 0 = no break, n = n minutes.
+        breakMins: form.breakOverrideMins !== "" ? Number(form.breakOverrideMins)
+          : deriveBreak(form.start, form.end, station?.area ? areaBreakRule(group, station.area) : null).breakMins,
+        ...(form.breakOverrideMins !== "" ? { breakOverrideMins: Number(form.breakOverrideMins) } : {}),
         type, notes: form.notes.trim(), weekKey: wk, published: true,
         // (Phase 3c) availabilityId is NO LONGER written — availability is informational
         // only. Existing shifts' stored availabilityId is left alone (no migration).
       };
       let shiftId;
       if (editing && editing.venueId === venue.id) {
-        // edit in place (same venue subcollection)
-        await updateDoc(doc(venueCol(groupId, venue.id, "shifts"), form.editId), shiftData);
+        // edit in place (same venue subcollection). Automatic on the form clears any
+        // stored override (deleteField) — same revert path as the detail modal.
+        await updateDoc(doc(venueCol(groupId, venue.id, "shifts"), form.editId), { ...shiftData, ...(form.breakOverrideMins === "" ? { breakOverrideMins: deleteField() } : {}) });
         shiftId = form.editId;
       } else if (editing) {
         // venue changed → move: delete the old doc, create under the new venue
@@ -951,6 +957,15 @@ export default function ShiftPlannerPage() {
               <div className="form-group"><label className="form-label">End time</label>
                 <select className="form-input" value={form.end} onChange={setF("end")}>{endOptions.map((t) => <option key={t}>{t}</option>)}</select>
               </div>
+              {/* Break (issue 2) — writes breakOverrideMins exactly like the detail modal's
+                  control (null = automatic, 0 = no break, n = n minutes); Automatic clears
+                  a stored override on save (deleteField) so the area rule applies again. */}
+              <div className="form-group"><label className="form-label">Break</label>
+                <select className="form-input" value={form.breakOverrideMins} onChange={setF("breakOverrideMins")}>
+                  <option value="">Automatic (use the area rule)</option>
+                  {[0, 15, 30, 45, 60].map((m) => <option key={m} value={String(m)}>{m} min{m === 0 ? " (no break)" : ""}</option>)}
+                </select>
+              </div>
               <div className="form-group"><label className="form-label">Role for this shift</label>
                 <select className="form-input" value={form.role} onChange={setF("role")}>{[...new Set([form.role, ...(roles?.length ? roles : ROLES)].filter(Boolean))].map((r) => <option key={r}>{r}</option>)}</select>
               </div>
@@ -974,7 +989,7 @@ export default function ShiftPlannerPage() {
               const editingShift = form.editId ? shifts.find((s) => s.id === form.editId) : null;
               const b = effectiveBreak({ start: form.start, end: form.end, stationId: form.stationId, venueId: form.venueId, breakOverrideMins: editingShift?.breakOverrideMins });
               const fArea = stations.find((s) => s.id === form.stationId && s.venueId === form.venueId)?.area || null;
-              const why = !fArea ? " (no station → no area → no auto break)" : (!areaGetsBreak(group, fArea) ? ` (${fArea}: breaks off)` : "");
+              const why = !fArea ? " (no station → no area → no auto break)" : (() => { const r = areaBreakRule(group, fArea); return r.mins > 0 ? "" : ` (${fArea}: no automatic break)`; })();
               return (
                 <div style={{ fontSize: 11, color: "var(--gray)", margin: "2px 0 8px" }}>
                   {b.breakMins > 0
@@ -1010,7 +1025,7 @@ export default function ShiftPlannerPage() {
                 const b = effectiveBreak(shiftDetail);
                 const area = shiftAreaOf(shiftDetail);
                 const src = b.manual ? "manual override"
-                  : area ? (areaGetsBreak(group, area) ? `auto — ${area}` : `auto — ${area}: breaks off`)
+                  : area ? (() => { const r = areaBreakRule(group, area); return r.mins > 0 ? `auto — ${area}: ${r.mins} min after ${r.afterHours}h` : `auto — ${area}: no automatic break`; })()
                   : "auto — no station/area";
                 return b.breakMins > 0
                   ? `${fmtHours(b.grossHours)}h gross · ${fmtHours(b.paidHours)}h paid · ${fmtHours(b.unpaidHours)}h unpaid (${b.breakMins} min break · ${src})`
