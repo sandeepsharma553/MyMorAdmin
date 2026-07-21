@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useRG } from "./RGContext";
-import { fullName, weekKeyOf, localDateKey, fmtHours } from "./rgUtils";
-import { areaGetsBreak } from "./staffStructureUtils";
+import { fullName, weekKeyOf, localDateKey, fmtHours, effectiveBreak } from "./rgUtils";
 import { contractedWeekStatus, fmtContractedRange } from "./contractedHours";
 
 /* Reports — first tenant: contracted vs rostered (Issue 6 part C).
@@ -14,9 +13,9 @@ import { contractedWeekStatus, fmtContractedRange } from "./contractedHours";
    their venues' staff), not a report filter — the picker changes nothing here. */
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-// Week machinery + paid-hours chain — mirrors ShiftPlannerPage (its versions are
-// page-local). ⚠ KEEP identical to the planner's mondayOf/fmt/parseTime/deriveBreak:
-// the report's "rostered" figure must equal the planner's Hours column to the minute.
+// Week machinery — mirrors ShiftPlannerPage (its versions are page-local). ⚠ KEEP
+// identical to the planner's mondayOf/fmt. The paid-hours chain is no longer mirrored:
+// it's the SHARED rgUtils effectiveBreak, the same call the planner makes.
 function mondayOf(offset) {
   const d = new Date();
   const dow = (d.getDay() + 6) % 7;
@@ -25,20 +24,6 @@ function mondayOf(offset) {
   return d;
 }
 const fmt = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
-function parseTime(t) {
-  if (!t) return 0;
-  const m = /(\d+):(\d+)(am|pm)/i.exec(t.trim());
-  if (!m) return 0;
-  let h = parseInt(m[1], 10) % 12;
-  if (/pm/i.test(m[3])) h += 12;
-  return h + parseInt(m[2], 10) / 60;
-}
-const deriveBreak = (startStr, endStr, eligible) => {
-  const grossHours = Math.max(0, parseTime(endStr) - parseTime(startStr));
-  const breakMins = eligible && grossHours >= 5 ? 30 : 0;
-  const unpaidHours = breakMins / 60;
-  return { grossHours, breakMins, unpaidHours, paidHours: Math.max(0, grossHours - unpaidHours) };
-};
 
 export default function ReportsPage() {
   const { scopedStaff, shifts, leave, stations, group } = useRG();
@@ -53,17 +38,9 @@ export default function ReportsPage() {
     return localDateKey(d);
   }, []), [offset]); // eslint-disable-line react-hooks/exhaustive-deps -- monday derives 1:1 from offset
 
-  // ⚠ KEEP identical to the planner's effectiveBreak chain (station → area →
-  // group.areaBreak flag; manual breakOverrideMins wins when present).
-  const shiftBreakEligible = (sh) => {
-    const a = stations.find((x) => x.id === sh.stationId && x.venueId === sh.venueId)?.area || null;
-    return !!a && areaGetsBreak(group, a);
-  };
-  const paidHoursOf = (sh) => {
-    const d = deriveBreak(sh.start, sh.end, shiftBreakEligible(sh));
-    if (sh.breakOverrideMins == null) return d.paidHours;
-    return Math.max(0, d.grossHours - sh.breakOverrideMins / 60);
-  };
+  // The SHARED break chain (rgUtils effectiveBreak — the same call the planner makes),
+  // so the report's "rostered" figure equals the planner's Hours column by construction.
+  const paidHoursOf = (sh) => effectiveBreak(sh, stations, group).paidHours;
 
   // ALL VENUES deliberately: the week filter only — selectedVenue is never consulted.
   const weekShiftsAll = useMemo(() => shifts.filter((sh) => (sh.weekKey || wk) === wk), [shifts, wk]);

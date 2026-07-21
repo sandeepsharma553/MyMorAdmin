@@ -3,8 +3,8 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot, deleteF
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
-import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel, fmtHours, parseShiftTime } from "./rgUtils";
-import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas, shiftSectionArea } from "./staffStructureUtils";
+import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel, fmtHours, parseShiftTime, deriveBreak, shiftBreakEligible as shiftBreakEligibleShared, effectiveBreak as effectiveBreakShared } from "./rgUtils";
+import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas, shiftSectionArea, shiftAreaOf as shiftAreaOfShared } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import { contractedLabelForStaff, contractedWeekStatus, fmtContractedRange } from "./contractedHours";
 import StaffCapabilityCard from "./StaffCapabilityCard";
@@ -47,22 +47,10 @@ function parseTime(t) {
   if (/pm/i.test(m[3])) h += 12;
   return h + parseInt(m[2], 10) / 60;
 }
-// Hours are on the PAID basis everywhere on this page (gross − EFFECTIVE break; see
-// effectiveBreak in the component: manual override ?? area-derived). Gross appears only
-// inside per-shift/per-row breakdowns via deriveBreak's grossHours. The old local
-// shiftHours helper is gone — rgUtils.shiftHours is unchanged for other pages.
-// ── ROSTERED break rule: AREA-DRIVEN. Eligibility = the shift's station → station.area →
-// group.areaBreak[area] (Settings toggle, missing entry → ON). No station or no area → NO
-// auto break. Eligible AND gross ≥ 5h → 30 min UNPAID; otherwise none. No keyword/substring
-// area guessing — the flag is looked up by the exact area string. PLANNED hours only —
-// actual clocked breaks (timeEntries) are a separate system. SINGLE SOURCE for the rule:
-// callers resolve `eligible` via shiftBreakEligible; manual overrides via effectiveBreak.
-const deriveBreak = (startStr, endStr, eligible) => {
-  const grossHours = Math.max(0, parseTime(endStr) - parseTime(startStr));
-  const breakMins = eligible && grossHours >= 5 ? 30 : 0;
-  const unpaidHours = breakMins / 60;
-  return { grossHours, breakMins, unpaidHours, paidHours: Math.max(0, grossHours - unpaidHours) };
-};
+// Hours are on the PAID basis everywhere on this page (gross − EFFECTIVE break: manual
+// override ?? area-derived). The break rule itself (deriveBreak/effectiveBreak) now lives
+// in rgUtils — ONE implementation per repo, shared with ReportsPage and StaffDirectory's
+// period split; thin adapters below bind this page's stations/group.
 
 const cellClass = (type) =>
   type === "evening" ? "shift-evening" : type === "open" ? "shift-open" : type === "off" ? "shift-off" : "shift-morning";
@@ -195,19 +183,12 @@ export default function ShiftPlannerPage() {
   const weekShiftsAllVenues = useMemo(() => shifts.filter((sh) => (sh.weekKey || wk) === wk), [shifts, wk]);
   const weekShifts = useMemo(() => weekShiftsAllVenues.filter((sh) => selectedVenue === "all" || sh.venueId === selectedVenue), [weekShiftsAllVenues, selectedVenue]);
 
-  // ── Area-driven break resolution ── station (exact id + venue match) → its area string →
-  // the owner's per-area flag. Unknown station / missing area → null → no auto break.
-  const shiftAreaOf = (sh) => stations.find((x) => x.id === sh.stationId && x.venueId === sh.venueId)?.area || null;
-  const shiftBreakEligible = (sh) => { const a = shiftAreaOf(sh); return !!a && areaGetsBreak(group, a); };
-  // EFFECTIVE break: manual breakOverrideMins (set in the shift-detail modal) wins when
-  // present; ABSENT means "derive", so existing shifts need no edit. Same return shape as
-  // deriveBreak plus `manual`.
-  const effectiveBreak = (sh) => {
-    const d = deriveBreak(sh.start, sh.end, shiftBreakEligible(sh));
-    if (sh.breakOverrideMins == null) return { ...d, manual: false };
-    const unpaidHours = sh.breakOverrideMins / 60;
-    return { grossHours: d.grossHours, breakMins: sh.breakOverrideMins, unpaidHours, paidHours: Math.max(0, d.grossHours - unpaidHours), manual: true };
-  };
+  // ── Break resolution — the SHARED rule (rgUtils deriveBreak/shiftBreakEligible/
+  // effectiveBreak). Thin adapters bind this page's stations/group so the dozen call
+  // sites below stay unchanged; the rule itself has ONE implementation per repo.
+  const shiftAreaOf = (sh) => shiftAreaOfShared(sh, stations);
+  const shiftBreakEligible = (sh) => shiftBreakEligibleShared(sh, stations, group);
+  const effectiveBreak = (sh) => effectiveBreakShared(sh, stations, group);
 
   // ── Public holidays (read-only) ── live-listen to the settings doc; fall back to the
   // seed so PH still shows before the owner saves anything. (Editing lives in Settings.)

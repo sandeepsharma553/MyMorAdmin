@@ -13,11 +13,11 @@ import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
 import { isJuniorType, isMinorDob } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
-import { staffAreas, roleConfiguredArea, isMultiArea, stationsForVenue, areaGetsBreak, empTypeIsSalaried, rateSplitFromPrivate } from "./staffStructureUtils";
+import { staffAreas, roleConfiguredArea, isMultiArea, stationsForVenue, empTypeIsSalaried, rateSplitFromPrivate } from "./staffStructureUtils";
 import { contractedNum, contractedSplitFromPrivate } from "./contractedHours";
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
-import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, fmtHours } from "./rgUtils";
+import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, fmtHours, effectiveBreak } from "./rgUtils";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
@@ -1106,24 +1106,19 @@ export default function StaffDirectoryPage() {
     // Venue state via venueState(): top-level state OR address.state, normalised to a code
     // ("Victoria" → "VIC"). A venue with no recognisable state has no detectable PH —
     // that shift honestly falls through to the plain Sat/Sun/Mon–Fri bucket.
-    // ROSTERED break split — EFFECTIVE per shift, mirroring ShiftPlannerPage: a manual
-    // breakOverrideMins wins; else AREA-DRIVEN (stationId → station.area → group.areaBreak,
-    // missing entry → ON; no station/area → none) AND gross ≥ 5h → 30 min UNPAID. No keyword
-    // guessing — the flag is looked up by the exact area string. Gross comes from the SHARED
-    // rgUtils.shiftHours, which is deliberately untouched (weeklyHours / StaffCapabilityCard
-    // / Ops mirror depend on it). The four day-type buckets are PAID (effective break
-    // deducted per shift), matching the planner's hoursByType; grossTot keeps the full span
-    // for the Rostered/Breaks summary line.
-    const shiftBreakMins = (x, h) => {
-      if (x.breakOverrideMins != null) return x.breakOverrideMins;
-      const area = stations.find((st) => st.id === x.stationId && st.venueId === x.venueId)?.area;
-      return area && areaGetsBreak(group, area) && h >= 5 ? 30 : 0;
-    };
+    // ROSTERED break split — EFFECTIVE per shift via the SHARED rgUtils.effectiveBreak
+    // (the planner's exact rule: manual breakOverrideMins wins; else station → area →
+    // group.areaBreak, missing entry → ON, no station/area → none, gross ≥ 5h → 30 min
+    // UNPAID). Gross display still comes from rgUtils.shiftHours — same parser, same
+    // number. The four day-type buckets are PAID (effective break deducted per shift),
+    // matching the planner's hoursByType; grossTot keeps the full span for the
+    // Rostered/Breaks summary line.
+    const shiftBreakMins = (x) => effectiveBreak(x, stations, group).breakMins;
     let mf = 0, sat = 0, sun = 0, ph = 0, grossTot = 0, breakTot = 0;
     sh.forEach((x) => {
       const d = shiftDateOf(x); if (!inPeriod(d)) return;
       const h = shiftHours(x);
-      const bm = shiftBreakMins(x, h);
+      const bm = shiftBreakMins(x);
       const hp = Math.max(0, h - bm / 60); // PAID hours — what the buckets accumulate
       grossTot += h;
       breakTot += bm;

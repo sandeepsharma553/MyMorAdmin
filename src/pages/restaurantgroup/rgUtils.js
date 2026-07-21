@@ -1,5 +1,5 @@
 import { venueColor } from "../../utils/restaurantGroupPaths";
-import { staffAreas } from "./staffStructureUtils";
+import { staffAreas, areaGetsBreak, shiftAreaOf } from "./staffStructureUtils";
 
 export const fullName = (s) => s?.name || `${s?.first || ""} ${s?.last || ""}`.trim();
 
@@ -128,6 +128,36 @@ export const parseShiftTime = (t) => {
   return 0;
 };
 export const shiftHours = (sh) => Math.max(0, parseShiftTime(sh.end) - parseShiftTime(sh.start));
+
+// ── ROSTERED break rule: AREA-DRIVEN — ⚠ KEEP the three function bodies below identical
+// to Ops (deriveBreak in lib/rgUtils; shiftBreakEligible/effectiveBreak in
+// lib/staffStructureUtils). All three live HERE in Admin because the staffAreas dependency
+// is inverted between the repos (Admin rgUtils imports staffStructureUtils, Ops the
+// reverse) — placing them Ops-style would create the import cycle this file documents
+// avoiding. SINGLE SOURCE for the rule in Admin (was three page-local copies).
+// Eligibility = the shift's station → station.area → group.areaBreak[area] (missing → ON);
+// no station or no area → NO auto break. Eligible AND gross ≥ 5h → 30 min UNPAID;
+// otherwise none. No keyword/substring area guessing. Actual clocked breaks (timeEntries)
+// are a separate system.
+export const deriveBreak = (startStr, endStr, eligible) => {
+  const grossHours = Math.max(0, parseShiftTime(endStr) - parseShiftTime(startStr));
+  const breakMins = eligible && grossHours >= 5 ? 30 : 0;
+  const unpaidHours = breakMins / 60;
+  return { grossHours, breakMins, unpaidHours, paidHours: Math.max(0, grossHours - unpaidHours) };
+};
+export const shiftBreakEligible = (sh, stations, group) => {
+  const a = shiftAreaOf(sh, stations);
+  return !!a && areaGetsBreak(group, a);
+};
+// EFFECTIVE break: manual breakOverrideMins wins when present (!= null) for ANY area incl.
+// no-area; ABSENT means "derive", so existing shifts need no edit. Same return shape as
+// deriveBreak plus `manual`.
+export const effectiveBreak = (sh, stations, group) => {
+  const d = deriveBreak(sh?.start, sh?.end, shiftBreakEligible(sh, stations, group));
+  if (sh?.breakOverrideMins == null) return { ...d, manual: false };
+  const unpaidHours = sh.breakOverrideMins / 60;
+  return { grossHours: d.grossHours, breakMins: sh.breakOverrideMins, unpaidHours, paidHours: Math.max(0, d.grossHours - unpaidHours), manual: true };
+};
 // SINGLE source of truth for shift week keys. Returns the Monday-of-week key for a date.
 // Kept in the existing `toISOString().slice(0,10)` form so already-stored shift weekKeys
 // still match (see Issue 18 — format intentionally unchanged, just consolidated).
