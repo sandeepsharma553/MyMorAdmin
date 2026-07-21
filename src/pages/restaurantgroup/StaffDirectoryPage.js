@@ -14,6 +14,7 @@ import { showInActiveList } from "./completionWindow";
 import { isJuniorType, isMinorDob } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
 import { staffAreas, roleConfiguredArea, isMultiArea, stationsForVenue, areaGetsBreak, empTypeIsSalaried, rateSplitFromPrivate } from "./staffStructureUtils";
+import { contractedNum, contractedSplitFromPrivate } from "./contractedHours";
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, fmtHours } from "./rgUtils";
@@ -85,7 +86,11 @@ const EMPLOYMENT_TERMS_FIELDS = [
   // absent-key fallback (rateSplitFromPrivate) — never deleted, never migrated.
   { key: "annualSalary", label: "Annual salary ($)", ph: "e.g. 65000", salariedOnly: true },
   { key: "hourlyRate", label: "Hourly rate ($)", ph: "e.g. 25.80", hourlyOnly: true },
-  { key: "contractedMinHours", label: "Contracted min hours / week", ph: "e.g. 38" },
+  // Contracted hours is a RANGE (client hires on "38–40"): two inputs, max optional.
+  // NEW always-numeric keys — the legacy STRING contractedMinHours is frozen (read-only
+  // fallback via contractedSplitFromPrivate below), never written by this form again.
+  { key: "contractedHoursMin", label: "Contracted min hours / week", ph: "e.g. 38" },
+  { key: "contractedHoursMax", label: "Contracted max hours / week (optional)", ph: "e.g. 40" },
 ];
 // One source of truth for the private/details doc shape. The reducers below iterate THIS,
 // so the existing setDoc(..., {merge:true}) write path picks up the new keys unchanged.
@@ -107,7 +112,23 @@ const payrollFromProfile = (p) => ({
   // rate-split read-fallback — new key ABSENT (undefined, not "") → legacy rate, bucketed
   // by the stored legacy payBasis. See rateSplitFromPrivate for the absent-vs-empty rule.
   ...rateSplitFromPrivate(p),
+  // contracted-range read-fallback (same absent-vs-empty rule): legacy "38-40" strings
+  // split into the two inputs so opening + saving normalises them — read-side only.
+  ...contractedSplitFromPrivate(p),
 });
+// Contracted-range validation + numeric write payload, shared by add (saveStaff) and edit
+// (saveEdit) — both render EMPLOYMENT_TERMS_FIELDS, so both must enforce the same rules:
+// numbers only, max optional, max needs a min and must be ≥ it.
+const contractedIssue = (state) => {
+  const rawMin = String(state.contractedHoursMin ?? "").trim(), rawMax = String(state.contractedHoursMax ?? "").trim();
+  if (rawMin && contractedNum(rawMin) == null) return "Contracted min hours must be a number";
+  if (rawMax && contractedNum(rawMax) == null) return "Contracted max hours must be a number";
+  if (rawMax && !rawMin) return "Contracted max hours needs a min";
+  if (rawMin && rawMax && contractedNum(rawMax) < contractedNum(rawMin)) return "Contracted max hours must be at least the min";
+  return null;
+};
+// payrollFrom String()s every private field; these two are numbers — spread this AFTER it.
+const contractedPairFrom = (state) => ({ contractedHoursMin: contractedNum(state.contractedHoursMin), contractedHoursMax: contractedNum(state.contractedHoursMax) });
 
 const blankForm = (defaultVenue) => ({
   name: "", role: "FOH", areas: [], venueIds: defaultVenue && defaultVenue !== "all" ? [defaultVenue] : [],
@@ -395,6 +416,8 @@ export default function StaffDirectoryPage() {
     if (!form.name.trim()) return showToast("Name is required");
     if (!form.venueIds.length) return showToast("Select at least one venue");
     if (form.hasAdminLogin && (!isEmail(form.email))) return showToast("Admin access needs a valid email");
+    const contractedErr = contractedIssue(form);
+    if (contractedErr) return showToast(contractedErr);
     setSaving(true);
     try {
       const displayName = uniqueDisplayName(form.name, [...staff, ...draftStaff], draftId); // dedupe against drafts too; skip the one being completed
@@ -431,7 +454,7 @@ export default function StaffDirectoryPage() {
         staffId = created.id;
       }
       // sensitive data (payroll + login password) → private subcollection (owner/storeAdmin only in rules)
-      if (canPayroll) await setDoc(staffPrivateDoc(groupId, staffId), { ...payrollFrom(form), password: pwd, updatedAt: serverTimestamp() });
+      if (canPayroll) await setDoc(staffPrivateDoc(groupId, staffId), { ...payrollFrom(form), ...contractedPairFrom(form), password: pwd, updatedAt: serverTimestamp() });
       showToast(`${displayName} added`);
       logChange("staff.create", `Added staff member ${displayName} (${form.role})`, { venueIds: form.venueIds });
       setAddOpen(false); setDraftId(null); setForm(blankForm(selectedVenue));
@@ -542,6 +565,8 @@ export default function StaffDirectoryPage() {
   };
   const saveEdit = async () => {
     if (!edit.venueIds.length) return showToast("Select at least one venue");
+    const contractedErr = contractedIssue(edit);
+    if (contractedErr) return showToast(contractedErr);
     if (!confirmSave) { setConfirmSave(true); return; }
     setSaving(true);
     try {
@@ -574,10 +599,10 @@ export default function StaffDirectoryPage() {
       await updateDoc(doc(staffCol(groupId), profile.id), patch);
       // sensitive payroll data → private subcollection (owner/storeAdmin only in rules)
       if (canPayroll) {
-        await setDoc(staffPrivateDoc(groupId, profile.id), { ...payrollFrom(edit), password: newPwd, updatedAt: serverTimestamp() }, { merge: true });
-        // mirror contracted hours to the staff doc (manager-readable; private value unchanged)
-        await setDoc(staffDoc(groupId, profile.id), { contractedWeeklyHours: Number(edit.contractedMinHours) || null, updatedAt: serverTimestamp() }, { merge: true });
-        setPayroll({ ...payrollFrom(edit), password: newPwd });
+        await setDoc(staffPrivateDoc(groupId, profile.id), { ...payrollFrom(edit), ...contractedPairFrom(edit), password: newPwd, updatedAt: serverTimestamp() }, { merge: true });
+        // mirror the contracted RANGE to the staff doc (manager-readable; private values unchanged)
+        await setDoc(staffDoc(groupId, profile.id), { contractedWeeklyHours: contractedNum(edit.contractedHoursMin), contractedWeeklyHoursMax: contractedNum(edit.contractedHoursMax), updatedAt: serverTimestamp() }, { merge: true });
+        setPayroll({ ...payrollFrom(edit), ...contractedPairFrom(edit), password: newPwd });
       }
       if (changes.length) logChange("staff.update", `Updated ${displayName}: ${changes.join("; ")}`, { staffId: profile.id, venueIds: edit.venueIds });
       showToast("Staff profile updated");

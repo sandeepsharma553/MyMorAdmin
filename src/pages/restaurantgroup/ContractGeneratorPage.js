@@ -6,6 +6,7 @@ import { contractTemplatesCol, contractDefaultsDoc, contractsCol, staffPrivateDo
 import { isManager } from "./rgConfig";
 import { isMinorDob } from "./staffMinorUtils";
 import contractFill from "./contractFill";
+import { contractedRangeOf, contractedNum, fmtContractedRange } from "./contractedHours";
 import { awardForVenue, isAwardUsableForLabour, staffIsCasual } from "./rgComplianceUtils";
 import { rateSplitFromPrivate } from "./staffStructureUtils";
 import { localDateKey } from "./rgUtils";
@@ -128,7 +129,11 @@ function buildValues(staff, priv, defaults, overrides, entities, venues, awardRa
     employee_address: priv?.address || "",
     classification_level: priv?.classificationLevel || "",
     hourly_rate: privHourly,
-    contracted_min_hours: priv?.contractedMinHours || "",
+    // pair-first (new numeric keys, legacy-string parse as fallback) so a form-edited range
+    // can't feed a stale value into the contract. The token stays the MIN — the frozen
+    // template wording is "a minimum of {{contracted_min_hours}} hours", so the min is the
+    // only value that reads correctly there until the client's new contract docs arrive.
+    contracted_min_hours: (() => { const r = contractedRangeOf(priv); return r.min != null ? String(r.min) : ""; })(),
     employer_name: entity ? entity.name : (defaults?.employerName || ""),
     // mirrors employer_name: the venue-mapped entity's address, else contractDefaults.employerAddress.
     // NB: follows pickEntityForStaff (venue), so a MANUAL employer_name dropdown change does NOT
@@ -296,10 +301,14 @@ export default function ContractGeneratorPage() {
     }
     if (!Object.keys(patch).length) return;
     patch.updatedAt = serverTimestamp();
+    // The generator only carries a MIN (its token). Write the numeric min key alongside the
+    // legacy string, but NEVER the max keys — merge leaves a staff-form-set max untouched
+    // (omitting a key is the anti-clobber; writing null here would erase it).
+    if (writeBack.contracted_min_hours) patch.contractedHoursMin = contractedNum(values.contracted_min_hours);
     await setDoc(staffPrivateDoc(groupId, selStaff.id), patch, { merge: true });
     // mirror contracted hours to the staff doc (manager-readable) when that field was written back
     if (writeBack.contracted_min_hours) {
-      await setDoc(staffDoc(groupId, selStaff.id), { contractedWeeklyHours: Number(values.contracted_min_hours) || null, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(staffDoc(groupId, selStaff.id), { contractedWeeklyHours: contractedNum(values.contracted_min_hours), updatedAt: serverTimestamp() }, { merge: true });
     }
   };
 
@@ -564,7 +573,9 @@ export default function ContractGeneratorPage() {
                   <strong>Rate:</strong> {rateInfo.hasRate ? `$${rateInfo.rate}/hr` : <span style={{ color: "var(--red)" }}>—</span>}{" "}
                   <span style={{ fontSize: 12, color: rateInfo.warn ? "#b45309" : "var(--gray)" }}>({rateInfo.source})</span>
                 </div>
-                <div><strong>Contracted hours:</strong> {values.contracted_min_hours ? `${values.contracted_min_hours}/week` : "—"}</div>
+                {/* the PAIR via the shared formatter, so this agrees with the planner (the raw
+                    token value is min-only and still fills the contract text unchanged) */}
+                <div><strong>Contracted hours:</strong> {(() => { const r = contractedRangeOf(priv); return fmtContractedRange(r.min, r.max) || "—"; })()}</div>
                 {emptyCount > 0 && <div style={{ marginTop: 6, fontSize: 12, color: "#b45309" }}>{emptyCount} field{emptyCount > 1 ? "s" : ""} still empty — ‹…› will show in the PDF.</div>}
               </div>
               <div className="btn-row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 14 }}>

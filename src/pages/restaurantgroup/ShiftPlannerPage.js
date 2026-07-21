@@ -6,6 +6,7 @@ import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState }
 import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel, fmtHours } from "./rgUtils";
 import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
+import { contractedLabelForStaff } from "./contractedHours";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 import { checkAndCreateShiftAssignments } from "./checklistShiftUtils";
 
@@ -603,8 +604,8 @@ export default function ShiftPlannerPage() {
                   <td style={{ padding: "6px 10px", borderBottom: "0.5px solid var(--gray-light)" }}>
                     <div style={{ fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--red)" }} onClick={() => setCapStaff(s)} title="View capability">{fullName(s)}</div>
                     <div style={{ fontSize: 9, color: "var(--gray)" }}>{s.role}</div>
-                    {s.type !== "Casual" && Number(s.contractedWeeklyHours) > 0 && (
-                      <div style={{ fontSize: 8, color: "var(--gray)" }}>Contracted: {Number(s.contractedWeeklyHours)}h/wk</div>
+                    {contractedLabelForStaff(s) && (
+                      <div style={{ fontSize: 8, color: "var(--gray)" }}>Contracted: {contractedLabelForStaff(s)}</div>
                     )}
                   </td>
                   {DAYS.map((_, day) => {
@@ -657,11 +658,12 @@ export default function ShiftPlannerPage() {
       <td style={{ padding: "8px 14px", borderBottom: "0.5px solid var(--gray-light)" }}>
         <div style={{ fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--red)" }} onClick={() => setCapStaff(s)} title="View capability (certs, training, history)">{fullName(s)}</div>
         <div style={{ fontSize: 10, color: "var(--gray)" }}>{s.role}</div>
-        {/* contracted minimum under the name — only when set (contractedWeeklyHours populates on
-            staff-edit / contract write-back, no bulk migration, so blank is EXPECTED); casuals
-            have no contracted minimum. Absent/null/0 → render nothing. */}
-        {s.type !== "Casual" && Number(s.contractedWeeklyHours) > 0 && (
-          <div style={{ fontSize: 9, color: "var(--gray)" }}>Contracted: {Number(s.contractedWeeklyHours)}h/wk</div>
+        {/* contracted hours under the name — RANGE-aware ("38–40h/wk" when a max exists) via
+            the ONE shared formatter (contractedLabelForStaff: Casual gate + min>0 baked in, so
+            this and the split pane can't drift). Mirror populates on staff-edit / contract
+            write-back, no bulk migration, so blank is EXPECTED. */}
+        {contractedLabelForStaff(s) && (
+          <div style={{ fontSize: 9, color: "var(--gray)" }}>Contracted: {contractedLabelForStaff(s)}</div>
         )}
       </td>
       {DAYS.map((_, day) => {
