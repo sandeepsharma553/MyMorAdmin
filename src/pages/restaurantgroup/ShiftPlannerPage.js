@@ -186,7 +186,11 @@ export default function ShiftPlannerPage() {
     } catch { showToast("Could not update break"); }
   };
 
-  const weekShifts = useMemo(() => shifts.filter((sh) => (sh.weekKey || wk) === wk), [shifts, wk]);
+  // TWO BASES: the split panes scope by their OWN vid and must not depend on the global
+  // top-bar picker (selectedVenue stays live in split mode — pre-filtering the shared list
+  // would empty any pane whose venue differs from it). Everything else is venue-scoped.
+  const weekShiftsAllVenues = useMemo(() => shifts.filter((sh) => (sh.weekKey || wk) === wk), [shifts, wk]);
+  const weekShifts = useMemo(() => weekShiftsAllVenues.filter((sh) => selectedVenue === "all" || sh.venueId === selectedVenue), [weekShiftsAllVenues, selectedVenue]);
 
   // ── Area-driven break resolution ── station (exact id + venue match) → its area string →
   // the owner's per-area flag. Unknown station / missing area → null → no auto break.
@@ -313,7 +317,9 @@ export default function ShiftPlannerPage() {
   // Fortnight total: this week + the next week. Build nextWk via weekKeyOf(nextMonday)
   // (same path shifts are keyed with) so it matches stored weekKeys exactly (AEST Issue-18).
   const nextWk = useMemo(() => { const nextMonday = new Date(monday); nextMonday.setDate(monday.getDate() + 7); return weekKeyOf(nextMonday); }, [monday]);
-  const fortnightHours = useMemo(() => shifts.filter((sh) => { const k = sh.weekKey || wk; return k === wk || k === nextWk; }).reduce((a, sh) => a + effectiveBreak(sh).paidHours, 0), [shifts, wk, nextWk, stations, group]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Venue-scoped like every other footer figure (same condition as weekShifts, so the two
+  // agree by construction) — display-only total, nothing threshold-based reads it.
+  const fortnightHours = useMemo(() => shifts.filter((sh) => { const k = sh.weekKey || wk; return (k === wk || k === nextWk) && (selectedVenue === "all" || sh.venueId === selectedVenue); }).reduce((a, sh) => a + effectiveBreak(sh).paidHours, 0), [shifts, wk, nextWk, selectedVenue, stations, group]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Area→Station drill-down: stations of the SELECTED area scoped to the selected venue
   // (respects "All venues"). Only meaningful once a specific area is picked.
@@ -456,10 +462,12 @@ export default function ShiftPlannerPage() {
     const dayIdx = FULL_DAYS.indexOf(form.day);
     const ns = parseTime(form.start), ne = parseTime(form.end);
     if (ne <= ns) return showToast("End time must be after start time");
-    // Hard block: no overlapping shift for this person that day, across ANY venue.
+    // Hard block: no overlapping shift for this person that day, across ANY venue — so it
+    // checks the ALL-VENUES list, not the picker-scoped weekShifts (a clash at another venue
+    // must still block even when a single venue is selected; Ops guards off the raw list too).
     // (7am–3pm + 3pm–9pm is fine — they only touch; strict overlap = ns < end && start < ne.)
     // overlap check excludes the shift being edited (so re-saving its own times is allowed)
-    const clash = weekShifts.find((sh) => sh.id !== form.editId && sh.staffId === form.staffId && sh.day === dayIdx
+    const clash = weekShiftsAllVenues.find((sh) => sh.id !== form.editId && sh.staffId === form.staffId && sh.day === dayIdx
       && ns < parseTime(sh.end) && parseTime(sh.start) < ne);
     if (clash) return showToast(`Already rostered ${clash.start}–${clash.end} at ${clash.venue} that day — can't double-book.`);
     // approved leave blocks rostering across ALL venues (leave is group-wide for the person)
@@ -549,7 +557,7 @@ export default function ShiftPlannerPage() {
   const thSticky = { ...th, position: "sticky", top: 0, zIndex: 2, background: "var(--gray-light)", borderBottom: undefined, boxShadow: "inset 0 -1px 0 var(--border)" };
 
   // Cell shifts scoped to a venue (for the split comparison view) — START-time sorted (#1).
-  const cellShiftsV = (staffId, day, vid) => weekShifts.filter((sh) => sh.staffId === staffId && sh.day === day && (vid === "all" || sh.venueId === vid)).sort((a, b) => parseTime(a.start) - parseTime(b.start));
+  const cellShiftsV = (staffId, day, vid) => weekShiftsAllVenues.filter((sh) => sh.staffId === staffId && sh.day === day && (vid === "all" || sh.venueId === vid)).sort((a, b) => parseTime(a.start) - parseTime(b.start));
   const VenueGrid = ({ vid }) => {
     // Phase-2 SECTIONS per column (split-view fix): the same grouping/order as the main
     // grid via groupRowsFor — and the area + station filters are now honoured here too
@@ -562,11 +570,11 @@ export default function ShiftPlannerPage() {
       return (perVenue && perVenue.length) ? perVenue : staffAreas(s);
     };
     const gridSections = groupRowsFor(
-      scopedStaff.filter((s) => staffInVenue(s, vid) && !hasLeft(s) && staffAtStation(s, effStation, weekShifts)),
+      scopedStaff.filter((s) => staffInVenue(s, vid) && !hasLeft(s) && staffAtStation(s, effStation, weekShiftsAllVenues)),
       areasOfVenue
     );
     const gridRows = gridSections.flatMap((g) => g.members); // footer hours + empty state
-    const gh = gridRows.reduce((a, s) => a + weekShifts.filter((sh) => sh.staffId === s.id && (vid === "all" || sh.venueId === vid)).reduce((x, sh) => x + effectiveBreak(sh).paidHours, 0), 0);
+    const gh = gridRows.reduce((a, s) => a + weekShiftsAllVenues.filter((sh) => sh.staffId === s.id && (vid === "all" || sh.venueId === vid)).reduce((x, sh) => x + effectiveBreak(sh).paidHours, 0), 0);
     // split view is always per-venue → closed-day greying keys off vid directly
     const vClosed = (day) => venues.find((v) => v.id === vid)?.hours?.[HOURS_KEYS[day]]?.closed === true;
     return (
