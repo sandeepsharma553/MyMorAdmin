@@ -6,7 +6,7 @@ import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState }
 import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel, fmtHours } from "./rgUtils";
 import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
-import { contractedLabelForStaff } from "./contractedHours";
+import { contractedLabelForStaff, contractedWeekStatus, fmtContractedRange } from "./contractedHours";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 import { checkAndCreateShiftAssignments } from "./checklistShiftUtils";
 
@@ -390,6 +390,17 @@ export default function ShiftPlannerPage() {
   // #5 distinct staff currently shown in the main grid (across all groups) — the basis
   // for the bottom "Staff rostered" headcount row (derived, no extra query).
   const rosteredIds = useMemo(() => new Set(groupedRows.flatMap((g) => g.members.map((s) => s.id))), [groupedRows]);
+  // (B) the under-contract strip — the SAME calculator as the Hours cell, over the SAME
+  // people the grid shows (groupedRows: venue people-filter + area/station filters +
+  // hide-Left), so it never names a row the manager can't see below. Hours themselves stay
+  // ALL-VENUES. Approved leave anywhere in the week → excluded (status "leave", no prorate).
+  const underContract = useMemo(() =>
+    groupedRows.flatMap((g) => g.members).map((s) => ({
+      s,
+      cw: contractedWeekStatus(s, weekShiftsAllVenues.filter((sh) => sh.staffId === s.id), (sh) => effectiveBreak(sh).paidHours, weekDates.some((d) => leaveFor(s.id, d))),
+    })).filter((x) => x.cw.status === "short"),
+    [groupedRows, weekShiftsAllVenues, weekDates, leave, stations, group] // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const dayHeadcount = (day) => new Set(weekShifts.filter((sh) => sh.day === day && rosteredIds.has(sh.staffId)).map((sh) => sh.staffId)).size;
   const weekHeadcount = new Set(weekShifts.filter((sh) => rosteredIds.has(sh.staffId)).map((sh) => sh.staffId)).size;
 
@@ -700,15 +711,28 @@ export default function ShiftPlannerPage() {
         {(() => {
           // PAID total headline (gross − EFFECTIVE break, override-aware) + gross/unpaid
           // subline. The break is area-driven per shift — see effectiveBreak.
-          const t = weekShifts.filter((sh) => sh.staffId === s.id).reduce((a, sh) => {
+          // Issue 6: ALL-VENUES by design — a person's hours are theirs, not the venue's
+          // (weekShiftsAllVenues, the double-book guard's list). With a single venue
+          // picked, the per-venue split line explains the number instead of a footnote.
+          const mine = weekShiftsAllVenues.filter((sh) => sh.staffId === s.id);
+          const t = mine.reduce((a, sh) => {
             const b = effectiveBreak(sh);
             a.gross += b.grossHours; a.paid += b.paidHours; a.unpaid += b.unpaidHours;
             return a;
           }, { gross: 0, paid: 0, unpaid: 0 });
+          const cw = contractedWeekStatus(s, mine, (sh) => effectiveBreak(sh).paidHours, weekDates.some((d) => leaveFor(s.id, d)));
           return (
             <>
               <div>{fmtHours(t.paid)}h</div>
               <div style={{ fontSize: 9, fontWeight: 400, color: "var(--gray)" }}>{fmtHours(t.gross)}h gross · {fmtHours(t.unpaid)}h unpaid</div>
+              {cw.byVenue.length > 1 && (
+                <div style={{ fontSize: 9, fontWeight: 400, color: "var(--gray)" }}>{cw.byVenue.map((v) => `${fmtHours(v.hours)}h ${v.venue}`).join(" · ")}</div>
+              )}
+              {(cw.status === "short" || cw.status === "met") && (
+                <div style={{ fontSize: 9, fontWeight: cw.status === "short" ? 700 : 400, color: cw.status === "short" ? "var(--red)" : "var(--gray)" }}>
+                  {fmtContractedRange(cw.min, cw.max, "h")} contracted{cw.status === "short" ? ` · ${fmtHours(cw.shortBy)}h short` : ""}
+                </div>
+              )}
             </>
           );
         })()}
@@ -814,6 +838,15 @@ export default function ShiftPlannerPage() {
           </span>
         ))}
       </div>
+      {/* (B) under-contract strip — exception alert: renders ONLY when someone is short
+          (same only-when-relevant rule as "Your shift today"). Above the grid because the
+          grid scrolls inside maxHeight calc(100vh - 260px) — the footer is what a manager
+          scrolls past. Leave-block amber = the established attention palette. */}
+      {underContract.length > 0 && (
+        <div style={{ background: "var(--amber-light, #fffbeb)", border: "1px solid #f59e0b", color: "#92400e", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 12, fontWeight: 600 }}>
+          ⚠ {underContract.length} staff under contracted hours: {underContract.map(({ s, cw }, i) => `${fullName(s)} ${fmtHours(cw.shortBy)}h${i === 0 ? " short" : ""}`).join(" · ")}
+        </div>
+      )}
       {/* Roster grid */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 260px)" }}>

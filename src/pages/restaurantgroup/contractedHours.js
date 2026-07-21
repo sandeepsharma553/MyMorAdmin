@@ -56,13 +56,45 @@ export const contractedSplitFromPrivate = (p) => {
 // ONE formatter for every display site. null unless min > 0 (keeps the planner's historic
 // > 0 gate — casuals stored as 0 render nothing); the max only shows when it's a real
 // range (max > min); en-dash, matching the client's own wording ("38–40 hours").
-export const fmtContractedRange = (min, max) => {
+// suffix defaults to the label form ("38–40h/wk"); the Hours-cell contracted line passes
+// "h" ("38–40h contracted") — one formatter, two suffixes, zero drift.
+export const fmtContractedRange = (min, max, suffix = "h/wk") => {
   const lo = contractedNum(min), hi = contractedNum(max);
   if (lo == null || lo <= 0) return null;
-  return hi != null && hi > lo ? `${lo}–${hi}h/wk` : `${lo}h/wk`;
+  return hi != null && hi > lo ? `${lo}–${hi}${suffix}` : `${lo}${suffix}`;
 };
 
 // Staff-doc (mirror) variant with the Casual gate baked in — the planner's two sites call
 // ONLY this, so the gate can't drift between the main grid and the split pane.
 export const contractedLabelForStaff = (s) =>
   !s || s.type === "Casual" ? null : fmtContractedRange(s.contractedWeeklyHours, s.contractedWeeklyHoursMax);
+
+// ── Issue 6 (parts A+B): contracted vs rostered — ONE calculator feeding both the Hours
+// cell and the under-contract strip, so the two can never disagree. ALL-VENUES by design:
+// a contract is with the person, not a venue (the double-book guard's rule) — callers
+// pass the staffer's shifts from the ALL-VENUES week list, never the picker-scoped one.
+// paidHoursOf: injected because effective breaks are area-driven page state (effectiveBreak).
+// onLeave: approved leave anywhere in the shown week → status "leave" — no contracted
+// line, no strip entry, NOT prorated (a leave week is not an under-rostered week).
+// Statuses: "none" (casual / no contracted min — decided by contractedLabelForStaff, the
+// ONE scope gate), "leave", "short" (paid hours < min; shortBy carries the gap), "met"
+// (>= min). Between min and max AND over the max both read "met" — the client's problem
+// is under-rostering, and over-max is already visible in the headline number, so a
+// distinct over status would be noise. byVenue is venue-name sorted for a stable render.
+export const contractedWeekStatus = (s, staffShifts, paidHoursOf, onLeave) => {
+  let hours = 0;
+  const byVenue = [];
+  for (const sh of staffShifts || []) {
+    const h = paidHoursOf(sh);
+    hours += h;
+    const b = byVenue.find((v) => v.venueId === sh.venueId);
+    if (b) b.hours += h; else byVenue.push({ venueId: sh.venueId, venue: sh.venue || "", hours: h });
+  }
+  byVenue.sort((a, b) => a.venue.localeCompare(b.venue));
+  if (contractedLabelForStaff(s) === null) return { hours, byVenue, min: null, max: null, status: "none", shortBy: 0 };
+  if (onLeave) return { hours, byVenue, min: null, max: null, status: "leave", shortBy: 0 };
+  const min = contractedNum(s.contractedWeeklyHours), max = contractedNum(s.contractedWeeklyHoursMax);
+  return hours < min
+    ? { hours, byVenue, min, max, status: "short", shortBy: min - hours }
+    : { hours, byVenue, min, max, status: "met", shortBy: 0 };
+};
