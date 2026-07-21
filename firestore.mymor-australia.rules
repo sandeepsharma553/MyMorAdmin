@@ -29,6 +29,7 @@ service cloud.firestore {
     function rgCanManageStaff(gid) { return rgGroupRoleIn(gid, ['owner', 'storeAdmin', 'manager']); }
     function rgIsGroupUser() { return rgHasEmp() && rgEmp().get('groupId', null) != null; }
     function rgStaff(gid, sid) { return get(/databases/$(database)/documents/restaurantGroups/$(gid)/staff/$(sid)).data; }
+
     function rgIsOwnStaff(gid, sid) {
       return sid != null
         && exists(/databases/$(database)/documents/restaurantGroups/$(gid)/staff/$(sid))
@@ -59,9 +60,10 @@ service cloud.firestore {
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
         // 🔒 Sensitive payroll (TFN / bank / super) — owner/storeAdmin only.
         // Phase 5b: a staffer may READ their own private/details, and UPDATE it restricted
-        // to four personal keys. Employment terms (classificationLevel, annualSalary,
-        // hourlyRate, contractedMinHours), the money fields, and `password` are NOT in the
-        // whitelist, so a self-write touching any of them is rejected outright.
+        // to four personal keys. The whitelist below is hasOnly(), so ANY key not listed is
+        // rejected outright — including every employment term (classificationLevel,
+        // annualSalary, hourlyRate, contractedHoursMin/Max and the retired
+        // contractedMinHours), the money fields, and `password`.
         match /private/details {
           allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
           allow create, delete: if rgIsSuper() || rgIsGroupAdmin(groupId);
@@ -93,6 +95,7 @@ service cloud.firestore {
         // so this is NOT group-readable like auditLog. Owner/storeAdmin, or the staffer
         // themselves. Client writes are append-only; no edits, no deletes.
         match /docHistory/{entryId} {
+
           allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
           allow create: if rgIsSuper() || rgIsGroupAdmin(groupId);
           allow update, delete: if rgIsSuper();
@@ -127,6 +130,7 @@ service cloud.firestore {
         allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
         allow write: if rgIsSuper() || rgIsGroupAdmin(groupId);
       }
+
       // Labour targets ($/hr + weekly revenue) — gated settings doc so staff can't read
       // them (the group doc is group-readable). Read: manager+ (labour % on Shift Planner).
       // Write: owner/storeAdmin only (managers are read-only).
@@ -145,7 +149,7 @@ service cloud.firestore {
 
 
           allow read, write: if (rgIsSuper() || rgIsGroupMember(groupId))
-            && !(coll in ['leaveRequests', 'shifts', 'timeEntries', 'availability', 'stock', 'stockMovements', 'stocktakes', 'batches', 'production', 'orders', 'menuItems']); // ⬅ ADDED 'menuItems'
+            && !(coll in ['leaveRequests', 'shifts', 'timeEntries', 'availability', 'stock', 'stockMovements', 'stocktakes', 'batches', 'production', 'orders', 'menuItems', 'performanceNotes', 'kpis']); // ⬅ ADDED 'performanceNotes', 'kpis'
         }
         // ── Stock / cost collections — manager+ ONLY (matches can('stock') =
         // owner/storeAdmin/manager; staff is stock:none). Holds cost, weighted-avg,
@@ -155,6 +159,15 @@ service cloud.firestore {
         match /stocktakes/{docId=**}     { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
         match /batches/{docId=**}        { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
         match /production/{docId=**}     { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
+        // ── ADDED: Performance (HR records) — manager+ ONLY. The permission matrix says
+        // owner=edit, storeAdmin/manager=view, staff=NONE. These previously rode the venue
+        // catch-all at member read+WRITE, so every staff member could read — and rewrite —
+        // warnings and coaching notes about anyone. Read+write are both manager+ here rather
+        // than split: the matrix wants storeAdmin/manager read-only, but tightening writes
+        // further needs the writers audited first. Excluding staff is the urgent half.
+
+        match /performanceNotes/{docId=**} { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
+        match /kpis/{docId=**}             { allow read, write: if rgIsSuper() || rgCanManageStaff(groupId); }
         // ── Per-venue MENU INSTANCES (template+instance model) — member-READ (POS/floor
         // need sellPrice/variants/86/availability), manager+ WRITE (no staff price-forging).
         // Mirrors the group-level menuItems gate. Server (rgSellOrder, Admin SDK) bypasses.
@@ -189,6 +202,7 @@ service cloud.firestore {
         // Time clock: the kiosk is a SHARED terminal — the signed-in device account writes
         // on behalf of staff (identity is the in-app PIN, NOT auth.uid). So create/update are
         // group-member; delete is managers+. (Manager "approve" is an update by a manager.)
+
         match /timeEntries/{entryId} {
 
         allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
@@ -226,7 +240,8 @@ service cloud.firestore {
       // ── Availability (Phase 3 — cluster-scoped, group-level, INFORMATIONAL-ONLY) ──
       // Staff post when they're free to a GROUP-level collection keyed
       // {staffId}_{clusterId}_{date}. No status / accept / reject / propose — the doc is
-      // pure information; managers READ it and roster manually. This REPLACES the old
+
+     // pure information; managers READ it and roster manually. This REPLACES the old
       // per-venue availability state machine under venues/, which is intentionally LEFT
       // in place (still readable) for the 14-day dual-read cutover, then removed in the
       // post-cutover cleanup along with the legacy read.
@@ -256,11 +271,12 @@ service cloud.firestore {
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
       match /modifierGroups/{modId} {
-        // ⬅ CHANGED: read was rgCanManageStaff — that denial made every POS item look like
-        // it had NO modifiers for staff-tier users (both clients filter modifierGroupIds
-        // against this collection), so required choices bypassed and paid add-ons vanished,
-        // silently, at base price. Holds no cost data — only priceDelta, a price the POS
-        // already shows the customer. Now mirrors the menuItems gate. Write unchanged.
+        // Read was rgCanManageStaff — that denial made every POS item look like it had NO
+        // modifiers for staff-tier users (both clients filter modifierGroupIds against this
+        // collection), so required choices bypassed and paid add-ons vanished, silently, at
+        // base price. Holds no cost data — only priceDelta, a price the POS already shows
+
+         // the customer. Mirrors the menuItems gate. Write unchanged.
         allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
@@ -297,6 +313,7 @@ service cloud.firestore {
       match /announcements/{docId} { allow read, write: if rgIsSuper() || rgIsGroupMember(groupId); }
       match /messages/{docId}      { allow read, write: if rgIsSuper() || rgIsGroupMember(groupId); }
     }
+
     match /hostel/{hid} {
       allow read:           if isSignedIn() && request.auth.token.role == 'superadmin';
       allow create, update: if isSignedIn() && (request.auth.token.role == 'superadmin' || request.auth.token.type == 'superadmin');
@@ -311,8 +328,23 @@ service cloud.firestore {
         && resource.data.hostelid == userHostelId()
         && hostelActive(userHostelId());
       allow read:   if isSignedIn() && request.auth.uid == empId;
-      allow create: if rgIsSuper() || rgCanManageStaff(request.resource.data.groupId);
-      allow update: if rgIsSuper() || rgCanManageStaff(resource.data.groupId);
+      // ⬅ CHANGED: rgCanManageStaff includes 'manager', so a manager could mint a NEW
+      // employees doc with groupRole:'owner' for their own group — full escalation.
+      // The only legitimate owner-create is the superadmin group-creation flow, which
+      // rides rgIsSuper() above. StaffDirectory's createAdminLogin uses roleToGroupRole(),
+      // which tops out at 'storeAdmin', so the one real client create is unaffected.
+      allow create: if rgIsSuper()
+        || (rgCanManageStaff(request.resource.data.groupId)
+            && request.resource.data.get('groupRole', 'staff') != 'owner');
+      // ⬅ CHANGED: same escalation via update — a manager could rewrite their OWN doc to
+      // groupRole:'owner'. In the whole rg product there is exactly ONE client update to
+      // employees (UserManagementPage, writing `permissions` only, gated usermgmt:edit =
+      // owner/storeAdmin). groupRole is never updated from a client anywhere. So: restricted
+      // to owner/storeAdmin, with a key whitelist that excludes groupRole and type.
+      allow update: if rgIsSuper()
+        || (rgIsGroupAdmin(resource.data.groupId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['permissions', 'venueId', 'venueIds', 'isActive', 'status', 'name', 'updatedAt']));
     }
     match /users/{uid} {
       allow read, write: if isSignedIn() && userHostelId() != null
@@ -322,6 +354,7 @@ service cloud.firestore {
       allow create: if rgIsSuper() || rgCanManageStaff(request.resource.data.groupId);
       allow update: if rgIsSuper() || rgCanManageStaff(resource.data.groupId) || request.auth.uid == uid;
     }
+
     // Locked: confirmed unused by every app/function (real verification runs
     // through Cloud Functions writing emailOtps via the Admin SDK).
     match /emailVerifications/{email} { allow read, write: if false; }
