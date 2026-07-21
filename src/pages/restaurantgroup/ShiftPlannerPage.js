@@ -3,8 +3,8 @@ import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot, deleteF
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
-import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel, fmtHours } from "./rgUtils";
-import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas } from "./staffStructureUtils";
+import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel, fmtHours, parseShiftTime } from "./rgUtils";
+import { staffAreas, staffAtStation, areaGetsBreak, areaPinned, areaExclusive, orderedAreas, shiftSectionArea } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import { contractedLabelForStaff, contractedWeekStatus, fmtContractedRange } from "./contractedHours";
 import StaffCapabilityCard from "./StaffCapabilityCard";
@@ -37,6 +37,7 @@ function mondayOf(offset) {
   return d;
 }
 const fmt = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+const shortRole = (r) => (r || "").replace(/^(FOH|BOH) — /, ""); // mirrors CalendarPage
 
 function parseTime(t) {
   if (!t) return 0;
@@ -77,6 +78,7 @@ export default function ShiftPlannerPage() {
   const [modal, setModal] = useState(null); // { staffId, day } | true
   const [shiftDetail, setShiftDetail] = useState(null);
   const [capStaff, setCapStaff] = useState(null); // staff capability card
+  const [dayDetail, setDayDetail] = useState(null); // { day, vid } — day-header popup (#5)
   const [areaFilter, setAreaFilter] = useState("all"); // "all" | any of the group's configured areas
   const [sortBy, setSortBy] = useState("az"); // az | za | newest | oldest — staff order within each section
   const [planStation, setPlanStation] = useState("all"); // Area→Station drill-down: all | stationId
@@ -258,6 +260,40 @@ export default function ShiftPlannerPage() {
   const leaveFor = (staffId, dateKey) =>
     (leave || []).find((l) => l.status === "Approved" && l.staffId === staffId
       && (l.startDate || "") <= dateKey && (l.endDate || l.startDate || "") >= dateKey) || null;
+  // ALL approved leave covering a date (the day popup lists everyone off) — same match
+  // rule as leaveFor, filter not find.
+  const dayLeave = (dateKey) =>
+    (leave || []).filter((l) => l.status === "Approved"
+      && (l.startDate || "") <= dateKey && (l.endDate || l.startDate || "") >= dateKey);
+  const nameOf = (id) => { const s = staff.find((x) => x.id === id) || (myStaff?.id === id ? myStaff : null); return s ? (s.displayName || fullName(s)) : ""; };
+
+  // Day-detail SHIFT sections — ⚠ KEEP identical to CalendarPage's detailShiftSections
+  // (which twins Ops CalendarScreen, ec96719/2e1fcfb). The day-header popup (#5) REUSES
+  // the Calendar's grouping verbatim; the function is page-local there, so this is a
+  // mirror, not a fork — change all three together or none.
+  const detailShiftSections = (list) => {
+    const ordered = orderedAreas(group);
+    // staff doc for a shift: full staff list first, then scopedStaff, else null
+    const staffOf = (sid) => staff.find((x) => x.id === sid) || scopedStaff.find((x) => x.id === sid) || null;
+    const sectionOf = (s) => {
+      const raw = shiftSectionArea(s, staffOf(s.staffId), stations, group);
+      if (raw === "__multi__" || raw === "__none__") return raw;
+      // normalise a station-cased fallback onto the configured spelling (unchanged rule)
+      return ordered.find((a) => a.toLowerCase() === String(raw).toLowerCase()) || raw;
+    };
+    const idx = (a) => { const i = ordered.indexOf(a); return i === -1 ? ordered.length : i; };
+    // mirrors ShiftPlannerPage groupRowsFor's rank: __none__ [3], __multi__ [2],
+    // real areas [areaPinned ? 0 : 1, orderedAreas idx], ties by localeCompare
+    const rank = (a) => (a === "__none__" ? [3, 0] : a === "__multi__" ? [2, 0] : [areaPinned(group, a) ? 0 : 1, idx(a)]);
+    const label = (a) => (a === "__multi__" ? "Multi-area" : a === "__none__" ? "No area assigned" : a);
+    const m = new Map();
+    [...list].sort((a, b) => parseShiftTime(a.start) - parseShiftTime(b.start))
+      .forEach((s) => { const a = sectionOf(s); if (!m.has(a)) m.set(a, []); m.get(a).push(s); });
+    return [...m.entries()].sort((x, y) => {
+      const rx = rank(x[0]), ry = rank(y[0]);
+      return (rx[0] - ry[0]) || (rx[1] - ry[1]) || x[0].localeCompare(y[0]);
+    }).map(([a, rows]) => [label(a), rows]);
+  };
 
   // PAID hours (gross − effective break) — the payroll figure everywhere on this page.
   const staffHours = (staffId) =>
@@ -598,7 +634,7 @@ export default function ShiftPlannerPage() {
                 <th style={{ ...th, textAlign: "left", width: 100, padding: "8px 10px" }}>Staff</th>
                 {/* PH header treatment mirrors the MAIN grid (8fd1887): #fef3c7 wash + 9px
                     #b45309 "PH" badge, spread BEFORE closed so closed's opacity still wins */}
-                {DAYS.map((d, i) => <th key={d} style={{ ...th, padding: "8px 4px", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (vClosed(i) ? "Venue closed this day" : undefined)}>{d}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 3 }}>PH</span>}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</th>)}
+                {DAYS.map((d, i) => <th key={d} style={{ ...th, padding: "8px 4px", cursor: "pointer", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (vClosed(i) ? "Venue closed this day" : "Click for day detail")} onClick={() => setDayDetail({ day: i, vid })}>{d}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 3 }}>PH</span>}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -612,7 +648,7 @@ export default function ShiftPlannerPage() {
                   </tr>
                   {g.members.map((s) => (
                 <tr key={s.id}>
-                  <td style={{ padding: "6px 10px", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <td style={{ padding: "6px 10px", borderBottom: "0.5px solid var(--border)" }}>
                     <div style={{ fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--red)" }} onClick={() => setCapStaff(s)} title="View capability">{fullName(s)}</div>
                     <div style={{ fontSize: 9, color: "var(--gray)" }}>{s.role}</div>
                     {contractedLabelForStaff(s) && (
@@ -628,7 +664,7 @@ export default function ShiftPlannerPage() {
                     // PH wash (visual only) — same 5% amber as the main grid, spread
                     // BEFORE the closed-day spread so closed still wins
                     return (
-                      <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top", ...(dayIsPH(day) ? { background: "rgba(180, 83, 9, 0.05)" } : {}), ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
+                      <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--border)", verticalAlign: "top", ...(dayIsPH(day) ? { background: "rgba(180, 83, 9, 0.05)" } : {}), ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                           {lv && (
                             <div key={`leave-${lv.id}`} style={{ background: "var(--amber-light, #fffbeb)", border: "1px solid #f59e0b", color: "#92400e", fontSize: 10, fontWeight: 600, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={`Approved leave — ${leaveLabel(lv)}${lv.dates ? ` (${lv.dates})` : ""}`}>
@@ -666,7 +702,7 @@ export default function ShiftPlannerPage() {
   // one staff row in the main (categorized) roster — name is clickable → capability card
   const renderRow = (s) => (
     <tr key={s.id}>
-      <td style={{ padding: "8px 14px", borderBottom: "0.5px solid var(--gray-light)" }}>
+      <td style={{ padding: "8px 14px", borderBottom: "0.5px solid var(--border)" }}>
         <div style={{ fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--red)" }} onClick={() => setCapStaff(s)} title="View capability (certs, training, history)">{fullName(s)}</div>
         <div style={{ fontSize: 10, color: "var(--gray)" }}>{s.role}</div>
         {/* contracted hours under the name — RANGE-aware ("38–40h/wk" when a max exists) via
@@ -686,7 +722,7 @@ export default function ShiftPlannerPage() {
         // PH wash (visual only) — badge amber #b45309 at 5% so solid shift/leave
         // chips on top stay true; closed-day spread AFTER so closed still wins
         return (
-          <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--gray-light)", verticalAlign: "top", ...(dayIsPH(day) ? { background: "rgba(180, 83, 9, 0.05)" } : {}), ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
+          <td key={day} style={{ padding: 3, borderBottom: "0.5px solid var(--border)", verticalAlign: "top", ...(dayIsPH(day) ? { background: "rgba(180, 83, 9, 0.05)" } : {}), ...(closedDay ? { background: "var(--gray-light)", opacity: 0.55 } : {}) }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {lv && (
                 <div key={`leave-${lv.id}`} style={{ background: "var(--amber-light, #fffbeb)", border: "1px solid #f59e0b", color: "#92400e", fontSize: 10, fontWeight: 600, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={`Approved leave — ${leaveLabel(lv)}${lv.dates ? ` (${lv.dates})` : ""}`}>
@@ -707,7 +743,7 @@ export default function ShiftPlannerPage() {
           </td>
         );
       })}
-      <td style={{ textAlign: "center", fontSize: 11, fontWeight: 600, borderBottom: "0.5px solid var(--gray-light)" }}>
+      <td style={{ textAlign: "center", fontSize: 11, fontWeight: 600, borderBottom: "0.5px solid var(--border)" }}>
         {(() => {
           // PAID total headline (gross − EFFECTIVE break, override-aware) + gross/unpaid
           // subline. The break is area-driven per shift — see effectiveBreak.
@@ -855,7 +891,7 @@ export default function ShiftPlannerPage() {
               <tr style={{ background: "var(--gray-light)" }}>
                 <th style={{ ...thSticky, textAlign: "left", width: 130, padding: "10px 14px" }}>Staff</th>
                 {DAYS.map((d, i) => (
-                  <th key={d} style={{ ...thSticky, ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(dayClosedForSelected(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (dayClosedForSelected(i) ? "Venue closed this day" : undefined)}>
+                  <th key={d} style={{ ...thSticky, cursor: "pointer", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(dayClosedForSelected(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (dayClosedForSelected(i) ? "Venue closed this day" : "Click for day detail")} onClick={() => setDayDetail({ day: i, vid: selectedVenue })}>
                     <div>{d}{weekDates[i] ? ` ${Number(weekDates[i].slice(8, 10))}` : ""}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 4 }}>PH</span>}{dayClosedForSelected(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "var(--gray)", marginLeft: 4 }}>Closed</span>}</div>
                     <div style={{ fontSize: 10, fontWeight: 600, color: "var(--gray)" }}>{dayHeadcount(i)} on</div>
                   </th>
@@ -1049,6 +1085,34 @@ export default function ShiftPlannerPage() {
           onClose={() => setCapStaff(null)}
         />
       )}
+
+      {/* Day detail (#5, click a day header) — the Calendar's popup, REUSED: same
+          detailShiftSections grouping (mirrored above) and the same row markup. Scope =
+          the grid it was opened from (main grid: the venue picker; split pane: that
+          pane's venue) — a popup wider than its grid would repeat bug #4. Approved
+          leave is listed group-wide regardless: a person on leave is off everywhere. */}
+      {dayDetail && (() => {
+        const dShifts = weekShiftsAllVenues.filter((sh) => sh.day === dayDetail.day && (dayDetail.vid === "all" || sh.venueId === dayDetail.vid));
+        const dLeave = dayLeave(weekDates[dayDetail.day]);
+        const dDate = new Date(monday); dDate.setDate(monday.getDate() + dayDetail.day);
+        const vName = dayDetail.vid === "all" ? "All venues" : (venues.find((v) => v.id === dayDetail.vid)?.name || "");
+        return (
+          <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setDayDetail(null)}>
+            <div className="rg-modal" style={{ maxWidth: 440 }}>
+              <div className="modal-head"><span className="modal-title">{FULL_DAYS[dayDetail.day]} {fmt(dDate)} · {vName}</span><button className="modal-close" onClick={() => setDayDetail(null)}>✕</button></div>
+              {dShifts.length + dLeave.length === 0 && <div style={{ fontSize: 13, color: "var(--gray)" }}>Nothing scheduled.</div>}
+              {dShifts.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Shifts</div>
+                {detailShiftSections(dShifts).map(([area, rows]) => <React.Fragment key={area}>
+                  <div className="form-label" style={{ marginTop: 6, fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: 0.4 }}>{area} · {rows.length}</div>
+                  {rows.map((s) => <div key={s.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span><strong>{s.start}–{s.end}</strong> · {nameOf(s.staffId)}</span><span style={{ color: "var(--gray)" }}>{shortRole(s.role)}{s.station ? ` · ${s.station}` : ""} · {s.venue}</span></div>)}
+                </React.Fragment>)}</>}
+              {dLeave.length > 0 && <><div className="form-label" style={{ marginTop: 10 }}>Approved leave <span style={{ fontWeight: 400, color: "var(--gray)" }}>(group-wide)</span></div>
+                {dLeave.map((l) => <div key={l.id} style={{ fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill pill-amber">{leaveLabel(l)}</span> {nameOf(l.staffId)} <span style={{ color: "var(--gray)" }}>· {l.dates}</span></div>)}</>}
+              <div className="btn-row" style={{ marginTop: 14 }}><button className="btn" onClick={() => setDayDetail(null)}>Close</button></div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }
