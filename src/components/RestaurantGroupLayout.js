@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import {
-  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen, FileSignature, FileCheck, CalendarClock, ShoppingCart,
+  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen, FileSignature, FileCheck, CalendarClock, ShoppingCart, FileBarChart,
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
 import { SOPS_NAV, CHECKLISTS_NAV_LABEL } from "../pages/restaurantgroup/rgConfig";
@@ -31,6 +31,10 @@ const NAV = [
   { key: "pos", path: "/rg/pos", label: "POS", Icon: ShoppingCart, title: "POS Terminal" },
   { key: "supplier", path: "/rg/supplier", label: "Supplier Ordering", Icon: Truck, title: "Supplier Ordering" },
   { key: "performance", path: "/rg/performance", label: "Performance", Icon: BarChart3, title: "Performance" },
+  // Not in STAFF_NAV_KEYS/DOCS_NAV_KEYS → lands in "Operations" beside Performance (the
+  // complement filter). One page doesn't justify a fourth nav section — revisit when more
+  // reports arrive.
+  { key: "reports", path: "/rg/reports", label: "Reports", Icon: FileBarChart, title: "Reports" },
   { key: "compliance", path: "/rg/compliance", label: "Awards & Compliance", Icon: Scale, title: "Awards & Compliance" },
   { key: "contracts", path: "/rg/contracts", label: "Contract Generator", Icon: FileSignature, title: "Contract Generator" },
   { key: "contractsSent", path: "/rg/contracts/sent", permKey: "contracts", label: "Sent Contracts", Icon: FileCheck, title: "Sent Contracts" },

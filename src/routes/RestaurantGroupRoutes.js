@@ -7,6 +7,7 @@ import TrainingPage from "../pages/restaurantgroup/TrainingPage";
 import ChecklistsPage from "../pages/restaurantgroup/ChecklistsPage";
 import TemperatureLogPage from "../pages/restaurantgroup/TemperatureLogPage";
 import PerformancePage from "../pages/restaurantgroup/PerformancePage";
+import ReportsPage from "../pages/restaurantgroup/ReportsPage";
 import UserManagementPage from "../pages/restaurantgroup/UserManagementPage";
 import MessagingPage from "../pages/restaurantgroup/MessagingPage";
 import CalendarPage from "../pages/restaurantgroup/CalendarPage";
@@ -40,6 +41,7 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/checklists" element={P("checklists", <ChecklistsPage />)} />
       <Route path="/rg/temperature" element={P("temperature", <TemperatureLogPage />)} />
       <Route path="/rg/performance" element={P("performance", <PerformancePage />)} />
+      <Route path="/rg/reports" element={P("reports", <ReportsPage />)} />
       <Route path="/rg/stock" element={P("stock", <StockPage />)} />
       <Route path="/rg/menus" element={P("menus", <MenusPage />)} />
       {/* POS Terminal — its OWN `pos` permission (staff default: view) so
