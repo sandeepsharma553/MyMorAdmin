@@ -6,7 +6,7 @@ import { contractTemplatesCol, contractDefaultsDoc, contractsCol, staffPrivateDo
 import { isManager } from "./rgConfig";
 import { isMinorDob } from "./staffMinorUtils";
 import contractFill from "./contractFill";
-import { contractedRangeOf, contractedNum, fmtContractedRange } from "./contractedHours";
+import { contractedRangeOf, fmtContractedRange, parseContractedLegacy } from "./contractedHours";
 import { awardForVenue, isAwardUsableForLabour, staffIsCasual } from "./rgComplianceUtils";
 import { rateSplitFromPrivate } from "./staffStructureUtils";
 import { localDateKey } from "./rgUtils";
@@ -27,7 +27,7 @@ const todayISO = () => localDateKey(new Date());
 // Which source each token prefills from — drives the grouped review form + labels.
 const TOKEN_SOURCE = {
   employee_name: "staff", employee_first_name: "staff", employment_type: "staff", commence_date: "staff", location_basis: "derived",
-  employee_address: "private", classification_level: "private", hourly_rate: "private", contracted_min_hours: "private",
+  employee_address: "private", classification_level: "private", hourly_rate: "private", contracted_hours: "private",
   employer_name: "defaults", employer_address: "defaults", owner_name: "defaults", discount_during: "defaults", discount_outside: "defaults", family_discount: "defaults",
   probation_shifts: "defaults", probation_months: "defaults", notice_weeks: "defaults", min_days: "defaults",
   // v2 template tokens (fulltime/parttime split + docx-highlight yellow fields)
@@ -38,7 +38,7 @@ const TOKEN_SOURCE = {
 const TOKEN_LABEL = {
   employee_name: "Employee name", employee_first_name: "First name", employment_type: "Employment type",
   commence_date: "Commence date", location_basis: "Location basis", employee_address: "Address",
-  classification_level: "Classification level", hourly_rate: "Rate", contracted_min_hours: "Contracted min hours",
+  classification_level: "Classification level", hourly_rate: "Rate", contracted_hours: "Contracted hours (per week)",
   employer_name: "Employer name", employer_address: "Employer address", owner_name: "Owner (counter-sign)", discount_during: "Discount (during shift)",
   discount_outside: "Discount (outside shift)", family_discount: "Family discount", probation_shifts: "Probation (shifts)",
   probation_months: "Probation (months)", notice_weeks: "Resignation notice (weeks)", min_days: "Min days/week",
@@ -65,7 +65,8 @@ const WRITEBACK_MAP = {
   classification_level: "classificationLevel",
   hourly_rate: "hourlyRate", // rate split (Bug 1) — writes the NEW key, never resurrects legacy `rate`
   annual_salary: "annualSalary", // rate split — the salaried half of the same pair
-  contracted_min_hours: "contractedMinHours",
+  // contracted_hours is handled specially in applyWriteBack: the "38–40" text parses to the
+  // numeric contractedHoursMin/Max pair; the legacy contractedMinHours string is FROZEN.
 };
 
 // §4 — resolve the template id from the staff record; never guess silently.
@@ -139,11 +140,10 @@ function buildValues(staff, priv, defaults, overrides, entities, venues, awardRa
     hourly_rate: privHourly,
     annual_salary: split.annualSalary || "", // fulltime templates — same private rate-split pair
 
-    // pair-first (new numeric keys, legacy-string parse as fallback) so a form-edited range
-    // can't feed a stale value into the contract. The token stays the MIN — the frozen
-    // template wording is "a minimum of {{contracted_min_hours}} hours", so the min is the
-    // only value that reads correctly there until the client's new contract docs arrive.
-    contracted_min_hours: (() => { const r = contractedRangeOf(priv); return r.min != null ? String(r.min) : ""; })(),
+    // pair-first (new numeric keys, legacy-string parse as fallback). v2 templates take a
+    // RANGE ("You will work {{contracted_hours}} hours per week") so the token carries
+    // "38" or "38–40" via the shared formatter — never the min alone when a max exists.
+    contracted_hours: (() => { const r = contractedRangeOf(priv); return fmtContractedRange(r.min, r.max, "") || ""; })(),
     employer_name: entity ? entity.name : (defaults?.employerName || ""),
     // mirrors employer_name: the venue-mapped entity's address, else contractDefaults.employerAddress.
     // NB: follows pickEntityForStaff (venue), so a MANUAL employer_name dropdown change does NOT
@@ -318,16 +318,16 @@ export default function ContractGeneratorPage() {
     for (const [token, field] of Object.entries(WRITEBACK_MAP)) {
       if (writeBack[token]) patch[field] = values[token] ?? "";
     }
+    // contracted_hours: the token text ("38" / "38–40") parses with the shared legacy parser
+    // into the numeric pair. The legacy contractedMinHours STRING is frozen — never written.
+    const range = writeBack.contracted_hours ? parseContractedLegacy(values.contracted_hours) : null;
+    if (range) { patch.contractedHoursMin = range.min; patch.contractedHoursMax = range.max; }
     if (!Object.keys(patch).length) return;
     patch.updatedAt = serverTimestamp();
-    // The generator only carries a MIN (its token). Write the numeric min key alongside the
-    // legacy string, but NEVER the max keys — merge leaves a staff-form-set max untouched
-    // (omitting a key is the anti-clobber; writing null here would erase it).
-    if (writeBack.contracted_min_hours) patch.contractedHoursMin = contractedNum(values.contracted_min_hours);
     await setDoc(staffPrivateDoc(groupId, selStaff.id), patch, { merge: true });
-    // mirror contracted hours to the staff doc (manager-readable) when that field was written back
-    if (writeBack.contracted_min_hours) {
-      await setDoc(staffDoc(groupId, selStaff.id), { contractedWeeklyHours: contractedNum(values.contracted_min_hours), updatedAt: serverTimestamp() }, { merge: true });
+    // mirror contracted hours to the staff doc (manager-readable, planner reads these keys)
+    if (range) {
+      await setDoc(staffDoc(groupId, selStaff.id), { contractedWeeklyHours: range.min, contractedWeeklyHoursMax: range.max, updatedAt: serverTimestamp() }, { merge: true });
     }
   };
 
@@ -406,12 +406,16 @@ export default function ContractGeneratorPage() {
       );
     }
     if (t === "location_basis") {
-      // green-marked in the v2 docx templates: fixed dropdown (prefilled from venue count)
+      // green-marked in the v2 docx templates: dropdown fed from Settings → Contracts →
+      // Location types (contractDefaults.locationTypes); standard pair as fallback.
+      const locOptions = (defaults?.locationTypes || []).length ? defaults.locationTypes : ["Single Location", "Multiple Locations"];
+      const known = locOptions.includes(values[t]);
       return (
         <select className="form-input" value={values[t] || ""} onChange={setOverride(t)}>
           <option value="">—</option>
-          <option value="Single Location">Single Location</option>
-          <option value="Multiple Locations">Multiple Locations</option>
+          {locOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+          {/* keep a prefilled-but-unlisted value (e.g. derived legacy wording) selectable */}
+          {values[t] && !known && <option value={values[t]}>{values[t]}</option>}
         </select>
       );
     }

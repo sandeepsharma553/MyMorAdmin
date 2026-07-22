@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueCol, groupDoc, contractClassificationsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
+import { venueCol, groupDoc, contractClassificationsDoc, contractDefaultsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS } from "./rgConfig";
 import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaBreakRule, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, empTypeIsSalaried } from "./staffStructureUtils";
@@ -10,6 +10,9 @@ import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS, resolvePosNotePresets } 
 const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
 
 const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+// Location-type dropdown seed — shown in-memory when the settings doc has none (never auto-written).
+const LOCATION_TYPES_SEED = ["Single Location", "Multiple Locations"];
 
 export default function SettingsPage() {
   const { groupId, group, venues, stations, equipment, roles, areas, empTypes, can, showToast, me } = useRG();
@@ -25,6 +28,9 @@ export default function SettingsPage() {
   const [newClass, setNewClass] = useState("");
   const [entities, setEntities] = useState([]);
   const [entForm, setEntForm] = useState(null); // {id?, name, venueIds[]} edit buffer
+  // Location types — the generator's green location_basis dropdown (contractDefaults.locationTypes).
+  const [locTypes, setLocTypes] = useState([]);
+  const [newLoc, setNewLoc] = useState("");
   // ── Public holidays (gated settings doc) ── seeded in-memory if absent (never auto-written)
   const [holidays, setHolidays] = useState([]);
   const [phSeeded, setPhSeeded] = useState(false);
@@ -36,6 +42,10 @@ export default function SettingsPage() {
     if (!groupId) return;
     getDoc(contractClassificationsDoc(groupId)).then((d) => setClassLevels(d.exists() ? (d.data().levels || []) : [])).catch(() => {});
     getDoc(legalEntitiesDoc(groupId)).then((d) => setEntities(d.exists() ? (d.data().entities || []) : [])).catch(() => {});
+    getDoc(contractDefaultsDoc(groupId)).then((d) => {
+      const list = d.exists() ? (d.data().locationTypes || []) : [];
+      setLocTypes(list.length ? list : LOCATION_TYPES_SEED); // prefill only — not persisted
+    }).catch(() => {});
     getDoc(labourTargetsDoc(groupId)).then((d) => {
       const x = d.exists() ? d.data() : {};
       setLabour({ hourlyRate: x.hourlyRate ?? "", weeklyRevenue: x.weeklyRevenue ?? "" });
@@ -77,6 +87,15 @@ export default function SettingsPage() {
   const addClass = () => { const v = newClass.trim(); if (!v || classLevels.includes(v)) return; saveClassLevels([...classLevels, v]); setNewClass(""); };
   const removeClass = (v) => saveClassLevels(classLevels.filter((x) => x !== v));
   const moveClass = (i, dir) => { const j = i + dir; if (j < 0 || j >= classLevels.length) return; const n = [...classLevels]; [n[i], n[j]] = [n[j], n[i]]; saveClassLevels(n); };
+
+  const saveLocTypes = async (next) => {
+    setLocTypes(next);
+    try { await setDoc(contractDefaultsDoc(groupId), { locationTypes: next, updatedAt: serverTimestamp() }, { merge: true }); }
+    catch { showToast("Could not save location types"); }
+  };
+  const addLoc = () => { const v = newLoc.trim(); if (!v || locTypes.includes(v)) return; saveLocTypes([...locTypes, v]); setNewLoc(""); };
+  const removeLoc = (v) => saveLocTypes(locTypes.filter((x) => x !== v));
+  const moveLoc = (i, dir) => { const j = i + dir; if (j < 0 || j >= locTypes.length) return; const n = [...locTypes]; [n[i], n[j]] = [n[j], n[i]]; saveLocTypes(n); };
 
   const saveEntities = async (next) => {
     setEntities(next);
@@ -875,6 +894,29 @@ export default function SettingsPage() {
               ))}
               {entities.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No legal entities yet.</div>}
               {!isOwner && <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 8 }}>Only the owner can add or edit legal entities.</div>}
+            </div>
+
+            {/* LOCATION TYPES — feeds the generator's location_basis dropdown (green field) */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Location types</span><span className="card-sub">Options for the contract “Location” dropdown</span></div></div>
+              {locTypes.map((c, i) => (
+                <div key={c} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <span style={{ fontSize: 13 }}>{c}</span>
+                  {editable && (
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button className="btn btn-sm" disabled={i === 0} title="Move up" onClick={() => moveLoc(i, -1)}>↑</button>
+                      <button className="btn btn-sm" disabled={i === locTypes.length - 1} title="Move down" onClick={() => moveLoc(i, 1)}>↓</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => removeLoc(c)}>✕</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {editable && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <input className="form-input" value={newLoc} onChange={(e) => setNewLoc(e.target.value)} placeholder="e.g. Single Location" onKeyDown={(e) => e.key === "Enter" && addLoc()} />
+                  <button className="btn btn-primary" onClick={addLoc}>Add</button>
+                </div>
+              )}
             </div>
           </div>
 
