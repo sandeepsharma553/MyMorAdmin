@@ -1,0 +1,2113 @@
+{
+ "boh_casual": {
+  "id": "boh_casual",
+  "label": "BOH — Casual",
+  "area": "BOH",
+  "basis": "casual",
+  "award": "MA000119",
+  "version": 2,
+  "schemaVersion": 2,
+  "source": "docx-highlight-v2",
+  "sourceFile": "Template Casual BOH Employment Agreement - Hourly Rate.docx",
+  "sections": [
+   {
+    "heading": "EMPLOYMENT AGREEMENT",
+    "body": [
+     "Date: {{offer_date}}",
+     "Employee Name: {{employee_name}}",
+     "Address: {{employee_address}}",
+     "Dear {{employee_first_name}},",
+     "Re: Offer of employment",
+     "I am delighted to make the following offer of employment to you as Casual employee with {{employer_name}} (Employer).",
+     "Please read through the terms and conditions of this offer of employment letter carefully and sign and date your acceptance before returning a signed copy."
+    ]
+   },
+   {
+    "heading": "Position",
+    "body": [
+     "Role and duties",
+     "You will be employed as Front of House (FOH) Team Member on the terms and conditions in this agreement.",
+     "You will report to the Store Manager, Supervisor, or such other person as nominated by the Employer from time to time.",
+     "Change of role and duties",
+     "The nature of your role, duties, levels of responsibility and reporting lines may be changed during the term of this agreement at the discretion of the Employer.",
+     "Location",
+     "You agree to perform your duties at the Employer's nominated workplace(s), being a {{location_basis}}, as specified by the Employer from time to time. The Employer may reasonably direct you to work at another workplace operated by the Employer where required for operational purposes.",
+     "Employment status",
+     "Your employment is on a Casual basis. As a casual employee, you will be engaged and paid in accordance with this Agreement, the applicable Modern Award, the National Employment Standards and applicable workplace laws.",
+     "You are engaged on an irregular and as-needed basis. No minimum number of hours or ongoing work is guaranteed, and the Employer is not required to offer work on any particular day or at any particular time.",
+     "Duty",
+     "You are required to perform the duties and responsibilities set out in the attached Job Description.",
+     "The Employer may amend your Job Description from time to time to reflect operational requirements and business needs.",
+     "The Employer may also require you to perform other duties that are reasonable and consistent with your skills, training, experience, and position.",
+     "You must perform your duties faithfully, diligently, and to the best of your ability at all times.",
+     "You must use your best efforts to promote and protect the interests of the business and act in the best interests of the Employer.",
+     "Your performance may be assessed against the Key Performance Indicators set out in Schedule 2, as amended by the Employer from time to time.",
+     "Commence Date",
+     "Your employment with the Employer will commence on {{commence_date}}.",
+     "Applicable Award",
+     "Your employment is covered by the Restaurant Industry Award (MA000119), the National Employment Standards (NES), and the Fair Work Act 2009 (Cth). To the extent of any inconsistency between this Agreement and the applicable Award or the NES, the applicable Award or the NES will prevail."
+    ]
+   },
+   {
+    "heading": "Probationary period",
+    "body": [
+     "You will be required to complete a probationary period of {{probation_shifts}} shifts or {{probation_months}} Months. During this period, your performance, conduct, and suitability for the role will be assessed.",
+     "You will be paid at the applicable introductory rate throughout the probationary period.",
+     "The Employer may terminate your employment at any time during the probationary period if your performance or conduct does not meet the required standards."
+    ]
+   },
+   {
+    "heading": "Hours of work",
+    "body": [
+     "Your hours of work will be offered by the Employer from time to time according to operational requirements. You may accept or decline shifts offered to you.",
+     "No minimum number of hours or ongoing work is guaranteed. The Employer is not required to offer work on any particular day or at any particular time.",
+     "You may provide your general availability to assist with rostering. Any availability provided by you does not create an obligation on the Employer to offer shifts, or on you to accept any particular shift, unless a shift has been accepted by you.",
+     "During your rostered hours of work, you will devote your time and attention to the proper discharge of your duties.",
+     "You will be paid for all hours worked as rostered and approved by the Employer.",
+     "You are entitled to an unpaid meal break of 30 minutes for each continuous period, to be taken at times agreed with your manager that do not disrupt business operations."
+    ]
+   },
+   {
+    "heading": "Roster",
+    "body": [
+     "The Employer may offer shifts to you from time to time based on operational requirements. Once you have accepted a shift, you are expected to attend and complete that shift unless you have a reasonable excuse and notify the Employer as soon as reasonably practicable.",
+     "Any request by you to change your roster or availability should be submitted with at least 2 days' notice where practicable.",
+     "Employees are expected to attend all accepted rostered shifts. If you are unable to attend a rostered shift due to illness or any other unforeseen circumstance, you must notify your manager as soon as reasonably practicable and, where requested, provide reasonable supporting evidence. Frequent failure to attend rostered shifts, repeated late cancellations after the roster has been published, or a pattern of unreliability in meeting rostered commitments may be treated as a performance or conduct issue. The Employer may address such matters through its disciplinary process, which may include counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to report for work on time and be ready to commence their duties at the start of each rostered shift. Where an employee is late for more than ten percent (10%) of their rostered shifts during any rolling three (3) month period, the Employer may treat the matter as a performance or conduct issue and may issue a formal warning. Continued failure to meet the Employer's punctuality expectations, following appropriate counselling and disciplinary action, may result in further disciplinary action, up to and including termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to commence work at their rostered start time. Employees must not clock in before their rostered start time unless approved by a supervisor, shift leader or manager, or unless they are asked to start work earlier due to operational requirements. Employees who clock in early without approval will not be paid before their rostered start time unless they have been directed to perform work during that period.",
+     "Employees are expected to complete their assigned duties within their rostered hours. The Employer will roster employees for a reasonable period of time to enable them to perform their duties, having regard to the operational requirements of the business. Employees must not remain at work beyond their rostered finishing time or work additional hours unless approved by a supervisor, shift leader or manager. Where an employee remains at work beyond their rostered finishing time without prior approval, including because of their own work pace or failure to complete their assigned duties within the rostered shift, such additional time will not automatically be treated as authorised work or overtime. Any payment for additional hours will only be made where the Employer has expressly directed or approved the employee to perform that work.",
+     "The Employee acknowledges that, under the applicable Restaurant Industry Award, the minimum engagement for each casual shift is two (2) hours. Where the Employee has completed the minimum two (2) hour engagement, the Employer may, having regard to operational requirements (including but not limited to reduced customer demand, business needs or other operational circumstances), direct the Employee to finish their shift earlier than the originally rostered finishing time. In such circumstances, the Employee will be paid for all hours actually worked, provided that no casual engagement will be less than the minimum two (2) hours required under the applicable Award."
+    ]
+   },
+   {
+    "heading": "Remuneration",
+    "body": [
+     "Salary",
+     "Your employment is classified as {{classification_level}} under the Restaurant Award (MA000119).",
+     "Your ordinary hourly rate of pay is ${{hourly_rate}} per hour, inclusive of casual loading.",
+     "Payment will be made fortnightly into a bank account nominated by you.",
+     "Your rate of pay has been determined having regard to the applicable Award classification and may also take into account factors such as your age, qualifications, skills and experience.",
+     "Where applicable, you will receive penalty rates for work performed on Saturdays, Sundays and public holidays, and any other applicable entitlements in accordance with the Restaurant Award and the National Employment Standards.",
+     "The Employer may, at its discretion, provide you with additional benefits from time to time. Such benefits are discretionary, do not form part of your remuneration or contractual entitlement, and may be varied, suspended or withdrawn at any time.",
+     "Superannuation",
+     "The Employer will, in addition to the salary, make superannuation contributions in accordance with the Employer’s obligations under the Superannuation Guarantee (Administration) Act 1992 and any regulations made pursuant to that act.",
+     "Staff Benefits",
+     "Subject to the Employer's policies and operational requirements, eligible employees may be provided with the following staff benefits:",
+     "Employees may receive a {{discount_during}} discount on food and beverages purchased during, or a {{discount_outside}} discount outside, their rostered shifts.",
+     "A {{family_discount}} family discount is available only to the employee's immediate family members. This discount does not apply to friends, boyfriends, girlfriends, partners, or any other persons who are not immediate family members.",
+     "The Employer reserves the right to verify an individual's eligibility for any staff discount and may suspend, withdraw, or revoke staff discount privileges where the benefit is misused or where the Employer reasonably considers it appropriate to do so.",
+     "Staff benefits are discretionary, do not form part of an employee's remuneration or contractual entitlements, and may be amended, suspended, or withdrawn by the Employer at any time.",
+     "Employer-Funded External Training",
+     "The Employer may, at its discretion, pay for external training, courses, licences or certifications provided by a third-party training organisation that are relevant to your employment.",
+     "Where the Employer has paid for approved external training and you voluntarily resign, or your employment is terminated for serious misconduct, within six (6) months of completing the training, you may be required to repay the reasonable and documented cost of that training as follows:",
+     "Employment ends within 0–3 months of completing the training: 100% of the training cost.",
+     "Employment ends within 3–6 months of completing the training: 50% of the training cost.",
+     "This clause applies only to the actual cost of the external training paid by the Employer and does not apply to routine on-the-job training or induction provided in the workplace. Any repayment must comply with applicable workplace laws.",
+     "The Employer will advise the Employee before enrolling the Employee in any training to which this clause applies."
+    ]
+   },
+   {
+    "heading": "Leave",
+    "body": [
+     "As a casual employee, you are not entitled to paid annual leave or paid personal/carer's leave.",
+     "You may be entitled to certain unpaid leave entitlements in accordance with the National Employment Standards, the Restaurant Award and applicable workplace laws.",
+     "Nothing in this Agreement changes your status as a casual employee."
+    ]
+   },
+   {
+    "heading": "Employee Obligations",
+    "body": [
+     "Personal Mobile Phone Policy",
+     "Employees must not use personal mobile phones during working hours unless expressly authorised by management. Personal mobile phones must be switched to silent mode and stored in the employee's locker or another location approved by the Employer before the commencement of each shift.",
+     "Personal mobile phones may only be used during authorised meal or rest breaks or with the prior approval of management.",
+     "In the event of an emergency, family members or emergency contacts should contact the workplace directly. Management will make reasonable efforts to notify the employee as soon as practicable.",
+     "Failure to comply with this policy may be treated as misconduct and may result in disciplinary action, including counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Professional Conduct",
+     "Employees must maintain professional standards of conduct at all times while on duty. Personal matters (including, but not limited to, personal relationships, family matters or emotional issues) must not interfere with an employee's performance, teamwork, communication, or customer service.",
+     "Where personal circumstances adversely affect an employee's conduct or work performance, the Employer may take disciplinary action, including issuing a written warning where appropriate.",
+     "Performance Management",
+     "Your performance may be assessed against the Key Performance Indicators (KPIs) set out in Schedule 2.",
+     "Employees may receive verbal or written warnings for misconduct or poor performance.",
+     "Where an employee fails to meet one or more KPIs, repeatedly breaches Company policies or procedures, or otherwise fails to meet the required standards of performance or conduct, the Employer may commence its performance management process, which may include counselling and the issuing of verbal or written warnings.",
+     "Repeated breaches of Company policies, procedures or performance expectations may result in further disciplinary action, up to and including termination of employment.",
+     "While the Employer will generally follow a progressive disciplinary process, including multiple warnings where appropriate, it reserves the right to determine the appropriate disciplinary action having regard to the nature and seriousness of the conduct. Serious misconduct may result in immediate termination of employment without prior warnings in accordance with applicable workplace laws.",
+     "Employees who receive three (3) written warnings within any rolling twelve (12) month period for repeated misconduct or poor performance may have their employment terminated following the Employer's disciplinary process and in accordance with applicable workplace laws.",
+     "Uniform and Personal Presentation",
+     "Employees must wear the required uniform while on duty and maintain a clean, neat and professional appearance at all times.",
+     "The required uniform may include, where applicable:",
+     "Branded shirt;",
+     "Name badge;",
+     "Apron; and",
+     "Non-slip, closed-toe footwear.",
+     "Employees are also required to maintain appropriate personal hygiene standards at all times.",
+     "Workplace Policies",
+     "Employees must comply with all lawful workplace policies and procedures issued by the Employer from time to time, including but not limited to:",
+     "food safety and hygiene requirements;",
+     "Workplace Health and Safety (WHS) requirements;",
+     "anti-discrimination, bullying and harassment policies; and",
+     "any other lawful workplace procedures relevant to the Employee's duties.",
+     "The Employer may amend or introduce workplace policies from time to time to meet operational or legal requirements. Such policies do not form part of this Agreement.",
+     "Social Media Policy",
+     "Employees must not, without the Employer's prior approval:",
+     "share confidential workplace information;",
+     "post kitchen processes, recipes, workplace images or videos;",
+     "make negative, harmful or misleading comments about the Employer, its business, staff or customers; or",
+     "represent or speak on behalf of the Employer.",
+     "A breach of this clause may result in disciplinary action, including formal warnings and, where appropriate, termination of employment."
+    ]
+   },
+   {
+    "heading": "Intellectual property",
+    "body": [
+     "Any intellectual property created or discovered during your employment must be disclosed to the Employer and will belong to and be the absolute property of the Employer or such one of its subsidiary companies as may be nominated by the Employer for that purpose.",
+     "For the avoidance of doubt, the Employer's recipes, menus, food preparation methods, cooking processes, branding, logos and other proprietary materials remain the exclusive intellectual property of the Employer. You must not copy, reproduce, disclose or use such intellectual property other than in the proper performance of your duties unless authorised in writing by the Employer."
+    ]
+   },
+   {
+    "heading": "Confidentiality",
+    "body": [
+     "You agree that you will not, at any time during your employment or after the termination of your employment for any reason, divulge, disclose or use any of the confidential information, affairs or secrets (including trade secrets) of the Employer without the Employer's prior written consent.",
+     "For the purposes of this Agreement, confidential information includes, but is not limited to, recipes, menus, food preparation methods, cooking processes, supplier information, pricing information, customer information, financial information, operational procedures, trade secrets and any other confidential business information belonging to the Employer.",
+     "You will not use or attempt to use any confidential information acquired during the course of your employment in any manner which may injure, or be likely to injure, the Employer or its business.",
+     "For clarity, this confidentiality clause does not restrict your rights under the Fair Work Act 2009 (Cth) to disclose or discuss your own pay or employment conditions, or to ask other employees about their pay or employment conditions where permitted by law."
+    ]
+   },
+   {
+    "heading": "Resignation",
+    "body": [
+     "Either party may end the casual employment relationship by giving notice in accordance with the Restaurant Award, the National Employment Standards and applicable workplace laws.",
+     "Upon the end of your employment for any reason, you must immediately return all Company property, including uniforms, keys, equipment, documents, records and any other items belonging to the Employer.",
+     "Where permitted by law and authorised by you in writing, the Employer may recover the reasonable cost of any unreturned Company property from any monies otherwise payable to you."
+    ]
+   },
+   {
+    "heading": "Workplace Surveillance",
+    "body": [
+     "The Employer advises that camera, computer, and other workplace monitoring systems may operate at the workplace on an ongoing basis for operational, security, safety, and compliance purposes. The use of workplace computers, devices, systems, and equipment may be monitored to ensure compliance with the Employer's policies, procedures, and legal obligations. By commencing and continuing your employment, you acknowledge and consent to such monitoring and surveillance as permitted by applicable law."
+    ]
+   },
+   {
+    "heading": "Misconduct",
+    "body": [
+     "We may terminate your employment without notice, or payments in lieu of notice, if you engage in serious misconduct.",
+     "Serious misconduct is when an employee:",
+     "- causes serious and imminent risk to the health and safety of another person or to the reputation, viability, or profits of their employer’s business, or",
+     "- willfully or deliberately behave in a way that’s inconsistent with the continuing their employment.",
+     "Examples of serious misconduct include:",
+     "- Theft",
+     "- Fraud",
+     "- Violence/Assault",
+     "- Serious breaches of health and safety requirements.",
+     "- Being drunk and/or affected by drugs at work.",
+     "- Refusing to carry out duties."
+    ]
+   },
+   {
+    "heading": "Termination of employment",
+    "body": [
+     "The Employer may terminate your employment by giving notice, or payment in lieu of notice, where required under the Restaurant Award, the National Employment Standards or applicable workplace laws.",
+     "The Employer may terminate your employment without notice, or payment in lieu of notice, where you engage in serious misconduct.",
+     "Upon termination of employment, you will be paid any wages and other entitlements owing to you up to the date of termination, in accordance with applicable workplace laws."
+    ]
+   },
+   {
+    "heading": "General",
+    "body": [
+     "This Agreement is governed by the laws of Victoria, Australia.",
+     "No variation or amendment to this Agreement will be effective unless it is made in writing and agreed by both the Employer and the Employee."
+    ]
+   },
+   {
+    "heading": "Acceptance",
+    "body": [
+     "Please sign and return the enclosed copy of this letter to confirm acceptance of this offer of employment.",
+     "Yours faithfully,",
+     "{{owner_name}}",
+     "Director, for and on behalf of {{employer_name}}",
+     "I, {{employee_name}},",
+     "Have read and understood the terms and conditions of the attached Employment Agreement.",
+     "Have had the opportunity to discuss any questions or concerns regarding these terms and conditions with my Employer, and have received satisfactory responses to any matters raised.",
+     "Understand and agree to comply with the Company's policies and procedures, and acknowledge the remuneration arrangements discussed and agreed during the recruitment process.",
+     "Signature: ______________________   Date: ____________",
+     "Print name: {{employee_name}}",
+     "Guardian Signature (if applicable): ______________________   Date: ____________",
+     "Print name: ______________________________________"
+    ]
+   },
+   {
+    "heading": "SCHEDULE 1 – JOB DESCRIPTION",
+    "body": [
+     "Position Summary",
+     "The Back of House (BOH) Team Member is responsible for food preparation, cooking, maintaining kitchen cleanliness, and ensuring that food is prepared safely, efficiently, and in accordance with the Employer's standards.",
+     "Key Responsibilities",
+     "Food Preparation and Cooking",
+     "Prepare and cook menu items in accordance with standard recipes and procedures.",
+     "Maintain consistency in food quality, portion sizes and presentation.",
+     "Operate kitchen equipment safely and in accordance with workplace procedures.",
+     "Food Safety and Hygiene",
+     "Comply with all applicable Food Standards Australia New Zealand (FSANZ) requirements and food safety procedures.",
+     "Maintain the cleanliness of the kitchen, equipment and storage areas.",
+     "Follow all food handling, hygiene and sanitation requirements.",
+     "Order Preparation",
+     "Prepare customer orders efficiently to meet service time targets.",
+     "Coordinate effectively with Front of House (FOH) staff.",
+     "Ensure orders are prepared accurately before service.",
+     "Cleaning and Maintenance",
+     "Clean kitchen equipment, utensils, workstations and food preparation areas.",
+     "Dispose of waste in accordance with workplace procedures.",
+     "Maintain a clean, safe and organised working environment.",
+     "Stock Control",
+     "Assist with stock rotation using the First In, First Out (FIFO) method.",
+     "Monitor ingredient levels and report shortages.",
+     "Minimise food waste and report damaged or spoiled stock.",
+     "Teamwork",
+     "Work collaboratively with FOH staff and other kitchen team members.",
+     "Assist other team members during busy trading periods.",
+     "Perform any other reasonable duties consistent with your skills, training and position, as directed by the Employer."
+    ]
+   },
+   {
+    "heading": "SCHEDULE 2 – KEY PERFORMANCE INDICATORS (KPIs)",
+    "body": [
+     "The following Key Performance Indicators (KPIs) are intended to assist in measuring work performance. The Employer may review and update these KPIs from time to time to reflect operational requirements and business needs.",
+     "1. Food Quality",
+     "Achieve at least 95% compliance with recipes and presentation standards.",
+     "Maintain minimal rework or rejected meals (target: less than 3%).",
+     "2. Speed and Efficiency",
+     "Prepare meals within the designated service times.",
+     "Meet the standard service target of 5–10 minutes, depending on the menu item.",
+     "Demonstrate the ability to perform effectively during peak trading periods.",
+     "3. Food Safety and Compliance",
+     "Maintain 100% compliance with food safety procedures.",
+     "Ensure there are no critical food safety breaches.",
+     "Complete all required checklists and comply with all Standard Operating Procedures (SOPs) at all times.",
+     "4. Cleanliness",
+     "Maintain workstations to a high standard of cleanliness at all times.",
+     "Complete all assigned cleaning tasks in accordance with the cleaning schedule.",
+     "5. Stock Management",
+     "Minimise ingredient waste.",
+     "Follow First In, First Out (FIFO) stock rotation procedures.",
+     "Report low stock levels promptly.",
+     "6. Teamwork and Communication",
+     "Work effectively with Front of House (FOH) and kitchen team members.",
+     "Make a positive contribution to the team environment.",
+     "7. Attendance and Reliability",
+     "Maintain at least 95% attendance and punctuality.",
+     "Attend and complete all rostered shifts reliably.",
+     "8. Standard Operating Procedures (SOPs) Compliance",
+     "Complete all required operational checklists accurately and on time.",
+     "Comply with all applicable Standard Operating Procedures (SOPs) and Company procedures at all times."
+    ]
+   }
+  ],
+  "tokenKeys": [
+   "classification_level",
+   "commence_date",
+   "discount_during",
+   "discount_outside",
+   "employee_address",
+   "employee_first_name",
+   "employee_name",
+   "employer_name",
+   "family_discount",
+   "hourly_rate",
+   "location_basis",
+   "offer_date",
+   "owner_name",
+   "probation_months",
+   "probation_shifts"
+  ],
+  "tokenTypes": {
+   "classification_level": "text",
+   "commence_date": "text",
+   "discount_during": "text",
+   "discount_outside": "text",
+   "employee_address": "system",
+   "employee_first_name": "system",
+   "employee_name": "system",
+   "employer_name": "settings",
+   "family_discount": "text",
+   "hourly_rate": "text",
+   "location_basis": "settings",
+   "offer_date": "system",
+   "owner_name": "text",
+   "probation_months": "text",
+   "probation_shifts": "text"
+  },
+  "tokenDefaults": {
+   "discount_during": "fifty percent (50%)",
+   "discount_outside": "twenty percent (20%)",
+   "family_discount": "twenty percent (20%)"
+  }
+ },
+ "foh_casual": {
+  "id": "foh_casual",
+  "label": "FOH — Casual",
+  "area": "FOH",
+  "basis": "casual",
+  "award": "MA000119",
+  "version": 2,
+  "schemaVersion": 2,
+  "source": "docx-highlight-v2",
+  "sourceFile": "Template Casual FOH Employment Agreement - Hourly Rate.docx",
+  "sections": [
+   {
+    "heading": "EMPLOYMENT AGREEMENT",
+    "body": [
+     "Date: {{offer_date}}",
+     "Employee Name: {{employee_name}}",
+     "Address: {{employee_address}}",
+     "Dear {{employee_first_name}},",
+     "Re: Offer of employment",
+     "I am delighted to make the following offer of employment to you as Casual employee with {{employer_name}} (Employer).",
+     "Please read through the terms and conditions of this offer of employment letter carefully and sign and date your acceptance before returning a signed copy."
+    ]
+   },
+   {
+    "heading": "Position",
+    "body": [
+     "Role and duties",
+     "You will be employed as Front of House (FOH) Team Member on the terms and conditions in this agreement.",
+     "You will report to the Store Manager, Supervisor, or such other person as nominated by the Employer from time to time.",
+     "Change of role and duties",
+     "The nature of your role, duties, levels of responsibility and reporting lines may be changed during the term of this agreement at the discretion of the Employer.",
+     "Location",
+     "You agree to perform your duties at the Employer's nominated workplace(s), being a {{location_basis}}, as specified by the Employer from time to time. The Employer may reasonably direct you to work at another workplace operated by the Employer where required for operational purposes.",
+     "Employment status",
+     "Your employment is on a Casual basis. As a casual employee, you will be engaged and paid in accordance with this Agreement, the applicable Modern Award, the National Employment Standards and applicable workplace laws.",
+     "You are engaged on an irregular and as-needed basis. No minimum number of hours or ongoing work is guaranteed, and the Employer is not required to offer work on any particular day or at any particular time.",
+     "Duty",
+     "You are required to perform the duties and responsibilities set out in the attached Job Description.",
+     "The Employer may amend your Job Description from time to time to reflect operational requirements and business needs.",
+     "The Employer may also require you to perform other duties that are reasonable and consistent with your skills, training, experience, and position.",
+     "You must perform your duties faithfully, diligently, and to the best of your ability at all times.",
+     "You must use your best efforts to promote and protect the interests of the business and act in the best interests of the Employer.",
+     "Your performance may be assessed against the Key Performance Indicators set out in Schedule 2, as amended by the Employer from time to time.",
+     "Commence Date",
+     "Your employment with the Employer will commence on {{commence_date}}.",
+     "Applicable Award",
+     "Your employment is covered by the Restaurant Industry Award (MA000119), the National Employment Standards (NES), and the Fair Work Act 2009 (Cth). To the extent of any inconsistency between this Agreement and the applicable Award or the NES, the applicable Award or the NES will prevail."
+    ]
+   },
+   {
+    "heading": "Probationary period",
+    "body": [
+     "You will be required to complete a probationary period of {{probation_shifts}} shifts or {{probation_months}} Months. During this period, your performance, conduct, and suitability for the role will be assessed.",
+     "You will be paid at the applicable introductory rate throughout the probationary period.",
+     "The Employer may terminate your employment at any time during the probationary period if your performance or conduct does not meet the required standards."
+    ]
+   },
+   {
+    "heading": "Hours of work",
+    "body": [
+     "Your hours of work will be offered by the Employer from time to time according to operational requirements. You may accept or decline shifts offered to you.",
+     "No minimum number of hours or ongoing work is guaranteed. The Employer is not required to offer work on any particular day or at any particular time.",
+     "You may provide your general availability to assist with rostering. Any availability provided by you does not create an obligation on the Employer to offer shifts, or on you to accept any particular shift, unless a shift has been accepted by you.",
+     "During your rostered hours of work, you will devote your time and attention to the proper discharge of your duties.",
+     "You will be paid for all hours worked as rostered and approved by the Employer.",
+     "You are entitled to an unpaid meal break of 30 minutes for each continuous period, to be taken at times agreed with your manager that do not disrupt business operations."
+    ]
+   },
+   {
+    "heading": "Roster",
+    "body": [
+     "The Employer may offer shifts to you from time to time based on operational requirements. Once you have accepted a shift, you are expected to attend and complete that shift unless you have a reasonable excuse and notify the Employer as soon as reasonably practicable.",
+     "Any request by you to change your roster or availability should be submitted with at least 2 days' notice where practicable.",
+     "Employees are expected to attend all accepted rostered shifts. If you are unable to attend a rostered shift due to illness or any other unforeseen circumstance, you must notify your manager as soon as reasonably practicable and, where requested, provide reasonable supporting evidence. Frequent failure to attend rostered shifts, repeated late cancellations after the roster has been published, or a pattern of unreliability in meeting rostered commitments may be treated as a performance or conduct issue. The Employer may address such matters through its disciplinary process, which may include counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to report for work on time and be ready to commence their duties at the start of each rostered shift. Where an employee is late for more than ten percent (10%) of their rostered shifts during any rolling three (3) month period, the Employer may treat the matter as a performance or conduct issue and may issue a formal warning. Continued failure to meet the Employer's punctuality expectations, following appropriate counselling and disciplinary action, may result in further disciplinary action, up to and including termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to commence work at their rostered start time. Employees must not clock in before their rostered start time unless approved by a supervisor, shift leader or manager, or unless they are asked to start work earlier due to operational requirements. Employees who clock in early without approval will not be paid before their rostered start time unless they have been directed to perform work during that period.",
+     "Employees are expected to complete their assigned duties within their rostered hours. The Employer will roster employees for a reasonable period of time to enable them to perform their duties, having regard to the operational requirements of the business. Employees must not remain at work beyond their rostered finishing time or work additional hours unless approved by a supervisor, shift leader or manager. Where an employee remains at work beyond their rostered finishing time without prior approval, including because of their own work pace or failure to complete their assigned duties within the rostered shift, such additional time will not automatically be treated as authorised work or overtime. Any payment for additional hours will only be made where the Employer has expressly directed or approved the employee to perform that work.",
+     "The Employee acknowledges that, under the applicable Restaurant Industry Award, the minimum engagement for each casual shift is two (2) hours. Where the Employee has completed the minimum two (2) hour engagement, the Employer may, having regard to operational requirements (including but not limited to reduced customer demand, business needs or other operational circumstances), direct the Employee to finish their shift earlier than the originally rostered finishing time. In such circumstances, the Employee will be paid for all hours actually worked, provided that no casual engagement will be less than the minimum two (2) hours required under the applicable Award."
+    ]
+   },
+   {
+    "heading": "Remuneration",
+    "body": [
+     "Salary",
+     "Your employment is classified as {{classification_level}} under the Restaurant Award (MA000119).",
+     "Your ordinary hourly rate of pay is ${{hourly_rate}} per hour, inclusive of casual loading.",
+     "Payment will be made fortnightly into a bank account nominated by you.",
+     "Your rate of pay has been determined having regard to the applicable Award classification and may also take into account factors such as your age, qualifications, skills and experience.",
+     "Where applicable, you will receive penalty rates for work performed on Saturdays, Sundays and public holidays, and any other applicable entitlements in accordance with the Restaurant Award and the National Employment Standards.",
+     "The Employer may, at its discretion, provide you with additional benefits from time to time. Such benefits are discretionary, do not form part of your remuneration or contractual entitlement, and may be varied, suspended or withdrawn at any time.",
+     "Superannuation",
+     "The Employer will, in addition to the salary, make superannuation contributions in accordance with the Employer’s obligations under the Superannuation Guarantee (Administration) Act 1992 and any regulations made pursuant to that act.",
+     "Staff Benefits",
+     "Subject to the Employer's policies and operational requirements, eligible employees may be provided with the following staff benefits:",
+     "Employees may receive a {{discount_during}} discount on food and beverages purchased during, or a {{discount_outside}} discount outside, their rostered shifts.",
+     "A {{family_discount}} family discount is available only to the employee's immediate family members. This discount does not apply to friends, boyfriends, girlfriends, partners, or any other persons who are not immediate family members.",
+     "The Employer reserves the right to verify an individual's eligibility for any staff discount and may suspend, withdraw, or revoke staff discount privileges where the benefit is misused or where the Employer reasonably considers it appropriate to do so.",
+     "Staff benefits are discretionary, do not form part of an employee's remuneration or contractual entitlements, and may be amended, suspended, or withdrawn by the Employer at any time.",
+     "Employer-Funded External Training",
+     "The Employer may, at its discretion, pay for external training, courses, licences or certifications provided by a third-party training organisation that are relevant to your employment.",
+     "Where the Employer has paid for approved external training and you voluntarily resign, or your employment is terminated for serious misconduct, within six (6) months of completing the training, you may be required to repay the reasonable and documented cost of that training as follows:",
+     "Employment ends within 0–3 months of completing the training: 100% of the training cost.",
+     "Employment ends within 3–6 months of completing the training: 50% of the training cost.",
+     "This clause applies only to the actual cost of the external training paid by the Employer and does not apply to routine on-the-job training or induction provided in the workplace. Any repayment must comply with applicable workplace laws.",
+     "The Employer will advise the Employee before enrolling the Employee in any training to which this clause applies."
+    ]
+   },
+   {
+    "heading": "Leave",
+    "body": [
+     "As a casual employee, you are not entitled to paid annual leave or paid personal/carer's leave.",
+     "You may be entitled to certain unpaid leave entitlements in accordance with the National Employment Standards, the Restaurant Award and applicable workplace laws.",
+     "Nothing in this Agreement changes your status as a casual employee."
+    ]
+   },
+   {
+    "heading": "Employee Obligations",
+    "body": [
+     "Personal Mobile Phone Policy",
+     "Employees must not use personal mobile phones during working hours unless expressly authorised by management. Personal mobile phones must be switched to silent mode and stored in the employee's locker or another location approved by the Employer before the commencement of each shift.",
+     "Personal mobile phones may only be used during authorised meal or rest breaks or with the prior approval of management.",
+     "In the event of an emergency, family members or emergency contacts should contact the workplace directly. Management will make reasonable efforts to notify the employee as soon as practicable.",
+     "Failure to comply with this policy may be treated as misconduct and may result in disciplinary action, including counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Professional Conduct",
+     "Employees must maintain professional standards of conduct at all times while on duty. Personal matters (including, but not limited to, personal relationships, family matters or emotional issues) must not interfere with an employee's performance, teamwork, communication, or customer service.",
+     "Where personal circumstances adversely affect an employee's conduct or work performance, the Employer may take disciplinary action, including issuing a written warning where appropriate.",
+     "Performance Management",
+     "Your performance may be assessed against the Key Performance Indicators (KPIs) set out in Schedule 2.",
+     "Employees may receive verbal or written warnings for misconduct or poor performance.",
+     "Where an employee fails to meet one or more KPIs, repeatedly breaches Company policies or procedures, or otherwise fails to meet the required standards of performance or conduct, the Employer may commence its performance management process, which may include counselling and the issuing of verbal or written warnings.",
+     "Repeated breaches of Company policies, procedures or performance expectations may result in further disciplinary action, up to and including termination of employment.",
+     "While the Employer will generally follow a progressive disciplinary process, including multiple warnings where appropriate, it reserves the right to determine the appropriate disciplinary action having regard to the nature and seriousness of the conduct. Serious misconduct may result in immediate termination of employment without prior warnings in accordance with applicable workplace laws.",
+     "Employees who receive three (3) written warnings within any rolling twelve (12) month period for repeated misconduct or poor performance may have their employment terminated following the Employer's disciplinary process and in accordance with applicable workplace laws.",
+     "Uniform and Personal Presentation",
+     "Employees must wear the required uniform while on duty and maintain a clean, neat and professional appearance at all times.",
+     "The required uniform may include, where applicable:",
+     "Branded shirt;",
+     "Name badge;",
+     "Apron; and",
+     "Non-slip, closed-toe footwear.",
+     "Employees are also required to maintain appropriate personal hygiene standards at all times.",
+     "Workplace Policies",
+     "Employees must comply with all lawful workplace policies and procedures issued by the Employer from time to time, including but not limited to:",
+     "food safety and hygiene requirements;",
+     "Workplace Health and Safety (WHS) requirements;",
+     "anti-discrimination, bullying and harassment policies; and",
+     "any other lawful workplace procedures relevant to the Employee's duties.",
+     "The Employer may amend or introduce workplace policies from time to time to meet operational or legal requirements. Such policies do not form part of this Agreement.",
+     "Social Media Policy",
+     "Employees must not, without the Employer's prior approval:",
+     "share confidential workplace information;",
+     "post kitchen processes, recipes, workplace images or videos;",
+     "make negative, harmful or misleading comments about the Employer, its business, staff or customers; or",
+     "represent or speak on behalf of the Employer.",
+     "A breach of this clause may result in disciplinary action, including formal warnings and, where appropriate, termination of employment."
+    ]
+   },
+   {
+    "heading": "Intellectual property",
+    "body": [
+     "Any intellectual property created or discovered during your employment must be disclosed to the Employer and will belong to and be the absolute property of the Employer or such one of its subsidiary companies as may be nominated by the Employer for that purpose.",
+     "For the avoidance of doubt, the Employer's recipes, menus, food preparation methods, cooking processes, branding, logos and other proprietary materials remain the exclusive intellectual property of the Employer. You must not copy, reproduce, disclose or use such intellectual property other than in the proper performance of your duties unless authorised in writing by the Employer."
+    ]
+   },
+   {
+    "heading": "Confidentiality",
+    "body": [
+     "You agree that you will not, at any time during your employment or after the termination of your employment for any reason, divulge, disclose or use any of the confidential information, affairs or secrets (including trade secrets) of the Employer without the Employer's prior written consent.",
+     "For the purposes of this Agreement, confidential information includes, but is not limited to, recipes, menus, food preparation methods, cooking processes, supplier information, pricing information, customer information, financial information, operational procedures, trade secrets and any other confidential business information belonging to the Employer.",
+     "You will not use or attempt to use any confidential information acquired during the course of your employment in any manner which may injure, or be likely to injure, the Employer or its business.",
+     "For clarity, this confidentiality clause does not restrict your rights under the Fair Work Act 2009 (Cth) to disclose or discuss your own pay or employment conditions, or to ask other employees about their pay or employment conditions where permitted by law."
+    ]
+   },
+   {
+    "heading": "Resignation",
+    "body": [
+     "Either party may end the casual employment relationship by giving notice in accordance with the Restaurant Award, the National Employment Standards and applicable workplace laws.",
+     "Upon the end of your employment for any reason, you must immediately return all Company property, including uniforms, keys, equipment, documents, records and any other items belonging to the Employer.",
+     "Where permitted by law and authorised by you in writing, the Employer may recover the reasonable cost of any unreturned Company property from any monies otherwise payable to you."
+    ]
+   },
+   {
+    "heading": "Workplace Surveillance",
+    "body": [
+     "The Employer advises that camera, computer, and other workplace monitoring systems may operate at the workplace on an ongoing basis for operational, security, safety, and compliance purposes. The use of workplace computers, devices, systems, and equipment may be monitored to ensure compliance with the Employer's policies, procedures, and legal obligations. By commencing and continuing your employment, you acknowledge and consent to such monitoring and surveillance as permitted by applicable law."
+    ]
+   },
+   {
+    "heading": "Misconduct",
+    "body": [
+     "We may terminate your employment without notice, or payments in lieu of notice, if you engage in serious misconduct.",
+     "Serious misconduct is when an employee:",
+     "- causes serious and imminent risk to the health and safety of another person or to the reputation, viability, or profits of their employer’s business, or",
+     "- willfully or deliberately behave in a way that’s inconsistent with the continuing their employment.",
+     "Examples of serious misconduct include:",
+     "- Theft",
+     "- Fraud",
+     "- Violence/Assault",
+     "- Serious breaches of health and safety requirements.",
+     "- Being drunk and/or affected by drugs at work.",
+     "- Refusing to carry out duties."
+    ]
+   },
+   {
+    "heading": "Termination of employment",
+    "body": [
+     "The Employer may terminate your employment by giving notice, or payment in lieu of notice, where required under the Restaurant Award, the National Employment Standards or applicable workplace laws.",
+     "The Employer may terminate your employment without notice, or payment in lieu of notice, where you engage in serious misconduct.",
+     "Upon termination of employment, you will be paid any wages and other entitlements owing to you up to the date of termination, in accordance with applicable workplace laws."
+    ]
+   },
+   {
+    "heading": "General",
+    "body": [
+     "This Agreement is governed by the laws of Victoria, Australia.",
+     "No variation or amendment to this Agreement will be effective unless it is made in writing and agreed by both the Employer and the Employee."
+    ]
+   },
+   {
+    "heading": "Acceptance",
+    "body": [
+     "Please sign and return the enclosed copy of this letter to confirm acceptance of this offer of employment.",
+     "Yours faithfully,",
+     "{{owner_name}}",
+     "Director, for and on behalf of {{employer_name}}",
+     "I, {{employee_name}},",
+     "Have read and understood the terms and conditions of the attached Employment Agreement.",
+     "Have had the opportunity to discuss any questions or concerns regarding these terms and conditions with my Employer, and have received satisfactory responses to any matters raised.",
+     "Understand and agree to comply with the Company's policies and procedures, and acknowledge the remuneration arrangements discussed and agreed during the recruitment process.",
+     "Signature: ______________________   Date: ____________",
+     "Print name: {{employee_name}}",
+     "Guardian Signature (if applicable): ______________________   Date: ____________",
+     "Print name: ______________________________________"
+    ]
+   },
+   {
+    "heading": "SCHEDULE 1 – JOB DESCRIPTION",
+    "body": [
+     "Position Summary",
+     "The Front of House (FOH) Team Member is responsible for delivering high-quality customer service, processing orders, maintaining clean service and dining areas, and supporting efficient front counter and service operations in accordance with the Employer's standards.",
+     "Key Responsibilities",
+     "Customer Service",
+     "Greet and serve customers in a friendly and professional manner.",
+     "Take accurate orders and answer customer enquiries.",
+     "Handle customer concerns courteously and escalate issues to a supervisor or manager where required.",
+     "Order Processing and POS",
+     "Operate the point-of-sale (POS) system accurately.",
+     "Process cash, card and digital payments in accordance with workplace procedures.",
+     "Ensure order accuracy and timely service.",
+     "Food and Beverage Service",
+     "Assemble and serve food and beverages in accordance with company standards.",
+     "Ensure orders are presented correctly before being provided to customers.",
+     "Coordinate with kitchen staff to support efficient order flow.",
+     "Cleanliness and Hygiene",
+     "Maintain the cleanliness of the front counter, dining area, service areas and customer-facing spaces.",
+     "Follow food safety and hygiene requirements.",
+     "Comply with Workplace Health and Safety (WHS) standards.",
+     "Stock and Supplies",
+     "Replenish front of house stock, including packaging, condiments, napkins and drinks.",
+     "Monitor stock levels and report shortages to a supervisor or manager.",
+     "Teamwork",
+     "Work cooperatively with kitchen staff and other team members.",
+     "Assist during peak service periods.",
+     "Perform any other reasonable duties consistent with your skills, training and position, as directed by the Employer."
+    ]
+   },
+   {
+    "heading": "SCHEDULE 2 – KEY PERFORMANCE INDICATORS (KPIs)",
+    "body": [
+     "The following Key Performance Indicators (KPIs) are intended to assist in measuring work performance. The Employer may review and update these KPIs from time to time to reflect operational requirements and business needs.",
+     "1. Customer Service",
+     "Achieve at least 90% positive customer feedback.",
+     "Demonstrate friendly, professional and courteous interactions with customers at all times.",
+     "2. Order Accuracy",
+     "Achieve at least 97% order accuracy.",
+     "Maintain minimal customer complaints relating to incorrect orders.",
+     "3. Speed of Service",
+     "Complete customer orders within the designated service times (generally 2–5 minutes, depending on order complexity).",
+     "Demonstrate the ability to perform efficiently during peak trading periods.",
+     "4. Cleanliness and Hygiene",
+     "Maintain the front counter, dining area and service areas to a high standard of cleanliness at all times.",
+     "Maintain 100% compliance with food safety and hygiene procedures.",
+     "Ensure there are no critical food safety or hygiene breaches.",
+     "Complete all required checklists and comply with all Standard Operating Procedures (SOPs) at all times.",
+     "5. Cash Handling and POS Accuracy",
+     "Maintain zero or minimal discrepancies in cash handling.",
+     "Operate the point-of-sale (POS) system accurately and in accordance with workplace procedures.",
+     "6. Attendance and Reliability",
+     "Maintain at least 95% attendance and punctuality.",
+     "Attend and complete all rostered shifts reliably.",
+     "7. Teamwork and Communication",
+     "Work effectively with supervisors and team members across Front of House and Back of House operations.",
+     "Make a positive contribution to the team environment.",
+     "Demonstrate a willingness to assist other team members during busy trading periods.",
+     "8. Standard Operating Procedures (SOPs) Compliance",
+     "Complete all required operational checklists accurately and on time.",
+     "Comply with all applicable Standard Operating Procedures (SOPs) and Company procedures at all times."
+    ]
+   }
+  ],
+  "tokenKeys": [
+   "classification_level",
+   "commence_date",
+   "discount_during",
+   "discount_outside",
+   "employee_address",
+   "employee_first_name",
+   "employee_name",
+   "employer_name",
+   "family_discount",
+   "hourly_rate",
+   "location_basis",
+   "offer_date",
+   "owner_name",
+   "probation_months",
+   "probation_shifts"
+  ],
+  "tokenTypes": {
+   "classification_level": "text",
+   "commence_date": "text",
+   "discount_during": "text",
+   "discount_outside": "text",
+   "employee_address": "system",
+   "employee_first_name": "system",
+   "employee_name": "system",
+   "employer_name": "settings",
+   "family_discount": "text",
+   "hourly_rate": "text",
+   "location_basis": "settings",
+   "offer_date": "system",
+   "owner_name": "text",
+   "probation_months": "text",
+   "probation_shifts": "text"
+  },
+  "tokenDefaults": {
+   "discount_during": "fifty percent (50%)",
+   "discount_outside": "twenty percent (20%)",
+   "family_discount": "twenty percent (20%)"
+  }
+ },
+ "boh_fulltime": {
+  "id": "boh_fulltime",
+  "label": "BOH — Full-time",
+  "area": "BOH",
+  "basis": "fulltime",
+  "award": "MA000119",
+  "version": 2,
+  "schemaVersion": 2,
+  "source": "docx-highlight-v2",
+  "sourceFile": "Template Full Time BOH Employment Agreement.docx",
+  "sections": [
+   {
+    "heading": "EMPLOYMENT AGREEMENT",
+    "body": [
+     "Date: {{offer_date}}",
+     "Employee Name: {{employee_name}}",
+     "Address: {{employee_address}}",
+     "Dear {{employee_first_name}},",
+     "Re: Offer of employment",
+     "I am delighted to make the following offer of employment to you as Full time employee with {{employer_name}} (Employer).",
+     "Please read through the terms and conditions of this offer of employment letter carefully and sign and date your acceptance before returning a signed copy."
+    ]
+   },
+   {
+    "heading": "Position",
+    "body": [
+     "Role and duties",
+     "You will be employed as Back of House (BOH) Team Member on the terms and conditions in this agreement.",
+     "You will report to the Store Manager, Kitchen Supervisor, or such other person as nominated by the Employer from time to time.",
+     "Change of role and duties",
+     "The nature of your role, duties, levels of responsibility and reporting lines may be changed during the term of this agreement at the discretion of the Employer.",
+     "Location",
+     "You agree to perform your duties at the Employer's nominated workplace(s), being a {{location_basis}}, as specified by the Employer from time to time. The Employer may reasonably direct you to work at another workplace operated by the Employer where required for operational purposes.",
+     "Employment status",
+     "Your employment is on a Full-time basis. Your entitlements, including hours of work and leave, will be provided in accordance with this Agreement, the applicable Modern Award and the National Employment Standards.",
+     "Duty",
+     "You are required to perform the duties and responsibilities set out in the attached Job Description.",
+     "The Employer may amend your Job Description from time to time to reflect operational requirements and business needs.",
+     "The Employer may also require you to perform other duties that are reasonable and consistent with your skills, training, experience, and position.",
+     "You must perform your duties faithfully, diligently, and to the best of your ability at all times.",
+     "You must use your best efforts to promote and protect the interests of the business and act in the best interests of the Employer.",
+     "Your performance may be assessed against the Key Performance Indicators set out in Schedule 2, as amended by the Employer from time to time.",
+     "Commence Date",
+     "Your employment with the Employer will commence on {{commence_date}}.",
+     "Applicable Award",
+     "Your employment is covered by the Restaurant Industry Award (MA000119), the National Employment Standards (NES), and the Fair Work Act 2009 (Cth). To the extent of any inconsistency between this Agreement and the applicable Award or the NES, the applicable Award or the NES will prevail."
+    ]
+   },
+   {
+    "heading": "Probationary period",
+    "body": [
+     "You will be required to complete a probationary period of {{probation_shifts}} shifts or {{probation_months}} Months. During this period, your performance, conduct, and suitability for the role will be assessed.",
+     "You will be paid at the applicable introductory rate throughout the probationary period.",
+     "The Employer may terminate your employment at any time during the probationary period if your performance or conduct does not meet the required standards."
+    ]
+   },
+   {
+    "heading": "Hours of work",
+    "body": [
+     "You will work a minimum of {{contracted_min_hours}} hours per week, Monday to Sunday. Subject to operational requirements and your availability, you may be offered and work additional hours beyond this minimum.",
+     "You are required to remain available to work your contracted hours and must provide availability across at least {{min_days}} days per week. Unless otherwise approved by the Employer, you must be available to work at least {{weekend_availability_pct}} of Saturdays and Sundays and at least {{public_holiday_pct}} of public holidays each calendar year as reasonably required by the operational needs of the business.",
+     "The Employer relies on employees providing reasonable availability to facilitate rostering. A failure to provide sufficient availability may affect the Employer's ability to allocate the Employee's contracted minimum hours and may be addressed through the Employer's performance or disciplinary processes where appropriate.",
+     "During your rostered hours of work, you will devote your time and attention to the proper discharge of your duties.",
+     "You will be paid for all hours worked as rostered and approved by the Employer.",
+     "You are entitled to an unpaid meal break of 30 minutes for each continuous period, to be taken at times agreed with your manager that do not disrupt business operations."
+    ]
+   },
+   {
+    "heading": "Roster",
+    "body": [
+     "From time to time, the Employer may reasonably require changes to your roster to meet operational needs, and you will make reasonable efforts to accommodate such changes.",
+     "Any request by you to change your roster or availability should be submitted with at least 2 days' notice where practicable.",
+     "Employees are expected to attend all rostered shifts. If you are unable to attend a rostered shift due to illness or any other unforeseen circumstance, you must notify your manager as soon as reasonably practicable and, where requested, provide reasonable supporting evidence. Frequent failure to attend rostered shifts, repeated late cancellations after the roster has been published, or a pattern of unreliability in meeting rostered commitments may be treated as a performance or conduct issue. The Employer may address such matters through its disciplinary process, which may include counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to report for work on time and be ready to commence their duties at the start of each rostered shift. Where an employee is late for more than ten percent (10%) of their rostered shifts during any rolling three (3) month period, the Employer may treat the matter as a performance or conduct issue and may issue a formal warning. Continued failure to meet the Employer's punctuality expectations, following appropriate counselling and disciplinary action, may result in further disciplinary action, up to and including termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to commence work at their rostered start time. Employees must not clock in before their rostered start time unless approved by a supervisor, shift leader or manager, or unless they are asked to start work earlier due to operational requirements. Employees who clock in early without approval will not be paid before their rostered start time unless they have been directed to perform work during that period.",
+     "Employees are expected to complete their assigned duties within their rostered hours. The Employer will roster employees for a reasonable period of time to enable them to perform their duties, having regard to the operational requirements of the business. Employees must not remain at work beyond their rostered finishing time or work additional hours unless approved by a supervisor, shift leader or manager. Where an employee remains at work beyond their rostered finishing time without prior approval, including because of their own work pace or failure to complete their assigned duties within the rostered shift, such additional time will not automatically be treated as authorised work or overtime. Any payment for additional hours will only be made where the Employer has expressly directed or approved the employee to perform that work."
+    ]
+   },
+   {
+    "heading": "Remuneration",
+    "body": [
+     "Salary",
+     "Your annual salary is ${{annual_salary}} per annum, payable by equal fortnightly instalments into a bank account nominated by you.",
+     "Your annual salary has been determined having regard to the applicable Award classification and may also take into account factors such as your age, qualifications, skills and experience.",
+     "The annual salary is intended to satisfy the Employer's obligations in respect of ordinary hours of work, reasonable additional hours, overtime, Saturday penalty rates, Sunday penalty rates, public holiday penalty rates and any other applicable Award entitlements.",
+     "Provided that the annual salary paid to you is no less than the total amount you would have been entitled to receive under the Restaurant Industry Award (MA000119), the National Employment Standards and applicable workplace laws, you will not be entitled to any additional payment in respect of those Award entitlements.",
+     "The Employer may, at its discretion, provide you with additional benefits from time to time. Such benefits are discretionary, do not form part of your remuneration or contractual entitlement, and may be varied, suspended or withdrawn at any time.",
+     "Superannuation",
+     "The Employer will, in addition to the salary, make superannuation contributions in accordance with the Employer’s obligations under the Superannuation Guarantee (Administration) Act 1992 and any regulations made pursuant to that act.",
+     "Staff Benefits",
+     "Subject to the Employer's policies and operational requirements, eligible employees may be provided with the following staff benefits:",
+     "Back of house staff are entitled to {{meal_benefit}} meal during their rostered shift. However, any unnecessary wastage may be charged. Employees may receive a {{discount_outside}} discount on food and beverages purchased outside their rostered shifts.",
+     "A {{family_discount}} family discount is available only to the employee's immediate family members. This discount does not apply to friends, boyfriends, girlfriends, partners, or any other persons who are not immediate family members.",
+     "The Employer reserves the right to verify an individual's eligibility for any staff discount and may suspend, withdraw, or revoke staff discount privileges where the benefit is misused or where the Employer reasonably considers it appropriate to do so.",
+     "Staff benefits are discretionary, do not form part of an employee's remuneration or contractual entitlements, and may be amended, suspended, or withdrawn by the Employer at any time.",
+     "Employer-Funded External Training",
+     "The Employer may, at its discretion, pay for external training, courses, licences or certifications provided by a third-party training organisation that are relevant to your employment.",
+     "Where the Employer has paid for approved external training and you voluntarily resign, or your employment is terminated for serious misconduct, within six (6) months of completing the training, you may be required to repay the reasonable and documented cost of that training as follows:",
+     "Employment ends within 0–3 months of completing the training: 100% of the training cost.",
+     "Employment ends within 3–6 months of completing the training: 50% of the training cost.",
+     "This clause applies only to the actual cost of the external training paid by the Employer and does not apply to routine on-the-job training or induction provided in the workplace. Any repayment must comply with applicable workplace laws.",
+     "The Employer will advise the Employee before enrolling the Employee in any training to which this clause applies."
+    ]
+   },
+   {
+    "heading": "Leave",
+    "body": [
+     "Annual leave",
+     "You will be entitled to 20 days annual leave in accordance with the National Employment Standard (NES) in the Fair Work Act 2009 (Cth) (Fair Work Act) and its replacements from time to time. As you are a full-time employee, your entitlement accumulates on a pro-rata basis. Annual leave must be taken at a time or times to be approved by the Employer. If at the end of the year, you have not taken all of your leave, it will carry forward into the next year. When your employment ends you will be entitled to be paid for all annual leave accrued but not taken.",
+     "Employees must obtain the Employer's approval for annual leave at least {{annual_leave_notice_weeks}} weeks prior to the commencement of the leave.",
+     "Other Leave Entitlements",
+     "You may be entitled to other applicable leave entitlements in accordance with the National Employment Standards, the Restaurant Award and applicable workplace laws.",
+     "Minimum Hours and Unpaid Leave",
+     "Where you are unable to work your contracted minimum hours due to your own unavailability, you must notify the Employer as soon as reasonably practicable. Unless annual leave or another form of approved paid leave has been approved, the absence will be treated as approved unpaid leave.",
+     "Nothing in this clause changes your status as a full-time employee or entitles you to casual employment or casual loading."
+    ]
+   },
+   {
+    "heading": "Employee Obligations",
+    "body": [
+     "Personal Mobile Phone Policy",
+     "Employees must not use personal mobile phones during working hours unless expressly authorised by management. Personal mobile phones must be switched to silent mode and stored in the employee's locker or another location approved by the Employer before the commencement of each shift.",
+     "Personal mobile phones may only be used during authorised meal or rest breaks or with the prior approval of management.",
+     "In the event of an emergency, family members or emergency contacts should contact the workplace directly. Management will make reasonable efforts to notify the employee as soon as practicable.",
+     "Failure to comply with this policy may be treated as misconduct and may result in disciplinary action, including counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Professional Conduct",
+     "Employees must maintain professional standards of conduct at all times while on duty. Personal matters (including, but not limited to, personal relationships, family matters or emotional issues) must not interfere with an employee's performance, teamwork, communication, or customer service.",
+     "Where personal circumstances adversely affect an employee's conduct or work performance, the Employer may take disciplinary action, including issuing a written warning where appropriate.",
+     "Performance Management",
+     "Your performance may be assessed against the Key Performance Indicators (KPIs) set out in Schedule 2.",
+     "Employees may receive verbal or written warnings for misconduct or poor performance.",
+     "Where an employee fails to meet one or more KPIs, repeatedly breaches Company policies or procedures, or otherwise fails to meet the required standards of performance or conduct, the Employer may commence its performance management process, which may include counselling and the issuing of verbal or written warnings.",
+     "Repeated breaches of Company policies, procedures or performance expectations may result in further disciplinary action, up to and including termination of employment.",
+     "While the Employer will generally follow a progressive disciplinary process, including multiple warnings where appropriate, it reserves the right to determine the appropriate disciplinary action having regard to the nature and seriousness of the conduct. Serious misconduct may result in immediate termination of employment without prior warnings in accordance with applicable workplace laws.",
+     "Employees who receive three (3) written warnings within any rolling twelve (12) month period for repeated misconduct or poor performance may have their employment terminated following the Employer's disciplinary process and in accordance with applicable workplace laws.",
+     "Uniform and Personal Presentation",
+     "Employees must wear the required uniform while on duty and maintain a clean, neat and professional appearance at all times.",
+     "The required uniform may include, where applicable:",
+     "Branded shirt or chef uniform;",
+     "Apron;",
+     "Hair restraint (such as a hat or hairnet); and",
+     "Non-slip, closed-toe footwear.",
+     "Employees are also required to maintain appropriate personal hygiene standards at all times.",
+     "Workplace Policies",
+     "Employees must comply with all lawful workplace policies and procedures issued by the Employer from time to time, including but not limited to:",
+     "food safety and hygiene requirements;",
+     "Workplace Health and Safety (WHS) requirements;",
+     "anti-discrimination, bullying and harassment policies; and",
+     "any other lawful workplace procedures relevant to the Employee's duties.",
+     "The Employer may amend or introduce workplace policies from time to time to meet operational or legal requirements. Such policies do not form part of this Agreement.",
+     "Social Media Policy",
+     "Employees must not, without the Employer's prior approval:",
+     "share confidential workplace information;",
+     "post kitchen processes, recipes, workplace images or videos;",
+     "make negative, harmful or misleading comments about the Employer, its business, staff or customers; or",
+     "represent or speak on behalf of the Employer.",
+     "A breach of this clause may result in disciplinary action, including formal warnings and, where appropriate, termination of employment."
+    ]
+   },
+   {
+    "heading": "Intellectual property",
+    "body": [
+     "Any intellectual property created or discovered during your employment must be disclosed to the Employer and will belong to and be the absolute property of the Employer or such one of its subsidiary companies as may be nominated by the Employer for that purpose.",
+     "For the avoidance of doubt, the Employer's recipes, menus, food preparation methods, cooking processes, branding, logos and other proprietary materials remain the exclusive intellectual property of the Employer. You must not copy, reproduce, disclose or use such intellectual property other than in the proper performance of your duties unless authorised in writing by the Employer."
+    ]
+   },
+   {
+    "heading": "Confidentiality",
+    "body": [
+     "You agree that you will not, at any time during your employment or after the termination of your employment for any reason, divulge, disclose or use any of the confidential information, affairs or secrets (including trade secrets) of the Employer without the Employer's prior written consent.",
+     "For the purposes of this Agreement, confidential information includes, but is not limited to, recipes, menus, food preparation methods, cooking processes, supplier information, pricing information, customer information, financial information, operational procedures, trade secrets and any other confidential business information belonging to the Employer.",
+     "You will not use or attempt to use any confidential information acquired during the course of your employment in any manner which may injure, or be likely to injure, the Employer or its business.",
+     "For clarity, this confidentiality clause does not restrict your rights under the Fair Work Act 2009 (Cth) to disclose or discuss your own pay or employment conditions, or to ask other employees about their pay or employment conditions where permitted by law."
+    ]
+   },
+   {
+    "heading": "Resignation",
+    "body": [
+     "If you wish to resign from your employment, you are required to provide the Employer with a minimum of {{notice_weeks}} weeks' written notice.",
+     "During the notice period, you are expected to continue to perform your duties satisfactorily and comply with all Company policies and procedures.",
+     "Upon the termination of your employment for any reason, you must immediately return all Company property, including uniforms, keys, equipment, documents, records and any other items belonging to the Employer.",
+     "Where permitted by law and authorised by you in writing, the Employer may recover the reasonable cost of any unreturned Company property from any monies otherwise payable to you."
+    ]
+   },
+   {
+    "heading": "Workplace Surveillance",
+    "body": [
+     "The Employer advises that camera, computer, and other workplace monitoring systems may operate at the workplace on an ongoing basis for operational, security, safety, and compliance purposes. The use of workplace computers, devices, systems, and equipment may be monitored to ensure compliance with the Employer's policies, procedures, and legal obligations. By commencing and continuing your employment, you acknowledge and consent to such monitoring and surveillance as permitted by applicable law."
+    ]
+   },
+   {
+    "heading": "Misconduct",
+    "body": [
+     "We may terminate your employment without notice, or payments in lieu of notice, if you engage in serious misconduct.",
+     "Serious misconduct is when an employee:",
+     "- causes serious and imminent risk to the health and safety of another person or to the reputation, viability, or profits of their employer’s business, or",
+     "- willfully or deliberately behave in a way that’s inconsistent with the continuing their employment.",
+     "Examples of serious misconduct include:",
+     "- Theft",
+     "- Fraud",
+     "- Violence/Assault",
+     "- Serious breaches of health and safety requirements.",
+     "- Being drunk and/or affected by drugs at work.",
+     "- Refusing to carry out duties."
+    ]
+   },
+   {
+    "heading": "Termination of employment",
+    "body": [
+     "The Employer may terminate your employment by providing notice, or payment in lieu of notice, in accordance with the Restaurant Award, the National Employment Standards and any applicable workplace laws.",
+     "The Employer may terminate your employment without notice, or payment in lieu of notice, where you engage in serious misconduct.",
+     "Upon termination of employment, you will be paid any wages and other entitlements owing to you up to the date of termination, in accordance with applicable workplace laws."
+    ]
+   },
+   {
+    "heading": "General",
+    "body": [
+     "This Agreement is governed by the laws of Victoria, Australia.",
+     "No variation or amendment to this Agreement will be effective unless it is made in writing and agreed by both the Employer and the Employee."
+    ]
+   },
+   {
+    "heading": "Acceptance",
+    "body": [
+     "Please sign and return the enclosed copy of this letter to confirm acceptance of this offer of employment.",
+     "Yours faithfully,",
+     "{{owner_name}}",
+     "Director, for and on behalf of {{employer_name}}",
+     "I, {{employee_name}},",
+     "Have read and understood the terms and conditions of the attached Employment Agreement.",
+     "Have had the opportunity to discuss any questions or concerns regarding these terms and conditions with my Employer, and have received satisfactory responses to any matters raised.",
+     "Understand and agree to comply with the Company's policies and procedures, and acknowledge the remuneration arrangements discussed and agreed during the recruitment process.",
+     "Signature: ______________________   Date: ____________",
+     "Print name: {{employee_name}}",
+     "Guardian Signature (if applicable): ______________________   Date: ____________",
+     "Print name: ______________________________________"
+    ]
+   },
+   {
+    "heading": "SCHEDULE 1 – JOB DESCRIPTION",
+    "body": [
+     "Position Summary",
+     "The Back of House (BOH) Team Member is responsible for food preparation, cooking, maintaining kitchen cleanliness, and ensuring that food is prepared safely, efficiently, and in accordance with the Employer's standards.",
+     "Key Responsibilities",
+     "Food Preparation and Cooking",
+     "Prepare and cook menu items in accordance with standard recipes and procedures.",
+     "Maintain consistency in food quality, portion sizes and presentation.",
+     "Operate kitchen equipment safely and in accordance with workplace procedures.",
+     "Food Safety and Hygiene",
+     "Comply with all applicable Food Standards Australia New Zealand (FSANZ) requirements and food safety procedures.",
+     "Maintain the cleanliness of the kitchen, equipment and storage areas.",
+     "Follow all food handling, hygiene and sanitation requirements.",
+     "Order Preparation",
+     "Prepare customer orders efficiently to meet service time targets.",
+     "Coordinate effectively with Front of House (FOH) staff.",
+     "Ensure orders are prepared accurately before service.",
+     "Cleaning and Maintenance",
+     "Clean kitchen equipment, utensils, workstations and food preparation areas.",
+     "Dispose of waste in accordance with workplace procedures.",
+     "Maintain a clean, safe and organised working environment.",
+     "Stock Control",
+     "Assist with stock rotation using the First In, First Out (FIFO) method.",
+     "Monitor ingredient levels and report shortages.",
+     "Minimise food waste and report damaged or spoiled stock.",
+     "Teamwork",
+     "Work collaboratively with FOH staff and other kitchen team members.",
+     "Assist other team members during busy trading periods.",
+     "Perform any other reasonable duties consistent with your skills, training and position, as directed by the Employer."
+    ]
+   },
+   {
+    "heading": "SCHEDULE 2 – KEY PERFORMANCE INDICATORS (KPIs)",
+    "body": [
+     "The following Key Performance Indicators (KPIs) are intended to assist in measuring work performance. The Employer may review and update these KPIs from time to time to reflect operational requirements and business needs.",
+     "1. Food Quality",
+     "Achieve at least 95% compliance with recipes and presentation standards.",
+     "Maintain minimal rework or rejected meals (target: less than 3%).",
+     "2. Speed and Efficiency",
+     "Prepare meals within the designated service times.",
+     "Meet the standard service target of 5–10 minutes, depending on the menu item.",
+     "Demonstrate the ability to perform effectively during peak trading periods.",
+     "3. Food Safety and Compliance",
+     "Maintain 100% compliance with food safety procedures.",
+     "Ensure there are no critical food safety breaches.",
+     "Complete all required checklists and comply with all Standard Operating Procedures (SOPs) at all times.",
+     "4. Cleanliness",
+     "Maintain workstations to a high standard of cleanliness at all times.",
+     "Complete all assigned cleaning tasks in accordance with the cleaning schedule.",
+     "5. Stock Management",
+     "Minimise ingredient waste.",
+     "Follow First In, First Out (FIFO) stock rotation procedures.",
+     "Report low stock levels promptly.",
+     "6. Teamwork and Communication",
+     "Work effectively with Front of House (FOH) and kitchen team members.",
+     "Make a positive contribution to the team environment.",
+     "7. Attendance and Reliability",
+     "Maintain at least 95% attendance and punctuality.",
+     "Attend and complete all rostered shifts reliably.",
+     "8. Standard Operating Procedures (SOPs) Compliance",
+     "Complete all required operational checklists accurately and on time.",
+     "Comply with all applicable Standard Operating Procedures (SOPs) and Company procedures at all times."
+    ]
+   }
+  ],
+  "tokenKeys": [
+   "annual_leave_notice_weeks",
+   "annual_salary",
+   "commence_date",
+   "contracted_min_hours",
+   "discount_outside",
+   "employee_address",
+   "employee_first_name",
+   "employee_name",
+   "employer_name",
+   "family_discount",
+   "location_basis",
+   "meal_benefit",
+   "min_days",
+   "notice_weeks",
+   "offer_date",
+   "owner_name",
+   "probation_months",
+   "probation_shifts",
+   "public_holiday_pct",
+   "weekend_availability_pct"
+  ],
+  "tokenTypes": {
+   "annual_leave_notice_weeks": "text",
+   "annual_salary": "text",
+   "commence_date": "text",
+   "contracted_min_hours": "text",
+   "discount_outside": "text",
+   "employee_address": "system",
+   "employee_first_name": "system",
+   "employee_name": "system",
+   "employer_name": "settings",
+   "family_discount": "text",
+   "location_basis": "settings",
+   "meal_benefit": "text",
+   "min_days": "text",
+   "notice_weeks": "text",
+   "offer_date": "system",
+   "owner_name": "text",
+   "probation_months": "text",
+   "probation_shifts": "text",
+   "public_holiday_pct": "text",
+   "weekend_availability_pct": "text"
+  },
+  "tokenDefaults": {
+   "discount_outside": "twenty percent (20%)",
+   "family_discount": "twenty percent (20%)",
+   "meal_benefit": "one complimentary",
+   "weekend_availability_pct": "80%",
+   "public_holiday_pct": "50%"
+  }
+ },
+ "foh_fulltime": {
+  "id": "foh_fulltime",
+  "label": "FOH — Full-time",
+  "area": "FOH",
+  "basis": "fulltime",
+  "award": "MA000119",
+  "version": 2,
+  "schemaVersion": 2,
+  "source": "docx-highlight-v2",
+  "sourceFile": "Template Full time FOH Employment Agreement.docx",
+  "sections": [
+   {
+    "heading": "EMPLOYMENT AGREEMENT",
+    "body": [
+     "Date: {{offer_date}}",
+     "Employee Name: {{employee_name}}",
+     "Address: {{employee_address}}",
+     "Dear {{employee_first_name}},",
+     "Re: Offer of employment",
+     "I am delighted to make the following offer of employment to you as Full time employee with {{employer_name}} (Employer).",
+     "Please read through the terms and conditions of this offer of employment letter carefully and sign and date your acceptance before returning a signed copy."
+    ]
+   },
+   {
+    "heading": "Position",
+    "body": [
+     "Role and duties",
+     "You will be employed as Front of House (FOH) Team Member on the terms and conditions in this agreement.",
+     "You will report to the Store Manager, Kitchen Supervisor, or such other person as nominated by the Employer from time to time.",
+     "Change of role and duties",
+     "The nature of your role, duties, levels of responsibility and reporting lines may be changed during the term of this agreement at the discretion of the Employer.",
+     "Location",
+     "You agree to perform your duties at the Employer's nominated workplace(s), being a {{location_basis}}, as specified by the Employer from time to time. The Employer may reasonably direct you to work at another workplace operated by the Employer where required for operational purposes.",
+     "Employment status",
+     "Your employment is on a Full-time basis. Your entitlements, including hours of work and leave, will be provided in accordance with this Agreement, the applicable Modern Award and the National Employment Standards.",
+     "Duty",
+     "You are required to perform the duties and responsibilities set out in the attached Job Description.",
+     "The Employer may amend your Job Description from time to time to reflect operational requirements and business needs.",
+     "The Employer may also require you to perform other duties that are reasonable and consistent with your skills, training, experience, and position.",
+     "You must perform your duties faithfully, diligently, and to the best of your ability at all times.",
+     "You must use your best efforts to promote and protect the interests of the business and act in the best interests of the Employer.",
+     "Your performance may be assessed against the Key Performance Indicators set out in Schedule 2, as amended by the Employer from time to time.",
+     "Commence Date",
+     "Your employment with the Employer will commence on {{commence_date}}.",
+     "Applicable Award",
+     "Your employment is covered by the Restaurant Industry Award (MA000119), the National Employment Standards (NES), and the Fair Work Act 2009 (Cth). To the extent of any inconsistency between this Agreement and the applicable Award or the NES, the applicable Award or the NES will prevail."
+    ]
+   },
+   {
+    "heading": "Probationary period",
+    "body": [
+     "You will be required to complete a probationary period of {{probation_shifts}} shifts or {{probation_months}} Months. During this period, your performance, conduct, and suitability for the role will be assessed.",
+     "You will be paid at the applicable introductory rate throughout the probationary period.",
+     "The Employer may terminate your employment at any time during the probationary period if your performance or conduct does not meet the required standards."
+    ]
+   },
+   {
+    "heading": "Hours of work",
+    "body": [
+     "You will work a minimum of {{contracted_min_hours}} hours per week, Monday to Sunday. Subject to operational requirements and your availability, you may be offered and work additional hours beyond this minimum.",
+     "You are required to remain available to work your contracted hours and must provide availability across at least {{min_days}} days per week. Unless otherwise approved by the Employer, you must be available to work at least {{weekend_availability_pct}} of Saturdays and Sundays and at least {{public_holiday_pct}} of public holidays each calendar year as reasonably required by the operational needs of the business.",
+     "The Employer relies on employees providing reasonable availability to facilitate rostering. A failure to provide sufficient availability may affect the Employer's ability to allocate the Employee's contracted minimum hours and may be addressed through the Employer's performance or disciplinary processes where appropriate.",
+     "During your rostered hours of work, you will devote your time and attention to the proper discharge of your duties.",
+     "You will be paid for all hours worked as rostered and approved by the Employer.",
+     "You are entitled to an unpaid meal break of 30 minutes for each continuous period, to be taken at times agreed with your manager that do not disrupt business operations."
+    ]
+   },
+   {
+    "heading": "Roster",
+    "body": [
+     "From time to time, the Employer may reasonably require changes to your roster to meet operational needs, and you will make reasonable efforts to accommodate such changes.",
+     "Any request by you to change your roster or availability should be submitted with at least 2 days' notice where practicable.",
+     "Employees are expected to attend all rostered shifts. If you are unable to attend a rostered shift due to illness or any other unforeseen circumstance, you must notify your manager as soon as reasonably practicable and, where requested, provide reasonable supporting evidence. Frequent failure to attend rostered shifts, repeated late cancellations after the roster has been published, or a pattern of unreliability in meeting rostered commitments may be treated as a performance or conduct issue. The Employer may address such matters through its disciplinary process, which may include counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to report for work on time and be ready to commence their duties at the start of each rostered shift. Where an employee is late for more than ten percent (10%) of their rostered shifts during any rolling three (3) month period, the Employer may treat the matter as a performance or conduct issue and may issue a formal warning. Continued failure to meet the Employer's punctuality expectations, following appropriate counselling and disciplinary action, may result in further disciplinary action, up to and including termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to commence work at their rostered start time. Employees must not clock in before their rostered start time unless approved by a supervisor, shift leader or manager, or unless they are asked to start work earlier due to operational requirements. Employees who clock in early without approval will not be paid before their rostered start time unless they have been directed to perform work during that period.",
+     "Employees are expected to complete their assigned duties within their rostered hours. The Employer will roster employees for a reasonable period of time to enable them to perform their duties, having regard to the operational requirements of the business. Employees must not remain at work beyond their rostered finishing time or work additional hours unless approved by a supervisor, shift leader or manager. Where an employee remains at work beyond their rostered finishing time without prior approval, including because of their own work pace or failure to complete their assigned duties within the rostered shift, such additional time will not automatically be treated as authorised work or overtime. Any payment for additional hours will only be made where the Employer has expressly directed or approved the employee to perform that work."
+    ]
+   },
+   {
+    "heading": "Remuneration",
+    "body": [
+     "Salary",
+     "Your annual salary is ${{annual_salary}} per annum, payable by equal fortnightly instalments into a bank account nominated by you.",
+     "Your annual salary has been determined having regard to the applicable Award classification and may also take into account factors such as your age, qualifications, skills and experience.",
+     "The annual salary is intended to satisfy the Employer's obligations in respect of ordinary hours of work, reasonable additional hours, overtime, Saturday penalty rates, Sunday penalty rates, public holiday penalty rates and any other applicable Award entitlements.",
+     "Provided that the annual salary paid to you is no less than the total amount you would have been entitled to receive under the Restaurant Industry Award (MA000119), the National Employment Standards and applicable workplace laws, you will not be entitled to any additional payment in respect of those Award entitlements.",
+     "The Employer may, at its discretion, provide you with additional benefits from time to time. Such benefits are discretionary, do not form part of your remuneration or contractual entitlement, and may be varied, suspended or withdrawn at any time.",
+     "Superannuation",
+     "The Employer will, in addition to the salary, make superannuation contributions in accordance with the Employer’s obligations under the Superannuation Guarantee (Administration) Act 1992 and any regulations made pursuant to that act.",
+     "Staff Benefits",
+     "Subject to the Employer's policies and operational requirements, eligible employees may be provided with the following staff benefits:",
+     "Employees may receive a {{discount_during}} discount on food and beverages purchased during, or a {{discount_outside}} discount outside, their rostered shifts.",
+     "A {{family_discount}} family discount is available only to the employee's immediate family members. This discount does not apply to friends, boyfriends, girlfriends, partners, or any other persons who are not immediate family members.",
+     "The Employer reserves the right to verify an individual's eligibility for any staff discount and may suspend, withdraw, or revoke staff discount privileges where the benefit is misused or where the Employer reasonably considers it appropriate to do so.",
+     "Staff benefits are discretionary, do not form part of an employee's remuneration or contractual entitlements, and may be amended, suspended, or withdrawn by the Employer at any time.",
+     "Employer-Funded External Training",
+     "The Employer may, at its discretion, pay for external training, courses, licences or certifications provided by a third-party training organisation that are relevant to your employment.",
+     "Where the Employer has paid for approved external training and you voluntarily resign, or your employment is terminated for serious misconduct, within six (6) months of completing the training, you may be required to repay the reasonable and documented cost of that training as follows:",
+     "Employment ends within 0–3 months of completing the training: 100% of the training cost.",
+     "Employment ends within 3–6 months of completing the training: 50% of the training cost.",
+     "This clause applies only to the actual cost of the external training paid by the Employer and does not apply to routine on-the-job training or induction provided in the workplace. Any repayment must comply with applicable workplace laws.",
+     "The Employer will advise the Employee before enrolling the Employee in any training to which this clause applies."
+    ]
+   },
+   {
+    "heading": "Leave",
+    "body": [
+     "Annual leave",
+     "You will be entitled to 20 days annual leave in accordance with the National Employment Standard (NES) in the Fair Work Act 2009 (Cth) (Fair Work Act) and its replacements from time to time. As you are a full-time employee, your entitlement accumulates on a pro-rata basis. Annual leave must be taken at a time or times to be approved by the Employer. If at the end of the year, you have not taken all of your leave, it will carry forward into the next year. When your employment ends you will be entitled to be paid for all annual leave accrued but not taken.",
+     "Employees must obtain the Employer's approval for annual leave at least {{annual_leave_notice_weeks}} weeks prior to the commencement of the leave.",
+     "Other Leave Entitlements",
+     "You may be entitled to other applicable leave entitlements in accordance with the National Employment Standards, the Restaurant Award and applicable workplace laws.",
+     "Minimum Hours and Unpaid Leave",
+     "Where you are unable to work your contracted minimum hours due to your own unavailability, you must notify the Employer as soon as reasonably practicable. Unless annual leave or another form of approved paid leave has been approved, the absence will be treated as approved unpaid leave.",
+     "Nothing in this clause changes your status as a full-time employee or entitles you to casual employment or casual loading."
+    ]
+   },
+   {
+    "heading": "Employee Obligations",
+    "body": [
+     "Personal Mobile Phone Policy",
+     "Employees must not use personal mobile phones during working hours unless expressly authorised by management. Personal mobile phones must be switched to silent mode and stored in the employee's locker or another location approved by the Employer before the commencement of each shift.",
+     "Personal mobile phones may only be used during authorised meal or rest breaks or with the prior approval of management.",
+     "In the event of an emergency, family members or emergency contacts should contact the workplace directly. Management will make reasonable efforts to notify the employee as soon as practicable.",
+     "Failure to comply with this policy may be treated as misconduct and may result in disciplinary action, including counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Professional Conduct",
+     "Employees must maintain professional standards of conduct at all times while on duty. Personal matters (including, but not limited to, personal relationships, family matters or emotional issues) must not interfere with an employee's performance, teamwork, communication, or customer service.",
+     "Where personal circumstances adversely affect an employee's conduct or work performance, the Employer may take disciplinary action, including issuing a written warning where appropriate.",
+     "Performance Management",
+     "Your performance may be assessed against the Key Performance Indicators (KPIs) set out in Schedule 2.",
+     "Employees may receive verbal or written warnings for misconduct or poor performance.",
+     "Where an employee fails to meet one or more KPIs, repeatedly breaches Company policies or procedures, or otherwise fails to meet the required standards of performance or conduct, the Employer may commence its performance management process, which may include counselling and the issuing of verbal or written warnings.",
+     "Repeated breaches of Company policies, procedures or performance expectations may result in further disciplinary action, up to and including termination of employment.",
+     "While the Employer will generally follow a progressive disciplinary process, including multiple warnings where appropriate, it reserves the right to determine the appropriate disciplinary action having regard to the nature and seriousness of the conduct. Serious misconduct may result in immediate termination of employment without prior warnings in accordance with applicable workplace laws.",
+     "Employees who receive three (3) written warnings within any rolling twelve (12) month period for repeated misconduct or poor performance may have their employment terminated following the Employer's disciplinary process and in accordance with applicable workplace laws.",
+     "Uniform and Personal Presentation",
+     "Employees must wear the required uniform while on duty and maintain a clean, neat and professional appearance at all times.",
+     "The required uniform may include, where applicable:",
+     "Branded shirt or chef uniform;",
+     "Apron;",
+     "Hair restraint (such as a hat or hairnet); and",
+     "Non-slip, closed-toe footwear.",
+     "Employees are also required to maintain appropriate personal hygiene standards at all times.",
+     "Workplace Policies",
+     "Employees must comply with all lawful workplace policies and procedures issued by the Employer from time to time, including but not limited to:",
+     "food safety and hygiene requirements;",
+     "Workplace Health and Safety (WHS) requirements;",
+     "anti-discrimination, bullying and harassment policies; and",
+     "any other lawful workplace procedures relevant to the Employee's duties.",
+     "The Employer may amend or introduce workplace policies from time to time to meet operational or legal requirements. Such policies do not form part of this Agreement.",
+     "Social Media Policy",
+     "Employees must not, without the Employer's prior approval:",
+     "share confidential workplace information;",
+     "post kitchen processes, recipes, workplace images or videos;",
+     "make negative, harmful or misleading comments about the Employer, its business, staff or customers; or",
+     "represent or speak on behalf of the Employer.",
+     "A breach of this clause may result in disciplinary action, including formal warnings and, where appropriate, termination of employment."
+    ]
+   },
+   {
+    "heading": "Intellectual property",
+    "body": [
+     "Any intellectual property created or discovered during your employment must be disclosed to the Employer and will belong to and be the absolute property of the Employer or such one of its subsidiary companies as may be nominated by the Employer for that purpose.",
+     "For the avoidance of doubt, the Employer's recipes, menus, food preparation methods, cooking processes, branding, logos and other proprietary materials remain the exclusive intellectual property of the Employer. You must not copy, reproduce, disclose or use such intellectual property other than in the proper performance of your duties unless authorised in writing by the Employer."
+    ]
+   },
+   {
+    "heading": "Confidentiality",
+    "body": [
+     "You agree that you will not, at any time during your employment or after the termination of your employment for any reason, divulge, disclose or use any of the confidential information, affairs or secrets (including trade secrets) of the Employer without the Employer's prior written consent.",
+     "For the purposes of this Agreement, confidential information includes, but is not limited to, recipes, menus, food preparation methods, cooking processes, supplier information, pricing information, customer information, financial information, operational procedures, trade secrets and any other confidential business information belonging to the Employer.",
+     "You will not use or attempt to use any confidential information acquired during the course of your employment in any manner which may injure, or be likely to injure, the Employer or its business.",
+     "For clarity, this confidentiality clause does not restrict your rights under the Fair Work Act 2009 (Cth) to disclose or discuss your own pay or employment conditions, or to ask other employees about their pay or employment conditions where permitted by law."
+    ]
+   },
+   {
+    "heading": "Resignation",
+    "body": [
+     "If you wish to resign from your employment, you are required to provide the Employer with a minimum of {{notice_weeks}} weeks' written notice.",
+     "During the notice period, you are expected to continue to perform your duties satisfactorily and comply with all Company policies and procedures.",
+     "Upon the termination of your employment for any reason, you must immediately return all Company property, including uniforms, keys, equipment, documents, records and any other items belonging to the Employer.",
+     "Where permitted by law and authorised by you in writing, the Employer may recover the reasonable cost of any unreturned Company property from any monies otherwise payable to you."
+    ]
+   },
+   {
+    "heading": "Workplace Surveillance",
+    "body": [
+     "The Employer advises that camera, computer, and other workplace monitoring systems may operate at the workplace on an ongoing basis for operational, security, safety, and compliance purposes. The use of workplace computers, devices, systems, and equipment may be monitored to ensure compliance with the Employer's policies, procedures, and legal obligations. By commencing and continuing your employment, you acknowledge and consent to such monitoring and surveillance as permitted by applicable law."
+    ]
+   },
+   {
+    "heading": "Misconduct",
+    "body": [
+     "We may terminate your employment without notice, or payments in lieu of notice, if you engage in serious misconduct.",
+     "Serious misconduct is when an employee:",
+     "- causes serious and imminent risk to the health and safety of another person or to the reputation, viability, or profits of their employer’s business, or",
+     "- willfully or deliberately behave in a way that’s inconsistent with the continuing their employment.",
+     "Examples of serious misconduct include:",
+     "- Theft",
+     "- Fraud",
+     "- Violence/Assault",
+     "- Serious breaches of health and safety requirements.",
+     "- Being drunk and/or affected by drugs at work.",
+     "- Refusing to carry out duties."
+    ]
+   },
+   {
+    "heading": "Termination of employment",
+    "body": [
+     "The Employer may terminate your employment by providing notice, or payment in lieu of notice, in accordance with the Restaurant Award, the National Employment Standards and any applicable workplace laws.",
+     "The Employer may terminate your employment without notice, or payment in lieu of notice, where you engage in serious misconduct.",
+     "Upon termination of employment, you will be paid any wages and other entitlements owing to you up to the date of termination, in accordance with applicable workplace laws."
+    ]
+   },
+   {
+    "heading": "General",
+    "body": [
+     "This Agreement is governed by the laws of Victoria, Australia.",
+     "No variation or amendment to this Agreement will be effective unless it is made in writing and agreed by both the Employer and the Employee."
+    ]
+   },
+   {
+    "heading": "Acceptance",
+    "body": [
+     "Please sign and return the enclosed copy of this letter to confirm acceptance of this offer of employment.",
+     "Yours faithfully,",
+     "{{owner_name}}",
+     "Director, for and on behalf of {{employer_name}}",
+     "I, {{employee_name}},",
+     "Have read and understood the terms and conditions of the attached Employment Agreement.",
+     "Have had the opportunity to discuss any questions or concerns regarding these terms and conditions with my Employer, and have received satisfactory responses to any matters raised.",
+     "Understand and agree to comply with the Company's policies and procedures, and acknowledge the remuneration arrangements discussed and agreed during the recruitment process.",
+     "Signature: ______________________   Date: ____________",
+     "Print name: {{employee_name}}",
+     "Guardian Signature (if applicable): ______________________   Date: ____________",
+     "Print name: ______________________________________"
+    ]
+   },
+   {
+    "heading": "SCHEDULE 1 – JOB DESCRIPTION",
+    "body": [
+     "Position Summary",
+     "The Front of House (FOH) Team Member is responsible for delivering high-quality customer service, processing orders, maintaining clean service and dining areas, and supporting efficient front counter and service operations in accordance with the Employer's standards.",
+     "Key Responsibilities",
+     "Customer Service",
+     "Greet and serve customers in a friendly and professional manner.",
+     "Take accurate orders and answer customer enquiries.",
+     "Handle customer concerns courteously and escalate issues to a supervisor or manager where required.",
+     "Order Processing and POS",
+     "Operate the point-of-sale (POS) system accurately.",
+     "Process cash, card and digital payments in accordance with workplace procedures.",
+     "Ensure order accuracy and timely service.",
+     "Food and Beverage Service",
+     "Assemble and serve food and beverages in accordance with company standards.",
+     "Ensure orders are presented correctly before being provided to customers.",
+     "Coordinate with kitchen staff to support efficient order flow.",
+     "Cleanliness and Hygiene",
+     "Maintain the cleanliness of the front counter, dining area, service areas and customer-facing spaces.",
+     "Follow food safety and hygiene requirements.",
+     "Comply with Workplace Health and Safety (WHS) standards.",
+     "Stock and Supplies",
+     "Replenish front of house stock, including packaging, condiments, napkins and drinks.",
+     "Monitor stock levels and report shortages to a supervisor or manager.",
+     "Teamwork",
+     "Work cooperatively with kitchen staff and other team members.",
+     "Assist during peak service periods.",
+     "Perform any other reasonable duties consistent with your skills, training and position, as directed by the Employer."
+    ]
+   },
+   {
+    "heading": "SCHEDULE 2 – KEY PERFORMANCE INDICATORS (KPIs)",
+    "body": [
+     "The following Key Performance Indicators (KPIs) are intended to assist in measuring work performance. The Employer may review and update these KPIs from time to time to reflect operational requirements and business needs.",
+     "1. Customer Service",
+     "Achieve at least 90% positive customer feedback.",
+     "Demonstrate friendly, professional and courteous interactions with customers at all times.",
+     "2. Order Accuracy",
+     "Achieve at least 97% order accuracy.",
+     "Maintain minimal customer complaints relating to incorrect orders.",
+     "3. Speed of Service",
+     "Complete customer orders within the designated service times (generally 2–5 minutes, depending on order complexity).",
+     "Demonstrate the ability to perform efficiently during peak trading periods.",
+     "4. Cleanliness and Hygiene",
+     "Maintain the front counter, dining area and service areas to a high standard of cleanliness at all times.",
+     "Maintain 100% compliance with food safety and hygiene procedures.",
+     "Ensure there are no critical food safety or hygiene breaches.",
+     "Complete all required checklists and comply with all Standard Operating Procedures (SOPs) at all times.",
+     "5. Cash Handling and POS Accuracy",
+     "Maintain zero or minimal discrepancies in cash handling.",
+     "Operate the point-of-sale (POS) system accurately and in accordance with workplace procedures.",
+     "6. Attendance and Reliability",
+     "Maintain at least 95% attendance and punctuality.",
+     "Attend and complete all rostered shifts reliably.",
+     "7. Teamwork and Communication",
+     "Work effectively with supervisors and team members across Front of House and Back of House operations.",
+     "Make a positive contribution to the team environment.",
+     "Demonstrate a willingness to assist other team members during busy trading periods or when your assigned station is under control.",
+     "8. Standard Operating Procedures (SOPs) Compliance",
+     "Complete all required operational checklists accurately and on time.",
+     "Comply with all applicable Standard Operating Procedures (SOPs) and Company procedures at all times."
+    ]
+   }
+  ],
+  "tokenKeys": [
+   "annual_leave_notice_weeks",
+   "annual_salary",
+   "commence_date",
+   "contracted_min_hours",
+   "discount_during",
+   "discount_outside",
+   "employee_address",
+   "employee_first_name",
+   "employee_name",
+   "employer_name",
+   "family_discount",
+   "location_basis",
+   "min_days",
+   "notice_weeks",
+   "offer_date",
+   "owner_name",
+   "probation_months",
+   "probation_shifts",
+   "public_holiday_pct",
+   "weekend_availability_pct"
+  ],
+  "tokenTypes": {
+   "annual_leave_notice_weeks": "text",
+   "annual_salary": "text",
+   "commence_date": "text",
+   "contracted_min_hours": "text",
+   "discount_during": "text",
+   "discount_outside": "text",
+   "employee_address": "system",
+   "employee_first_name": "system",
+   "employee_name": "system",
+   "employer_name": "settings",
+   "family_discount": "text",
+   "location_basis": "settings",
+   "min_days": "text",
+   "notice_weeks": "text",
+   "offer_date": "system",
+   "owner_name": "text",
+   "probation_months": "text",
+   "probation_shifts": "text",
+   "public_holiday_pct": "text",
+   "weekend_availability_pct": "text"
+  },
+  "tokenDefaults": {
+   "discount_during": "fifty percent (50%)",
+   "discount_outside": "twenty percent (20%)",
+   "family_discount": "twenty percent (20%)",
+   "weekend_availability_pct": "50%",
+   "public_holiday_pct": "50%"
+  }
+ },
+ "boh_parttime": {
+  "id": "boh_parttime",
+  "label": "BOH — Part-time",
+  "area": "BOH",
+  "basis": "parttime",
+  "award": "MA000119",
+  "version": 2,
+  "schemaVersion": 2,
+  "source": "docx-highlight-v2",
+  "sourceFile": "Template Part time BOH Employment Agreement.docx",
+  "sections": [
+   {
+    "heading": "EMPLOYMENT AGREEMENT",
+    "body": [
+     "Date: {{offer_date}}",
+     "Employee Name: {{employee_name}}",
+     "Address: {{employee_address}}",
+     "Dear {{employee_first_name}},",
+     "Re: Offer of employment",
+     "I am delighted to make the following offer of employment to you as Part-Time employee with {{employer_name}} (Employer).",
+     "Please read through the terms and conditions of this offer of employment letter carefully and sign and date your acceptance before returning a signed copy."
+    ]
+   },
+   {
+    "heading": "Position",
+    "body": [
+     "Role and duties",
+     "You will be employed as Back of House (BOH) Team Member on the terms and conditions in this agreement.",
+     "You will report to the Store Manager, Kitchen Supervisor, or such other person as nominated by the Employer from time to time.",
+     "Change of role and duties",
+     "The nature of your role, duties, levels of responsibility and reporting lines may be changed during the term of this agreement at the discretion of the Employer.",
+     "Location",
+     "You agree to perform your duties at the Employer's nominated workplace(s), being a {{location_basis}}, as specified by the Employer from time to time. The Employer may reasonably direct you to work at another workplace operated by the Employer where required for operational purposes.",
+     "Employment status",
+     "Your employment is on a Part-time basis. Your entitlements, including hours of work and leave, will be provided in accordance with this Agreement, the applicable Modern Award and the National Employment Standards.",
+     "Where you are employed on a part-time basis, you will receive the same entitlements as a full-time employee on a pro rata basis",
+     "Duty",
+     "You are required to perform the duties and responsibilities set out in the attached Job Description.",
+     "The Employer may amend your Job Description from time to time to reflect operational requirements and business needs.",
+     "The Employer may also require you to perform other duties that are reasonable and consistent with your skills, training, experience, and position.",
+     "You must perform your duties faithfully, diligently, and to the best of your ability at all times.",
+     "You must use your best efforts to promote and protect the interests of the business and act in the best interests of the Employer.",
+     "Your performance may be assessed against the Key Performance Indicators set out in Schedule 2, as amended by the Employer from time to time.",
+     "Commence Date",
+     "Your employment with the Employer will commence on {{commence_date}}.",
+     "Applicable Award",
+     "Your employment is covered by the Restaurant Industry Award (MA000119), the National Employment Standards (NES), and the Fair Work Act 2009 (Cth). To the extent of any inconsistency between this Agreement and the applicable Award or the NES, the applicable Award or the NES will prevail."
+    ]
+   },
+   {
+    "heading": "Probationary period",
+    "body": [
+     "You will be required to complete a probationary period of {{probation_shifts}} shifts or {{probation_months}} Months. During this period, your performance, conduct, and suitability for the role will be assessed.",
+     "You will be paid at the applicable introductory rate throughout the probationary period.",
+     "The Employer may terminate your employment at any time during the probationary period if your performance or conduct does not meet the required standards."
+    ]
+   },
+   {
+    "heading": "Hours of work",
+    "body": [
+     "You will work a minimum of {{contracted_min_hours}} hours per week, Monday to Sunday. Subject to operational requirements and your availability, you may be offered and work additional hours beyond this minimum.",
+     "You are required to remain available to work your contracted hours and must provide availability across at least {{min_days}} days per week. Unless otherwise approved by the Employer, you must be available to work at least {{weekend_availability_pct}} of Saturdays and Sundays and at least {{public_holiday_pct}} of public holidays each calendar year as reasonably required by the operational needs of the business.",
+     "The Employer relies on employees providing reasonable availability to facilitate rostering. A failure to provide sufficient availability may affect the Employer's ability to allocate the Employee's contracted minimum hours and may be addressed through the Employer's performance or disciplinary processes where appropriate.",
+     "During your rostered hours of work, you will devote your time and attention to the proper discharge of your duties.",
+     "You will be paid for all hours worked as rostered and approved by the Employer.",
+     "You are entitled to an unpaid meal break of 30 minutes for each continuous period, to be taken at times agreed with your manager that do not disrupt business operations."
+    ]
+   },
+   {
+    "heading": "Roster",
+    "body": [
+     "From time to time, the Employer may reasonably require changes to your roster to meet operational needs, and you will make reasonable efforts to accommodate such changes.",
+     "Any request by you to change your roster or availability should be submitted with at least 2 days' notice where practicable.",
+     "Employees are expected to attend all rostered shifts. If you are unable to attend a rostered shift due to illness or any other unforeseen circumstance, you must notify your manager as soon as reasonably practicable and, where requested, provide reasonable supporting evidence. Frequent failure to attend rostered shifts, repeated late cancellations after the roster has been published, or a pattern of unreliability in meeting rostered commitments may be treated as a performance or conduct issue. The Employer may address such matters through its disciplinary process, which may include counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to report for work on time and be ready to commence their duties at the start of each rostered shift. Where an employee is late for more than ten percent (10%) of their rostered shifts during any rolling three (3) month period, the Employer may treat the matter as a performance or conduct issue and may issue a formal warning. Continued failure to meet the Employer's punctuality expectations, following appropriate counselling and disciplinary action, may result in further disciplinary action, up to and including termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to commence work at their rostered start time. Employees must not clock in before their rostered start time unless approved by a supervisor, shift leader or manager, or unless they are asked to start work earlier due to operational requirements. Employees who clock in early without approval will not be paid before their rostered start time unless they have been directed to perform work during that period.",
+     "Employees are expected to complete their assigned duties within their rostered hours. The Employer will roster employees for a reasonable period of time to enable them to perform their duties, having regard to the operational requirements of the business. Employees must not remain at work beyond their rostered finishing time or work additional hours unless approved by a supervisor, shift leader or manager. Where an employee remains at work beyond their rostered finishing time without prior approval, including because of their own work pace or failure to complete their assigned duties within the rostered shift, such additional time will not automatically be treated as authorised work or overtime. Any payment for additional hours will only be made where the Employer has expressly directed or approved the employee to perform that work."
+    ]
+   },
+   {
+    "heading": "Remuneration",
+    "body": [
+     "Salary",
+     "Your employment is classified as {{classification_level}} under the Restaurant Award (MA000119).",
+     "Your ordinary hourly rate of pay is ${{hourly_rate}} per hour.",
+     "Payment will be made fortnightly into a bank account nominated by you.",
+     "Your rate of pay has been determined having regard to the applicable Award classification and may also take into account factors such as your age, qualifications, skills and experience.",
+     "Where applicable, you will receive penalty rates for work performed on Saturdays, Sundays and public holidays, and any other applicable entitlements in accordance with the Restaurant Award and the National Employment Standards.",
+     "The Employer may, at its discretion, provide you with additional benefits from time to time. Such benefits are discretionary, do not form part of your remuneration or contractual entitlement, and may be varied, suspended or withdrawn at any time.",
+     "Superannuation",
+     "The Employer will, in addition to the salary, make superannuation contributions in accordance with the Employer’s obligations under the Superannuation Guarantee (Administration) Act 1992 and any regulations made pursuant to that act.",
+     "Staff Benefits",
+     "Subject to the Employer's policies and operational requirements, eligible employees may be provided with the following staff benefits:",
+     "Employees may receive a {{discount_during}} discount on food and beverages purchased during, or a {{discount_outside}} discount outside, their rostered shifts.",
+     "A {{family_discount}} family discount is available only to the employee's immediate family members. This discount does not apply to friends, boyfriends, girlfriends, partners, or any other persons who are not immediate family members.",
+     "The Employer reserves the right to verify an individual's eligibility for any staff discount and may suspend, withdraw, or revoke staff discount privileges where the benefit is misused or where the Employer reasonably considers it appropriate to do so.",
+     "Staff benefits are discretionary, do not form part of an employee's remuneration or contractual entitlements, and may be amended, suspended, or withdrawn by the Employer at any time.",
+     "Employer-Funded External Training",
+     "The Employer may, at its discretion, pay for external training, courses, licences or certifications provided by a third-party training organisation that are relevant to your employment.",
+     "Where the Employer has paid for approved external training and you voluntarily resign, or your employment is terminated for serious misconduct, within six (6) months of completing the training, you may be required to repay the reasonable and documented cost of that training as follows:",
+     "Employment ends within 0–3 months of completing the training: 100% of the training cost.",
+     "Employment ends within 3–6 months of completing the training: 50% of the training cost.",
+     "This clause applies only to the actual cost of the external training paid by the Employer and does not apply to routine on-the-job training or induction provided in the workplace. Any repayment must comply with applicable workplace laws.",
+     "The Employer will advise the Employee before enrolling the Employee in any training to which this clause applies."
+    ]
+   },
+   {
+    "heading": "Leave",
+    "body": [
+     "Annual leave",
+     "You will be entitled to 20 days annual leave in accordance with the National Employment Standard (NES) in the Fair Work Act 2009 (Cth) (Fair Work Act) and its replacements from time to time. As you are a part-time employee, your entitlement accumulates on a pro-rata basis. Annual leave must be taken at a time or times to be approved by the Employer. If at the end of the year, you have not taken all of your leave, it will carry forward into the next year. When your employment ends you will be entitled to be paid for all annual leave accrued but not taken.",
+     "Employees must obtain the Employer's approval for annual leave at least {{annual_leave_notice_weeks}} weeks prior to the commencement of the leave.",
+     "Other Leave Entitlements",
+     "You may be entitled to other applicable leave entitlements in accordance with the National Employment Standards, the Restaurant Award and applicable workplace laws.",
+     "Minimum Hours and Unpaid Leave",
+     "Where you are unable to work your contracted minimum hours due to your own unavailability, you must notify the Employer as soon as reasonably practicable. Unless annual leave or another form of approved paid leave has been approved, the absence will be treated as approved unpaid leave.",
+     "Nothing in this clause changes your status as a part-time employee or entitles you to casual employment or casual loading."
+    ]
+   },
+   {
+    "heading": "Employee Obligations",
+    "body": [
+     "Personal Mobile Phone Policy",
+     "Employees must not use personal mobile phones during working hours unless expressly authorised by management. Personal mobile phones must be switched to silent mode and stored in the employee's locker or another location approved by the Employer before the commencement of each shift.",
+     "Personal mobile phones may only be used during authorised meal or rest breaks or with the prior approval of management.",
+     "In the event of an emergency, family members or emergency contacts should contact the workplace directly. Management will make reasonable efforts to notify the employee as soon as practicable.",
+     "Failure to comply with this policy may be treated as misconduct and may result in disciplinary action, including counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Professional Conduct",
+     "Employees must maintain professional standards of conduct at all times while on duty. Personal matters (including, but not limited to, personal relationships, family matters or emotional issues) must not interfere with an employee's performance, teamwork, communication, or customer service.",
+     "Where personal circumstances adversely affect an employee's conduct or work performance, the Employer may take disciplinary action, including issuing a written warning where appropriate.",
+     "Performance Management",
+     "Your performance may be assessed against the Key Performance Indicators (KPIs) set out in Schedule 2.",
+     "Employees may receive verbal or written warnings for misconduct or poor performance.",
+     "Where an employee fails to meet one or more KPIs, repeatedly breaches Company policies or procedures, or otherwise fails to meet the required standards of performance or conduct, the Employer may commence its performance management process, which may include counselling and the issuing of verbal or written warnings.",
+     "Repeated breaches of Company policies, procedures or performance expectations may result in further disciplinary action, up to and including termination of employment.",
+     "While the Employer will generally follow a progressive disciplinary process, including multiple warnings where appropriate, it reserves the right to determine the appropriate disciplinary action having regard to the nature and seriousness of the conduct. Serious misconduct may result in immediate termination of employment without prior warnings in accordance with applicable workplace laws.",
+     "Employees who receive three (3) written warnings within any rolling twelve (12) month period for repeated misconduct or poor performance may have their employment terminated following the Employer's disciplinary process and in accordance with applicable workplace laws.",
+     "Uniform and Personal Presentation",
+     "Employees must wear the required uniform while on duty and maintain a clean, neat and professional appearance at all times.",
+     "The required uniform may include, where applicable:",
+     "Branded shirt or chef uniform;",
+     "Apron;",
+     "Hair restraint (such as a hat or hairnet); and",
+     "Non-slip, closed-toe footwear.",
+     "Employees are also required to maintain appropriate personal hygiene standards at all times.",
+     "Workplace Policies",
+     "Employees must comply with all lawful workplace policies and procedures issued by the Employer from time to time, including but not limited to:",
+     "food safety and hygiene requirements;",
+     "Workplace Health and Safety (WHS) requirements;",
+     "anti-discrimination, bullying and harassment policies; and",
+     "any other lawful workplace procedures relevant to the Employee's duties.",
+     "The Employer may amend or introduce workplace policies from time to time to meet operational or legal requirements. Such policies do not form part of this Agreement.",
+     "Social Media Policy",
+     "Employees must not, without the Employer's prior approval:",
+     "share confidential workplace information;",
+     "post kitchen processes, recipes, workplace images or videos;",
+     "make negative, harmful or misleading comments about the Employer, its business, staff or customers; or",
+     "represent or speak on behalf of the Employer.",
+     "A breach of this clause may result in disciplinary action, including formal warnings and, where appropriate, termination of employment."
+    ]
+   },
+   {
+    "heading": "Intellectual property",
+    "body": [
+     "Any intellectual property created or discovered during your employment must be disclosed to the Employer and will belong to and be the absolute property of the Employer or such one of its subsidiary companies as may be nominated by the Employer for that purpose.",
+     "For the avoidance of doubt, the Employer's recipes, menus, food preparation methods, cooking processes, branding, logos and other proprietary materials remain the exclusive intellectual property of the Employer. You must not copy, reproduce, disclose or use such intellectual property other than in the proper performance of your duties unless authorised in writing by the Employer."
+    ]
+   },
+   {
+    "heading": "Confidentiality",
+    "body": [
+     "You agree that you will not, at any time during your employment or after the termination of your employment for any reason, divulge, disclose or use any of the confidential information, affairs or secrets (including trade secrets) of the Employer without the Employer's prior written consent.",
+     "For the purposes of this Agreement, confidential information includes, but is not limited to, recipes, menus, food preparation methods, cooking processes, supplier information, pricing information, customer information, financial information, operational procedures, trade secrets and any other confidential business information belonging to the Employer.",
+     "You will not use or attempt to use any confidential information acquired during the course of your employment in any manner which may injure, or be likely to injure, the Employer or its business.",
+     "For clarity, this confidentiality clause does not restrict your rights under the Fair Work Act 2009 (Cth) to disclose or discuss your own pay or employment conditions, or to ask other employees about their pay or employment conditions where permitted by law."
+    ]
+   },
+   {
+    "heading": "Resignation",
+    "body": [
+     "If you wish to resign from your employment, you are required to provide the Employer with a minimum of {{notice_weeks}} weeks' written notice.",
+     "During the notice period, you are expected to continue to perform your duties satisfactorily and comply with all Company policies and procedures.",
+     "Upon the termination of your employment for any reason, you must immediately return all Company property, including uniforms, keys, equipment, documents, records and any other items belonging to the Employer.",
+     "Where permitted by law and authorised by you in writing, the Employer may recover the reasonable cost of any unreturned Company property from any monies otherwise payable to you."
+    ]
+   },
+   {
+    "heading": "Workplace Surveillance",
+    "body": [
+     "The Employer advises that camera, computer, and other workplace monitoring systems may operate at the workplace on an ongoing basis for operational, security, safety, and compliance purposes. The use of workplace computers, devices, systems, and equipment may be monitored to ensure compliance with the Employer's policies, procedures, and legal obligations. By commencing and continuing your employment, you acknowledge and consent to such monitoring and surveillance as permitted by applicable law."
+    ]
+   },
+   {
+    "heading": "Misconduct",
+    "body": [
+     "We may terminate your employment without notice, or payments in lieu of notice, if you engage in serious misconduct.",
+     "Serious misconduct is when an employee:",
+     "- causes serious and imminent risk to the health and safety of another person or to the reputation, viability, or profits of their employer’s business, or",
+     "- willfully or deliberately behave in a way that’s inconsistent with the continuing their employment.",
+     "Examples of serious misconduct include:",
+     "- Theft",
+     "- Fraud",
+     "- Violence/Assault",
+     "- Serious breaches of health and safety requirements.",
+     "- Being drunk and/or affected by drugs at work.",
+     "- Refusing to carry out duties."
+    ]
+   },
+   {
+    "heading": "Termination of employment",
+    "body": [
+     "The Employer may terminate your employment by providing notice, or payment in lieu of notice, in accordance with the Restaurant Award, the National Employment Standards and any applicable workplace laws.",
+     "The Employer may terminate your employment without notice, or payment in lieu of notice, where you engage in serious misconduct.",
+     "Upon termination of employment, you will be paid any wages and other entitlements owing to you up to the date of termination, in accordance with applicable workplace laws."
+    ]
+   },
+   {
+    "heading": "General",
+    "body": [
+     "This Agreement is governed by the laws of Victoria, Australia.",
+     "No variation or amendment to this Agreement will be effective unless it is made in writing and agreed by both the Employer and the Employee."
+    ]
+   },
+   {
+    "heading": "Acceptance",
+    "body": [
+     "Please sign and return the enclosed copy of this letter to confirm acceptance of this offer of employment.",
+     "Yours faithfully,",
+     "{{owner_name}}",
+     "Director, for and on behalf of {{employer_name}}",
+     "I, {{employee_name}},",
+     "Have read and understood the terms and conditions of the attached Employment Agreement.",
+     "Have had the opportunity to discuss any questions or concerns regarding these terms and conditions with my Employer, and have received satisfactory responses to any matters raised.",
+     "Understand and agree to comply with the Company's policies and procedures, and acknowledge the remuneration arrangements discussed and agreed during the recruitment process.",
+     "Signature: ______________________   Date: ____________",
+     "Print name: {{employee_name}}",
+     "Guardian Signature (if applicable): ______________________   Date: ____________",
+     "Print name: ______________________________________"
+    ]
+   },
+   {
+    "heading": "SCHEDULE 1 – JOB DESCRIPTION",
+    "body": [
+     "Position Summary",
+     "The Back of House (BOH) Team Member is responsible for food preparation, cooking, maintaining kitchen cleanliness, and ensuring that food is prepared safely, efficiently, and in accordance with the Employer's standards.",
+     "Key Responsibilities",
+     "Food Preparation and Cooking",
+     "Prepare and cook menu items in accordance with standard recipes and procedures.",
+     "Maintain consistency in food quality, portion sizes and presentation.",
+     "Operate kitchen equipment safely and in accordance with workplace procedures.",
+     "Food Safety and Hygiene",
+     "Comply with all applicable Food Standards Australia New Zealand (FSANZ) requirements and food safety procedures.",
+     "Maintain the cleanliness of the kitchen, equipment and storage areas.",
+     "Follow all food handling, hygiene and sanitation requirements.",
+     "Order Preparation",
+     "Prepare customer orders efficiently to meet service time targets.",
+     "Coordinate effectively with Front of House (FOH) staff.",
+     "Ensure orders are prepared accurately before service.",
+     "Cleaning and Maintenance",
+     "Clean kitchen equipment, utensils, workstations and food preparation areas.",
+     "Dispose of waste in accordance with workplace procedures.",
+     "Maintain a clean, safe and organised working environment.",
+     "Stock Control",
+     "Assist with stock rotation using the First In, First Out (FIFO) method.",
+     "Monitor ingredient levels and report shortages.",
+     "Minimise food waste and report damaged or spoiled stock.",
+     "Teamwork",
+     "Work collaboratively with FOH staff and other kitchen team members.",
+     "Assist other team members during busy trading periods.",
+     "Perform any other reasonable duties consistent with your skills, training and position, as directed by the Employer."
+    ]
+   },
+   {
+    "heading": "SCHEDULE 2 – KEY PERFORMANCE INDICATORS (KPIs)",
+    "body": [
+     "The following Key Performance Indicators (KPIs) are intended to assist in measuring work performance. The Employer may review and update these KPIs from time to time to reflect operational requirements and business needs.",
+     "1. Food Quality",
+     "Achieve at least 95% compliance with recipes and presentation standards.",
+     "Maintain minimal rework or rejected meals (target: less than 3%).",
+     "2. Speed and Efficiency",
+     "Prepare meals within the designated service times.",
+     "Meet the standard service target of 5–10 minutes, depending on the menu item.",
+     "Demonstrate the ability to perform effectively during peak trading periods.",
+     "3. Food Safety and Compliance",
+     "Maintain 100% compliance with food safety procedures.",
+     "Ensure there are no critical food safety breaches.",
+     "Complete all required checklists and comply with all Standard Operating Procedures (SOPs) at all times.",
+     "4. Cleanliness",
+     "Maintain workstations to a high standard of cleanliness at all times.",
+     "Complete all assigned cleaning tasks in accordance with the cleaning schedule.",
+     "5. Stock Management",
+     "Minimise ingredient waste.",
+     "Follow First In, First Out (FIFO) stock rotation procedures.",
+     "Report low stock levels promptly.",
+     "6. Teamwork and Communication",
+     "Work effectively with Front of House (FOH) and kitchen team members.",
+     "Make a positive contribution to the team environment.",
+     "7. Attendance and Reliability",
+     "Maintain at least 95% attendance and punctuality.",
+     "Attend and complete all rostered shifts reliably.",
+     "8. Standard Operating Procedures (SOPs) Compliance",
+     "Complete all required operational checklists accurately and on time.",
+     "Comply with all applicable Standard Operating Procedures (SOPs) and Company procedures at all times."
+    ]
+   }
+  ],
+  "tokenKeys": [
+   "annual_leave_notice_weeks",
+   "classification_level",
+   "commence_date",
+   "contracted_min_hours",
+   "discount_during",
+   "discount_outside",
+   "employee_address",
+   "employee_first_name",
+   "employee_name",
+   "employer_name",
+   "family_discount",
+   "hourly_rate",
+   "location_basis",
+   "min_days",
+   "notice_weeks",
+   "offer_date",
+   "owner_name",
+   "probation_months",
+   "probation_shifts",
+   "public_holiday_pct",
+   "weekend_availability_pct"
+  ],
+  "tokenTypes": {
+   "annual_leave_notice_weeks": "text",
+   "classification_level": "text",
+   "commence_date": "text",
+   "contracted_min_hours": "text",
+   "discount_during": "text",
+   "discount_outside": "text",
+   "employee_address": "system",
+   "employee_first_name": "system",
+   "employee_name": "system",
+   "employer_name": "settings",
+   "family_discount": "text",
+   "hourly_rate": "text",
+   "location_basis": "settings",
+   "min_days": "text",
+   "notice_weeks": "text",
+   "offer_date": "system",
+   "owner_name": "text",
+   "probation_months": "text",
+   "probation_shifts": "text",
+   "public_holiday_pct": "text",
+   "weekend_availability_pct": "text"
+  },
+  "tokenDefaults": {
+   "discount_during": "fifty percent (50%)",
+   "discount_outside": "twenty percent (20%)",
+   "family_discount": "twenty percent (20%)",
+   "weekend_availability_pct": "50%",
+   "public_holiday_pct": "50%"
+  }
+ },
+ "foh_parttime": {
+  "id": "foh_parttime",
+  "label": "FOH — Part-time",
+  "area": "FOH",
+  "basis": "parttime",
+  "award": "MA000119",
+  "version": 2,
+  "schemaVersion": 2,
+  "source": "docx-highlight-v2",
+  "sourceFile": "Template Part time FOH Employment Agreement.docx",
+  "sections": [
+   {
+    "heading": "EMPLOYMENT AGREEMENT",
+    "body": [
+     "Date: {{offer_date}}",
+     "Employee Name: {{employee_name}}",
+     "Address: {{employee_address}}",
+     "Dear {{employee_first_name}},",
+     "Re: Offer of employment",
+     "I am delighted to make the following offer of employment to you as Part Time employee with {{employer_name}} (Employer).",
+     "Please read through the terms and conditions of this offer of employment letter carefully and sign and date your acceptance before returning a signed copy."
+    ]
+   },
+   {
+    "heading": "Position",
+    "body": [
+     "Role and duties",
+     "You will be employed as Front of House (FOH) Team Member on the terms and conditions in this agreement.",
+     "You will report to the Store Manager, Supervisor, or such other person as nominated by the Employer from time to time.",
+     "Change of role and duties",
+     "The nature of your role, duties, levels of responsibility and reporting lines may be changed during the term of this agreement at the discretion of the Employer.",
+     "Location",
+     "You agree to perform your duties at the Employer's nominated workplace(s), being a {{location_basis}}, as specified by the Employer from time to time. The Employer may reasonably direct you to work at another workplace operated by the Employer where required for operational purposes.",
+     "Employment status",
+     "Your employment is on a Part-time basis. Your entitlements, including hours of work and leave, will be provided in accordance with this Agreement, the applicable Modern Award and the National Employment Standards.",
+     "Where you are employed on a part-time basis, you will receive the same entitlements as a full-time employee on a pro rata basis",
+     "Duty",
+     "You are required to perform the duties and responsibilities set out in the attached Job Description.",
+     "The Employer may amend your Job Description from time to time to reflect operational requirements and business needs.",
+     "The Employer may also require you to perform other duties that are reasonable and consistent with your skills, training, experience, and position.",
+     "You must perform your duties faithfully, diligently, and to the best of your ability at all times.",
+     "You must use your best efforts to promote and protect the interests of the business and act in the best interests of the Employer.",
+     "Your performance may be assessed against the Key Performance Indicators set out in Schedule 2, as amended by the Employer from time to time.",
+     "Commence Date",
+     "Your employment with the Employer will commence on {{commence_date}}.",
+     "Applicable Award",
+     "Your employment is covered by the Restaurant Industry Award (MA000119), the National Employment Standards (NES), and the Fair Work Act 2009 (Cth). To the extent of any inconsistency between this Agreement and the applicable Award or the NES, the applicable Award or the NES will prevail."
+    ]
+   },
+   {
+    "heading": "Probationary period",
+    "body": [
+     "You will be required to complete a probationary period of {{probation_shifts}} shifts or {{probation_months}} Months. During this period, your performance, conduct, and suitability for the role will be assessed.",
+     "You will be paid at the applicable introductory rate throughout the probationary period.",
+     "The Employer may terminate your employment at any time during the probationary period if your performance or conduct does not meet the required standards."
+    ]
+   },
+   {
+    "heading": "Hours of work",
+    "body": [
+     "You will work a minimum of {{contracted_min_hours}} hours per week, Monday to Sunday. Subject to operational requirements and your availability, you may be offered and work additional hours beyond this minimum.",
+     "You are required to remain available to work your contracted hours and must provide availability across at least {{min_days}} days per week. Unless otherwise approved by the Employer, you must be available to work at least {{weekend_availability_pct}} of Saturdays and Sundays and at least {{public_holiday_pct}} of public holidays each calendar year as reasonably required by the operational needs of the business.",
+     "The Employer relies on employees providing reasonable availability to facilitate rostering. A failure to provide sufficient availability may affect the Employer's ability to allocate the Employee's contracted minimum hours and may be addressed through the Employer's performance or disciplinary processes where appropriate.",
+     "During your rostered hours of work, you will devote your time and attention to the proper discharge of your duties.",
+     "You will be paid for all hours worked as rostered and approved by the Employer.",
+     "You are entitled to an unpaid meal break of 30 minutes for each continuous period, to be taken at times agreed with your manager that do not disrupt business operations."
+    ]
+   },
+   {
+    "heading": "Roster",
+    "body": [
+     "From time to time, the Employer may reasonably require changes to your roster to meet operational needs, and you will make reasonable efforts to accommodate such changes.",
+     "Any request by you to change your roster or availability should be submitted with at least 2 days' notice where practicable.",
+     "Employees are expected to attend all rostered shifts. If you are unable to attend a rostered shift due to illness or any other unforeseen circumstance, you must notify your manager as soon as reasonably practicable and, where requested, provide reasonable supporting evidence. Frequent failure to attend rostered shifts, repeated late cancellations after the roster has been published, or a pattern of unreliability in meeting rostered commitments may be treated as a performance or conduct issue. The Employer may address such matters through its disciplinary process, which may include counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to report for work on time and be ready to commence their duties at the start of each rostered shift. Where an employee is late for more than ten percent (10%) of their rostered shifts during any rolling three (3) month period, the Employer may treat the matter as a performance or conduct issue and may issue a formal warning. Continued failure to meet the Employer's punctuality expectations, following appropriate counselling and disciplinary action, may result in further disciplinary action, up to and including termination of employment in accordance with applicable workplace laws.",
+     "Employees are expected to commence work at their rostered start time. Employees must not clock in before their rostered start time unless approved by a supervisor, shift leader or manager, or unless they are asked to start work earlier due to operational requirements. Employees who clock in early without approval will not be paid before their rostered start time unless they have been directed to perform work during that period.",
+     "Employees are expected to complete their assigned duties within their rostered hours. The Employer will roster employees for a reasonable period of time to enable them to perform their duties, having regard to the operational requirements of the business. Employees must not remain at work beyond their rostered finishing time or work additional hours unless approved by a supervisor, shift leader or manager. Where an employee remains at work beyond their rostered finishing time without prior approval, including because of their own work pace or failure to complete their assigned duties within the rostered shift, such additional time will not automatically be treated as authorised work or overtime. Any payment for additional hours will only be made where the Employer has expressly directed or approved the employee to perform that work."
+    ]
+   },
+   {
+    "heading": "Remuneration",
+    "body": [
+     "Salary",
+     "Your employment is classified as {{classification_level}} under the Restaurant Award (MA000119).",
+     "Your ordinary hourly rate of pay is ${{hourly_rate}} per hour.",
+     "Payment will be made fortnightly into a bank account nominated by you.",
+     "Your rate of pay has been determined having regard to the applicable Award classification and may also take into account factors such as your age, qualifications, skills and experience.",
+     "Where applicable, you will receive penalty rates for work performed on Saturdays, Sundays and public holidays, and any other applicable entitlements in accordance with the Restaurant Award and the National Employment Standards.",
+     "The Employer may, at its discretion, provide you with additional benefits from time to time. Such benefits are discretionary, do not form part of your remuneration or contractual entitlement, and may be varied, suspended or withdrawn at any time.",
+     "Superannuation",
+     "The Employer will, in addition to the salary, make superannuation contributions in accordance with the Employer’s obligations under the Superannuation Guarantee (Administration) Act 1992 and any regulations made pursuant to that act.",
+     "Staff Benefits",
+     "Subject to the Employer's policies and operational requirements, eligible employees may be provided with the following staff benefits:",
+     "Employees may receive a {{discount_during}} discount on food and beverages purchased during, or a {{discount_outside}} discount outside, their rostered shifts.",
+     "A {{family_discount}} family discount is available only to the employee's immediate family members. This discount does not apply to friends, boyfriends, girlfriends, partners, or any other persons who are not immediate family members.",
+     "The Employer reserves the right to verify an individual's eligibility for any staff discount and may suspend, withdraw, or revoke staff discount privileges where the benefit is misused or where the Employer reasonably considers it appropriate to do so.",
+     "Staff benefits are discretionary, do not form part of an employee's remuneration or contractual entitlements, and may be amended, suspended, or withdrawn by the Employer at any time.",
+     "Employer-Funded External Training",
+     "The Employer may, at its discretion, pay for external training, courses, licences or certifications provided by a third-party training organisation that are relevant to your employment.",
+     "Where the Employer has paid for approved external training and you voluntarily resign, or your employment is terminated for serious misconduct, within six (6) months of completing the training, you may be required to repay the reasonable and documented cost of that training as follows:",
+     "Employment ends within 0–3 months of completing the training: 100% of the training cost.",
+     "Employment ends within 3–6 months of completing the training: 50% of the training cost.",
+     "This clause applies only to the actual cost of the external training paid by the Employer and does not apply to routine on-the-job training or induction provided in the workplace. Any repayment must comply with applicable workplace laws.",
+     "The Employer will advise the Employee before enrolling the Employee in any training to which this clause applies."
+    ]
+   },
+   {
+    "heading": "Leave",
+    "body": [
+     "Annual leave",
+     "You will be entitled to 20 days annual leave in accordance with the National Employment Standard (NES) in the Fair Work Act 2009 (Cth) (Fair Work Act) and its replacements from time to time. As you are a part-time employee, your entitlement accumulates on a pro-rata basis. Annual leave must be taken at a time or times to be approved by the Employer. If at the end of the year, you have not taken all of your leave, it will carry forward into the next year. When your employment ends you will be entitled to be paid for all annual leave accrued but not taken.",
+     "Employees must obtain the Employer's approval for annual leave at least {{annual_leave_notice_weeks}} weeks prior to the commencement of the leave.",
+     "Other Leave Entitlements",
+     "You may be entitled to other applicable leave entitlements in accordance with the National Employment Standards, the Restaurant Award and applicable workplace laws.",
+     "Minimum Hours and Unpaid Leave",
+     "Where you are unable to work your contracted minimum hours due to your own unavailability, you must notify the Employer as soon as reasonably practicable. Unless annual leave or another form of approved paid leave has been approved, the absence will be treated as approved unpaid leave.",
+     "Nothing in this clause changes your status as a part-time employee or entitles you to casual employment or casual loading."
+    ]
+   },
+   {
+    "heading": "Employee Obligations",
+    "body": [
+     "Personal Mobile Phone Policy",
+     "Employees must not use personal mobile phones during working hours unless expressly authorised by management. Personal mobile phones must be switched to silent mode and stored in the employee's locker or another location approved by the Employer before the commencement of each shift.",
+     "Personal mobile phones may only be used during authorised meal or rest breaks or with the prior approval of management.",
+     "In the event of an emergency, family members or emergency contacts should contact the workplace directly. Management will make reasonable efforts to notify the employee as soon as practicable.",
+     "Failure to comply with this policy may be treated as misconduct and may result in disciplinary action, including counselling, formal warnings, and, where appropriate, termination of employment in accordance with applicable workplace laws.",
+     "Professional Conduct",
+     "Employees must maintain professional standards of conduct at all times while on duty. Personal matters (including, but not limited to, personal relationships, family matters or emotional issues) must not interfere with an employee's performance, teamwork, communication, or customer service.",
+     "Where personal circumstances adversely affect an employee's conduct or work performance, the Employer may take disciplinary action, including issuing a written warning where appropriate.",
+     "Performance Management",
+     "Your performance may be assessed against the Key Performance Indicators (KPIs) set out in Schedule 2.",
+     "Employees may receive verbal or written warnings for misconduct or poor performance.",
+     "Where an employee fails to meet one or more KPIs, repeatedly breaches Company policies or procedures, or otherwise fails to meet the required standards of performance or conduct, the Employer may commence its performance management process, which may include counselling and the issuing of verbal or written warnings.",
+     "Repeated breaches of Company policies, procedures or performance expectations may result in further disciplinary action, up to and including termination of employment.",
+     "While the Employer will generally follow a progressive disciplinary process, including multiple warnings where appropriate, it reserves the right to determine the appropriate disciplinary action having regard to the nature and seriousness of the conduct. Serious misconduct may result in immediate termination of employment without prior warnings in accordance with applicable workplace laws.",
+     "Employees who receive three (3) written warnings within any rolling twelve (12) month period for repeated misconduct or poor performance may have their employment terminated following the Employer's disciplinary process and in accordance with applicable workplace laws.",
+     "Uniform and Personal Presentation",
+     "Employees must wear the required uniform while on duty and maintain a clean, neat and professional appearance at all times.",
+     "The required uniform may include, where applicable:",
+     "Branded shirt;",
+     "Name badge;",
+     "Apron; and",
+     "Non-slip, closed-toe footwear.",
+     "Employees are also required to maintain appropriate personal hygiene standards at all times.",
+     "Workplace Policies",
+     "Employees must comply with all lawful workplace policies and procedures issued by the Employer from time to time, including but not limited to:",
+     "food safety and hygiene requirements;",
+     "Workplace Health and Safety (WHS) requirements;",
+     "anti-discrimination, bullying and harassment policies; and",
+     "any other lawful workplace procedures relevant to the Employee's duties.",
+     "The Employer may amend or introduce workplace policies from time to time to meet operational or legal requirements. Such policies do not form part of this Agreement.",
+     "Social Media Policy",
+     "Employees must not, without the Employer's prior approval:",
+     "share confidential workplace information;",
+     "post kitchen processes, recipes, workplace images or videos;",
+     "make negative, harmful or misleading comments about the Employer, its business, staff or customers; or",
+     "represent or speak on behalf of the Employer.",
+     "A breach of this clause may result in disciplinary action, including formal warnings and, where appropriate, termination of employment."
+    ]
+   },
+   {
+    "heading": "Intellectual property",
+    "body": [
+     "Any intellectual property created or discovered during your employment must be disclosed to the Employer and will belong to and be the absolute property of the Employer or such one of its subsidiary companies as may be nominated by the Employer for that purpose.",
+     "For the avoidance of doubt, the Employer's recipes, menus, food preparation methods, cooking processes, branding, logos and other proprietary materials remain the exclusive intellectual property of the Employer. You must not copy, reproduce, disclose or use such intellectual property other than in the proper performance of your duties unless authorised in writing by the Employer."
+    ]
+   },
+   {
+    "heading": "Confidentiality",
+    "body": [
+     "You agree that you will not, at any time during your employment or after the termination of your employment for any reason, divulge, disclose or use any of the confidential information, affairs or secrets (including trade secrets) of the Employer without the Employer's prior written consent.",
+     "For the purposes of this Agreement, confidential information includes, but is not limited to, recipes, menus, food preparation methods, cooking processes, supplier information, pricing information, customer information, financial information, operational procedures, trade secrets and any other confidential business information belonging to the Employer.",
+     "You will not use or attempt to use any confidential information acquired during the course of your employment in any manner which may injure, or be likely to injure, the Employer or its business.",
+     "For clarity, this confidentiality clause does not restrict your rights under the Fair Work Act 2009 (Cth) to disclose or discuss your own pay or employment conditions, or to ask other employees about their pay or employment conditions where permitted by law."
+    ]
+   },
+   {
+    "heading": "Resignation",
+    "body": [
+     "If you wish to resign from your employment, you are required to provide the Employer with a minimum of {{notice_weeks}} weeks' written notice.",
+     "During the notice period, you are expected to continue to perform your duties satisfactorily and comply with all Company policies and procedures.",
+     "Upon the termination of your employment for any reason, you must immediately return all Company property, including uniforms, keys, equipment, documents, records and any other items belonging to the Employer.",
+     "Where permitted by law and authorised by you in writing, the Employer may recover the reasonable cost of any unreturned Company property from any monies otherwise payable to you."
+    ]
+   },
+   {
+    "heading": "Workplace Surveillance",
+    "body": [
+     "The Employer advises that camera, computer, and other workplace monitoring systems may operate at the workplace on an ongoing basis for operational, security, safety, and compliance purposes. The use of workplace computers, devices, systems, and equipment may be monitored to ensure compliance with the Employer's policies, procedures, and legal obligations. By commencing and continuing your employment, you acknowledge and consent to such monitoring and surveillance as permitted by applicable law."
+    ]
+   },
+   {
+    "heading": "Misconduct",
+    "body": [
+     "We may terminate your employment without notice, or payments in lieu of notice, if you engage in serious misconduct.",
+     "Serious misconduct is when an employee:",
+     "- causes serious and imminent risk to the health and safety of another person or to the reputation, viability, or profits of their employer’s business, or",
+     "- willfully or deliberately behave in a way that’s inconsistent with the continuing their employment.",
+     "Examples of serious misconduct include:",
+     "- Theft",
+     "- Fraud",
+     "- Violence/Assault",
+     "- Serious breaches of health and safety requirements.",
+     "- Being drunk and/or affected by drugs at work.",
+     "- Refusing to carry out duties."
+    ]
+   },
+   {
+    "heading": "Termination of employment",
+    "body": [
+     "The Employer may terminate your employment by providing notice, or payment in lieu of notice, in accordance with the Restaurant Award, the National Employment Standards and any applicable workplace laws.",
+     "The Employer may terminate your employment without notice, or payment in lieu of notice, where you engage in serious misconduct.",
+     "Upon termination of employment, you will be paid any wages and other entitlements owing to you up to the date of termination, in accordance with applicable workplace laws."
+    ]
+   },
+   {
+    "heading": "General",
+    "body": [
+     "This Agreement is governed by the laws of Victoria, Australia.",
+     "No variation or amendment to this Agreement will be effective unless it is made in writing and agreed by both the Employer and the Employee."
+    ]
+   },
+   {
+    "heading": "Acceptance",
+    "body": [
+     "Please sign and return the enclosed copy of this letter to confirm acceptance of this offer of employment.",
+     "Yours faithfully,",
+     "{{owner_name}}",
+     "Director, for and on behalf of {{employer_name}}",
+     "I, {{employee_name}},",
+     "Have read and understood the terms and conditions of the attached Employment Agreement.",
+     "Have had the opportunity to discuss any questions or concerns regarding these terms and conditions with my Employer, and have received satisfactory responses to any matters raised.",
+     "Understand and agree to comply with the Company's policies and procedures, and acknowledge the remuneration arrangements discussed and agreed during the recruitment process.",
+     "Signature: ______________________   Date: ____________",
+     "Print name: {{employee_name}}",
+     "Guardian Signature (if applicable): ______________________   Date: ____________",
+     "Print name: ______________________________________"
+    ]
+   },
+   {
+    "heading": "SCHEDULE 1 – JOB DESCRIPTION",
+    "body": [
+     "Position Summary",
+     "The Front of House (FOH) Team Member is responsible for delivering high-quality customer service, processing orders, maintaining clean service and dining areas, and supporting efficient front counter and service operations in accordance with the Employer's standards.",
+     "Key Responsibilities",
+     "Customer Service",
+     "Greet and serve customers in a friendly and professional manner.",
+     "Take accurate orders and answer customer enquiries.",
+     "Handle customer concerns courteously and escalate issues to a supervisor or manager where required.",
+     "Order Processing and POS",
+     "Operate the point-of-sale (POS) system accurately.",
+     "Process cash, card and digital payments in accordance with workplace procedures.",
+     "Ensure order accuracy and timely service.",
+     "Food and Beverage Service",
+     "Assemble and serve food and beverages in accordance with company standards.",
+     "Ensure orders are presented correctly before being provided to customers.",
+     "Coordinate with kitchen staff to support efficient order flow.",
+     "Cleanliness and Hygiene",
+     "Maintain the cleanliness of the front counter, dining area, service areas and customer-facing spaces.",
+     "Follow food safety and hygiene requirements.",
+     "Comply with Workplace Health and Safety (WHS) standards.",
+     "Stock and Supplies",
+     "Replenish front of house stock, including packaging, condiments, napkins and drinks.",
+     "Monitor stock levels and report shortages to a supervisor or manager.",
+     "Teamwork",
+     "Work cooperatively with kitchen staff and other team members.",
+     "Assist during peak service periods.",
+     "Perform any other reasonable duties consistent with your skills, training and position, as directed by the Employer."
+    ]
+   },
+   {
+    "heading": "SCHEDULE 2 – KEY PERFORMANCE INDICATORS (KPIs)",
+    "body": [
+     "The following Key Performance Indicators (KPIs) are intended to assist in measuring work performance. The Employer may review and update these KPIs from time to time to reflect operational requirements and business needs.",
+     "1. Customer Service",
+     "Achieve at least 90% positive customer feedback.",
+     "Demonstrate friendly, professional and courteous interactions with customers at all times.",
+     "2. Order Accuracy",
+     "Achieve at least 97% order accuracy.",
+     "Maintain minimal customer complaints relating to incorrect orders.",
+     "3. Speed of Service",
+     "Complete customer orders within the designated service times (generally 2–5 minutes, depending on order complexity).",
+     "Demonstrate the ability to perform efficiently during peak trading periods.",
+     "4. Cleanliness and Hygiene",
+     "Maintain the front counter, dining area and service areas to a high standard of cleanliness at all times.",
+     "Maintain 100% compliance with food safety and hygiene procedures.",
+     "Ensure there are no critical food safety or hygiene breaches.",
+     "Complete all required checklists and comply with all Standard Operating Procedures (SOPs) at all times.",
+     "5. Cash Handling and POS Accuracy",
+     "Maintain zero or minimal discrepancies in cash handling.",
+     "Operate the point-of-sale (POS) system accurately and in accordance with workplace procedures.",
+     "6. Attendance and Reliability",
+     "Maintain at least 95% attendance and punctuality.",
+     "Attend and complete all rostered shifts reliably.",
+     "7. Teamwork and Communication",
+     "Work effectively with supervisors and team members across Front of House and Back of House operations.",
+     "Make a positive contribution to the team environment.",
+     "Demonstrate a willingness to assist other team members during busy trading periods.",
+     "8. Standard Operating Procedures (SOPs) Compliance",
+     "Complete all required operational checklists accurately and on time.",
+     "Comply with all applicable Standard Operating Procedures (SOPs) and Company procedures at all times."
+    ]
+   }
+  ],
+  "tokenKeys": [
+   "annual_leave_notice_weeks",
+   "classification_level",
+   "commence_date",
+   "contracted_min_hours",
+   "discount_during",
+   "discount_outside",
+   "employee_address",
+   "employee_first_name",
+   "employee_name",
+   "employer_name",
+   "family_discount",
+   "hourly_rate",
+   "location_basis",
+   "min_days",
+   "notice_weeks",
+   "offer_date",
+   "owner_name",
+   "probation_months",
+   "probation_shifts",
+   "public_holiday_pct",
+   "weekend_availability_pct"
+  ],
+  "tokenTypes": {
+   "annual_leave_notice_weeks": "text",
+   "classification_level": "text",
+   "commence_date": "text",
+   "contracted_min_hours": "text",
+   "discount_during": "text",
+   "discount_outside": "text",
+   "employee_address": "system",
+   "employee_first_name": "system",
+   "employee_name": "system",
+   "employer_name": "settings",
+   "family_discount": "text",
+   "hourly_rate": "text",
+   "location_basis": "settings",
+   "min_days": "text",
+   "notice_weeks": "text",
+   "offer_date": "system",
+   "owner_name": "text",
+   "probation_months": "text",
+   "probation_shifts": "text",
+   "public_holiday_pct": "text",
+   "weekend_availability_pct": "text"
+  },
+  "tokenDefaults": {
+   "discount_during": "fifty percent (50%)",
+   "discount_outside": "twenty percent (20%)",
+   "family_discount": "twenty percent (20%)",
+   "weekend_availability_pct": "50%",
+   "public_holiday_pct": "50%"
+  }
+ }
+}

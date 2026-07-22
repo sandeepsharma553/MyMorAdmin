@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { getDocs } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { contractTemplatesCol } from "../../utils/restaurantGroupPaths";
-import { DocSheet } from "./contractDocSheet";
+import { DocSheet, TOKEN_TYPE_STYLE } from "./contractDocSheet";
 
 /* ============================================================================
    Contract Templates — READ-ONLY viewer (Phase 1, Step 8).
@@ -69,6 +69,14 @@ export default function ContractTemplatesPage() {
                   <span className="card-title">{selected.label || selected.id}</span>
                   <span className="card-sub">{selected.id} · {selected.area} · {selected.basis} · award {selected.award || "—"} · v{selected.version || 1} · tokens shown as ‹token›</span>
                 </div>
+              </div>
+              {/* field-colour legend — mirrors the client's docx highlight scheme (tokenTypes) */}
+              <div style={{ display: "flex", gap: 14, alignItems: "center", fontSize: 11, color: "var(--gray)", margin: "0 0 10px" }}>
+                {[["system", "autofilled from the system"], ["settings", "dropdown — data from Settings"], ["text", "text box"]].map(([kind, desc]) => (
+                  <span key={kind} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ ...TOKEN_TYPE_STYLE[kind], padding: "0 6px", borderRadius: 2, fontWeight: 600 }}>‹token›</span> {desc}
+                  </span>
+                ))}
               </div>
               <div style={{ maxHeight: "72vh", overflowY: "auto", background: "#e8e8ea", padding: 20, borderRadius: 8 }}>
                 <DocSheet template={selected} />

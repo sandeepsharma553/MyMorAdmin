@@ -16,19 +16,29 @@ const isSubhead = (t) =>
 const isNumberedSub = (t) => /^\d+\.\s+[A-Z]/.test(t) && t.length <= 56 && !t.includes("‹");
 const isSchedule = (h) => /^schedule/i.test(String(h || "").trim());
 
-// tokens render like the doc's underlined blanks
-const TokenText = ({ text }) => (
+// tokens render like the doc's underlined blanks, tinted by their fill kind
+// (template.tokenTypes, from the client's docx highlight legend):
+//   system → pink (autofilled from the system) · settings → green (dropdown fed
+//   from Settings) · text → yellow (free text box). Untyped tokens stay gray.
+export const TOKEN_TYPE_STYLE = {
+  system:   { background: "#fce7f3", color: "#be185d", borderBottom: "1px solid #be185d" },
+  settings: { background: "#d1fae5", color: "#047857", borderBottom: "1px solid #047857" },
+  text:     { background: "#fef3c7", color: "#b45309", borderBottom: "1px solid #b45309" },
+};
+const TokenText = ({ text, tokenTypes }) => (
   <>
-    {String(text).split(/(‹[^›]*›)/g).map((part, i) =>
-      part.startsWith("‹")
-        ? <span key={i} style={{ borderBottom: "1px solid #9ca3af", color: "#6b7280", padding: "0 2px" }}>{part}</span>
-        : <React.Fragment key={i}>{part}</React.Fragment>
-    )}
+    {String(text).split(/(‹[^›]*›)/g).map((part, i) => {
+      if (!part.startsWith("‹")) return <React.Fragment key={i}>{part}</React.Fragment>;
+      const kind = (tokenTypes || {})[part.slice(1, -1)];
+      const style = TOKEN_TYPE_STYLE[kind] || { borderBottom: "1px solid #9ca3af", color: "#6b7280" };
+      return <span key={i} style={{ padding: "0 2px", borderRadius: 2, ...style }}>{part}</span>;
+    })}
   </>
 );
 
 export function DocSheet({ template }) {
   const fill = (s) => contractFill.line(s, {}); // empty values → ‹token› blanks
+  const tokenTypes = template.tokenTypes || {};
   const sections = template.sections || [];
   let clauseNo = 0;
 
@@ -55,11 +65,11 @@ export function DocSheet({ template }) {
                 if (label) {
                   return (
                     <div key={i} style={{ marginBottom: 10 }}>
-                      <strong>{label[1]}</strong> <TokenText text={label[3]} />
+                      <strong>{label[1]}</strong> <TokenText text={label[3]} tokenTypes={tokenTypes} />
                     </div>
                   );
                 }
-                return <div key={i} style={{ margin: "12px 0" }}><TokenText text={t} /></div>;
+                return <div key={i} style={{ margin: "12px 0" }}><TokenText text={t} tokenTypes={tokenTypes} /></div>;
               })}
             </div>
           );
@@ -88,7 +98,7 @@ export function DocSheet({ template }) {
               }
               return (
                 <div key={i} style={{ margin: "6px 0 8px", paddingLeft: 18 }}>
-                  <TokenText text={t} />
+                  <TokenText text={t} tokenTypes={tokenTypes} />
                 </div>
               );
             })}

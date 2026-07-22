@@ -30,6 +30,9 @@ const TOKEN_SOURCE = {
   employee_address: "private", classification_level: "private", hourly_rate: "private", contracted_min_hours: "private",
   employer_name: "defaults", employer_address: "defaults", owner_name: "defaults", discount_during: "defaults", discount_outside: "defaults", family_discount: "defaults",
   probation_shifts: "defaults", probation_months: "defaults", notice_weeks: "defaults", min_days: "defaults",
+  // v2 template tokens (fulltime/parttime split + docx-highlight yellow fields)
+  annual_salary: "private", meal_benefit: "defaults", annual_leave_notice_weeks: "defaults",
+  weekend_availability_pct: "defaults", public_holiday_pct: "defaults",
   offer_date: "typed",
 };
 const TOKEN_LABEL = {
@@ -39,6 +42,8 @@ const TOKEN_LABEL = {
   employer_name: "Employer name", employer_address: "Employer address", owner_name: "Owner (counter-sign)", discount_during: "Discount (during shift)",
   discount_outside: "Discount (outside shift)", family_discount: "Family discount", probation_shifts: "Probation (shifts)",
   probation_months: "Probation (months)", notice_weeks: "Resignation notice (weeks)", min_days: "Min days/week",
+  annual_salary: "Annual salary", meal_benefit: "Staff meal benefit", annual_leave_notice_weeks: "Annual-leave notice (weeks)",
+  weekend_availability_pct: "Weekend availability (%)", public_holiday_pct: "Public-holiday availability (%)",
   offer_date: "Offer date",
 };
 const SOURCE_GROUPS = [
@@ -59,6 +64,7 @@ const WRITEBACK_MAP = {
   employee_address: "address",
   classification_level: "classificationLevel",
   hourly_rate: "hourlyRate", // rate split (Bug 1) — writes the NEW key, never resurrects legacy `rate`
+  annual_salary: "annualSalary", // rate split — the salaried half of the same pair
   contracted_min_hours: "contractedMinHours",
 };
 
@@ -85,7 +91,8 @@ function resolveTemplate(staff, templatesById, forcedArea) {
   if (!["Full-time", "Part-time", "Casual"].includes(staff.type))
     return { status: "BLOCK", reason: `Unrecognised employment type “${staff.type || "—"}”.` };
 
-  const basis = staff.type === "Casual" ? "casual" : "hourly"; // Full-time/Part-time → hourly
+  // v2 template set: casual / fulltime / parttime (the combined "hourly" ids are retired)
+  const basis = staff.type === "Casual" ? "casual" : staff.type === "Full-time" ? "fulltime" : "parttime";
   const id = `${area.toLowerCase()}_${basis}`;
   return templatesById[id] ? { status: "OK", templateId: id } : { status: "BLOCK", reason: `Template “${id}” not found.` };
 }
@@ -120,7 +127,8 @@ function buildValues(staff, priv, defaults, overrides, entities, venues, awardRa
   // (new hourlyRate wins even when ""; only a pre-split doc falls back to legacy `rate`,
   // bucketed by legacy payBasis). Salaried staff resolve to "" here — there is no
   // annual-salary token, so they fall through to award rate / empty exactly as before.
-  const privHourly = rateSplitFromPrivate(priv).hourlyRate || "";
+  const split = rateSplitFromPrivate(priv);
+  const privHourly = split.hourlyRate || "";
   const base = {
     employee_name: staff?.displayName || staff?.name || "",
     employment_type: staff?.type || "",
@@ -129,6 +137,8 @@ function buildValues(staff, priv, defaults, overrides, entities, venues, awardRa
     employee_address: priv?.address || "",
     classification_level: priv?.classificationLevel || "",
     hourly_rate: privHourly,
+    annual_salary: split.annualSalary || "", // fulltime templates — same private rate-split pair
+
     // pair-first (new numeric keys, legacy-string parse as fallback) so a form-edited range
     // can't feed a stale value into the contract. The token stays the MIN — the frozen
     // template wording is "a minimum of {{contracted_min_hours}} hours", so the min is the
@@ -147,6 +157,10 @@ function buildValues(staff, priv, defaults, overrides, entities, venues, awardRa
     probation_months: defaults?.probation_months || "",
     notice_weeks: defaults?.notice_weeks || "",
     min_days: defaults?.min_days || "",
+    meal_benefit: defaults?.meal_benefit || "",
+    annual_leave_notice_weeks: defaults?.annual_leave_notice_weeks || "",
+    weekend_availability_pct: defaults?.weekend_availability_pct || "",
+    public_holiday_pct: defaults?.public_holiday_pct || "",
     offer_date: todayISO(),
   };
   const merged = { ...base, ...overrides };
@@ -261,10 +275,15 @@ export default function ContractGeneratorPage() {
     [selStaff, templatesById, areaChoice]
   );
   const template = resolved.status === "OK" ? templatesById[resolved.templateId] : null;
-  const values = useMemo(
-    () => buildValues(selStaff, priv || {}, defaults || {}, overrides, entities, venues, awardRates),
-    [selStaff, priv, defaults, overrides, entities, venues, awardRates]
-  );
+  const values = useMemo(() => {
+    const v = buildValues(selStaff, priv || {}, defaults || {}, overrides, entities, venues, awardRates);
+    // weakest fallback: the template's doc-baked values (v2 tokenDefaults — e.g. the
+    // discount/availability percentages the docx carried). Settings/staff/overrides all win.
+    for (const [k, d] of Object.entries(template?.tokenDefaults || {})) {
+      if (!(v[k] && String(v[k]).trim())) v[k] = d;
+    }
+    return v;
+  }, [selStaff, priv, defaults, overrides, entities, venues, awardRates, template]);
   // The award mapped to the selected staff's venue (may be unverified) — its level labels feed
   // the classification dropdown; the RATE auto-fill (in buildValues) separately requires verified.
   const staffAward = useMemo(
@@ -383,6 +402,16 @@ export default function ContractGeneratorPage() {
           {classOptions.map((l) => <option key={l} value={l}>{l}</option>)}
           {/* keep a prefilled-but-unlisted value selectable (e.g. legacy staff-record level) */}
           {values[t] && !known && <option value={values[t]}>{values[t]}</option>}
+        </select>
+      );
+    }
+    if (t === "location_basis") {
+      // green-marked in the v2 docx templates: fixed dropdown (prefilled from venue count)
+      return (
+        <select className="form-input" value={values[t] || ""} onChange={setOverride(t)}>
+          <option value="">—</option>
+          <option value="Single Location">Single Location</option>
+          <option value="Multiple Locations">Multiple Locations</option>
         </select>
       );
     }
@@ -544,6 +573,8 @@ export default function ContractGeneratorPage() {
       {/* Option 1 rate-review confirm — gates the EXISTING addDoc behind a Confirm click.
           Does NOT touch the award verified flag; rate source mirrors buildValues precedence. */}
       {confirmGen && (() => {
+        // fulltime templates carry annual_salary instead of hourly_rate — review the salary there
+        const salaried = !!template && (template.tokenKeys || []).includes("annual_salary");
         const rateInfo = (() => {
           const rate = values.hourly_rate; // the exact value that will be written onto the contract
           const hasRate = rate != null && String(rate).trim() !== "";
@@ -569,10 +600,18 @@ export default function ContractGeneratorPage() {
                 <div><strong>Employee:</strong> {values.employee_name || "—"} · {values.employment_type || "—"}</div>
                 <div><strong>Venue:</strong> {venueName}</div>
                 <div><strong>Classification:</strong> {values.classification_level || <span style={{ color: "var(--red)" }}>not set</span>}</div>
-                <div>
-                  <strong>Rate:</strong> {rateInfo.hasRate ? `$${rateInfo.rate}/hr` : <span style={{ color: "var(--red)" }}>—</span>}{" "}
-                  <span style={{ fontSize: 12, color: rateInfo.warn ? "#b45309" : "var(--gray)" }}>({rateInfo.source})</span>
-                </div>
+                {salaried ? (
+                  <div>
+                    <strong>Salary:</strong> {String(values.annual_salary || "").trim()
+                      ? `$${values.annual_salary} p.a.`
+                      : <span style={{ color: "var(--red)" }}>not set</span>}
+                  </div>
+                ) : (
+                  <div>
+                    <strong>Rate:</strong> {rateInfo.hasRate ? `$${rateInfo.rate}/hr` : <span style={{ color: "var(--red)" }}>—</span>}{" "}
+                    <span style={{ fontSize: 12, color: rateInfo.warn ? "#b45309" : "var(--gray)" }}>({rateInfo.source})</span>
+                  </div>
+                )}
                 {/* the PAIR via the shared formatter, so this agrees with the planner (the raw
                     token value is min-only and still fills the contract text unchanged) */}
                 <div><strong>Contracted hours:</strong> {(() => { const r = contractedRangeOf(priv); return fmtContractedRange(r.min, r.max) || "—"; })()}</div>
