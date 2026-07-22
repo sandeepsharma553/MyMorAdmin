@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import {
-  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen, FileSignature, FileCheck, CalendarClock, ShoppingCart, FileBarChart,
+  Users, CalendarDays, FileText, GraduationCap, CheckSquare, BarChart3, LogOut, Settings, ShieldCheck, SlidersHorizontal, MessageCircle, CalendarRange, Thermometer, Bell, Package, UtensilsCrossed, Truck, Scale, BookOpen, FileSignature, FileCheck, CalendarClock, ShoppingCart, FileBarChart, KeyRound,
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
 import { SOPS_NAV, CHECKLISTS_NAV_LABEL } from "../pages/restaurantgroup/rgConfig";
@@ -30,6 +30,8 @@ const NAV = [
   // the sale server-side (stock OR pos permission).
   { key: "pos", path: "/rg/pos", label: "POS", Icon: ShoppingCart, title: "POS Terminal" },
   { key: "supplier", path: "/rg/supplier", label: "Supplier Ordering", Icon: Truck, title: "Supplier Ordering" },
+  // Not in STAFF_NAV_KEYS/DOCS_NAV_KEYS → lands in "Operations" (the complement filter).
+  { key: "keys", path: "/rg/keys", label: "Keys", Icon: KeyRound, title: "Keys — Store Key Register" },
   { key: "performance", path: "/rg/performance", label: "Performance", Icon: BarChart3, title: "Performance" },
   // Not in STAFF_NAV_KEYS/DOCS_NAV_KEYS → lands in "Operations" beside Performance (the
   // complement filter). One page doesn't justify a fourth nav section — revisit when more

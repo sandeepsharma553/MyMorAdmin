@@ -16,6 +16,7 @@ import StockPage from "../pages/restaurantgroup/StockPage";
 import MenusPage from "../pages/restaurantgroup/MenusPage";
 import PosPage from "../pages/restaurantgroup/PosPage";
 import SupplierPage from "../pages/restaurantgroup/SupplierPage";
+import KeysPage from "../pages/restaurantgroup/KeysPage";
 import CompliancePage from "../pages/restaurantgroup/CompliancePage";
 import ContractGeneratorPage from "../pages/restaurantgroup/ContractGeneratorPage";
 import SentContractsPage from "../pages/restaurantgroup/SentContractsPage";
@@ -49,6 +50,7 @@ export default function RestaurantGroupRoutes() {
           rgSellOrder (stock OR pos permission, fail-closed). */}
       <Route path="/rg/pos" element={P("pos", <PosPage />)} />
       <Route path="/rg/supplier" element={P("supplier", <SupplierPage />)} />
+      <Route path="/rg/keys" element={P("keys", <KeysPage />)} />
       <Route path="/rg/compliance" element={P("compliance", <CompliancePage />)} />
       <Route path="/rg/contracts" element={P("contracts", <ContractGeneratorPage />)} />
       <Route path="/rg/contracts/sent" element={P("contracts", <SentContractsPage />)} />
