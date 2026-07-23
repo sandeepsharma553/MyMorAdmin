@@ -120,6 +120,17 @@ export function RGProvider({ children }) {
   const noteReady = useCallback((label) => {
     readyRef.current[label] = true;
     setReadyLabels((prev) => (prev[label] ? prev : { ...prev, [label]: true }));
+    // SELF-HEAL: a snapshot arriving AFTER the watchdog fired means the timeout
+    // was latency, not a dead listener — clear its stale "(timed out)" banner
+    // entry. Real failures (rules denial / dropped listener) never snapshot, so
+    // their entries stay. Without this, one slow cold start pins the banner on
+    // every screen for the rest of the session. Mirrored in Ops's RGContext.
+    setLoadErrors((prev) => {
+      const k = `${label} (timed out)`;
+      if (!prev[k]) return prev;
+      const { [k]: _gone, ...rest } = prev;
+      return rest;
+    });
   }, []);
   // Listener failures: { [label]: true } for every collection whose listener
   // errored (rules denial, dropped listener). Data still fail-softs to []/null;
