@@ -59,7 +59,12 @@ const gateLabelsFor = (managerTier) =>
   managerTier ? GATE_LABELS : GATE_LABELS.filter((l) => !MGR_ONLY_GATE_LABELS.includes(l));
 // stockMovements/stocktakes/batches/production are also manager+ but are
 // screen-subscribed (StockPage/StockExtraTabs), not context fan-out.
-const MGR_ONLY_VENUE_COLLS = ["stock"];
+// kpis + performanceNotes: the live rules made these manager-only (HR records —
+// performance notes were previously member read+WRITE), so staff must not
+// subscribe; an expected denial they cannot act on is not a failure worth
+// surfacing. flat() returns [] for a never-subscribed collection exactly as it
+// does for a denied one, so staff-reachable readers render identically.
+const MGR_ONLY_VENUE_COLLS = ["stock", "kpis", "performanceNotes"];
 
 export function RGProvider({ children }) {
   const employee = useSelector((s) => s.auth.employee);
