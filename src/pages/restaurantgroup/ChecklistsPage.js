@@ -34,7 +34,7 @@ const pushHist = (c) => {
 const areaOf = (c) => c.area || (/\bboh\b|kitchen|grill|fry|wash|prep|cook|dressing/i.test(c.title || "") ? "BOH" : /\bfoh\b|floor|barista|bar|counter|service|opening|closing/i.test(c.title || "") ? "FOH" : "All");
 const nowHHMM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const fmt12 = (t) => { if (!t) return ""; const [h, m] = t.split(":").map(Number); const ap = h >= 12 ? "pm" : "am"; const h12 = h % 12 || 12; return `${h12}:${String(m).padStart(2, "0")}${ap}`; };
-const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "", area: "FOH", stationId: "", autoStations: [], time: "", items: [], days: [], images: [], frequency: "daily", scheduleDay: "mon", scheduleDate: 1, autoRoles: [], autoShiftStart: "", shiftLinks: [], recurring: true });
+const blankForm = (venueId) => ({ id: null, title: "", sub: "", venueId: venueId || "", type: "", area: "FOH", stationId: "", autoStations: [], time: "", items: [], days: [], images: [], frequency: "daily", scheduleDay: "mon", scheduleDate: 1, anchorDate: "", autoRoles: [], autoShiftStart: "", shiftLinks: [], recurring: true });
 // 15-minute time options for linking checklists to shift slots — from the SHARED rgUtils
 // mkTimes (Phase 3e single source); the local duplicate is gone (byte-identical output).
 const TIMES = FULL_DAY_TIMES; // 12:00am … 11:45pm
@@ -117,7 +117,7 @@ export default function ChecklistsPage() {
   const [editor, setEditor] = useState(null);
   const setEd = (k) => (e) => setEditor((p) => ({ ...p, [k]: e.target.value }));
   const openNew = () => setEditor(blankForm(venueTab));
-  const openEdit = (c) => setEditor({ id: c.id, title: c.title, sub: c.sub || "", venueId: c.venueId, type: c.type, area: areaOf(c), stationId: c.stationId || "", autoStations: c.autoAssign?.stations || (c.stationId ? [c.stationId] : []), time: c.time || "", items: c.items || [], days: c.days || [], images: c.images || [], frequency: c.frequency || "daily", scheduleDay: c.scheduleDay || "mon", scheduleDate: c.scheduleDate || 1, autoRoles: c.autoAssign?.roles || [], autoShiftStart: c.autoAssign?.shiftStart || "", shiftLinks: c.shiftLinks || [], recurring: c.recurring !== false });
+  const openEdit = (c) => setEditor({ id: c.id, title: c.title, sub: c.sub || "", venueId: c.venueId, type: c.type, area: areaOf(c), stationId: c.stationId || "", autoStations: c.autoAssign?.stations || (c.stationId ? [c.stationId] : []), time: c.time || "", items: c.items || [], days: c.days || [], images: c.images || [], frequency: c.frequency || "daily", scheduleDay: c.scheduleDay || "mon", scheduleDate: c.scheduleDate || 1, anchorDate: c.anchorDate || "", autoRoles: c.autoAssign?.roles || [], autoShiftStart: c.autoAssign?.shiftStart || "", shiftLinks: c.shiftLinks || [], recurring: c.recurring !== false });
   const toggleAutoRole = (r) => setEditor((p) => ({ ...p, autoRoles: p.autoRoles.includes(r) ? p.autoRoles.filter((x) => x !== r) : [...p.autoRoles, r] }));
   const toggleDay = (d) => setEditor((p) => ({ ...p, days: p.days.includes(d) ? p.days.filter((x) => x !== d) : [...p.days, d] }));
   // toggle a recurring {day,start,label} slot — same stored shape, no one-off binding
@@ -128,6 +128,19 @@ export default function ChecklistsPage() {
     if ((p.shiftLinks || []).some((l) => l.day === slotDraft.day && l.start === slotDraft.start)) return p; // dedupe by day+start
     return { ...p, shiftLinks: [...(p.shiftLinks || []), { day: slotDraft.day, start: slotDraft.start, end: slotDraft.end, label: "" }] };
   });
+
+  // Snap a YYYY-MM-DD to its week's MONDAY (local construction — never new Date(string),
+  // which parses UTC and can shift the day). The stored fortnight anchor always reads as
+  // the start of the selected fortnight; scheduleDay picks the fire day. Invalid → "".
+  // ⚠ KEEP byte-identical to Ops ChecklistsScreen.js (anchorMonday).
+  const anchorMonday = (s) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s || "")) return "";
+    const [y, m, d] = s.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return "";
+    dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  };
 
   const saveChecklist = async () => {
     if (!editor.title.trim()) return showToast("Title required");
@@ -143,6 +156,9 @@ export default function ChecklistsPage() {
       frequency: editor.frequency || "daily",
       scheduleDay: editor.scheduleDay || "mon",
       scheduleDate: Math.max(1, Math.min(28, Number(editor.scheduleDate) || 1)),
+      // fortnight anchor, snapped to its week's Monday (picks WHICH fortnight; the
+      // scheduler skips fortnightly checklists whose anchor is empty/invalid)
+      anchorDate: editor.frequency === "fortnightly" ? anchorMonday(editor.anchorDate) : "",
       autoAssign: { roles: [], shiftStart: "", stations: autoStations }, // multi-station auto-assign
       // slot links (#shiftLinks): the single source of truth for shift-triggered assignment
       shiftLinks: editor.shiftLinks || [],
@@ -398,6 +414,13 @@ export default function ChecklistsPage() {
                     <select className="form-input" value={editor.scheduleDate} onChange={setEd("scheduleDate")}>
                       {Array.from({ length: 28 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
                     </select>
+                  </div>
+                )}
+                {editor.frequency === "fortnightly" && (
+                  <div>
+                    <label className="form-label" style={{ fontSize: 10 }}>Fortnight anchor — picks WHICH fortnight (the day select picks which day)</label>
+                    <input type="date" className="form-input" value={editor.anchorDate || ""} onChange={setEd("anchorDate")} />
+                    <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>Required — without an anchor this checklist will not auto-assign. Saved as that week's Monday.</div>
                   </div>
                 )}
               </div>
