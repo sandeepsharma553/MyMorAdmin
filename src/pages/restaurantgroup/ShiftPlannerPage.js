@@ -8,7 +8,6 @@ import { staffAreas, staffAtStation, areaBreakRule, areaPinned, areaExclusive, o
 import { stationsForArea } from "./itemDrilldown";
 import { contractedLabelForStaff, contractedWeekStatus, fmtContractedRange } from "./contractedHours";
 import StaffCapabilityCard from "./StaffCapabilityCard";
-import { checkAndCreateShiftAssignments } from "./checklistShiftUtils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const FULL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -60,7 +59,7 @@ const cellClass = (type) =>
 // from the owner's configured areas (group.areas / areaOrder / areaBreak). See groupedRows.
 
 export default function ShiftPlannerPage() {
-  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, checklists, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope, noteErr } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope, noteErr } = useRG();
   const canEdit = can("shifts", "edit");
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
@@ -547,13 +546,9 @@ export default function ShiftPlannerPage() {
         shiftId = created.id;
       }
       showToast(editing ? "Shift updated" : "Shift saved");
-      // slot-linked checklist auto-assignment — separate async op, NEVER blocks the shift save
-      checkAndCreateShiftAssignments(shiftData, shiftId, groupId, checklists)
-        .then((r) => {
-          if (r.created) showToast(`${r.created} checklist(s) auto-assigned for this shift`);
-          else if (r.errors.length) showToast("Shift saved — checklist auto-assign failed");
-        })
-        .catch(() => showToast("Shift saved — checklist auto-assign failed"));
+      // Slot-linked checklist assignment is handled SERVER-SIDE by rgOnShiftCreated
+      // (the shift-write trigger), so Admin and Ops shift saves behave identically.
+      // Do NOT re-add a client-side call here — both writers would run on every save.
       setModal(null);
     } catch (e) { showToast("Could not save shift"); }
   };
