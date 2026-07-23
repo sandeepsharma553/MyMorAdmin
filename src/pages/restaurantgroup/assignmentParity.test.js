@@ -41,6 +41,11 @@ const fohNoStn = { areas: ["FOH"], role: "FOH", venueIds: ["v1"], stationIds: []
 const mgrBar = { areas: ["Mgmt"], role: "Manager", venueIds: ["v1"], stationIds: ["bar"] };
 const mgrNoStn = { areas: ["Mgmt"], role: "Manager", venueIds: ["v1"], stationIds: [] };
 
+// untargeted-rule fixtures (no stations + no roles → NOBODY; only TARGETED paths reach managers)
+const clAllMgrRole = { area: "All", autoAssign: { roles: ["Manager"] } };  // manager NAMED in roles
+const mBOHmgrRole = { cat: "BOH", autoAssign: { roles: ["Manager"] } };    // role-targeted CROSS-AREA item (mgr area is Mgmt)
+const clLiveShape = { area: "FOH", autoAssign: { roles: [], shiftStart: "", stations: [] } }; // the editors' explicit-empty shape
+
 // [label, item, staff, venueId, expected] — the canonical truth table.
 const CASES = [
   ["role+area match", clFOHrole, foh, "v1", true],
@@ -50,11 +55,11 @@ const CASES = [
   ["All area, role match", clAllRoleFOH, foh, "v1", true],
   ["All area, role mismatch", clAllRoleFOH, boh, "v1", false],
   ["no-roles item NOT auto-assigned to line staff", clFOHnoRole, foh, "v1", false],
-  ["no-roles item goes to managers", clFOHnoRole, mgr, "v1", true],
+  ["untargeted item (no stations, no roles) assigns NOBODY — not even managers", clFOHnoRole, mgr, "v1", false],
   ["wrong venue excluded", clFOHrole, fohV2, "v1", false],
   ["unknown staff.area never blocks", clFOHrole, fohNoArea, "v1", true],
   ["role match is case-insensitive", clFOHroleLower, foh, "v1", true],
-  ["supervisor (sees all) gets no-roles cross-area item", clBOHnoRole, sup, "v1", true],
+  ["untargeted cross-area item assigns NOBODY — supervisors included", clBOHnoRole, sup, "v1", false],
   // multi-area (areas[]) + dropped area-based see-all
   ["multi-area person gets a FOH item", clFOHrole, multiFB, "v1", true],
   ["multi-area person ALSO gets a BOH item", mBOHfoh, multiFB, "v1", true],
@@ -72,6 +77,13 @@ const CASES = [
   // multi-station auto-assign (autoAssign.stations): staff tagged ANY target station is assigned
   ["multi-station item → staff at one of the target stations assigned", clMultiStn, fohBar, "v1", true],
   ["multi-station item → staff at none of the target stations excluded", clMultiStn, fohNoStn, "v1", false],
+  // untargeted rule: no stations + no roles → NOBODY. Managers keep every TARGETED path
+  // (named role, station tag — see also "manager WITH the station" above); only the
+  // untargeted fallthrough is gone.
+  ["manager still assigned when NAMED in autoAssign.roles", clAllMgrRole, mgr, "v1", true],
+  ["roles:[] station-targeted item still assigns the manager via the station tag", clMultiStn, mgrBar, "v1", true],
+  ["seesAll still bypasses the AREA gate for a role-targeted cross-area item", mBOHmgrRole, mgr, "v1", true],
+  ["live shape — explicit roles:[] AND stations:[] assigns NOBODY, managers included", clLiveShape, mgr, "v1", false],
 ];
 
 describe("shouldAutoAssign — canonical truth table (client copy)", () => {
@@ -88,10 +100,10 @@ describe("same-people proof — server filter == client filter for one item", ()
     const assigned = roster.filter((s) => shouldAutoAssign(clFOHrole, s, "v1"));
     expect(assigned).toEqual([foh, fohNoArea]); // FOH line + unknown-area FOH; NOT boh/mgr/sup/other-venue
   });
-  test("a no-roles checklist resolves to exactly the managers/supervisors", () => {
+  test("an untargeted (no-roles) checklist resolves to NOBODY — managers included", () => {
     const roster = [foh, boh, mgr, sup, fohNoArea];
     const assigned = roster.filter((s) => shouldAutoAssign(clFOHnoRole, s, "v1"));
-    expect(assigned).toEqual([mgr, sup]);
+    expect(assigned).toEqual([]); // was [mgr, sup] before the untargeted-→-nobody change
   });
 });
 
@@ -144,9 +156,10 @@ describe("rostered-role basis — assign off the shift's role/area, NOT the home
 
 // ⚠ KEEP identical in all four parity test files (Admin ×2, Ops, Functions).
 describe("missing-area ruling — neither cat nor area is NOT an implicit 'All'", () => {
-  test("an item with neither cat nor area auto-assigns to nobody but see-all", () => {
+  test("an item with neither cat nor area auto-assigns to NOBODY — see-all included", () => {
     const orphan = {}; // no cat, no area, no autoAssign — an authoring oversight
     expect(shouldAutoAssign(orphan, { areas: ["FOH"], role: "FOH", venueIds: ["v1"] }, "v1")).toBe(false);
-    expect(shouldAutoAssign(orphan, { area: "FOH", role: "FOH Supervisor", venueIds: ["v1"] }, "v1")).toBe(true);
+    // was true pre-change: see-all no longer rescues an untargeted item (no stations, no roles)
+    expect(shouldAutoAssign(orphan, { area: "FOH", role: "FOH Supervisor", venueIds: ["v1"] }, "v1")).toBe(false);
   });
 });

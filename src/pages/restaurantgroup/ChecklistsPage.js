@@ -407,6 +407,9 @@ export default function ChecklistsPage() {
                   ? `Auto-assigns to staff at ${(editor.autoStations || []).length} selected station(s) on the schedule above. You can also assign manually anytime.`
                   : "No stations selected — pick stations above to auto-assign this checklist by station; otherwise assign it manually."}
               </div>
+              {!(editor.autoStations || []).length && !(editor.shiftLinks || []).length && (
+                <div style={{ fontSize: 10, color: "var(--amber)", marginTop: 6 }}>⚠ No stations and no shift links — this checklist will not auto-assign to anyone (not even managers). Assign it manually, or pick stations / add a shift link.</div>
+              )}
             </div>
             {/* Slot links — assignment follows the shift slot, not the person */}
             <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 12 }}>

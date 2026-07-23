@@ -481,6 +481,9 @@ export default function TrainingPage({ initialTab }) {
                   </>
                 ) : <div style={{ fontSize: 12, color: "var(--gray)" }}>No stations in {modEditor.cat} for this venue — add them in Settings.</div>;
               })() : <div style={{ fontSize: 12, color: "var(--gray)" }}>Universal module (no area) — won't auto-assign by station. Pick an Area above to choose stations.</div>}
+              {!(modEditor.autoStations || []).length && (
+                <div style={{ fontSize: 10, color: "var(--amber)", marginTop: 6 }}>⚠ No stations selected — this module will not auto-assign to anyone (not even managers). Assign it manually, or pick stations above.</div>
+              )}
             </div>
 
             {/* Step sections — matches the module detail layout */}

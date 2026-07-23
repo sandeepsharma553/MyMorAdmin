@@ -274,9 +274,10 @@ describe("Scenario 5: SOP (training modules) and Checklist (own collection) reso
 
 // ⚠ KEEP identical in all four parity test files (Admin ×2, Ops, Functions).
 describe("missing-area ruling — neither cat nor area is NOT an implicit 'All'", () => {
-  test("an item with neither cat nor area auto-assigns to nobody but see-all", () => {
+  test("an item with neither cat nor area auto-assigns to NOBODY — see-all included", () => {
     const orphan = {}; // no cat, no area, no autoAssign — an authoring oversight
     expect(shouldAutoAssign(orphan, { areas: ["FOH"], role: "FOH", venueIds: ["v1"] }, "v1")).toBe(false);
-    expect(shouldAutoAssign(orphan, { area: "FOH", role: "FOH Supervisor", venueIds: ["v1"] }, "v1")).toBe(true);
+    // was true pre-change: see-all no longer rescues an untargeted item (no stations, no roles)
+    expect(shouldAutoAssign(orphan, { area: "FOH", role: "FOH Supervisor", venueIds: ["v1"] }, "v1")).toBe(false);
   });
 });
