@@ -217,7 +217,9 @@ export default function TrainingPage({ initialTab }) {
                     <span>{(a.checks || []).filter(Boolean).length}/{a.itemsTotal || (a.checks || []).length}</span>
                   </div>
                   <div className="progress-wrap"><div className="progress-bar" style={{ width: `${a.progress || 0}%`, background: trainingBarColor(a.status) }} /></div>
-                  <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>Click to open & tick off each step</div>
+                  {/* trainer-ticked model: only training:edit holders can tick, so the copy
+                      must not promise staff readers actionable checkboxes */}
+                  <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>{canEdit ? "Click to open & tick off each step" : "Your trainer ticks each step off with you, then signs off to complete"}</div>
                 </div>
               ))}
             </div>

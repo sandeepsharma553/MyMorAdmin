@@ -8,9 +8,12 @@ import { archiveCompletion } from "./completionArchive";
 import { sendNotification } from "./notify";
 
 /**
- * Opened training-assignment view. The assignee ticks each step item (verifiable).
- * Ticking everything moves it to "Awaiting sign-off"; a trainer's verification is
- * what marks it "Complete" and logs a note to the staff member's record.
+ * Opened training-assignment view. TRAINER-TICKED (owner ruling, Jul 2026): a
+ * training:edit holder ticks each step as they observe it being done — the assignee
+ * never self-ticks (every caller passes canTick as training:edit / staff:edit).
+ * Ticking everything moves the assignment to "Awaiting sign-off"; the trainer's
+ * verification is what marks it "Complete" and logs a note to the staff member's
+ * record. Keep consistent with Ops AssignmentDetailScreen.js's canTick comment.
  *
  * If the frozen snapshot has no items (e.g. assigned before the module had steps),
  * we fall back to the LIVE module's current steps so it's never empty.
