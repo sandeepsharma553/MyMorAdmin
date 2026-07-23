@@ -201,11 +201,16 @@ export default function StaffDirectoryPage() {
   const refsClean = (refs, venueIds) => (refs || []).filter((r) => (venueIds || []).includes(r.split(":")[0]));
   const refsToStationIds = (refs) => [...new Set((refs || []).map((r) => r.split(":")[1]).filter(Boolean))];
   const refsToStationNames = (refs) => [...new Set((refs || []).map((r) => stationByRef(r)?.name).filter(Boolean))];
-  // legacy stationIds → refs: a bare id maps to every selected venue that actually has it
+  // legacy stationIds → refs: a bare id maps to every selected venue that actually has it.
+  // An id that resolves in NO venue is PRESERVED against venueIds[0] rather than dropped:
+  // dropping it silently erased a staffer's stations on any unrelated field edit (missing/
+  // recreated station docs, or a stations listener that hadn't loaded / had errored).
+  // Preservation is deliberate — stationIds must survive the seed→save round trip.
   const deriveRefs = (stationIds, venueIds) => {
     const out = [];
     (venueIds || []).forEach((vid) => (stationIds || []).forEach((sid) => { if (stations.some((st) => st.id === sid && st.venueId === vid)) out.push(refKey(vid, sid)); }));
-    return out;
+    (stationIds || []).forEach((sid) => { if (sid && (venueIds || []).length && !out.some((r) => r.split(":")[1] === sid)) out.push(refKey(venueIds[0], sid)); });
+    return [...new Set(out)];
   };
   const avatarColor = (s) => venueColor(s?.venueNames?.[0] || venueName(s?.venueIds?.[0]) || s?.venue);
 
