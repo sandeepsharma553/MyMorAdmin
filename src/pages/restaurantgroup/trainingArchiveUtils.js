@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
-import { venueCol, trainingArchiveCol } from "../../utils/restaurantGroupPaths";
+import { venueCol, trainingArchiveCol, sopArchiveCol } from "../../utils/restaurantGroupPaths";
 
 /**
  * Training archive (phase 1 of the staff restructure).
@@ -43,7 +43,17 @@ export const hasArchivableTraining = (a) => {
  * @returns { archived: boolean }
  */
 export async function archiveAndRemoveTraining(groupId, a, reason) {
-  const srcRef = doc(venueCol(groupId, a.venueId, "trainingAssignments"), a.id);
+  return archiveAndRemoveAssignment(groupId, a, reason, "trainingAssignments", trainingArchiveCol);
+}
+
+// SOP twin — same archive-first-then-delete flow, pointed at the SOP module's own
+// collections (sopAssignments → sopArchive). Never touches training data.
+export async function archiveAndRemoveSop(groupId, a, reason) {
+  return archiveAndRemoveAssignment(groupId, a, reason, "sopAssignments", sopArchiveCol);
+}
+
+async function archiveAndRemoveAssignment(groupId, a, reason, assignCollName, archiveColFn) {
+  const srcRef = doc(venueCol(groupId, a.venueId, assignCollName), a.id);
 
   // Prefer the freshest server copy so we capture ticks/threads added since the
   // page last rendered; fall back to the in-memory row if the read fails.
@@ -57,7 +67,7 @@ export async function archiveAndRemoveTraining(groupId, a, reason) {
   const archivable = hasArchivableTraining(source);
 
   if (archivable) {
-    await setDoc(doc(trainingArchiveCol(groupId, a.venueId), a.id), {
+    await setDoc(doc(archiveColFn(groupId, a.venueId), a.id), {
       ...source,                 // preserves sections, checks, notes, status,
                                  // verified/verifiedBy/verifiedAt/verifyNote, threads, dates
       originalId: a.id,

@@ -1,5 +1,5 @@
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { trainingArchiveCol, checklistArchiveCol } from "../../utils/restaurantGroupPaths";
+import { trainingArchiveCol, checklistArchiveCol, sopArchiveCol } from "../../utils/restaurantGroupPaths";
 
 /* Archive-on-completion (client-side, no scheduled function).
  *
@@ -16,12 +16,14 @@ export const COMPLETION_ARCHIVE_REASON = "completed";
 export const completionArchiveId = (originalId, completedAtMillis) => `${originalId}-${completedAtMillis}`;
 
 const colFor = (kind, groupId, venueId) =>
-  kind === "checklist" ? checklistArchiveCol(groupId, venueId) : trainingArchiveCol(groupId, venueId);
+  kind === "checklist" ? checklistArchiveCol(groupId, venueId)
+    : kind === "sop" ? sopArchiveCol(groupId, venueId)
+      : trainingArchiveCol(groupId, venueId);
 
 /**
  * Write a dated, unique completion-archive entry. Non-destructive (the active assignment
  * stays put) — callers fire-and-forget (.catch) so a failed archive never breaks completion.
- * @param kind        "training" | "checklist"
+ * @param kind        "training" | "checklist" | "sop"
  * @param assignment  in-memory row ({ id, venueId, ...data })
  * @param overrides   the just-completed fields to capture (status/checks/verifyNote…)
  * @param completedAtMillis  client ms for the unique id (defaults to now)

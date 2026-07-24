@@ -275,6 +275,10 @@ export function RGProvider({ children }) {
   const checklistAssignments = useMemo(() => flat("checklistAssignments"), [pv.checklistAssignments]); // eslint-disable-line react-hooks/exhaustive-deps
   const kpis = useMemo(() => flat("kpis", "order"), [pv.kpis]); // eslint-disable-line react-hooks/exhaustive-deps
   const modules = useMemo(() => flat("trainingModules"), [pv.trainingModules]); // eslint-disable-line react-hooks/exhaustive-deps
+  // SOPs — own per-venue collections (sops / sopAssignments), separate listeners and
+  // state from training's trainingModules / trainingAssignments. Same fan-out machinery.
+  const sops = useMemo(() => flat("sops"), [pv.sops]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sopAssignments = useMemo(() => flat("sopAssignments"), [pv.sopAssignments]); // eslint-disable-line react-hooks/exhaustive-deps
   const stations = useMemo(() => flat("stations", "order"), [pv.stations]); // eslint-disable-line react-hooks/exhaustive-deps
   const equipment = useMemo(() => flat("equipment", "order"), [pv.equipment]); // eslint-disable-line react-hooks/exhaustive-deps
   const stock = useMemo(() => flat("stock"), [pv.stock]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -402,7 +406,7 @@ export function RGProvider({ children }) {
   }, [myNotifications, myStaff, me]);
 
   const value = useMemo(() => ({
-    groupId, group, venues, staff, draftStaff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
+    groupId, group, venues, staff, draftStaff, shifts, leave, availability, modules, assignments, sops, sopAssignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
     announcements, messages, unreadMessages, myNotifications, unreadNotifications,
     inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
     resolvedMenuItems, menuInstanceById, venueMenuInstances,
@@ -410,7 +414,7 @@ export function RGProvider({ children }) {
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, loadErrors, noteErr, showToast,
-  }), [groupId, group, venues, staff, draftStaff, shifts, leave, availability, modules, assignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
+  }), [groupId, group, venues, staff, draftStaff, shifts, leave, availability, modules, assignments, sops, sopAssignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
       inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
       resolvedMenuItems, menuInstanceById, venueMenuInstances,

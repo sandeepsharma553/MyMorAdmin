@@ -17,8 +17,42 @@ import { sendNotification } from "./notify";
  *
  * If the frozen snapshot has no items (e.g. assigned before the module had steps),
  * we fall back to the LIVE module's current steps so it's never empty.
+ *
+ * `variant` selects which module's collections + copy this detail view drives:
+ * "training" (the default — behaviour unchanged for every existing caller) or
+ * "sop" (SOPsPage — writes go to sopAssignments/sopArchive, copy says SOP).
  */
-export default function AssignmentDetail({ assignment, liveModule, groupId, canTick, canVerify, canComment, actorName, actorId, showToast, onClose }) {
+const VARIANTS = {
+  training: {
+    coll: "trainingAssignments",
+    archiveKind: "training",
+    recordType: "Training",
+    recordIdPrefix: "train-",
+    notifType: "training",
+    readyTitle: "Training ready for sign-off",
+    signedOffTitle: "Training signed off",
+    verifiedToast: "Training verified & logged",
+    redoNoun: "training",
+    externalLabel: "Open external training ↗",
+    noItemsCopy: "This module has no step items to tick.",
+  },
+  sop: {
+    coll: "sopAssignments",
+    archiveKind: "sop",
+    recordType: "SOP",
+    recordIdPrefix: "sop-",
+    notifType: "sop",
+    readyTitle: "SOP ready for sign-off",
+    signedOffTitle: "SOP signed off",
+    verifiedToast: "SOP verified & logged",
+    redoNoun: "SOP",
+    externalLabel: "Open external SOP ↗",
+    noItemsCopy: "This SOP has no step items to tick.",
+  },
+};
+
+export default function AssignmentDetail({ assignment, liveModule, groupId, canTick, canVerify, canComment, actorName, actorId, showToast, onClose, variant = "training" }) {
+  const V = VARIANTS[variant] || VARIANTS.training;
   const [vNote, setVNote] = useState("");
   const [cmt, setCmt] = useState({ i: null, text: "", priv: false });
   if (!assignment) return null;
@@ -57,7 +91,7 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
   let off = 0;
   const withOffset = sections.map((s) => { const o = off; off += (s.items || []).length; return { ...s, _off: o }; });
 
-  const ref = () => doc(venueCol(groupId, assignment.venueId, "trainingAssignments"), assignment.id);
+  const ref = () => doc(venueCol(groupId, assignment.venueId, V.coll), assignment.id);
 
   const write = async (next, nextMeta) => {
     if (locked) return; // completed assignments are read-only (reassign to redo)
@@ -73,7 +107,7 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
       await updateDoc(ref(), { checks: next, checkMeta: nextMeta, progress, status, ...heal, ...clearVerify });
       // tell the managers when someone finishes all steps (ready to sign off)
       if (status === "Awaiting sign-off" && assignment.status !== "Awaiting sign-off") {
-        sendNotification(groupId, { to: "managers", type: "training", title: "Training ready for sign-off", body: `${assignment.staffName} completed all steps of "${assignment.moduleTitle}"`, venueId: assignment.venueId, by: assignment.staffName });
+        sendNotification(groupId, { to: "managers", type: V.notifType, title: V.readyTitle, body: `${assignment.staffName} completed all steps of "${assignment.moduleTitle}"`, venueId: assignment.venueId, by: assignment.staffName });
       }
     } catch { showToast?.("Could not save"); }
   };
@@ -114,21 +148,21 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
       // on the not-verified → verified transition: write a dated completion archive entry
       // (additive, fire-and-forget) and log a record on the staff profile
       if (!assignment.verified) {
-        archiveCompletion(groupId, "training", assignment, {
+        archiveCompletion(groupId, V.archiveKind, assignment, {
           status: "Complete", verified: true, verifiedBy: actorName || "Trainer", verifyNote: note, checks, progress: pct,
         }, ms).catch(() => {});
       }
       if (assignment.staffId && !assignment.verified) {
         await updateDoc(doc(staffCol(groupId), assignment.staffId), {
           records: arrayUnion({
-            id: `train-${assignment.id}`, type: "Training",
+            id: `${V.recordIdPrefix}${assignment.id}`, type: V.recordType,
             note: `Signed off "${assignment.moduleTitle}"${note ? ` — ${note}` : ""}`,
             at: new Date().toISOString(), by: actorName || "Trainer",
           }),
         });
       }
-      showToast?.("Training verified & logged"); setVNote("");
-      sendNotification(groupId, { to: assignment.staffId, type: "training", title: "Training signed off", body: `"${assignment.moduleTitle}" was verified by ${actorName || "your trainer"}`, venueId: assignment.venueId, by: actorName || "Trainer" });
+      showToast?.(V.verifiedToast); setVNote("");
+      sendNotification(groupId, { to: assignment.staffId, type: V.notifType, title: V.signedOffTitle, body: `"${assignment.moduleTitle}" was verified by ${actorName || "your trainer"}`, venueId: assignment.venueId, by: actorName || "Trainer" });
     } catch { showToast?.("Could not verify — please try again"); }
   };
   const unverify = async () => {
@@ -155,12 +189,12 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
         <div className="progress-wrap" style={{ marginBottom: 14 }}><div className="progress-bar" style={{ width: `${pctNow}%`, background: "var(--green)" }} /></div>
         {locked && (
           <div style={{ marginBottom: 12, padding: "8px 10px", background: "rgba(34,197,94,0.08)", border: "0.5px solid var(--green)", borderRadius: 8, fontSize: 12 }}>
-            🔒 <strong>Completed &amp; locked.</strong> This record is read-only. To redo this training, reassign it from the staff profile — the completed record is archived first.
+            🔒 <strong>Completed &amp; locked.</strong> This record is read-only. To redo this {V.redoNoun}, reassign it from the staff profile — the completed record is archived first.
           </div>
         )}
-        {link && <div style={{ marginBottom: 12 }}><button className="btn btn-sm btn-primary" onClick={() => window.open(link, "_blank", "noopener")}>Open external training ↗</button></div>}
+        {link && <div style={{ marginBottom: 12 }}><button className="btn btn-sm btn-primary" onClick={() => window.open(link, "_blank", "noopener")}>{V.externalLabel}</button></div>}
 
-        {withOffset.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>This module has no step items to tick.</div>}
+        {withOffset.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>{V.noItemsCopy}</div>}
         {withOffset.map((sec, si) => (
           <div key={si} style={{ marginBottom: 14 }}>
             {sec.heading && <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{sec.heading}</div>}

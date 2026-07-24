@@ -43,6 +43,13 @@ export const venueCol = (groupId, venueId, name) => {
   return collection(db, "restaurantGroups", String(groupId), "venues", String(venueId), name);
 };
 export const venueTrainingCol = (groupId, venueId) => venueCol(groupId, venueId, "trainingModules");
+// ── SOPs (own module, decoupled from Training) ── procedures live in their OWN
+// per-venue collections (sops / sopAssignments / sopArchive) so editing an SOP can
+// never touch a training module and vice-versa. Same per-venue shape as training,
+// covered by the existing venues/{venueId}/{coll}/{docId=**} group-member rule —
+// no rules change (the catch-all only excludes the named gated collections).
+export const venueSopsCol = (groupId, venueId) => venueCol(groupId, venueId, "sops");
+export const sopArchiveCol = (groupId, venueId) => venueCol(groupId, venueId, "sopArchive");
 // Archive of completed/in-progress training assignments removed or reassigned.
 // Per-venue subcollection (same shape/location as trainingAssignments) so it is
 // covered by the existing venues/{venueId}/{coll}/{docId=**} group-member rule.
@@ -65,6 +72,7 @@ export const PER_VENUE_COLLECTIONS = [
   "shifts", "leaveRequests", "checklists", "stations", "equipment",
   "performanceNotes", "trainingModules", "trainingAssignments", "checklistAssignments", "kpis",
   "stock",
+  "sops", "sopAssignments",
 ];
 
 // A staff member belongs to one venue or many: matches when venueIds includes

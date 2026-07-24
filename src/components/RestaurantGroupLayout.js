@@ -18,8 +18,8 @@ const NAV = [
   { key: "leave", path: "/rg/leave", label: "Leave Requests", Icon: FileText, title: "Leave Requests" },
   { key: "availability", path: "/rg/availability", label: "Availability", Icon: CalendarClock, title: "My Availability" },
   { key: "training", path: "/rg/training", label: "Training", Icon: GraduationCap, title: "Training & Development" },
-  // SOPs = the training-module library; distinct nav item, gated by the `training`
-  // permission (permKey) since it shares training's data — no new permission module.
+  // SOPs — own page + data (SOPsPage over venues/{v}/sops); still gated by the
+  // `training` permission (permKey) — no new permission module, data no longer shared.
   { key: SOPS_NAV.key, path: SOPS_NAV.path, permKey: SOPS_NAV.permKey, label: SOPS_NAV.label, Icon: BookOpen, title: SOPS_NAV.title },
   { key: "checklists", path: "/rg/checklists", label: CHECKLISTS_NAV_LABEL, Icon: CheckSquare, title: "Checklists" },
   { key: "temperature", path: "/rg/temperature", label: "Temperature Log", Icon: Thermometer, title: "Temperature Log" },

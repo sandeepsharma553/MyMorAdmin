@@ -4,6 +4,7 @@ import ShiftPlannerPage from "../pages/restaurantgroup/ShiftPlannerPage";
 import LeaveRequestsPage from "../pages/restaurantgroup/LeaveRequestsPage";
 import AvailabilityPage from "../pages/restaurantgroup/AvailabilityPage";
 import TrainingPage from "../pages/restaurantgroup/TrainingPage";
+import SOPsPage from "../pages/restaurantgroup/SOPsPage";
 import ChecklistsPage from "../pages/restaurantgroup/ChecklistsPage";
 import TemperatureLogPage from "../pages/restaurantgroup/TemperatureLogPage";
 import PerformancePage from "../pages/restaurantgroup/PerformancePage";
@@ -36,9 +37,10 @@ export default function RestaurantGroupRoutes() {
       {/* staff-SELF availability posting + manager-proposal accept/decline (fills the RG_MODULES slot) */}
       <Route path="/rg/availability" element={P("availability", <AvailabilityPage />)} />
       <Route path="/rg/training" element={P("training", <TrainingPage />)} />
-      {/* SOPs = the training-module library (same data + `training` permission); a
-          distinct nav item from Checklists, opened to the module library. */}
-      <Route path="/rg/sops" element={P("training", <TrainingPage initialTab="modules" />)} />
+      {/* SOPs — its OWN page + data (venues/{v}/sops + sopAssignments), decoupled from
+          Training. Still gated by the `training` permission (SOPS_NAV.permKey — no new
+          permission module); opens on the procedure library. */}
+      <Route path="/rg/sops" element={P("training", <SOPsPage />)} />
       <Route path="/rg/checklists" element={P("checklists", <ChecklistsPage />)} />
       <Route path="/rg/temperature" element={P("temperature", <TemperatureLogPage />)} />
       <Route path="/rg/performance" element={P("performance", <PerformancePage />)} />

@@ -43,11 +43,11 @@ export const RG_MODULES = [
   { key: "settings", label: "Settings", path: "/rg/settings" },
 ];
 
-// Phase 3b presentation split: SOPs and Checklists are now DISTINCT nav items.
-// SOPs are the training-module library, so the SOPs item reuses the `training`
-// permission + data (NO new permission module, NO data migration) — its route just
-// opens the Training page focused on the module/SOP library. Checklists keep their
-// own collection + the `checklists` permission, now plainly labelled "Checklists".
+// SOPs are their OWN page + data (SOPsPage over venues/{v}/sops + sopAssignments —
+// decoupled from Training's trainingModules/trainingAssignments in Jul 2026). The nav
+// item still reuses the `training` PERMISSION (permKey — no new permission module);
+// only the permission is shared, not the data. Checklists keep their own collection +
+// the `checklists` permission, plainly labelled "Checklists".
 export const SOPS_NAV = { key: "sops", path: "/rg/sops", permKey: "training", label: "SOPs", title: "SOPs — Procedures" };
 export const CHECKLISTS_NAV_LABEL = "Checklists";
 
