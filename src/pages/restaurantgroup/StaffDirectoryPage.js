@@ -4,11 +4,11 @@ import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from "firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, publicHolidaysDoc, payrollChangeRequestsCol, payrollChangeRequestDoc, contractsCol, docHistoryCol } from "../../utils/restaurantGroupPaths";
+import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, sopArchiveCol, publicHolidaysDoc, payrollChangeRequestsCol, payrollChangeRequestDoc, contractsCol, docHistoryCol } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { defaultPermsForStaffRole, roleToGroupRole, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
-import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
+import { archiveAndRemoveTraining, archiveAndRemoveSop } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
 import { isJuniorType, isMinorDob } from "./staffMinorUtils";
@@ -137,7 +137,7 @@ const blankForm = (defaultVenue) => ({
 });
 
 export default function StaffDirectoryPage() {
-  const { groupId, group, staff, draftStaff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, checklists, perfNotes, stations, roles, areas, empTypes, selectedVenue, showToast, can, me, myStaff, noteErr } = useRG();
+  const { groupId, group, staff, draftStaff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, sops, sopAssignments, checklists, perfNotes, stations, roles, areas, empTypes, selectedVenue, showToast, can, me, myStaff, noteErr } = useRG();
   const canEdit = can("staff", "edit");
   // Phase 5a: false for the "self" tier — they get ONLY their own read-only profile below.
   const canViewAll = can("staff", "view");
@@ -866,13 +866,19 @@ export default function StaffDirectoryPage() {
   const [assignNotes, setAssignNotes] = useState("");
   const [openAssignId, setOpenAssignId] = useState(null);
   const openAssignment = useMemo(() => assignments.find((a) => a.id === openAssignId) || null, [assignments, openAssignId]);
+  // SOP assignments open in their own detail (variant="sop" — writes go to sopAssignments)
+  const [openSopId, setOpenSopId] = useState(null);
+  const openSopAssignment = useMemo(() => sopAssignments.find((a) => a.id === openSopId) || null, [sopAssignments, openSopId]);
   const [openChecklistId, setOpenChecklistId] = useState(null);
   const openChecklistAssignment = useMemo(() => checklistAssignments.find((a) => a.id === openChecklistId) || null, [checklistAssignments, openChecklistId]);
-  // archived (past) training for the open profile — fetched on demand (grows over time)
+  // archived (past) training / SOPs for the open profile — fetched on demand (grows over time)
   const [archivedTraining, setArchivedTraining] = useState(null); // null = loading, [] = none
+  const [archivedSops, setArchivedSops] = useState(null); // sopArchive — decoupled from trainingArchive
   const [archivedChecklists, setArchivedChecklists] = useState(null);
   const [openArchiveId, setOpenArchiveId] = useState(null);
-  const openArchiveRecord = useMemo(() => (archivedTraining || []).find((a) => a.id === openArchiveId) || (archivedChecklists || []).find((a) => a.id === openArchiveId) || null, [archivedTraining, archivedChecklists, openArchiveId]);
+  const openArchiveRecord = useMemo(() => (archivedTraining || []).find((a) => a.id === openArchiveId) || (archivedSops || []).find((a) => a.id === openArchiveId) || (archivedChecklists || []).find((a) => a.id === openArchiveId) || null, [archivedTraining, archivedSops, archivedChecklists, openArchiveId]);
+  // did the open archive row come from the SOP archive? (drives the read-only viewer variant)
+  const openArchiveIsSop = useMemo(() => !!openArchiveId && !(archivedTraining || []).some((a) => a.id === openArchiveId) && (archivedSops || []).some((a) => a.id === openArchiveId), [archivedTraining, archivedSops, openArchiveId]);
 
   // fetch the private payroll doc when a profile opens (only managers/admins can read it)
   useEffect(() => {
@@ -1029,7 +1035,7 @@ export default function StaffDirectoryPage() {
   // opens. Both archives now also receive a dated entry on EACH completion (completionArchive),
   // so a training/checklist completed N times shows N dated entries here.
   useEffect(() => {
-    setArchivedTraining(null); setArchivedChecklists(null); setOpenArchiveId(null);
+    setArchivedTraining(null); setArchivedSops(null); setArchivedChecklists(null); setOpenArchiveId(null);
     if (!profile || !groupId) return;
     let alive = true;
     const vids = profile.venueIds || (profile.venueId ? [profile.venueId] : []);
@@ -1041,16 +1047,20 @@ export default function StaffDirectoryPage() {
     )).then((lists) => { if (alive) setter(lists.flat().sort(sortByDate)); })
       .catch(() => { if (alive) setter([]); });
     load(trainingArchiveCol, setArchivedTraining);
+    load(sopArchiveCol, setArchivedSops);
     load(checklistArchiveCol, setArchivedChecklists);
     return () => { alive = false; };
   }, [profile, groupId]);
 
   const myTraining = useMemo(() => profile ? assignments.filter((a) => a.staffId === profile.id) : [], [profile, assignments]);
+  // SOPs are DECOUPLED (Jul 2026): the profile's SOP sections read sopAssignments — the
+  // same collection the SOPs page assigns into — never the legacy sop-flagged training
+  // modules (that flag is display-only history now; flagged assignments list as training).
+  const mySops = useMemo(() => profile ? sopAssignments.filter((a) => a.staffId === profile.id) : [], [profile, sopAssignments]);
   const myChecklists = useMemo(() => profile ? checklistAssignments.filter((a) => a.staffId === profile.id) : [], [profile, checklistAssignments]);
   // active-list views: hide Complete items older than 48h (stats/dedup keep the full lists)
   const myTrainingActive = useMemo(() => myTraining.filter((a) => showInActiveList(a)), [myTraining]);
-  // an assignment is an SOP if its module is flagged sop (SOPs share the module library)
-  const isSopAssign = (a) => { const m = modules.find((x) => x.id === a.moduleId); return !!(m && m.sop); };
+  const mySopsActive = useMemo(() => mySops.filter((a) => showInActiveList(a)), [mySops]);
   // one archived training/SOP row (shared by the Past/archived training + SOPs sections)
   const ArchivedTrainingRow = ({ a }) => (
     <div style={{ padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
@@ -1205,13 +1215,21 @@ export default function StaffDirectoryPage() {
     const list = checklists.filter((c) => checklistForStaff(c, profile) && !taken.has(`${c.venueId}:${c.id}`));
     return orderItemsForStaff(list, profile);
   }, [profile, checklists, myChecklists]);
+  // SOPs — same eligibility rule (venue + area via moduleForStaff, SOP docs carry `cat`
+  // exactly like modules), pooled from the sops collection, minus already-assigned.
+  const eligibleSops = useMemo(() => {
+    if (!profile) return [];
+    const taken = new Set(mySops.map((a) => `${a.venueId}:${a.moduleId}`));
+    const list = sops.filter((m) => moduleForStaff(m, profile) && !taken.has(`${m.venueId}:${m.id}`));
+    return orderItemsForStaff(list, profile);
+  }, [profile, sops, mySops]);
 
   const openAssign = (kind) => { setAssignKind(kind); setPicked([]); setAssignDue(""); setAssignPriority("normal"); setAssignNotes(""); };
   const togglePick = (key) => setPicked((p) => p.includes(key) ? p.filter((x) => x !== key) : [...p, key]);
   const submitAssign = async () => {
     if (!picked.length) return showToast("Pick at least one");
     try {
-      if (assignKind === "training" || assignKind === "sop") {
+      if (assignKind === "training") {
         for (const key of picked) {
           const m = eligibleModules.find((x) => `${x.venueId}:${x.id}` === key);
           if (!m) continue;
@@ -1221,8 +1239,22 @@ export default function StaffDirectoryPage() {
             ...snapshotForAssign(m), status: "Not started", progress: 0, createdAt: serverTimestamp(),
           });
         }
-        showToast(`Assigned ${picked.length} ${assignKind === "sop" ? "SOP" : "module"}(s)`);
+        showToast(`Assigned ${picked.length} module(s)`);
         sendNotification(groupId, { to: profile.id, type: "training", title: "Training assigned", body: `${picked.length} module(s) assigned to you${assignDue ? ` · due ${assignDue}` : ""}`, by: actorName });
+      } else if (assignKind === "sop") {
+        // SOP assignments — byte-identical doc shape to SOPsPage.assign, written to the
+        // sops module's OWN collection (never trainingAssignments)
+        for (const key of picked) {
+          const m = eligibleSops.find((x) => `${x.venueId}:${x.id}` === key);
+          if (!m) continue;
+          await addDoc(venueCol(groupId, m.venueId, "sopAssignments"), {
+            staffId: profile.id, staffName: profile.displayName || profile.name, venue: m.venue, venueId: m.venueId,
+            moduleId: m.id, moduleTitle: m.title, due: assignDue, priority: assignPriority, notes: assignNotes.trim(),
+            ...snapshotForAssign(m), status: "Not started", progress: 0, createdAt: serverTimestamp(),
+          });
+        }
+        showToast(`Assigned ${picked.length} SOP(s)`);
+        sendNotification(groupId, { to: profile.id, type: "sop", title: "SOP assigned", body: `${picked.length} SOP(s) assigned to you${assignDue ? ` · due ${assignDue}` : ""}`, by: actorName });
       } else {
         for (const key of picked) {
           const c = eligibleChecklists.find((x) => `${x.venueId}:${x.id}` === key);
@@ -1244,6 +1276,10 @@ export default function StaffDirectoryPage() {
       if (kind === "training") {
         // archive completion history before removing (reassign = remove + assign fresh)
         const { archived } = await archiveAndRemoveTraining(groupId, a, "removed");
+        showToast(archived ? "Archived & removed" : "Removed");
+      } else if (kind === "sop") {
+        // same archive-first flow, pointed at sopAssignments → sopArchive
+        const { archived } = await archiveAndRemoveSop(groupId, a, "removed");
         showToast(archived ? "Archived & removed" : "Removed");
       } else {
         await deleteDoc(doc(venueCol(groupId, a.venueId, "checklistAssignments"), a.id));
@@ -1796,6 +1832,15 @@ export default function StaffDirectoryPage() {
                   <div className="progress-wrap"><div className="progress-bar" style={{ width: `${trainingPct(profile.id, assignments)}%`, background: progressColor(trainingPct(profile.id, assignments)) }} /></div>
                   {staffSeesAll(profile) && <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>Manager/admin — can be assigned any module.</div>}
                 </div>
+                {mySops.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                      <span>SOP completion ({mySops.filter((a) => a.status === "Complete").length}/{mySops.length})</span>
+                      <strong>{trainingPct(profile.id, sopAssignments)}%</strong>
+                    </div>
+                    <div className="progress-wrap"><div className="progress-bar" style={{ width: `${trainingPct(profile.id, sopAssignments)}%`, background: progressColor(trainingPct(profile.id, sopAssignments)) }} /></div>
+                  </div>
+                )}
                 {myChecklists.length > 0 && (
                   <div style={{ marginTop: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
@@ -1806,13 +1851,14 @@ export default function StaffDirectoryPage() {
                   </div>
                 )}
 
-                {/* Assigned training (non-SOP modules) */}
+                {/* Assigned training — ALL trainingAssignments (the legacy sop flag no longer
+                    splits this list; real SOPs live in the decoupled sections below) */}
                 <div style={{ marginTop: 16 }}>
                   <div className="card-head" style={{ marginBottom: 8 }}>
                     <span className="card-title">Assigned training</span>
                     {canEdit && <button className="btn btn-sm btn-primary" onClick={() => openAssign("training")}>+ Assign training</button>}
                   </div>
-                  {myTrainingActive.filter((a) => !isSopAssign(a)).map((a) => (
+                  {myTrainingActive.map((a) => (
                     <div key={a.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                       <span style={{ fontSize: 12 }}>{a.moduleTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span></span>
                       <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
@@ -1824,55 +1870,51 @@ export default function StaffDirectoryPage() {
                       </span>
                     </div>
                   ))}
-                  {myTrainingActive.filter((a) => !isSopAssign(a)).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No training assigned.</div>}
+                  {myTrainingActive.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No training assigned.</div>}
                 </div>
 
-                {/* Assigned SOPs (modules flagged as SOP) */}
+                {/* Assigned SOPs — sopAssignments (the SOPs page's own collection, Jul 2026 split) */}
                 <div style={{ marginTop: 16 }}>
                   <div className="card-head" style={{ marginBottom: 8 }}>
                     <span className="card-title">Assigned SOPs</span>
                     {canEdit && <button className="btn btn-sm btn-primary" onClick={() => openAssign("sop")}>+ Assign SOP</button>}
                   </div>
-                  {myTrainingActive.filter((a) => isSopAssign(a)).map((a) => (
+                  {mySopsActive.map((a) => (
                     <div key={a.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                       <span style={{ fontSize: 12 }}>{a.moduleTitle} <span style={{ color: "var(--gray)" }}>· {a.venue}</span></span>
                       <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                         <span style={{ fontSize: 11, color: "var(--gray)" }}>{(a.checks || []).filter(Boolean).length}/{a.itemsTotal || (a.checks || []).length}</span>
                         {a.verified && <span className="pill pill-green" title={`Verified by ${a.verifiedBy || "trainer"}`}>✓ Verified</span>}
                         <span className={`pill ${trainingStatusPill(a.status)}`}>{a.status}</span>
-                        <button className="btn btn-sm" onClick={() => setOpenAssignId(a.id)}>Open</button>
-                        {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeAssignment(a, "training")}>✕</button>}
+                        <button className="btn btn-sm" onClick={() => setOpenSopId(a.id)}>Open</button>
+                        {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeAssignment(a, "sop")}>✕</button>}
                       </span>
                     </div>
                   ))}
-                  {myTrainingActive.filter((a) => isSopAssign(a)).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No SOPs assigned.</div>}
+                  {mySopsActive.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No SOPs assigned.</div>}
                 </div>
 
-                {/* Past / archived training (non-SOP) */}
-                {(() => { const rows = (archivedTraining || []).filter((a) => !isSopAssign(a)); return (
-                  <div style={{ marginTop: 16 }}>
-                    <div className="card-head" style={{ marginBottom: 8 }}>
-                      <span className="card-title">Past / archived training</span>
-                      {rows.length > 0 && <span className="pill pill-gray">{rows.length}</span>}
-                    </div>
-                    {archivedTraining === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
-                    {archivedTraining && rows.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No archived training.</div>}
-                    {rows.map((a) => <ArchivedTrainingRow key={a.id} a={a} />)}
+                {/* Past / archived training */}
+                <div style={{ marginTop: 16 }}>
+                  <div className="card-head" style={{ marginBottom: 8 }}>
+                    <span className="card-title">Past / archived training</span>
+                    {archivedTraining && archivedTraining.length > 0 && <span className="pill pill-gray">{archivedTraining.length}</span>}
                   </div>
-                ); })()}
+                  {archivedTraining === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
+                  {archivedTraining && archivedTraining.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No archived training.</div>}
+                  {(archivedTraining || []).map((a) => <ArchivedTrainingRow key={a.id} a={a} />)}
+                </div>
 
-                {/* Past / archived SOPs */}
-                {(() => { const rows = (archivedTraining || []).filter((a) => isSopAssign(a)); return (
-                  <div style={{ marginTop: 16 }}>
-                    <div className="card-head" style={{ marginBottom: 8 }}>
-                      <span className="card-title">Past / archived SOPs</span>
-                      {rows.length > 0 && <span className="pill pill-gray">{rows.length}</span>}
-                    </div>
-                    {archivedTraining === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
-                    {archivedTraining && rows.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No archived SOPs.</div>}
-                    {rows.map((a) => <ArchivedTrainingRow key={a.id} a={a} />)}
+                {/* Past / archived SOPs — sopArchive (dated completion entries + removals) */}
+                <div style={{ marginTop: 16 }}>
+                  <div className="card-head" style={{ marginBottom: 8 }}>
+                    <span className="card-title">Past / archived SOPs</span>
+                    {archivedSops && archivedSops.length > 0 && <span className="pill pill-gray">{archivedSops.length}</span>}
                   </div>
-                ); })()}
+                  {archivedSops === null && <div style={{ fontSize: 12, color: "var(--gray)" }}>Loading…</div>}
+                  {archivedSops && archivedSops.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No archived SOPs.</div>}
+                  {(archivedSops || []).map((a) => <ArchivedTrainingRow key={a.id} a={a} />)}
+                </div>
 
                 {/* Past / archived checklists — a dated entry per completion (+ reassign/remove) */}
                 <div style={{ marginTop: 16 }}>
@@ -2032,7 +2074,8 @@ export default function StaffDirectoryPage() {
             )}
             {(() => {
               const isMod = assignKind !== "checklist";
-              const pool = assignKind === "checklist" ? eligibleChecklists : assignKind === "sop" ? eligibleModules.filter((x) => x.sop) : eligibleModules.filter((x) => !x.sop);
+              // sop → the decoupled sops collection pool; training → ALL modules (no flag split)
+              const pool = assignKind === "checklist" ? eligibleChecklists : assignKind === "sop" ? eligibleSops : eligibleModules;
               return (
                 <div style={{ maxHeight: "45vh", overflowY: "auto", border: "0.5px solid var(--border)", borderRadius: 8 }}>
                   {pool.map((m) => {
@@ -2065,6 +2108,9 @@ export default function StaffDirectoryPage() {
       {openAssignment && (
         <AssignmentDetail assignment={openAssignment} liveModule={modules.find((m) => m.id === openAssignment.moduleId) || modules.find((m) => m.title === openAssignment.moduleTitle && m.venueId === openAssignment.venueId)} groupId={groupId} canTick={canEdit} canVerify={can("training", "edit")} canComment={can("training", "edit")} actorName={actorName} actorId={me?.uid || me?.id} showToast={showToast} onClose={() => setOpenAssignId(null)} />
       )}
+      {openSopAssignment && (
+        <AssignmentDetail assignment={openSopAssignment} liveModule={sops.find((m) => m.id === openSopAssignment.moduleId) || sops.find((m) => m.title === openSopAssignment.moduleTitle && m.venueId === openSopAssignment.venueId)} groupId={groupId} canTick={canEdit} canVerify={can("training", "edit")} canComment={can("training", "edit")} actorName={actorName} actorId={me?.uid || me?.id} showToast={showToast} onClose={() => setOpenSopId(null)} variant="sop" />
+      )}
       {openChecklistAssignment && (
         <ChecklistAssignmentDetail assignment={openChecklistAssignment} liveChecklist={checklists.find((c) => c.id === openChecklistAssignment.checklistId) || checklists.find((c) => c.title === openChecklistAssignment.checklistTitle && c.venueId === openChecklistAssignment.venueId)} groupId={groupId} canTick={canEdit} canComment={canEdit} actorName={actorName} showToast={showToast} onClose={() => setOpenChecklistId(null)} />
       )}
@@ -2073,7 +2119,7 @@ export default function StaffDirectoryPage() {
         <ChecklistAssignmentDetail assignment={openArchiveRecord} liveChecklist={checklists.find((c) => c.id === openArchiveRecord.checklistId) || checklists.find((c) => c.title === openArchiveRecord.checklistTitle && c.venueId === openArchiveRecord.venueId)} groupId={groupId} canTick={false} canComment={false} actorName={actorName} showToast={showToast} onClose={() => setOpenArchiveId(null)} />
       )}
       {openArchiveRecord && !(openArchiveRecord.kind === "checklist" || openArchiveRecord.checklistTitle) && (
-        <AssignmentDetail assignment={openArchiveRecord} liveModule={modules.find((m) => m.id === openArchiveRecord.moduleId)} groupId={groupId} canTick={false} canVerify={false} canComment={false} actorName={actorName} showToast={showToast} onClose={() => setOpenArchiveId(null)} />
+        <AssignmentDetail assignment={openArchiveRecord} liveModule={(openArchiveIsSop ? sops : modules).find((m) => m.id === openArchiveRecord.moduleId)} groupId={groupId} canTick={false} canVerify={false} canComment={false} actorName={actorName} showToast={showToast} onClose={() => setOpenArchiveId(null)} variant={openArchiveIsSop ? "sop" : "training"} />
       )}
     </>
   );
