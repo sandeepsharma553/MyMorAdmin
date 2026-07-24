@@ -7,7 +7,8 @@ import { RefImageViewer, RefImageEditor } from "./RefImages";
 import { RichItemList, RichText } from "./RichItems";
 import PrepListPanel from "./PrepListPanel";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
-import { trainingStatusPill, progressColor, mkTimes, FULL_DAY_TIMES, localDateKey } from "./rgUtils";
+import { trainingStatusPill, progressColor, mkTimes, FULL_DAY_TIMES, localDateKey, fullName, snapshotForChecklist } from "./rgUtils";
+import { shouldAutoAssign } from "./assignmentUtils";
 import { stationsForArea, groupItemsByStation, filterByStation, GENERAL_KEY } from "./itemDrilldown";
 import { showInActiveList } from "./completionWindow";
 import { SLOT_DAYS, toggleSlotLink } from "./shiftSlotPicker";
@@ -165,6 +166,7 @@ export default function ChecklistsPage() {
       recurring: editor.recurring !== false,
     };
     try {
+      let cid = editor.id;
       if (editor.id) {
         const existing = checklists.find((c) => c.id === editor.id);
         // preserve today's ticks by item CONTENT, not by index — so reorder/delete can't move a
@@ -172,11 +174,31 @@ export default function ChecklistsPage() {
         const tickedText = new Set((existing?.items || []).filter((_, i) => (existing?.checked || [])[i]));
         const checked = items.map((it) => tickedText.has(it));
         await updateDoc(doc(venueCol(groupId, venue.id, "checklists"), editor.id), { ...payload, checked });
-        showToast("Checklist updated");
       } else {
-        await addDoc(venueCol(groupId, venue.id, "checklists"), { ...payload, checked: items.map(() => false), createdAt: serverTimestamp() });
-        showToast("Checklist created");
+        const created = await addDoc(venueCol(groupId, venue.id, "checklists"), { ...payload, checked: items.map(() => false), createdAt: serverTimestamp() });
+        cid = created.id;
       }
+      // immediate auto-assign on save (mirrors the SOP/training editors — owner request
+      // Jul 2026): every staff member in this venue matching the area + selected stations
+      // who doesn't already hold ANY copy of this checklist (manual, shift-dated, or a
+      // prior auto) gets a standing assignment now — same doc shape as manual assign.
+      // Slot-linked checklists are excluded: their assignment follows the shift slot.
+      const saved = { ...payload, id: cid };
+      let assigned = 0;
+      if (autoStations.length && !(payload.shiftLinks || []).length) {
+        const targets = staff.filter((s) => shouldAutoAssign(saved, s, venue.id) && !checklistAssignments.some((a) => a.staffId === s.id && a.checklistId === cid));
+        for (const s of targets) {
+          try {
+            await addDoc(venueCol(groupId, venue.id, "checklistAssignments"), {
+              staffId: s.id, staffName: s.displayName || fullName(s), venueId: venue.id, venue: venue.name,
+              checklistId: cid, checklistTitle: saved.title, ...snapshotForChecklist(saved),
+              status: "Not started", progress: 0, auto: true, source: "editor", createdAt: serverTimestamp(),
+            });
+            assigned++;
+          } catch { /* skip one, keep going */ }
+        }
+      }
+      showToast(`${editor.id ? "Checklist updated" : "Checklist created"}${assigned ? ` · auto-assigned to ${assigned} staff` : ""}`);
       setEditor(null);
     } catch { showToast("Could not save checklist"); }
   };
