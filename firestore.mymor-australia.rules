@@ -312,6 +312,13 @@ service cloud.firestore {
       match /auditLog/{docId}      { allow read, write: if rgIsSuper() || rgIsGroupMember(groupId); }
       match /announcements/{docId} { allow read, write: if rgIsSuper() || rgIsGroupMember(groupId); }
       match /messages/{docId}      { allow read, write: if rgIsSuper() || rgIsGroupMember(groupId); }
+      // ── Help cards ("How to use MyMor") — short read-only guides for staff.
+      // Read: any group member (staff read these during onboarding). Write:
+      // owner/storeAdmin only (edited in Admin web; content, not HR data).
+      match /helpCards/{cardId} {
+        allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
+        allow write: if rgIsSuper() || rgIsGroupAdmin(groupId);
+      }
     }
 
     match /hostel/{hid} {

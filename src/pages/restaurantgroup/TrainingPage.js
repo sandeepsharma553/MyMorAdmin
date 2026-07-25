@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
+import React, { useEffect, useMemo, useState } from "react";
+import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, onSnapshot } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueTrainingCol, venueCol, staffInVenue } from "../../utils/restaurantGroupPaths";
+import { venueTrainingCol, venueCol, staffInVenue, helpCardsCol } from "../../utils/restaurantGroupPaths";
 import { fullName, trainingStatusPill, trainingBarColor, progressColor, trainingPct, moduleForStaff, snapshotForAssign } from "./rgUtils";
 import { archiveAndRemoveTraining } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
@@ -17,11 +17,25 @@ const hasText = (h) => (h || "").replace(/<[^>]*>/g, "").trim().length > 0;
 
 const TABS = [
   { id: "mine", label: "My Training" },
+  { id: "help", label: "How to use MyMor" },
   { id: "overview", label: "Overview" },
   { id: "modules", label: "Modules" },
   { id: "assigned", label: "Assigned" },
   { id: "progress", label: "Progress" },
 ];
+
+// Render a help-card body: plain text where a newline is a paragraph and **spans** are
+// bold. Nothing else — no markdown, no HTML. ⚠ KEEP the parsing identical to Ops
+// TrainingScreen.js (HelpBody): split("\n") → paragraphs; split("**") → odd segments bold.
+const HelpBody = ({ body }) => (
+  <>
+    {String(body || "").split("\n").map((line, i) => (
+      <p key={i} style={{ fontSize: 13, lineHeight: 1.55, margin: "0 0 8px" }}>
+        {line.split("**").map((seg, j) => (j % 2 ? <strong key={j}>{seg}</strong> : seg))}
+      </p>
+    ))}
+  </>
+);
 const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent", "Urgent — today"]];
 const ICONS = ["🌅", "🌙", "⭐", "🤝", "🍔", "🥗", "🍳", "🔥", "🛡️", "☕", "🏭", "👑", "📋", "🧂"];
 const MOD_COLORS = [["Amber", "#fef3c7"], ["Purple", "#ede9fe"], ["Yellow", "#fef9c3"], ["Green", "#dcfce7"], ["Red", "#fee2e2"], ["Blue", "#e0f2fe"], ["Cyan", "#cffafe"], ["Pink", "#fce7f3"]];
@@ -32,15 +46,52 @@ const editorToSteps = (steps) => (steps || [])
   .filter((s) => s.heading || s.items.length);
 
 export default function TrainingPage({ initialTab }) {
-  const { groupId, staff, scopedStaff: roleStaff, venues, modules, assignments, stations, roles, areas, selectedVenue, matchVenue, showToast, can, me } = useRG();
+  const { groupId, staff, scopedStaff: roleStaff, venues, modules, assignments, stations, roles, areas, selectedVenue, matchVenue, showToast, can, me, noteErr } = useRG();
   const canEdit = can("training", "edit");
+
+  // ── Help cards ("How to use MyMor") — read-only staff guides, group-level collection.
+  // NO assignment docs, NO status/progress, NO badge contribution — deliberately outside
+  // the training-assignment machinery. Editing is owner/storeAdmin ONLY (mirrors the
+  // Firestore rule: helpCards write = rgIsGroupAdmin, NOT rgCanManageStaff — a plain
+  // manager cannot edit help content).
+  const [helpCards, setHelpCards] = useState([]);
+  useEffect(() => {
+    if (!groupId) { setHelpCards([]); return; }
+    return onSnapshot(helpCardsCol(groupId),
+      (s) => setHelpCards(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      () => { setHelpCards([]); noteErr("help cards"); });
+  }, [groupId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const canEditCards = ["owner", "storeAdmin"].includes(me?.groupRole);
+  const visibleCards = useMemo(
+    () => helpCards.filter((c) => canEditCards || c.active !== false).slice().sort((a, b) => (a.order ?? 99) - (b.order ?? 99)),
+    [helpCards, canEditCards]
+  );
+  const [openCard, setOpenCard] = useState(null);      // read-only card view (everyone)
+  const [cardEditor, setCardEditor] = useState(null);  // owner/storeAdmin editor
+  const setCE = (k) => (e) => setCardEditor((p) => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+  const saveCard = async () => {
+    if (!canEditCards || !cardEditor) return; // second gate behind the UI gate; rules are the third
+    try {
+      await setDoc(doc(helpCardsCol(groupId), cardEditor.id), {
+        title: (cardEditor.title || "").trim(),
+        page: (cardEditor.page || "").trim(),
+        order: Math.max(1, Number(cardEditor.order) || 99),
+        active: !!cardEditor.active,
+        body: cardEditor.body || "",
+        updatedAt: serverTimestamp(),
+        updatedBy: me?.displayName || me?.name || me?.email || "admin",
+      }, { merge: true });
+      showToast("Help card saved");
+      setCardEditor(null);
+    } catch { showToast("Could not save help card"); }
+  };
 
   const myUid = me?.uid || me?.id;
   const myStaff = useMemo(() => staff.find((s) => (s.adminUid && s.adminUid === myUid) || (s.email && me?.email && s.email.toLowerCase() === me.email.toLowerCase())), [staff, myUid, me]);
   const myAssignments = useMemo(() => myStaff ? assignments.filter((a) => a.staffId === myStaff.id) : [], [myStaff, assignments]);
-  // staff (non-management) only get the "My Training" tab; managers/admins get all
+  // staff (non-management) get "My Training" + the read-only help cards; managers/admins get all
   const isMgr = ["owner", "storeAdmin", "manager"].includes(me?.groupRole);
-  const visibleTabs = isMgr ? TABS : TABS.filter((t) => t.id === "mine");
+  const visibleTabs = isMgr ? TABS : TABS.filter((t) => t.id === "mine" || t.id === "help");
   // initialTab (e.g. the SOPs nav opens to the module library) — clamped to a tab the
   // user is actually allowed to see, so it can never widen visibility.
   const [tab, setTab] = useState(() => (visibleTabs.some((t) => t.id === initialTab) ? initialTab : "mine"));
@@ -222,6 +273,69 @@ export default function TrainingPage({ initialTab }) {
                   <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>{canEdit ? "Click to open & tick off each step" : "Your trainer ticks each step off with you, then signs off to complete"}</div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* How to use MyMor — read-only help cards. No ticking, no status, no progress,
+          no assignments; content is group-level helpCards docs, owner/storeAdmin-edited. */}
+      {tab === "help" && (
+        <div>
+          {visibleCards.length === 0 && <div className="card"><div style={{ fontSize: 13, color: "var(--gray)" }}>No help cards yet.</div></div>}
+          {visibleCards.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
+              {visibleCards.map((c) => (
+                <div key={c.id} className="training-module" onClick={() => setOpenCard(c)} style={{ cursor: "pointer", opacity: c.active === false ? 0.55 : 1 }}>
+                  <div className="module-title">{c.title}</div>
+                  <div className="module-meta">{c.page}{c.active === false ? " · hidden from staff" : ""}</div>
+                  <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>Click to read</div>
+                  {canEditCards && (
+                    <button className="btn btn-sm" style={{ marginTop: 8 }}
+                      onClick={(e) => { e.stopPropagation(); setCardEditor({ id: c.id, title: c.title || "", page: c.page || "", order: c.order ?? 99, active: c.active !== false, body: c.body || "" }); }}>
+                      Edit
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {openCard && (
+            <div className="rg-modal-overlay" onClick={() => setOpenCard(null)}>
+              <div className="rg-modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+                <div className="card-head"><span className="card-title">{openCard.title}</span><span className="card-sub">{openCard.page}</span></div>
+                <HelpBody body={openCard.body} />
+                <div className="btn-row"><button className="btn" onClick={() => setOpenCard(null)}>Close</button></div>
+              </div>
+            </div>
+          )}
+
+          {cardEditor && canEditCards && (
+            <div className="rg-modal-overlay" onClick={() => setCardEditor(null)}>
+              <div className="rg-modal" style={{ maxWidth: 620 }} onClick={(e) => e.stopPropagation()}>
+                <div className="card-head"><span className="card-title">Edit help card</span><span className="card-sub">{cardEditor.id}</span></div>
+                <div className="grid-2" style={{ gap: 10 }}>
+                  <div className="form-group"><label className="form-label">Title</label><input className="form-input" value={cardEditor.title} onChange={setCE("title")} /></div>
+                  <div className="form-group"><label className="form-label">Page</label><input className="form-input" value={cardEditor.page} onChange={setCE("page")} /></div>
+                </div>
+                <div className="grid-2" style={{ gap: 10 }}>
+                  <div className="form-group"><label className="form-label">Order</label><input className="form-input" type="number" min={1} value={cardEditor.order} onChange={setCE("order")} /></div>
+                  <div className="form-group" style={{ display: "flex", alignItems: "flex-end" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                      <input type="checkbox" checked={cardEditor.active} onChange={setCE("active")} /> Visible to staff
+                    </label>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Body <span style={{ color: "var(--gray)", fontWeight: 400 }}>· new line = paragraph · **text** = bold</span></label>
+                  <textarea className="form-input" rows={9} value={cardEditor.body} onChange={setCE("body")} />
+                </div>
+                <div className="btn-row">
+                  <button className="btn" onClick={() => setCardEditor(null)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={saveCard}>Save card</button>
+                </div>
+              </div>
             </div>
           )}
         </div>
