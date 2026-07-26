@@ -59,7 +59,7 @@ const cellClass = (type) =>
 // from the owner's configured areas (group.areas / areaOrder / areaBreak). See groupedRows.
 
 export default function ShiftPlannerPage() {
-  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope, noteErr } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope, noteErr, myVenues } = useRG();
   const canEdit = can("shifts", "edit");
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
@@ -79,7 +79,7 @@ export default function ShiftPlannerPage() {
   const ZOOMS = [0.75, 1, 1.25, 1.5];
   const [splitA, setSplitA] = useState("");
   const [splitB, setSplitB] = useState("");
-  useEffect(() => { if (!splitA && venues[0]) setSplitA(venues[0].id); if (!splitB && venues[1]) setSplitB(venues[1].id); }, [venues]); // eslint-disable-line
+  useEffect(() => { if (!splitA && myVenues[0]) setSplitA(myVenues[0].id); if (!splitB && myVenues[1]) setSplitB(myVenues[1].id); }, [myVenues]); // eslint-disable-line
 
   const monday = mondayOf(offset);
   const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
@@ -856,7 +856,8 @@ export default function ShiftPlannerPage() {
           {[[splitA, setSplitA], [splitB, setSplitB]].map(([val, setter], i) => (
             <div key={i}>
               <select className="form-input" style={{ marginBottom: 8 }} value={val} onChange={(e) => setter(e.target.value)}>
-                {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                {/* myVenues, not venues — staff pick only among their own (owner ruling) */}
+                {myVenues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
               <VenueGrid vid={val} />
             </div>

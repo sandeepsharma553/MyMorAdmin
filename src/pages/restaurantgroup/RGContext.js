@@ -231,11 +231,40 @@ export function RGProvider({ children }) {
 
   // Everything else lives INSIDE each venue. Subscribe to every per-venue
   // collection for every venue, merge, and stamp venueId/venue on each row.
-  const venueIdsKey = venues.map((v) => v.id).join(",");
+  // ── Venue scoping (owner ruling) ── a STAFF-tier user only ever loads/sees the venues
+  // on their OWN staff record; managers/owners keep every venue. Source of truth is
+  // staff.venueIds (legacy single venueId honoured) — NEVER employees.venueIds, which is
+  // written once at login creation and never updated when a staff member's venues change,
+  // so it goes stale. Empty venueIds = NO venues, deliberately (this also changed
+  // Messaging, which used to fall back to ALL venues for a venue-less staff doc).
+  // myUid/myStaff/myScope are HOISTED here (were below matchVenue) so the per-venue
+  // fan-out below can subscribe to myVenues only — same precedent as the tier flags.
+  const myUidTop = employee?.uid || employee?.id;
+  const myStaff = useMemo(
+    () => staff.find((s) => (s.adminUid && s.adminUid === myUidTop) || (s.email && employee?.email && s.email.toLowerCase() === employee.email.toLowerCase())) || null,
+    [staff, myUidTop, employee]
+  );
+  const myScope = isOwnerTier ? "owner" : isManagerTier ? "manager" : "staff";
+  const myVenues = useMemo(() => {
+    if (myScope !== "staff") return venues;
+    const mv = myStaff?.venueIds?.length ? myStaff.venueIds : (myStaff?.venueId ? [myStaff.venueId] : []);
+    return venues.filter((v) => mv.includes(v.id));
+  }, [myScope, venues, myStaff]);
+  const myVenueIdsKey = myVenues.map((v) => v.id).join(",");
+  const myVenueIdSet = useMemo(() => new Set(myVenues.map((v) => v.id)), [myVenueIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // selectedVenue can go stale (live venue reassignment, leftover state): a selection
+  // outside myVenues resets to "all"; a single-venue STAFF user is pinned to their venue
+  // (their switcher hides the "All venues" option).
   useEffect(() => {
-    if (!groupId || !venues.length) { setPv({}); return; }
+    if (!myVenues.length) { if (selectedVenue !== "all") setSelectedVenue("all"); return; }
+    if (selectedVenue !== "all" && !myVenues.some((v) => v.id === selectedVenue)) { setSelectedVenue("all"); return; }
+    if (myScope === "staff" && myVenues.length === 1 && selectedVenue === "all") setSelectedVenue(myVenues[0].id);
+  }, [selectedVenue, myVenueIdsKey, myScope]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!groupId || !myVenues.length) { setPv({}); return; }
     const unsubs = [];
-    venues.forEach((v) => {
+    myVenues.forEach((v) => {
       // "availability" reuses the SAME per-venue onSnapshot machinery (no ad-hoc listener).
       // It lives in restaurantGroupPaths.PER_VENUE_COLLECTIONS conceptually; extended here
       // locally to keep this change within the two in-scope files.
@@ -253,7 +282,7 @@ export function RGProvider({ children }) {
       });
     });
     return () => unsubs.forEach((u) => u && u());
-  }, [groupId, venueIdsKey, managerTier]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [groupId, myVenueIdsKey, managerTier]); // myVenueIdsKey: re-subscribe when the USER'S venue set changes (live staff doc) — eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Cluster-scoped availability (NEW group-level collection) — Phase 3c dual-read ──
   const [clusterAvail, setClusterAvail] = useState([]);
@@ -325,9 +354,15 @@ export function RGProvider({ children }) {
   const selectedVenueName = selectedVenue === "all" ? "All venues" : venueName(selectedVenue);
 
   // helper: does a record match the current venue filter
+  // "all" now means MY venues (owner ruling). Managers short-circuit on myScope — no
+  // per-row scan; staff use a Set (O(1)). Rows with NO venueId stamp (group-level /
+  // cluster rows) keep matching under "all" exactly as they always did — only rows
+  // stamped with a venue are held to membership.
   const matchVenue = useCallback(
-    (rec) => selectedVenue === "all" || rec?.venueId === selectedVenue || rec?.venue === selectedVenueName,
-    [selectedVenue, selectedVenueName]
+    (rec) => (selectedVenue === "all"
+      ? (myScope !== "staff" || !rec?.venueId || myVenueIdSet.has(rec.venueId))
+      : (rec?.venueId === selectedVenue || rec?.venue === selectedVenueName)),
+    [selectedVenue, selectedVenueName, myScope, myVenueIdSet]
   );
 
   // permission helpers
@@ -335,15 +370,9 @@ export function RGProvider({ children }) {
   const me = useMemo(() => ({ ...(employee || {}), groupRole, venueId: myVenueId, perms: myPerms }), [employee, groupRole, myVenueId, myPerms]);
 
   // ── who is this login, and which staff can they act on? ──
-  // owner/super → all staff; manager/storeAdmin → staff at their venue(s); staff → only themselves.
-  const myUidTop = employee?.uid || employee?.id;
-  const myStaff = useMemo(
-    () => staff.find((s) => (s.adminUid && s.adminUid === myUidTop) || (s.email && employee?.email && s.email.toLowerCase() === employee.email.toLowerCase())) || null,
-    [staff, myUidTop, employee]
-  );
-  // (isOwnerTier / isManagerTier are defined near the top with the other
-  // employee-derived flags — the subscription effects gate on them.)
-  const myScope = isOwnerTier ? "owner" : isManagerTier ? "manager" : "staff";
+  // owner/super → all staff; manager/storeAdmin → staff at their venue(s); staff → only
+  // themselves. (myUidTop / myStaff / myScope are declared ABOVE the venue fan-out now —
+  // the venue-scoping block — so the scoped subscriptions can read them.)
   const scopedStaff = useMemo(() => {
     if (isOwnerTier) return staff;
     const mv = myStaff?.venueIds || [];
@@ -411,7 +440,7 @@ export function RGProvider({ children }) {
     inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
     resolvedMenuItems, menuInstanceById, venueMenuInstances,
     awardRates, complianceManual, labourTargets, acksByStaff, acknowledgements,
-    selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue,
+    selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue, myVenues,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, loadErrors, noteErr, showToast,
   }), [groupId, group, venues, staff, draftStaff, shifts, leave, availability, modules, assignments, sops, sopAssignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
@@ -419,7 +448,7 @@ export function RGProvider({ children }) {
       inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
       resolvedMenuItems, menuInstanceById, venueMenuInstances,
       awardRates, complianceManual, labourTargets, acksByStaff, acknowledgements,
-      selectedVenue, selectedVenueName, venueName, matchVenue, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, loadErrors, noteErr, showToast]);
+      selectedVenue, selectedVenueName, venueName, matchVenue, myVenues, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, loadErrors, noteErr, showToast]);
 
   return (
     <RGContext.Provider value={value}>

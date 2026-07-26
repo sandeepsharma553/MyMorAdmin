@@ -41,7 +41,10 @@ export default function MessagingPage() {
   const myId = myStaff?.id || myUid || "owner";
   const myName = myStaff?.displayName || myStaff?.name || me?.name || me?.displayName || "Admin";
   // an EMPTY venueIds array must not hide every channel — fall back like an absent value
-  const myVenueIds = (myStaff?.venueIds?.length) ? myStaff.venueIds : (me?.venueId && me.venueId !== "all" ? [me.venueId] : venues.map((v) => v.id));
+  // owner ruling: a STAFF-tier user with no venues sees NO team channels (the old
+  // fallback showed ALL venues' channels). Managers/owners keep the all-venues fallback
+  // — an owner often has no staff doc at all and must still see every channel.
+  const myVenueIds = (myStaff?.venueIds?.length) ? myStaff.venueIds : (me?.venueId && me.venueId !== "all" ? [me.venueId] : (myScope === "staff" ? [] : venues.map((v) => v.id)));
 
   const [tab, setTab] = useState("announcements");
 

@@ -143,8 +143,11 @@ function Shell({ children }) {
   const {
     group, venues, staff, leave, assignments, unreadMessages,
     stock, purchaseOrders,
-    selectedVenue, setSelectedVenue, selectedVenueName, can,
+    selectedVenue, setSelectedVenue, selectedVenueName, can, myVenues, myScope,
   } = useRG();
+  // staff-tier with exactly ONE venue: no "All venues" option — the context pins their
+  // selection to that venue (managers always keep "All", even in a one-venue group)
+  const showAllOption = !(myScope === "staff" && myVenues.length === 1);
 
   const [venueMgrOpen, setVenueMgrOpen] = useState(false);
 
@@ -222,14 +225,16 @@ function Shell({ children }) {
 
         <div className="nav-section">
           <div className="nav-label">Locations</div>
-          <button
-            className={`nav-item ${selectedVenue === "all" ? "active" : ""}`}
-            onClick={() => setSelectedVenue("all")}
-          >
-            <span className="nav-dot" style={{ background: "#9ca3af" }} />
-            <span>All venues</span>
-          </button>
-          {venues.map((v) => (
+          {showAllOption && (
+            <button
+              className={`nav-item ${selectedVenue === "all" ? "active" : ""}`}
+              onClick={() => setSelectedVenue("all")}
+            >
+              <span className="nav-dot" style={{ background: "#9ca3af" }} />
+              <span>All venues</span>
+            </button>
+          )}
+          {myVenues.map((v) => (
             <button
               key={v.id}
               className={`nav-item ${selectedVenue === v.id ? "active" : ""}`}
@@ -264,8 +269,9 @@ function Shell({ children }) {
               value={selectedVenue}
               onChange={(e) => setSelectedVenue(e.target.value)}
             >
-              <option value="all">All venues</option>
-              {venues.map((v) => (
+              {/* myVenues, not venues — staff only ever see their own (owner ruling) */}
+              {showAllOption && <option value="all">All venues</option>}
+              {myVenues.map((v) => (
                 <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>
