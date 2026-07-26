@@ -1,13 +1,14 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot, deleteField } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueCol, staffInVenue, publicHolidaysDoc } from "../../utils/restaurantGroupPaths";
+import { venueCol, staffInVenue, publicHolidaysDoc, auditLogCol } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel, fmtHours, parseShiftTime, deriveBreak, shiftBreakRule as shiftBreakRuleShared, effectiveBreak as effectiveBreakShared } from "./rgUtils";
 import { staffAreas, staffAtStation, areaBreakRule, areaPinned, areaExclusive, orderedAreas, shiftSectionArea, shiftAreaOf as shiftAreaOfShared } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import { contractedLabelForStaff, contractedWeekStatus, fmtContractedRange } from "./contractedHours";
 import StaffCapabilityCard from "./StaffCapabilityCard";
+import AvailabilityEditor from "./AvailabilityEditor";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const FULL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -59,8 +60,25 @@ const cellClass = (type) =>
 // from the owner's configured areas (group.areas / areaOrder / areaBreak). See groupedRows.
 
 export default function ShiftPlannerPage() {
-  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, myStaff, myScope, noteErr, myVenues } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, me, myStaff, myScope, noteErr, myVenues } = useRG();
   const canEdit = can("shifts", "edit");
+  // Amend-from-planner (availability:edit — managers/owners hold approve, which ranks
+  // above edit): the availability chip opens the SHARED AvailabilityEditor for that
+  // staffer. For everyone else the chip stays the inert info block it always was.
+  const canAmendAvail = can("availability", "edit");
+  const [availEdit, setAvailEdit] = useState(null); // staff object being amended | null
+  const actorName = me?.displayName || me?.name || me?.email || "Admin";
+  // Same audit shape as StaffDirectoryPage's logChange (page-local by convention).
+  // Summary carries name + day count only — the auditLog is group-readable, keep it
+  // value-free. NOTE: the audit log is only DISPLAYED in the superadmin view today.
+  const logChange = async (action, summary, extra = {}) => {
+    try {
+      await addDoc(auditLogCol(groupId), {
+        action, summary, by: actorName, byRole: me?.groupRole || "",
+        at: serverTimestamp(), notifySuperAdmin: true, seenBySuper: false, ...extra,
+      });
+    } catch { noteErr("audit log"); } // non-blocking, but RECORDED — a log that silently stops recording looks complete
+  };
   const [offset, setOffset] = useState(0);
   const [modal, setModal] = useState(null); // { staffId, day } | true
   const [shiftDetail, setShiftDetail] = useState(null);
@@ -569,20 +587,25 @@ export default function ShiftPlannerPage() {
   // availability is DISPLAY ONLY. Managers read when a staffer is free and build
   // shifts manually via the normal "+" / "+ Add shift" flow.
 
-  // Availability — INFORMATIONAL ONLY. ONE read-only line per posting: the posted
-  // window(s) (or "All day") + note marker. No buttons, no onClick, no status colours.
+  // Availability — INFORMATIONAL display. ONE line per posting: the posted window(s)
+  // (or "All day") + note marker. No status colours. For availability:edit holders the
+  // chip is the AMEND entry point (opens the shared AvailabilityEditor for that staffer);
+  // for everyone else it stays exactly the inert block it always was — no onClick.
   // Renders identically for legacy (venueId) and new cluster-scoped (clusterId) rows.
   const avTimeLabel = (a) => (a.windows?.length ? a.windows.map((w) => `${w.start}–${w.end}`).join(", ") : (a.allDay ? "All day" : ""));
-  const renderAvailChip = (a) => {
+  const renderAvailChip = (a, s) => {
     const key = `${a._src || "legacy"}:${a.clusterId || a.venueId || ""}:${a.id}`;
+    const amend = canAmendAvail && s ? { onClick: () => setAvailEdit(s), role: "button" } : {};
+    const amendCursor = canAmendAvail && s ? { cursor: "pointer" } : {};
     if (a.available === false) return (
-      <div key={key} style={{ background: "#f3f4f6", color: "#9ca3af", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px" }} title={a.note || "Marked unavailable"}>
+      <div key={key} {...amend} style={{ background: "#f3f4f6", color: "#9ca3af", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px", ...amendCursor }}
+        title={canAmendAvail && s ? `Click to amend availability${a.note ? ` — ${a.note}` : ""}` : (a.note || "Marked unavailable")}>
         Unavailable
       </div>
     );
     return (
-      <div key={key} style={{ background: "#ecfdf5", border: "1px dashed #10b981", color: "#047857", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px" }}
-        title={`Posted availability (info only)${a.note ? ` — ${a.note}` : ""}`}>
+      <div key={key} {...amend} style={{ background: "#ecfdf5", border: "1px dashed #10b981", color: "#047857", fontSize: 10, textAlign: "center", borderRadius: 4, padding: "2px 4px", ...amendCursor }}
+        title={canAmendAvail && s ? `Click to amend availability${a.note ? ` — ${a.note}` : ""}` : `Posted availability (info only)${a.note ? ` — ${a.note}` : ""}`}>
         Free{avTimeLabel(a) ? `: ${avTimeLabel(a)}` : ""}{a.note ? " 📝" : ""}
       </div>
     );
@@ -669,7 +692,7 @@ export default function ShiftPlannerPage() {
                               {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{fmtHours(b.grossHours)}h gross · {fmtHours(b.paidHours)}h paid · {fmtHours(b.unpaidHours)}h unpaid</div> : null; })()}
                             </div>
                           ))}
-                          {avs.map((a) => renderAvailChip(a))}
+                          {avs.map((a) => renderAvailChip(a, s))}
                           {canEdit && !closedDay && !lv && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day, vid)}>+</div>}
                         </div>
                       </td>
@@ -727,7 +750,7 @@ export default function ShiftPlannerPage() {
                   {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{fmtHours(b.grossHours)}h gross · {fmtHours(b.paidHours)}h paid · {fmtHours(b.unpaidHours)}h unpaid</div> : null; })()}
                 </div>
               ))}
-              {avs.map((a) => renderAvailChip(a))}
+              {avs.map((a) => renderAvailChip(a, s))}
               {canEdit && !closedDay && !lv && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 8px" }} onClick={() => openAdd(s.id, day)}>+</div>}
               {!canEdit && shs.length === 0 && !lv && <div className="shift-cell shift-off" style={{ textAlign: "center", opacity: 0.5 }}>·</div>}
             </div>
@@ -1123,6 +1146,24 @@ export default function ShiftPlannerPage() {
           </div>
         );
       })()}
+
+      {/* Amend availability (availability:edit only) — the SHARED AvailabilityEditor,
+          target = the chip's staffer. The editor covers the full 21-day window, clicked
+          day included; the actor's uid lands in updatedBy and the amendment is
+          audit-logged (availability.amend). The audit log is only DISPLAYED in the
+          superadmin view today — recorded, not owner-visible in-app. */}
+      {availEdit && (
+        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setAvailEdit(null)}>
+          <div className="rg-modal" style={{ maxWidth: 760, maxHeight: "85vh", overflowY: "auto" }}>
+            <div className="modal-head">
+              <span className="modal-title">Amend availability — {fullName(availEdit)}</span>
+              <button className="modal-close" onClick={() => setAvailEdit(null)}>✕</button>
+            </div>
+            <AvailabilityEditor key={availEdit.id} staff={availEdit}
+              onSaved={({ count }) => logChange("availability.amend", `${actorName} amended availability for ${fullName(availEdit)} (${count} day${count === 1 ? "" : "s"})`, { staffId: availEdit.id })} />
+          </div>
+        </div>
+      )}
     </>
   );
 }
