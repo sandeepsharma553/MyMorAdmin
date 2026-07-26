@@ -325,3 +325,35 @@ defaults)", …) so a support screenshot reads the same on both devices.
   **byte‑identical cross‑repo predicates** (the drift‑guard convention) and **parity tests**
   (`assignmentParity` / `rgAutoAssign` truth tables, the twin describes) — not by runtime error
   reporting. Keep both disciplines; they catch disjoint failure classes.
+
+---
+
+## Permissions & security boundaries — standing rules (Jul 2026)
+
+### RULE 1 — new features are permission‑gated by default
+
+Any new screen, tab, or significant capability gets a module entry in the permissions matrix
+(`RG_MODULES` in `src/pages/restaurantgroup/rgConfig.js` — mirrored in Ops `lib/rgConfig.js`,
+keep levels in sync) with the appropriate view/edit/approve levels, AND a `can()` gate on the
+surface itself. `RG_MODULES` is a hardcoded list — a new feature does NOT appear in User
+Management automatically. Never ship a feature visible to everyone by default. If a feature
+genuinely should not be gated, say so explicitly in the report and give the reason — never
+leave it ungated silently.
+
+### RULE 2 — route guards and nav filters are not security
+
+Firestore rules (`firestore.mymor-australia.rules`, the deployed source of truth) are the ONLY
+server‑side boundary. Hiding a nav item, filtering a list, or scoping a subscription stops the
+casual case, not a determined one (the Jul 2026 venue‑scoping change is UI/data‑layer only —
+the rules still let any group member read any venue). When a change is a UX boundary rather
+than an enforced one, say so plainly in the report AND the commit message — a cosmetic scope
+must never read as a security fix.
+
+### RULE 3 — staff tier never subscribes to manager‑only collections
+
+Already the convention — see "Manager‑only collections must role‑gate the recording" above
+(`MGR_ONLY_VENUE_COLLS` / `MGR_ONLY_GATE_LABELS` in RGContext.js). The standing addition: when
+adding ANY new per‑venue or group‑level subscription, check the live rule that governs it
+FIRST, and if it is manager‑gated, skip the subscription for staff tier entirely. An expected
+denial is not a failure worth surfacing — it pins a permanent error banner that teaches people
+to ignore real ones.
