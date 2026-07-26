@@ -13,7 +13,7 @@ import Button from "@mui/material/Button";
 import Tooltip from "@mui/material/Tooltip";
 import MenuItem from "@mui/material/MenuItem";
 // import AdbIcon from "@mui/icons-material/Adb";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import Badge from "@mui/material/Badge";
 import { useNavigate } from "react-router-dom";
 
@@ -37,19 +37,19 @@ function NavBar({ onLogout, onNavbarHeightChange }) {
   const navigate = useNavigate();
   const navbarRef = useRef(null);
   const [userRole, setUserRole] = useState();
+  // Re-pointed at Redux: the localStorage "userData" mirror is retired. (The stored
+  // user object never carried userRole, so this was always undefined — behaviour
+  // unchanged, source of truth now the live auth slice.)
+  const user = useSelector((state) => state.auth.user);
 
   useEffect(() => {
-    const storedUserData = localStorage.getItem("userData");
-    if (storedUserData) {
-      const userData = JSON.parse(storedUserData);
-      setUserRole(userData.userRole);
-    }
-  
+    setUserRole(user?.userRole);
+
     if (navbarRef.current) {
       const navbarHeight = navbarRef.current.offsetHeight;
       onNavbarHeightChange(navbarHeight);
     }
-  }, [navbarRef, onNavbarHeightChange]);
+  }, [navbarRef, onNavbarHeightChange, user]);
 
   const handleOpenNavMenu = (event) => {
     setAnchorElNav(event.currentTarget);

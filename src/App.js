@@ -1,7 +1,8 @@
 import "./App.css";
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
+import { bootstrapAuth } from "./app/features/AuthSlice";
 
 import LoginPage from "./auth/LoginPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
@@ -25,19 +26,23 @@ const isValidId = (v) =>
   String(v).trim().toLowerCase() !== "undefined";
 
 function AppWrapper() {
+  const dispatch = useDispatch();
   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
   const type = useSelector((state) => state.auth.type);
   const employee = useSelector((state) => state.auth.employee);
   const activeOrg = useSelector((state) => state.auth.activeOrg);
+  const booting = useSelector((state) => state.auth.booting);
 
-  const [checking, setChecking] = useState(true);
-
+  // Real bootstrap (replaces the retired localStorage hydration AND the old fixed
+  // 100ms `checking` timer): Firebase restores its persisted Auth session, the live
+  // employee listener attaches, and `booting` clears on the first snapshot/answer.
+  // Until then we render nothing — so a reload no longer flashes or bounces a
+  // signed-in user to LoginPage, and an EXPIRED session correctly lands on login.
   useEffect(() => {
-    const timer = setTimeout(() => setChecking(false), 100);
-    return () => clearTimeout(timer);
-  }, []);
+    dispatch(bootstrapAuth());
+  }, [dispatch]);
 
-  if (checking) return null;
+  if (booting) return null;
 
   const hasHostel = isValidId(employee?.hostelid);
   const hasUniclub = isValidId(employee?.uniclubid);

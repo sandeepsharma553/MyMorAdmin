@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "../../firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { toast } from "react-toastify";
 
 /* ---------------- helpers ---------------- */
@@ -64,33 +64,78 @@ const pickDefaultActiveOrg = (employee) => {
 
 const VALID_ORGS = ["hostel", "uniclub", "business", "university", "restaurantGroup"];
 
-/* ---------------- thunks ---------------- */
-export const getEmployeeByUid = createAsyncThunk(
-  "auth/getEmployeeByUid",
-  async (uid, { rejectWithValue }) => {
-    try {
-      if (!uid) throw new Error("UID is missing");
-      const docRef = doc(db, "employees", uid);
-      const docSnap = await getDoc(docRef);
+/* ── Live employee listener ── (mirrors MyMorOps authSlice, ff37816)
+ * employees/{uid} used to be a one-shot getDoc whose result was mirrored to
+ * localStorage and hydrated synchronously at startup — there was NO
+ * onAuthStateChanged anywhere in this repo, so permissions were stale until an
+ * explicit logout/login (even a reload only re-read the stale mirror). Now a
+ * single module-level onSnapshot:
+ *  - RESOLVE ONCE: LoginAdmin/bootstrapAuth await the FIRST snapshot (or error)
+ *    only; later snapshots never re-settle the thunk.
+ *  - DAMPENED: later snapshots dispatch employeeUpdated ONLY when the serialized
+ *    doc actually changed (order-independent stringify — safe because
+ *    toSerializable has already normalised Timestamps to millis).
+ *  - FREEZE: employeeUpdated never touches state.type or state.activeOrg — see
+ *    the reducer comment.
+ *  - DEACTIVATION (owner ruling): a snapshot saying the doc is GONE, or carrying
+ *    an EXPLICIT isActive === false (missing/undefined must never sign anyone
+ *    out), signs the user out through the existing logoutAdmin path. Listener
+ *    ERRORS never sign out an established session.
+ */
+let employeeUnsub = null; // module-level: exactly one live listener, ever
+const stopEmployeeListener = () => {
+  if (employeeUnsub) { try { employeeUnsub(); } catch {} employeeUnsub = null; }
+};
 
-      if (!docSnap.exists()) {
-        return rejectWithValue({ error: "Employee not found" });
+// Order-independent stringify for the changed-payload check (snapshot key order is
+// not guaranteed stable). Inputs are toSerializable outputs: plain JSON values only.
+const stableStringify = (v) => {
+  if (v === undefined) return "null";
+  if (v === null || typeof v !== "object") return JSON.stringify(v);
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
+  return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(v[k])}`).join(",")}}`;
+};
+
+// Starts (replacing any predecessor) the live listener. Settles on the FIRST
+// snapshot or error — the caller stores that first read via the fulfilled reducer;
+// everything after flows through employeeUpdated. A failed FIRST read tears the
+// listener down before rejecting.
+const startEmployeeListener = (uid, { dispatch, getState }) =>
+  new Promise((resolve, reject) => {
+    stopEmployeeListener(); // a re-login replaces the previous listener, never stacks
+    let settled = false;
+    employeeUnsub = onSnapshot(
+      doc(db, "employees", uid),
+      (snap) => {
+        if (!snap.exists()) {
+          if (!settled) { settled = true; stopEmployeeListener(); reject(new Error("Employee not found")); }
+          else dispatch(logoutAdmin()); // doc deleted mid-session → sign out
+          return;
+        }
+        const employee = toSerializable({ id: snap.id, ...(snap.data() || {}) });
+        if (employee.isActive === false) { // EXPLICIT false only — see header comment
+          if (!settled) { settled = true; stopEmployeeListener(); reject(new Error("Account deactivated")); }
+          else dispatch(logoutAdmin()); // deactivated mid-session → sign out
+          return;
+        }
+        if (!settled) { settled = true; resolve(employee); return; } // first read → fulfilled reducer
+        const prev = getState().auth.employee;
+        if (prev && stableStringify(prev) === stableStringify(employee)) return; // unchanged — no dispatch
+        dispatch(employeeUpdated(employee));
+      },
+      (err) => {
+        if (!settled) { settled = true; stopEmployeeListener(); reject(err); }
+        // established session: swallow — never sign out on a stream error
       }
+    );
+  });
 
-      const raw = { id: docSnap.id, ...(docSnap.data() || {}) };
-      return toSerializable(raw);
-    } catch (error) {
-      toast.error(getLoginErrorMessage(error.code));
-      return rejectWithValue({
-        error: error.code || error.message || "Failed to fetch employee",
-      });
-    }
-  }
-);
+/* ---------------- thunks ---------------- */
 
 export const LoginAdmin = createAsyncThunk(
   "auth/loginadmin",
-  async (userData, { dispatch, rejectWithValue }) => {
+  async (userData, thunkAPI) => {
+    const { rejectWithValue } = thunkAPI;
     try {
       const res = await signInWithEmailAndPassword(
         auth,
@@ -113,22 +158,57 @@ export const LoginAdmin = createAsyncThunk(
         providerId: firebaseUser.providerId,
       };
 
-      const employee = await dispatch(getEmployeeByUid(firebaseUser.uid)).unwrap();
+      // first snapshot (or error) settles here — the listener then stays live
+      const employee = await startEmployeeListener(firebaseUser.uid, thunkAPI);
 
       return { isSuccess: true, user: safeUser, employee };
     } catch (error) {
+      stopEmployeeListener(); // a failed login must not leave a live listener behind
       toast.error(getLoginErrorMessage(error.code));
       return rejectWithValue({ error: error.code || "Failed to login" });
     }
   }
 );
 
+// Runs once at startup: Firebase restores the persisted Auth session (IndexedDB),
+// and if a user exists we attach the live employee listener; the FIRST snapshot
+// resolves this thunk, clearing the `booting` gate. This REPLACES the retired
+// localStorage hydration — a reload now re-reads the real session and the real doc,
+// and an expired Firebase session lands on the login page instead of a zombie UI.
+export const bootstrapAuth = createAsyncThunk(
+  "auth/bootstrap",
+  async (_, thunkAPI) =>
+    new Promise((resolve) => {
+      const unsub = onAuthStateChanged(auth, async (user) => {
+        unsub();
+        if (!user) return resolve(null);
+        try {
+          const safeUser = {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            photoURL: user.photoURL,
+            emailVerified: user.emailVerified,
+            phoneNumber: user.phoneNumber,
+            providerId: user.providerId,
+          };
+          const employee = await startEmployeeListener(user.uid, thunkAPI);
+          resolve({ user: safeUser, employee });
+        } catch {
+          stopEmployeeListener();
+          resolve(null);
+        }
+      });
+    })
+);
+
 export const logoutAdmin = createAsyncThunk(
   "auth/logout",
   async (_, { rejectWithValue }) => {
     try {
+      stopEmployeeListener(); // tear the live employee listener down BEFORE auth dies
       await signOut(auth);
-      localStorage.clear();
+      localStorage.clear(); // kept: clears remembered activeOrg + any legacy keys
       return null;
     } catch (error) {
       return rejectWithValue({ error: error.message || "Failed to logout" });
@@ -137,30 +217,47 @@ export const logoutAdmin = createAsyncThunk(
 );
 
 /* ---------------- initial state ---------------- */
+// The localStorage mirror is RETIRED: state starts empty and bootstrapAuth (real
+// Firebase session + live employee doc) populates it. `booting` gates first paint.
+// (ChooseContextPage keeps its own "activeOrg" remember-key — that is a page-level
+// preference it reads/writes itself, not this slice's auth mirror.)
 const initialState = {
-  isLoggedIn: !!localStorage.getItem("userData"),
+  isLoggedIn: false,
   isLoading: false,
+  booting: true, // true until bootstrapAuth settles
   error: null,
-  user: (() => {
-    try {
-      return JSON.parse(localStorage.getItem("userData")) || null;
-    } catch {
-      return null;
-    }
-  })(),
-  employee: (() => {
-    try {
-      const v = localStorage.getItem("employee");
-      if (!v || v === "undefined") return null;
-      return JSON.parse(v);
-    } catch {
-      return null;
-    }
-  })(),
-  type: localStorage.getItem("type") || null,
-  activeOrg: VALID_ORGS.includes(localStorage.getItem("activeOrg"))
-    ? localStorage.getItem("activeOrg")
-    : null,
+  user: null,
+  employee: null,
+  type: null,
+  activeOrg: null,
+};
+
+// Shared by LoginAdmin.fulfilled and bootstrapAuth.fulfilled — the ONLY two places
+// allowed to set state.type and state.activeOrg (see employeeUpdated's freeze).
+const applyAuth = (state, payload) => {
+  const { user, employee } = payload;
+  state.user = user;
+  state.employee = employee;
+  state.type = employee?.type || null;
+  state.isLoggedIn = true;
+
+  const computed = pickDefaultActiveOrg(employee);
+  const stored = state.activeOrg;
+
+  const hasHostel = isValidId(employee?.hostelid);
+  const hasUniclub = isValidId(employee?.uniclubid);
+  const hasUniversity = isValidId(employee?.universityid || employee?.universityId);
+  const hasGroup = isValidId(employee?.groupId || employee?.groupid);
+  const hasBusiness = !hasHostel && !hasUniclub && !hasUniversity && !hasGroup;
+
+  const storedValid =
+    (stored === "hostel" && hasHostel) ||
+    (stored === "uniclub" && hasUniclub) ||
+    (stored === "university" && hasUniversity) ||
+    (stored === "restaurantGroup" && hasGroup) ||
+    (stored === "business" && hasBusiness);
+
+  state.activeOrg = storedValid ? stored : computed;
 };
 
 /* ---------------- slice ---------------- */
@@ -171,12 +268,8 @@ const AuthSlice = createSlice({
     setActiveOrg: (state, action) => {
       const v = action.payload;
       if (v !== null && !VALID_ORGS.includes(v)) return;
-
+      // mirror write retired — ChooseContextPage persists its own remember-key
       state.activeOrg = v;
-      try {
-        if (v) localStorage.setItem("activeOrg", v);
-        else localStorage.removeItem("activeOrg");
-      } catch {}
     },
     hydrateActiveOrg: (state) => {
       try {
@@ -195,6 +288,15 @@ const AuthSlice = createSlice({
     clearAuthError: (state) => {
       state.error = null;
     },
+    // Live employee update (later snapshots only — the first read goes through
+    // applyAuth). FREEZE (owner ruling): state.type and state.activeOrg are
+    // deliberately NOT touched here — `type` drives the top-level product route
+    // table and activeOrg drives which org a multi-org admin is working in;
+    // re-routing someone between products mid-session is not intended behaviour.
+    // Only LoginAdmin.fulfilled / bootstrapAuth.fulfilled may set those.
+    employeeUpdated: (state, action) => {
+      state.employee = action.payload;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -203,56 +305,19 @@ const AuthSlice = createSlice({
         state.error = null;
       })
       .addCase(LoginAdmin.fulfilled, (state, action) => {
-        const { user, employee } = action.payload;
-
         state.isLoading = false;
-        state.user = user;
-        state.employee = employee;
-        state.type = employee?.type || null;
-        state.isLoggedIn = true;
-
-        const computed = pickDefaultActiveOrg(employee);
-        const stored = state.activeOrg;
-
-        const hasHostel = isValidId(employee?.hostelid);
-        const hasUniclub = isValidId(employee?.uniclubid);
-        const hasUniversity = isValidId(employee?.universityid || employee?.universityId);
-        const hasGroup = isValidId(employee?.groupId || employee?.groupid);
-        const hasBusiness = !hasHostel && !hasUniclub && !hasUniversity && !hasGroup;
-
-        const storedValid =
-          (stored === "hostel" && hasHostel) ||
-          (stored === "uniclub" && hasUniclub) ||
-          (stored === "university" && hasUniversity) ||
-          (stored === "restaurantGroup" && hasGroup) ||
-          (stored === "business" && hasBusiness);
-
-        state.activeOrg = storedValid ? stored : computed;
-
-        localStorage.setItem("userData", JSON.stringify(user));
-        localStorage.setItem("employee", JSON.stringify(employee));
-        localStorage.setItem("type", state.type || "");
-        localStorage.setItem("loginTime", Date.now().toString());
-
-        if (state.activeOrg) localStorage.setItem("activeOrg", state.activeOrg);
-        else localStorage.removeItem("activeOrg");
+        applyAuth(state, action.payload); // mirror writes retired — state only
       })
       .addCase(LoginAdmin.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload?.error || action.error?.message || "Login failed";
       })
-      .addCase(getEmployeeByUid.pending, (state) => {
-        state.isLoading = true;
-        state.error = null;
+      .addCase(bootstrapAuth.fulfilled, (state, action) => {
+        state.booting = false;
+        if (action.payload) applyAuth(state, action.payload);
       })
-      .addCase(getEmployeeByUid.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.employee = action.payload;
-      })
-      .addCase(getEmployeeByUid.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error =
-          action.payload?.error || action.error?.message || "Failed to fetch employee";
+      .addCase(bootstrapAuth.rejected, (state) => {
+        state.booting = false;
       })
       .addCase(logoutAdmin.fulfilled, (state) => {
         state.isLoggedIn = false;
@@ -272,6 +337,7 @@ export const {
   hydrateActiveOrg,
   clearActiveOrg,
   clearAuthError,
+  employeeUpdated,
 } = AuthSlice.actions;
 
 export default AuthSlice.reducer;

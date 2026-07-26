@@ -321,7 +321,10 @@ export default function BusinessProfilePage({ navbarHeight }) {
       },
       media: { ...initialForm.media, ...(data.media || {}) },
     });
-  }, [businessDoc, employee]);
+    // deps narrowed to the two employee FIELDS this effect actually reads (the
+    // no-businessDoc branch above): with the employee doc now LIVE, depending on
+    // the whole object would wipe unsaved form edits on any unrelated doc write.
+  }, [businessDoc, employee?.email, employee?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** ---------------- Form setters ---------------- */
   const set = (key) => (e) => {
