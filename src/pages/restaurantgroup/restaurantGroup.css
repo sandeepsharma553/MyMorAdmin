@@ -235,8 +235,15 @@
 .rg-scope .progress-bar { height:100%; border-radius:10px; transition:width 0.3s; }
 
 /* ── SHIFT PLANNER ── */
+/* --rg-zoom (default 1) is set inline on the grid wrappers by ShiftPlannerPage's zoom
+   control. Property-based scaling only — transform:scale would break the sticky header
+   and the scroll geometry. Inline style overrides (e.g. the compact "+" add cell) win
+   over these calcs, deliberately. */
 .rg-scope .shift-cell {
-  padding:6px 8px; border-radius:6px; font-size:10px; min-height:36px;
+  padding:calc(6px * var(--rg-zoom, 1)) calc(8px * var(--rg-zoom, 1));
+  border-radius:6px;
+  font-size:calc(10px * var(--rg-zoom, 1));
+  min-height:calc(36px * var(--rg-zoom, 1));
   border:0.5px solid transparent;
 }
 .rg-scope .shift-assigned { background:var(--red-light); border-color:var(--red-mid); color:var(--red2); cursor:pointer; }

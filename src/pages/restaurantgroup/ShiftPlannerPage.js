@@ -70,6 +70,13 @@ export default function ShiftPlannerPage() {
   const [sortBy, setSortBy] = useState("az"); // az | za | newest | oldest — staff order within each section
   const [planStation, setPlanStation] = useState("all"); // Area→Station drill-down: all | stationId
   const [splitMode, setSplitMode] = useState(false);
+  // Grid zoom — SESSION-ONLY by design (no localStorage/context; a reload returns to
+  // 100%). Drives the --rg-zoom CSS custom property on the grid wrappers; the ✕ resets
+  // to 100% without hiding the control. Scaling is property-based (font/padding/widths
+  // via calc), NEVER transform:scale — a transform would break the sticky header and
+  // make the scroll geometry lie.
+  const [zoom, setZoom] = useState(1);
+  const ZOOMS = [0.75, 1, 1.25, 1.5];
   const [splitA, setSplitA] = useState("");
   const [splitB, setSplitB] = useState("");
   useEffect(() => { if (!splitA && venues[0]) setSplitA(venues[0].id); if (!splitB && venues[1]) setSplitB(venues[1].id); }, [venues]); // eslint-disable-line
@@ -609,11 +616,13 @@ export default function ShiftPlannerPage() {
     const vClosed = (day) => venues.find((v) => v.id === vid)?.hours?.[HOURS_KEYS[day]]?.closed === true;
     return (
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 520 }}>
+        {/* zoom applies to the split panes too — same .shift-cell class, and toggling
+            Split view must not silently lose the chosen zoom */}
+        <div style={{ overflowX: "auto", "--rg-zoom": zoom }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "calc(520px * var(--rg-zoom, 1))" }}>
             <thead>
               <tr style={{ background: "var(--gray-light)" }}>
-                <th style={{ ...th, textAlign: "left", width: 100, padding: "8px 10px" }}>Staff</th>
+                <th style={{ ...th, textAlign: "left", width: "calc(100px * var(--rg-zoom, 1))", padding: "8px 10px" }}>Staff</th>
                 {/* PH header treatment mirrors the MAIN grid (8fd1887): #fef3c7 wash + 9px
                     #b45309 "PH" badge, spread BEFORE closed so closed's opacity still wins */}
                 {DAYS.map((d, i) => <th key={d} style={{ ...th, padding: "8px 4px", cursor: "pointer", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (vClosed(i) ? "Venue closed this day" : "Click for day detail")} onClick={() => setDayDetail({ day: i, vid })}>{d}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 3 }}>PH</span>}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</th>)}
@@ -776,6 +785,15 @@ export default function ShiftPlannerPage() {
             const rows = [["Staff", "Day", "Start", "End", "Role", "Station", "Venue", "Gross", "Paid", "Unpaid"], ...weekShifts.slice().sort((a, b) => (a.day - b.day) || a.start.localeCompare(b.start)).map((sh) => { const b = effectiveBreak(sh); return [sh.staffName, FULL_DAYS[sh.day] || "", sh.start, sh.end, sh.role, sh.station || "", sh.venue, fmtHours(b.grossHours), fmtHours(b.paidHours), fmtHours(b.unpaidHours)]; })];
             downloadCsv(`roster-${wk}.csv`, rows); showToast("Roster exported");
           }}>Export</button>
+          {/* Zoom presets — house button pattern (btn-sm + red active, same as the area
+              filters). ✕ resets to 100%, it does not hide the control. */}
+          <div style={{ display: "flex", gap: 4, alignItems: "center", marginLeft: 4 }}>
+            {ZOOMS.map((z) => (
+              <button key={z} className="btn btn-sm" onClick={() => setZoom(z)}
+                style={zoom === z ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>{Math.round(z * 100)}%</button>
+            ))}
+            <button className="btn btn-sm" title="Reset zoom to 100%" onClick={() => setZoom(1)}>✕</button>
+          </div>
         </div>
       </div>
 
@@ -867,11 +885,11 @@ export default function ShiftPlannerPage() {
       )}
       {/* Roster grid */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 260px)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 260px)", "--rg-zoom": zoom }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "calc(760px * var(--rg-zoom, 1))" }}>
             <thead>
               <tr style={{ background: "var(--gray-light)" }}>
-                <th style={{ ...thSticky, textAlign: "left", width: 130, padding: "10px 14px" }}>Staff</th>
+                <th style={{ ...thSticky, textAlign: "left", width: "calc(130px * var(--rg-zoom, 1))", padding: "10px 14px" }}>Staff</th>
                 {DAYS.map((d, i) => (
                   <th key={d} style={{ ...thSticky, cursor: "pointer", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(dayClosedForSelected(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (dayClosedForSelected(i) ? "Venue closed this day" : "Click for day detail")} onClick={() => setDayDetail({ day: i, vid: selectedVenue })}>
                     <div>{d}{weekDates[i] ? ` ${Number(weekDates[i].slice(8, 10))}` : ""}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 4 }}>PH</span>}{dayClosedForSelected(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "var(--gray)", marginLeft: 4 }}>Closed</span>}</div>
