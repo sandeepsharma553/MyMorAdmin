@@ -357,3 +357,49 @@ adding ANY new per‑venue or group‑level subscription, check the live rule th
 FIRST, and if it is manager‑gated, skip the subscription for staff tier entirely. An expected
 denial is not a failure worth surfacing — it pins a permanent error banner that teaches people
 to ignore real ones.
+
+---
+
+## How to work in this repo — working discipline (Jul 2026)
+
+The standing rules above cover WHAT to build; this section covers HOW changes get made here.
+
+### 1. Recon before building
+
+Before changing anything, find and QUOTE the real code with file paths and line numbers. Do
+not describe something as missing without checking — three features assumed missing in July
+2026 turned out to be already built (contracted‑vs‑rostered, leave‑week suppression,
+temperature venue scoping), and one had been built twice. Reading first is cheaper than
+building twice. Say "not found" only after actually looking.
+
+### 2. One thing at a time
+
+Do not combine two features in one change. If a change turns out to need a second, unrelated
+change, say so and STOP rather than folding it in.
+
+### 3. Stop before committing
+
+Stage by EXPLICIT path, print the staged diff, and let it be reviewed before the commit.
+Never `git add .` or `git add -A`. Never stage `.firebase/hosting.YnVpbGQ.cache` — permanent
+build noise.
+
+### 4. Walk the cases
+
+After building, state what happens in each relevant scenario — empty data, missing fields, a
+manager versus a staff member, the boundary values. State the OUTCOME of each walk; do not
+assert "it works".
+
+### 5. Verified in code versus needs clicking
+
+A passing build proves the code compiles. A passing test proves the test's assumption.
+Neither proves the feature works. Tag every claim either VERIFIED‑IN‑CODE, with the file and
+line, or as NEEDING a click test, with the exact steps and the expected result. (Known
+baselines here: `CI=true npx react-scripts test` carries one pre‑existing App.test.js suite
+failure; `npm run build:dev` emits pre‑existing source‑map noise — neither is a new failure.)
+
+### 6. Who‑can‑do‑this decisions go in User Management
+
+Any decision about who may SEE or DO something becomes a permission the owner controls — a
+module + level in `RG_MODULES` / the permissions matrix, gated by `can()` (RULE 1 above has
+the mechanics) — not a hardcoded role check. If a capability genuinely must be fixed in code,
+say so explicitly and give the reason.
