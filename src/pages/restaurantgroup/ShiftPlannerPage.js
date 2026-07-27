@@ -95,9 +95,11 @@ export default function ShiftPlannerPage() {
   // make the scroll geometry lie.
   const [zoom, setZoom] = useState(1);
   const ZOOMS = [0.75, 1, 1.25, 1.5];
-  const [splitA, setSplitA] = useState("");
-  const [splitB, setSplitB] = useState("");
-  useEffect(() => { if (!splitA && myVenues[0]) setSplitA(myVenues[0].id); if (!splitB && myVenues[1]) setSplitB(myVenues[1].id); }, [myVenues]); // eslint-disable-line
+  // Each split pane holds an ARRAY of venue ids — a pane can compare several venues at
+  // once (e.g. Mad Benji + Hey Sister left, Mad Hotpot right). Seeded one venue per pane.
+  const [splitA, setSplitA] = useState([]);
+  const [splitB, setSplitB] = useState([]);
+  useEffect(() => { if (!splitA.length && myVenues[0]) setSplitA([myVenues[0].id]); if (!splitB.length && myVenues[1]) setSplitB([myVenues[1].id]); }, [myVenues]); // eslint-disable-line
 
   const monday = mondayOf(offset);
   const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
@@ -616,27 +618,31 @@ export default function ShiftPlannerPage() {
   // sticky cell drops its own border, so the divider is drawn as an inset box-shadow.
   const thSticky = { ...th, position: "sticky", top: 0, zIndex: 2, background: "var(--gray-light)", borderBottom: undefined, boxShadow: "inset 0 -1px 0 var(--border)" };
 
-  // Cell shifts scoped to a venue (for the split comparison view) — START-time sorted (#1).
-  const cellShiftsV = (staffId, day, vid) => weekShiftsAllVenues.filter((sh) => sh.staffId === staffId && sh.day === day && (vid === "all" || sh.venueId === vid)).sort((a, b) => parseTime(a.start) - parseTime(b.start));
-  const VenueGrid = ({ vid }) => {
+  // Cell shifts scoped to a pane's venues (for the split comparison view) — START-time sorted (#1).
+  const cellShiftsV = (staffId, day, vids) => weekShiftsAllVenues.filter((sh) => sh.staffId === staffId && sh.day === day && vids.includes(sh.venueId)).sort((a, b) => parseTime(a.start) - parseTime(b.start));
+  const VenueGrid = ({ vids }) => {
     // Phase-2 SECTIONS per column (split-view fix): the same grouping/order as the main
     // grid via groupRowsFor — and the area + station filters are now honoured here too
-    // (this path previously ignored both). Each staffer groups by THIS venue's areas
-    // (venueRoles[vid].areas); legacy docs with no venueRoles entry for the venue fall
-    // back to the cross-venue union staffAreas(s), NOT to "No area assigned".
+    // (this path previously ignored both). Each staffer groups by the PANE's venues' areas
+    // (union of venueRoles[vid].areas across the pane); legacy docs with no venueRoles
+    // entry for any pane venue fall back to the cross-venue union staffAreas(s), NOT to
+    // "No area assigned".
     // #2 hide Inactive + #3 sort control still apply (separate source: scopedStaff).
     const areasOfVenue = (s) => {
-      const perVenue = s.venueRoles?.[vid]?.areas;
-      return (perVenue && perVenue.length) ? perVenue : staffAreas(s);
+      const perVenue = [...new Set(vids.flatMap((vid) => s.venueRoles?.[vid]?.areas || []))];
+      return perVenue.length ? perVenue : staffAreas(s);
     };
     const gridSections = groupRowsFor(
-      scopedStaff.filter((s) => staffInVenue(s, vid) && !hasLeft(s) && staffAtStation(s, effStation, weekShiftsAllVenues)),
+      scopedStaff.filter((s) => vids.some((vid) => staffInVenue(s, vid)) && !hasLeft(s) && staffAtStation(s, effStation, weekShiftsAllVenues)),
       areasOfVenue
     );
     const gridRows = gridSections.flatMap((g) => g.members); // footer hours + empty state
-    const gh = gridRows.reduce((a, s) => a + weekShiftsAllVenues.filter((sh) => sh.staffId === s.id && (vid === "all" || sh.venueId === vid)).reduce((x, sh) => x + effectiveBreak(sh).paidHours, 0), 0);
-    // split view is always per-venue → closed-day greying keys off vid directly
-    const vClosed = (day) => venues.find((v) => v.id === vid)?.hours?.[HOURS_KEYS[day]]?.closed === true;
+    const gh = gridRows.reduce((a, s) => a + weekShiftsAllVenues.filter((sh) => sh.staffId === s.id && vids.includes(sh.venueId)).reduce((x, sh) => x + effectiveBreak(sh).paidHours, 0), 0);
+    // closed-day greying: only when EVERY venue in the pane is closed that day
+    const vClosed = (day) => vids.length > 0 && vids.every((vid) => venues.find((v) => v.id === vid)?.hours?.[HOURS_KEYS[day]]?.closed === true);
+    // "+" adds to the venue the staffer belongs to among the pane's venues (first match);
+    // a single-venue pane keeps the old behaviour exactly.
+    const addVenueFor = (s) => (vids.length === 1 ? vids[0] : (vids.find((vid) => staffInVenue(s, vid)) || vids[0]));
     return (
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         {/* zoom applies to the split panes too — same .shift-cell class, and toggling
@@ -648,7 +654,7 @@ export default function ShiftPlannerPage() {
                 <th style={{ ...th, textAlign: "left", width: "calc(100px * var(--rg-zoom, 1))", padding: "8px 10px" }}>Staff</th>
                 {/* PH header treatment mirrors the MAIN grid (8fd1887): #fef3c7 wash + 9px
                     #b45309 "PH" badge, spread BEFORE closed so closed's opacity still wins */}
-                {DAYS.map((d, i) => <th key={d} style={{ ...th, padding: "8px 4px", cursor: "pointer", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (vClosed(i) ? "Venue closed this day" : "Click for day detail")} onClick={() => setDayDetail({ day: i, vid })}>{d}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 3 }}>PH</span>}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</th>)}
+                {DAYS.map((d, i) => <th key={d} style={{ ...th, padding: "8px 4px", cursor: "pointer", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (vClosed(i) ? "Venue closed this day" : "Click for day detail")} onClick={() => setDayDetail({ day: i, vid: vids })}>{d}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 3 }}>PH</span>}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -670,9 +676,9 @@ export default function ShiftPlannerPage() {
                     )}
                   </td>
                   {DAYS.map((_, day) => {
-                    const shs = cellShiftsV(s.id, day, vid);
+                    const shs = cellShiftsV(s.id, day, vids);
                     // legacy postings are venue-scoped; new cluster rows are staffer-wide info
-                    const avs = availAll(s.id, weekDates[day]).filter((a) => a._src === "cluster" || a.venueId === vid);
+                    const avs = availAll(s.id, weekDates[day]).filter((a) => a._src === "cluster" || vids.includes(a.venueId));
                     const closedDay = vClosed(day); // muted cell + no "+"; existing shifts still render
                     const lv = leaveFor(s.id, weekDates[day]); // APPROVED leave (Phase 4b) — read-only block, no "+"
                     // PH wash (visual only) — same 5% amber as the main grid, spread
@@ -688,12 +694,13 @@ export default function ShiftPlannerPage() {
                           {shs.map((sh) => (
                             <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff" }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                               <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
-                              <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}</div>
+                              {/* multi-venue pane: venue initials on the chip (main-grid convention) */}
+                              <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{vids.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
                               {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{fmtHours(b.grossHours)}h gross · {fmtHours(b.paidHours)}h paid · {fmtHours(b.unpaidHours)}h unpaid</div> : null; })()}
                             </div>
                           ))}
                           {avs.map((a) => renderAvailChip(a, s))}
-                          {canEdit && !closedDay && !lv && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day, vid)}>+</div>}
+                          {canEdit && !closedDay && !lv && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day, addVenueFor(s))}>+</div>}
                         </div>
                       </td>
                     );
@@ -873,16 +880,24 @@ export default function ShiftPlannerPage() {
         </div>
       )}
 
-      {/* Split comparison view */}
+      {/* Split comparison view — each pane can show SEVERAL venues (toggle chips) */}
       {splitMode ? (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>
-          {[[splitA, setSplitA], [splitB, setSplitB]].map(([val, setter], i) => (
+          {[[splitA, setSplitA], [splitB, setSplitB]].map(([vids, setter], i) => (
             <div key={i}>
-              <select className="form-input" style={{ marginBottom: 8 }} value={val} onChange={(e) => setter(e.target.value)}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 {/* myVenues, not venues — staff pick only among their own (owner ruling) */}
-                {myVenues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
-              <VenueGrid vid={val} />
+                {myVenues.map((v) => {
+                  const on = vids.includes(v.id);
+                  return (
+                    <button key={v.id} className="btn btn-sm" style={on ? { background: venueColorOf(v.id), borderColor: venueColorOf(v.id), color: "#fff" } : undefined}
+                      onClick={() => setter(on ? vids.filter((x) => x !== v.id) : [...vids, v.id])} title={on ? "Click to remove from this pane" : "Click to add to this pane"}>
+                      {v.name}
+                    </button>
+                  );
+                })}
+              </div>
+              {vids.length ? <VenueGrid vids={vids} /> : <div className="card" style={{ padding: 16, fontSize: 12, color: "var(--gray)" }}>Pick one or more venues to compare.</div>}
             </div>
           ))}
         </div>
@@ -1125,10 +1140,14 @@ export default function ShiftPlannerPage() {
           pane's venue) — a popup wider than its grid would repeat bug #4. Approved
           leave is listed group-wide regardless: a person on leave is off everywhere. */}
       {dayDetail && (() => {
-        const dShifts = weekShiftsAllVenues.filter((sh) => sh.day === dayDetail.day && (dayDetail.vid === "all" || sh.venueId === dayDetail.vid));
+        // vid: "all" | venue-id string (main grid) | venue-id ARRAY (multi-venue split pane)
+        const dVids = Array.isArray(dayDetail.vid) ? dayDetail.vid : null;
+        const dShifts = weekShiftsAllVenues.filter((sh) => sh.day === dayDetail.day && (dayDetail.vid === "all" || (dVids ? dVids.includes(sh.venueId) : sh.venueId === dayDetail.vid)));
         const dLeave = dayLeave(weekDates[dayDetail.day]);
         const dDate = new Date(monday); dDate.setDate(monday.getDate() + dayDetail.day);
-        const vName = dayDetail.vid === "all" ? "All venues" : (venues.find((v) => v.id === dayDetail.vid)?.name || "");
+        const vName = dayDetail.vid === "all" ? "All venues"
+          : dVids ? dVids.map((vid) => venues.find((v) => v.id === vid)?.name).filter(Boolean).join(" + ")
+          : (venues.find((v) => v.id === dayDetail.vid)?.name || "");
         return (
           <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setDayDetail(null)}>
             <div className="rg-modal" style={{ maxWidth: 440 }}>

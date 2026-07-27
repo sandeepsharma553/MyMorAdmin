@@ -50,6 +50,14 @@ service cloud.firestore {
         || (rgHasEmp() && rgEmp().groupId == gid
             && rgEmp().get('permissions', {}).get('availability', '') == 'approve');
     }
+    // Group-chat member editing (Job 5): owner/storeAdmin always, OR an explicit
+    // permissions.messages == 'approve' grant (set per person in User Management —
+    // same consume-approve pattern as leave/availability, never seeded by default).
+    function rgCanEditChatMembers(gid) {
+      return rgIsGroupAdmin(gid)
+        || (rgHasEmp() && rgEmp().groupId == gid
+            && rgEmp().get('permissions', {}).get('messages', '') == 'approve');
+    }
      match /restaurantGroups/{groupId} {
 
       allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
@@ -306,12 +314,34 @@ service cloud.firestore {
       match /notifications/{notificationId} {
         allow read, write: if rgIsSuper() || rgIsGroupMember(groupId);
       }
-      match /conversations/{conversationId}/{rest=**} {
-        allow read, write: if rgIsSuper() || rgIsGroupMember(groupId);
+      // Group-chat conversations (Job 5) — MEMBER-ONLY, WhatsApp-like. The doc carries
+      // memberUids[] (Firebase auth uids); only listed members read it, so both apps
+      // query with where("memberUids","array-contains",uid). Legacy docs without the
+      // field become invisible — run scripts/backfill-conversation-uids.js once.
+      // Member edits: owner/storeAdmin, or a member holding messages == 'approve'.
+      match /conversations/{conversationId} {
+        allow read:   if rgIsSuper() || (rgIsGroupMember(groupId) && request.auth.uid in resource.data.get('memberUids', []));
+        allow create: if rgIsSuper() || (rgIsGroupMember(groupId) && request.auth.uid in request.resource.data.get('memberUids', []));
+        allow update: if rgIsSuper() || rgIsGroupAdmin(groupId)
+          || (rgIsGroupMember(groupId) && request.auth.uid in resource.data.get('memberUids', []) && rgCanEditChatMembers(groupId));
+        allow delete: if rgIsSuper() || rgIsGroupAdmin(groupId);
       }
       match /auditLog/{docId}      { allow read, write: if rgIsSuper() || rgIsGroupMember(groupId); }
       match /announcements/{docId} { allow read, write: if rgIsSuper() || rgIsGroupMember(groupId); }
-      match /messages/{docId}      { allow read, write: if rgIsSuper() || rgIsGroupMember(groupId); }
+      // Messages: SENDING into a group chat (conv "grp_<docId>") requires membership of
+      // that conversation. READS stay group-member-wide: both apps still list the flat
+      // collection for DM discovery/unread badges, and a per-doc read condition would
+      // deny those whole-collection listeners outright. This is a stated UX boundary,
+      // not full enforcement — a determined member can still read grp_ messages
+      // directly. Closing it needs the per-conversation listener restructure in BOTH
+      // apps (RGContext badges + Messaging screens) as its own change.
+      match /messages/{docId} {
+        allow read: if rgIsSuper() || rgIsGroupMember(groupId);
+        allow create: if rgIsSuper() || (rgIsGroupMember(groupId)
+          && (!request.resource.data.get('conv', '').matches('^grp_.+')
+              || request.auth.uid in get(/databases/$(database)/documents/restaurantGroups/$(groupId)/conversations/$(request.resource.data.conv.split('grp_')[1])).data.get('memberUids', [])));
+        allow update, delete: if rgIsSuper() || rgIsGroupMember(groupId);
+      }
       // ── Help cards ("How to use MyMor") — short read-only guides for staff.
       // Read: any group member (staff read these during onboarding). Write:
       // owner/storeAdmin only (edited in Admin web; content, not HR data).

@@ -719,6 +719,24 @@ export default function StaffDirectoryPage() {
     if (!profile || !groupId || !canContractsView) return;
     loadProfileContracts(profile.id);
   }, [profile, groupId, canContractsView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Keys held by the open profile (venues/{vid}/keys where staffId == profile.id) ──
+  // Subscribed only for viewers holding keys:view — a staff-tier viewer never subscribes,
+  // so the expected rules denial can't pin the error banner (RULE 3). Live listeners per
+  // venue (the KeysPage pattern) so a single failing venue can't blank the others.
+  const canKeysView = can("keys", "view");
+  const [profileKeys, setProfileKeys] = useState({}); // venueId -> rows[]
+  useEffect(() => {
+    setProfileKeys({});
+    if (!profile?.id || !groupId || !canKeysView || !venues.length) return;
+    const unsubs = venues.map((v) =>
+      onSnapshot(query(venueCol(groupId, v.id, "keys"), where("staffId", "==", profile.id)), (s) => {
+        setProfileKeys((p) => ({ ...p, [v.id]: s.docs.map((d) => ({ id: d.id, venueId: v.id, ...d.data() })) }));
+      }, () => noteErr(`keys held (${v.name})`))
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [profile?.id, groupId, canKeysView, venues]); // eslint-disable-line react-hooks/exhaustive-deps
+  const heldKeys = useMemo(() => Object.values(profileKeys).flat(), [profileKeys]);
   // Upload an EXTERNALLY-signed contract PDF: create a MINIMAL contracts doc, then hand the
   // bytes to the EXISTING uploadSignedContract callable — it stores the PDF on the LOCKED
   // Storage path (client can never touch it), flips status → "signed" and adds the staff
@@ -1682,10 +1700,18 @@ export default function StaffDirectoryPage() {
                         {pCerts.map((c, i) => { const st = certStatus(c.expiry); return <span key={i} className={`pill ${st.pill}`}>{c.name}{c.expiry ? ` · ${c.expiry}` : ""}{st.note ? ` (${st.note})` : ""}</span>; })}
                       </span>
                     ) : "Not yet obtained";
+                    const keysCell = heldKeys.length ? (
+                      <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 4 }}>
+                        <span className="pill pill-blue">{heldKeys.length} {heldKeys.length === 1 ? "key" : "keys"}</span>
+                        {heldKeys.map((k) => <span key={`${k.venueId}:${k.id}`} className="pill pill-gray">{k.keyLabel}{venues.length > 1 ? ` · ${venueName(k.venueId)}` : ""}</span>)}
+                      </span>
+                    ) : "None";
                     return [["Employment", profile.type], ["Weekly hours", hoursWk ? `${fmtHours(hoursWk)}h · this week` : "— (no shifts)"], ["Start date", profile.start || "—"],
                       ["End date", profile.endDate || "—"], ["Status", profile.status || "Active"], ["Phone", profile.phone || "—"],
                       ["Stations", (profile.stationNames || []).join(", ") || "—"],
-                      ["Certificates", certCell], ["POS PIN", profile.pin || "— (none)"], ["Admin login", profile.hasAdminLogin ? (profile.email || "yes") : "No"]];
+                      ["Certificates", certCell], ["POS PIN", profile.pin || "— (none)"], ["Admin login", profile.hasAdminLogin ? (profile.email || "yes") : "No"],
+                      // keys:view viewers only — count + which keys, straight from the venue keys records
+                      ...(canKeysView ? [["Keys held", keysCell]] : [])];
                   })().map(([k, v]) => (
                     <div key={k}><div className="form-label">{k}</div><div style={{ fontSize: 13 }}>{v}</div></div>
                   ))}

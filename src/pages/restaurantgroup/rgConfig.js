@@ -66,6 +66,18 @@ export const DEFAULT_EMP_TYPES = ["Casual", "Part-time", "Full-time", "Junior"];
 // in this list — it is PERMANENT: the request forms always append it, and it stores
 // type:"Other" + typeOther:"<free text>" so history never depends on an editable label.
 export const DEFAULT_LEAVE_TYPES = ["Annual Leave", "Sick Leave", "Personal Leave", "Study Leave", "Unpaid Leave", "RDO", "Compassionate Leave"];
+// Temperature unit types. Editable in Settings (group.tempUnitTypes[{name,min,max}]); seed
+// defaults, shown in-memory when none are configured (never auto-written). min/max are the
+// DEFAULT safe range prefilled on a new unit of that type — each unit keeps its own range.
+export const DEFAULT_UNIT_TYPES = [
+  { name: "Fridge", min: 1, max: 5 },
+  { name: "Freezer", min: -22, max: -15 },
+  { name: "Cool room", min: 1, max: 5 },
+  { name: "Hot hold", min: 60, max: 75 },
+  { name: "Grill", min: 165, max: 230 },
+  { name: "Display", min: 1, max: 5 },
+  { name: "Other", min: null, max: null },
+];
 export const SUGGESTED_STATIONS = {
   FOH: ["Counter", "Floor", "Barista", "Bar"],
   BOH: ["Grill", "Salad", "Food Prep", "Restock", "Fryer", "Dishwashing"],

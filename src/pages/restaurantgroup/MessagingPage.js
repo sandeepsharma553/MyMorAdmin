@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp, arrayUnion } from "firebase/firestore";
+import { addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, where, serverTimestamp, arrayUnion } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
 import { useRG } from "./RGContext";
@@ -29,9 +29,13 @@ const Attachment = ({ a, mine }) => {
 };
 
 export default function MessagingPage() {
-  const { groupId, staff, venues, me, myScope, can, showToast, noteErr } = useRG();
+  const { groupId, staff, venues, me, myScope, groupRole, can, showToast, noteErr } = useRG();
   const canPost = can("messages", "edit");
   const canCreateGroup = myScope !== "staff"; // only managers/owners create custom groups
+  // Who may add/remove group-chat members (Job 5): owner/storeAdmin, or an explicit
+  // messages == 'approve' grant in User Management — mirrors rgCanEditChatMembers in
+  // the rules exactly. Never hardcoded per person; the owner decides.
+  const canEditMembers = ["owner", "storeAdmin"].includes(groupRole) || can("messages", "approve");
 
   const myUid = me?.uid || me?.id || null;
   const myStaff = useMemo(
@@ -56,9 +60,14 @@ export default function MessagingPage() {
     if (!groupId) return;
     const u1 = onSnapshot(announcementsCol(groupId), (s) => setAnns(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => { setAnns([]); noteErr("announcements"); });
     const u2 = onSnapshot(messagesCol(groupId), (s) => setMsgs(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => { setMsgs([]); noteErr("messages"); });
-    const u3 = onSnapshot(conversationsCol(groupId), (s) => setConvos(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => { setConvos([]); noteErr("conversations"); });
-    return () => { u1(); u2(); u3(); };
-  }, [groupId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Job 5: only ask for conversations I am a MEMBER of (memberUids carries auth uids)
+    // — matches the member-only read rule; a whole-collection listen would be denied.
+    const u3 = myUid
+      ? onSnapshot(query(conversationsCol(groupId), where("memberUids", "array-contains", myUid)),
+          (s) => setConvos(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => { setConvos([]); noteErr("conversations"); })
+      : undefined;
+    return () => { u1(); u2(); if (u3) u3(); };
+  }, [groupId, myUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nameOf = (id) => { const s = staff.find((x) => x.id === id); return s ? (s.displayName || s.name) : (id === myId ? myName : ""); };
   const contactable = useMemo(
@@ -117,9 +126,10 @@ export default function MessagingPage() {
     venues.filter((v) => myVenueIds.includes(v.id)).forEach((v) => {
       list.push({ key: `venue_${v.id}`, kind: "venue", name: `${v.name} team` });
     });
-    // custom groups I'm a member of
-    convos.filter((c) => (c.memberIds || []).includes(myId)).forEach((c) => {
-      list.push({ key: `grp_${c.id}`, kind: "group", name: c.name, members: c.memberIds || [] });
+    // custom groups I'm a member of (the query already scopes by memberUids; the
+    // memberIds check stays as a belt for owner-created legacy shapes)
+    convos.filter((c) => (c.memberIds || []).includes(myId) || (c.memberUids || []).includes(myUid)).forEach((c) => {
+      list.push({ key: `grp_${c.id}`, kind: "group", name: c.name, members: c.memberIds || [], convo: c });
     });
     // 1:1 DMs derived from messages
     const dmMap = {};
@@ -193,18 +203,52 @@ export default function MessagingPage() {
     catch { showToast("Could not send"); }
   };
 
+  // Member id → auth uid (Job 5). Members are staff ids (picked from `contactable`,
+  // all of whom hold a login) — except a creator with no staff record (the owner),
+  // whose member id IS their auth uid already.
+  const uidForMember = (mid) => {
+    const s = staff.find((x) => x.id === mid);
+    if (s) return s.adminUid || null; // staff without a resolvable uid can't be granted rules access
+    return mid || null; // not a staff record — an owner/admin uid used as the member id
+  };
+  const memberUidsOf = (members) => Array.from(new Set(members.map(uidForMember).filter(Boolean)));
+
   const createGroup = async () => {
     if (!grpName.trim()) return showToast("Name the group");
     if (!grpMembers.length) return showToast("Pick at least one member");
     try {
       const members = Array.from(new Set([...grpMembers, myId]));
+      // memberUids drives the member-only read rule + both apps' scoped queries;
+      // the creator's own uid is always present so the group can't orphan itself.
+      const memberUids = Array.from(new Set([...memberUidsOf(members), ...(myUid ? [myUid] : [])]));
       const ref = await addDoc(conversationsCol(groupId), {
         name: grpName.trim(), type: "group", memberIds: members,
-        memberNames: members.map(nameOf), createdBy: myId, createdByName: myName, createdAt: serverTimestamp(),
+        memberNames: members.map(nameOf), memberUids,
+        createdBy: myId, createdByName: myName, createdByUid: myUid || "", createdAt: serverTimestamp(),
       });
       setActiveKey(`grp_${ref.id}`); setTab("direct"); setPick(null); setGrpName(""); setGrpMembers([]);
       showToast("Group created");
     } catch { showToast("Could not create group"); }
+  };
+
+  // ── Edit group members (Job 5) — WhatsApp-like: whoever is removed loses the
+  // conversation (and, once the member-only rules are live, its history too). ──
+  const [editConv, setEditConv] = useState(null); // conversation doc being edited
+  const openEditMembers = (c) => { setEditConv(c); setGrpMembers([...(c.memberIds || [])]); setPick("editMembers"); };
+  const saveMembers = async () => {
+    if (!editConv) return;
+    const members = Array.from(new Set(grpMembers));
+    if (!members.length) return showToast("A group needs at least one member");
+    const memberUids = memberUidsOf(members);
+    if (!memberUids.length) return showToast("At least one member needs a login");
+    try {
+      await updateDoc(doc(conversationsCol(groupId), editConv.id), {
+        memberIds: members, memberNames: members.map((m) => nameOf(m) || (editConv.memberNames || [])[(editConv.memberIds || []).indexOf(m)] || ""),
+        memberUids, updatedAt: serverTimestamp(),
+      });
+      setPick(null); setEditConv(null); setGrpMembers([]);
+      showToast("Members updated");
+    } catch { showToast("Could not update members"); }
   };
 
   const totalUnread = convList.reduce((a, c) => a + c.unread, 0);
@@ -308,6 +352,10 @@ export default function MessagingPage() {
                 <div style={{ padding: 12, borderBottom: "0.5px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
                   <div className="staff-avatar" style={{ width: 34, height: 34, fontSize: 12, marginBottom: 0, background: activeResolved.kind === "dm" ? undefined : "var(--ink)" }}>{activeResolved.kind === "dm" ? initials({ name: activeResolved.name }) : (activeResolved.kind === "venue" ? "🏠" : "👥")}</div>
                   <div><div style={{ fontSize: 14, fontWeight: 600 }}>{activeResolved.name}</div>{headerSub && <div style={{ fontSize: 11, color: "var(--gray)" }}>{headerSub}</div>}</div>
+                  {/* Job 5: add/remove members — owner/storeAdmin or a messages:approve grant */}
+                  {activeResolved.kind === "group" && activeResolved.convo && canEditMembers && (
+                    <button className="btn btn-sm" style={{ marginLeft: "auto" }} onClick={() => openEditMembers(activeResolved.convo)}>Edit members</button>
+                  )}
                 </div>
                 <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                   {thread.map((m) => {
@@ -369,6 +417,44 @@ export default function MessagingPage() {
               ))}
               {contactable.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", padding: 12 }}>No one has a website login yet.</div>}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit group members (Job 5) — current members (removable) + everyone with a
+          login (addable). Removing someone takes the chat off their screen; with the
+          member-only rules live they lose the history too. */}
+      {pick === "editMembers" && editConv && (
+        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && (setPick(null), setEditConv(null))}>
+          <div className="rg-modal" style={{ maxWidth: 460 }}>
+            <div className="modal-head"><span className="modal-title">Edit members — {editConv.name}</span><button className="modal-close" onClick={() => { setPick(null); setEditConv(null); }}>✕</button></div>
+            <div className="form-group"><label className="form-label">Members ({grpMembers.length})</label>
+              <div style={{ maxHeight: "44vh", overflowY: "auto", border: "0.5px solid var(--border)", borderRadius: 8 }}>
+                {/* current members with no staff record (e.g. the owner) — still removable */}
+                {(editConv.memberIds || []).filter((mid) => !contactable.some((s) => s.id === mid)).map((mid) => {
+                  const on = grpMembers.includes(mid);
+                  const label = nameOf(mid) || (editConv.memberNames || [])[(editConv.memberIds || []).indexOf(mid)] || "Admin";
+                  return (
+                    <label key={mid} className="staff-meta-row" style={{ gap: 10, padding: "8px 10px", borderBottom: "0.5px solid var(--gray-light)", cursor: "pointer" }}>
+                      <input type="checkbox" checked={on} onChange={() => setGrpMembers((p) => on ? p.filter((x) => x !== mid) : [...p, mid])} />
+                      <div className="staff-avatar" style={{ width: 28, height: 28, fontSize: 11, marginBottom: 0 }}>{initials({ name: label })}</div>
+                      <div><div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>Admin login</div></div>
+                    </label>
+                  );
+                })}
+                {contactable.map((s) => {
+                  const on = grpMembers.includes(s.id);
+                  return (
+                    <label key={s.id} className="staff-meta-row" style={{ gap: 10, padding: "8px 10px", borderBottom: "0.5px solid var(--gray-light)", cursor: "pointer" }}>
+                      <input type="checkbox" checked={on} onChange={() => setGrpMembers((p) => on ? p.filter((x) => x !== s.id) : [...p, s.id])} />
+                      <div className="staff-avatar" style={{ width: 28, height: 28, fontSize: 11, marginBottom: 0 }}>{initials(s)}</div>
+                      <div><div style={{ fontSize: 13, fontWeight: 600 }}>{s.displayName || s.name}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{s.role}</div></div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="btn-row"><button className="btn btn-primary" onClick={saveMembers}>Save members</button><button className="btn" onClick={() => { setPick(null); setEditConv(null); }}>Cancel</button></div>
           </div>
         </div>
       )}

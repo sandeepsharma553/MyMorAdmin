@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from "react";
-import { addDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import React, { useEffect, useMemo, useState } from "react";
+import { addDoc, doc, updateDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol, auditLogCol } from "../../utils/restaurantGroupPaths";
+import { staffCol, auditLogCol, venueCol } from "../../utils/restaurantGroupPaths";
 import { RG_MODULES, RG_ROLES, DEFAULT_PERMISSIONS, defaultPermsForStaffRole, roleToGroupRole, roleMeta, levelMeta } from "./rgConfig";
 import { initials } from "./rgUtils";
 
@@ -25,6 +25,27 @@ export default function UserManagementPage() {
     const rank = { storeAdmin: 0, manager: 1, staff: 2 };
     return [...staff].sort((a, b) => (rank[a.groupRole || roleToGroupRole(a.role)] ?? 3) - (rank[b.groupRole || roleToGroupRole(b.role)] ?? 3) || (a.displayName || "").localeCompare(b.displayName || ""));
   }, [staff]);
+
+  // ── Keys held per staff member (venues/{vid}/keys, the KeysPage pattern) ──
+  // Subscribed only for viewers holding keys:view — a viewer without it never subscribes,
+  // so the expected rules denial can't pin the error banner (RULE 3). The column hides too.
+  const canKeysView = can("keys", "view");
+  const [keysByVenue, setKeysByVenue] = useState({}); // venueId -> rows[]
+  useEffect(() => {
+    setKeysByVenue({});
+    if (!groupId || !canKeysView || !venues.length) return;
+    const unsubs = venues.map((v) =>
+      onSnapshot(venueCol(groupId, v.id, "keys"), (s) => {
+        setKeysByVenue((p) => ({ ...p, [v.id]: s.docs.map((d) => ({ id: d.id, ...d.data() })) }));
+      }, () => noteErr(`store keys (${v.name})`))
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [groupId, canKeysView, venues]); // eslint-disable-line react-hooks/exhaustive-deps
+  const keyCountByStaff = useMemo(() => {
+    const m = {};
+    Object.values(keysByVenue).flat().forEach((k) => { if (k.staffId) m[k.staffId] = (m[k.staffId] || 0) + 1; });
+    return m;
+  }, [keysByVenue]);
 
   const [permUser, setPermUser] = useState(null);
   const [permDraft, setPermDraft] = useState({});
@@ -79,7 +100,7 @@ export default function UserManagementPage() {
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
-              <thead><tr><th>User</th><th>Role</th><th>Venues</th><th>Access</th>{showCreds && <><th>Email</th><th>Password</th><th>PIN</th></>}<th style={{ textAlign: "right" }}>Permissions</th></tr></thead>
+              <thead><tr><th>User</th><th>Role</th><th>Venues</th><th>Access</th>{canKeysView && <th>Keys</th>}{showCreds && <><th>Email</th><th>Password</th><th>PIN</th></>}<th style={{ textAlign: "right" }}>Permissions</th></tr></thead>
               <tbody>
                 {/* Super Admin / owner */}
                 <tr>
@@ -90,6 +111,7 @@ export default function UserManagementPage() {
                   <td><span className="pill" style={{ background: "var(--black)", color: "#fff" }}>Super Admin</span></td>
                   <td style={{ fontSize: 11, color: "var(--gray)" }}>All venues</td>
                   <td><span className="pill pill-green">Website login</span></td>
+                  {canKeysView && <td style={{ fontSize: 11, color: "var(--gray)" }}>—</td>}
                   {showCreds && <><td style={{ fontSize: 11 }}>{group?.ownerEmail || "—"}</td><td style={{ fontSize: 11, color: "var(--gray)" }}>(set at creation)</td><td>—</td></>}
                   <td style={{ textAlign: "right", fontSize: 11, color: "var(--gray)" }}>Full access</td>
                 </tr>
@@ -105,6 +127,7 @@ export default function UserManagementPage() {
                       <td><span className="pill" style={{ background: rm.pill, color: rm.text }}>{rm.label}</span></td>
                       <td style={{ fontSize: 11, color: "var(--gray)" }}>{venueLabel(s)}</td>
                       <td>{s.hasAdminLogin ? <span className="pill pill-green" title={s.email}>Website login</span> : <span className="pill pill-gray">PIN only</span>}</td>
+                      {canKeysView && <td>{keyCountByStaff[s.id] ? <span className="pill pill-blue">{keyCountByStaff[s.id]}</span> : <span style={{ fontSize: 11, color: "var(--gray)" }}>—</span>}</td>}
                       {showCreds && <><td style={{ fontSize: 11 }}>{s.email || "—"}</td><td style={{ fontSize: 11, color: "var(--gray)" }}>{s.hasAdminLogin ? "in Staff profile" : "—"}</td><td style={{ fontSize: 11 }}>{s.pin || "—"}</td></>}
                       <td style={{ textAlign: "right" }}>
                         {editable ? <button className="btn btn-sm" onClick={() => openPerms(s)}>Permissions</button> : <span style={{ fontSize: 11, color: "var(--gray)" }}>—</span>}
@@ -112,7 +135,7 @@ export default function UserManagementPage() {
                     </tr>
                   );
                 })}
-                {sorted.length === 0 && <tr><td colSpan={showCreds ? 8 : 5} style={{ color: "var(--gray)" }}>No staff yet — add them in Staff Directory.</td></tr>}
+                {sorted.length === 0 && <tr><td colSpan={(showCreds ? 8 : 5) + (canKeysView ? 1 : 0)} style={{ color: "var(--gray)" }}>No staff yet — add them in Staff Directory.</td></tr>}
               </tbody>
             </table>
           </div>

@@ -3,7 +3,7 @@ import { updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp } from "fire
 import { useRG } from "./RGContext";
 import { venueCol, groupDoc, contractClassificationsDoc, contractDefaultsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
-import { SUGGESTED_STATIONS } from "./rgConfig";
+import { SUGGESTED_STATIONS, DEFAULT_UNIT_TYPES } from "./rgConfig";
 import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaBreakRule, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, empTypeIsSalaried } from "./staffStructureUtils";
 import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS, resolvePosNotePresets } from "./rgStockUtils";
 
@@ -165,8 +165,13 @@ export default function SettingsPage() {
   };
 
   // ── Temperature units (fridges/freezers/etc.) ──
-  const UNIT_TYPES = ["Fridge", "Freezer", "Cool room", "Hot hold", "Grill", "Display", "Other"];
-  const DEFAULT_RANGE = { Fridge: [1, 5], Freezer: [-22, -15], "Cool room": [1, 5], "Hot hold": [60, 75], Grill: [165, 230], Display: [1, 5], Other: ["", ""] };
+  // Unit TYPES are owner-configured on the group doc (group.tempUnitTypes[{name,min,max}]);
+  // DEFAULT_UNIT_TYPES is the in-memory seed when none are configured (never auto-written).
+  // A type's min/max is only the DEFAULT range prefilled on new units — renaming or removing
+  // a type never touches existing units or past readings (they keep their own stored strings).
+  const unitTypes = group?.tempUnitTypes?.length ? group.tempUnitTypes : DEFAULT_UNIT_TYPES;
+  // Case-insensitive lookup: Ops historically stored lowercase type keys ("fridge").
+  const unitTypeOf = (name) => unitTypes.find((t) => (t.name || "").toLowerCase() === String(name || "").toLowerCase());
   const SUGGESTED_UNITS = [["Fridge 1", "Fridge"], ["Fridge 2", "Fridge"], ["Freezer 1", "Freezer"], ["Cool room", "Cool room"], ["Hot hold", "Hot hold"], ["Grill", "Grill"]];
   const venueEquipment = useMemo(() => equipment.filter((e) => e.venueId === venueTab), [equipment, venueTab]);
   const [eqForm, setEqForm] = useState(null); // {id, name, type, minTemp, maxTemp}
@@ -192,13 +197,36 @@ export default function SettingsPage() {
   };
   const quickAddUnit = async (name, type) => {
     if (venueEquipment.some((e) => e.name.toLowerCase() === name.toLowerCase())) return;
-    const [mn, mx] = DEFAULT_RANGE[type] || ["", ""];
-    try { await setDoc(doc(venueCol(groupId, venueTab, "equipment"), slug(name)), { name, type, minTemp: mn === "" ? null : mn, maxTemp: mx === "" ? null : mx, venueId: venueTab, order: venueEquipment.length, createdAt: serverTimestamp() }); }
+    const cfg = unitTypeOf(type);
+    try { await setDoc(doc(venueCol(groupId, venueTab, "equipment"), slug(name)), { name, type, minTemp: cfg?.min ?? null, maxTemp: cfg?.max ?? null, venueId: venueTab, order: venueEquipment.length, createdAt: serverTimestamp() }); }
     catch { showToast("Could not add"); }
   };
   const removeUnit = async (e) => {
     try { await deleteDoc(doc(venueCol(groupId, venueTab, "equipment"), e.id)); showToast("Unit removed"); }
     catch { showToast("Could not remove"); }
+  };
+  // Unit-type editor — PH pattern: edits stay in local rows, a single Save writes the group doc.
+  // typeRows === null means "mirror the live config"; it becomes an array on first edit.
+  const [typeRows, setTypeRows] = useState(null);
+  const shownTypeRows = typeRows ?? unitTypes.map((t) => ({ name: t.name || "", min: t.min ?? "", max: t.max ?? "" }));
+  const typeSet = (i, k, v) => setTypeRows(shownTypeRows.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)));
+  const typeAdd = () => setTypeRows([...shownTypeRows, { name: "", min: "", max: "" }]);
+  const typeRemove = (i) => setTypeRows(shownTypeRows.filter((_, idx) => idx !== i));
+  const saveUnitTypes = async () => {
+    const rows = shownTypeRows.map((r) => ({ ...r, name: r.name.trim() })).filter((r) => r.name);
+    if (!rows.length) return showToast("Keep at least one unit type");
+    const names = rows.map((r) => r.name.toLowerCase());
+    if (new Set(names).size !== names.length) return showToast("Unit type names must be unique");
+    const next = [];
+    for (const r of rows) {
+      const mn = r.min === "" ? null : Number(r.min);
+      const mx = r.max === "" ? null : Number(r.max);
+      if ((r.min !== "" && isNaN(mn)) || (r.max !== "" && isNaN(mx))) return showToast("Default min and max must be numbers");
+      if (mn !== null && mx !== null && mn >= mx) return showToast(`${r.name}: default min must be less than max`);
+      next.push({ name: r.name, min: mn, max: mx });
+    }
+    try { await updateDoc(groupDoc(groupId), { tempUnitTypes: next }); setTypeRows(null); showToast("Unit types saved"); }
+    catch { showToast("Could not save unit types"); }
   };
 
   // ── Roles ──
@@ -490,13 +518,13 @@ export default function SettingsPage() {
           <div className="card">
             <div className="card-head">
               <div><span className="card-title">Temperature units</span><span className="card-sub">{venues.find((v) => v.id === venueTab)?.name} — fridges, freezers, grills… with safe ranges for the log</span></div>
-              {editable && <button className="btn btn-sm btn-primary" onClick={() => setEqForm({ id: null, name: "", type: "Fridge", minTemp: 1, maxTemp: 5 })}>+ Add unit</button>}
+              {editable && <button className="btn btn-sm btn-primary" onClick={() => setEqForm({ id: null, name: "", type: unitTypes[0]?.name || "", minTemp: unitTypes[0]?.min ?? "", maxTemp: unitTypes[0]?.max ?? "" })}>+ Add unit</button>}
             </div>
 
             {editable && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
                 <span style={{ fontSize: 11, color: "var(--gray)", alignSelf: "center" }}>Quick add:</span>
-                {SUGGESTED_UNITS.map(([n, t]) => (
+                {SUGGESTED_UNITS.filter(([, t]) => unitTypeOf(t)).map(([n, t]) => (
                   <button key={n} className="btn btn-sm" onClick={() => quickAddUnit(n, t)} disabled={venueEquipment.some((e) => e.name.toLowerCase() === n.toLowerCase())}>{n}</button>
                 ))}
               </div>
@@ -516,6 +544,27 @@ export default function SettingsPage() {
               ))}
               {venueEquipment.length === 0 && <div style={{ fontSize: 13, color: "var(--gray)" }}>No units yet for this venue.</div>}
             </div>
+          </div>
+
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="card-head">
+              <div><span className="card-title">Unit types</span><span className="card-sub">Shared across all venues — each type sets the default safe range prefilled on a new unit. Renaming or removing a type never changes existing units or past readings.</span></div>
+              {editable && <button className="btn btn-sm" onClick={typeAdd}>+ Add type</button>}
+            </div>
+            {shownTypeRows.map((r, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                <input className="form-input" style={{ flex: 1 }} value={r.name} disabled={!editable} onChange={(e) => typeSet(i, "name", e.target.value)} placeholder="e.g. Blast chiller" />
+                <input className="form-input" style={{ width: 120 }} type="number" value={r.min} disabled={!editable} onChange={(e) => typeSet(i, "min", e.target.value)} placeholder="Min °C" />
+                <input className="form-input" style={{ width: 120 }} type="number" value={r.max} disabled={!editable} onChange={(e) => typeSet(i, "max", e.target.value)} placeholder="Max °C" />
+                {editable && <button className="btn btn-sm btn-danger" onClick={() => typeRemove(i)} disabled={shownTypeRows.length <= 1}>✕</button>}
+              </div>
+            ))}
+            {editable && typeRows && (
+              <div style={{ marginTop: 8 }}>
+                <button className="btn btn-sm btn-primary" onClick={saveUnitTypes}>Save unit types</button>
+                <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => setTypeRows(null)}>Cancel</button>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -795,7 +844,9 @@ export default function SettingsPage() {
             <div className="modal-head"><span className="modal-title">{eqForm.id ? "Edit unit" : "New unit"}</span><button className="modal-close" onClick={() => setEqForm(null)}>✕</button></div>
             <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={eqForm.name} onChange={(e) => setEqForm((p) => ({ ...p, name: e.target.value }))} placeholder="Fridge 1" /></div>
             <div className="form-group"><label className="form-label">Type</label>
-              <select className="form-input" value={eqForm.type} onChange={(e) => { const t = e.target.value; const [mn, mx] = DEFAULT_RANGE[t] || ["", ""]; setEqForm((p) => ({ ...p, type: t, minTemp: mn, maxTemp: mx })); }}>{UNIT_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+              {/* options = the group's configured unit types; the unit's CURRENT type is unioned
+                  in (first) when it's no longer in the list, so editing never drops it */}
+              <select className="form-input" value={unitTypeOf(eqForm.type)?.name ?? eqForm.type} onChange={(e) => { const t = e.target.value; const cfg = unitTypeOf(t); setEqForm((p) => ({ ...p, type: t, minTemp: cfg?.min ?? "", maxTemp: cfg?.max ?? "" })); }}>{[...(eqForm.type && !unitTypeOf(eqForm.type) ? [eqForm.type] : []), ...unitTypes.map((t) => t.name)].map((t) => <option key={t}>{t}</option>)}</select>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div className="form-group"><label className="form-label">Safe min (°C)</label><input type="number" className="form-input" value={eqForm.minTemp} onChange={(e) => setEqForm((p) => ({ ...p, minTemp: e.target.value }))} placeholder="e.g. 1" /></div>
