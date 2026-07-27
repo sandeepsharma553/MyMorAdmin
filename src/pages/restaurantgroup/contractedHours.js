@@ -64,10 +64,22 @@ export const fmtContractedRange = (min, max, suffix = "h/wk") => {
   return hi != null && hi > lo ? `${lo}–${hi}${suffix}` : `${lo}${suffix}`;
 };
 
-// Staff-doc (mirror) variant with the Casual gate baked in — the planner's two sites call
-// ONLY this, so the gate can't drift between the main grid and the split pane.
+// ONLY Full-time and Part-time staff carry a contracted-hours line (client ruling,
+// confirmed by Chirag) — Junior and Casual no longer show one. Employment types are
+// OWNER-EDITABLE free text (a group can rename them), so this is an ALLOWLIST match
+// across all of type/empType/employmentType, case-insensitive — the staffIsCasual
+// convention in rgComplianceUtils, never a === on one field. A renamed type only
+// keeps its line if its name still contains "full/part(-)time"; anything else
+// (e.g. a bespoke "Salaried Chef" type) reads as not-contracted — rename-aware
+// matching beats the old exact-"Casual" check, which missed lowercase and renames.
+export const staffIsContractedType = (s) =>
+  /full[\s-]?time|part[\s-]?time/i.test(String(s?.type || s?.empType || s?.employmentType || ""));
+
+// Staff-doc (mirror) variant with the employment-type gate baked in — the planner's two
+// sites AND contractedWeekStatus call ONLY this, so the gate can't drift between the
+// main grid, the split pane, the under-contract strip and the hours-owed calculator.
 export const contractedLabelForStaff = (s) =>
-  !s || s.type === "Casual" ? null : fmtContractedRange(s.contractedWeeklyHours, s.contractedWeeklyHoursMax);
+  !s || !staffIsContractedType(s) ? null : fmtContractedRange(s.contractedWeeklyHours, s.contractedWeeklyHoursMax);
 
 // ── Issue 6 (parts A+B): contracted vs rostered — ONE calculator feeding both the Hours
 // cell and the under-contract strip, so the two can never disagree. ALL-VENUES by design:
