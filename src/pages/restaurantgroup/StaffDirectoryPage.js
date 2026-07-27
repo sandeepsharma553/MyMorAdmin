@@ -14,10 +14,10 @@ import { showInActiveList } from "./completionWindow";
 import { isJuniorType, isMinorDob } from "./staffMinorUtils";
 import { orderItemsForStaff, isSuggested } from "./assignmentUtils";
 import { staffAreas, roleConfiguredArea, isMultiArea, stationsForVenue, empTypeIsSalaried, rateSplitFromPrivate } from "./staffStructureUtils";
-import { contractedNum, contractedSplitFromPrivate } from "./contractedHours";
+import { contractedNum, contractedSplitFromPrivate, contractedWeekStatus } from "./contractedHours";
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
-import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, fmtHours, effectiveBreak } from "./rgUtils";
+import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, weekKeyOf, localDateKey, fmtHours, effectiveBreak } from "./rgUtils";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
@@ -185,6 +185,13 @@ export default function StaffDirectoryPage() {
   const [showPayroll, setShowPayroll] = useState(false);
   const [payroll, setPayroll] = useState(null); // private payroll doc for the open profile
   const [profileTab, setProfileTab] = useState("profile"); // profile | history
+  // ── Hours owed (Job 7A) — owner records how many hours a staffer is short over a
+  // date range. `hoursOwed` permission module (owner-only by default, grantable in
+  // User Management — never hardcoded). Entries live on the staff doc: hoursOwed[]
+  // { id, startDate, endDate, calculated, override, note, at, by }.
+  const canHoursOwed = can("hoursOwed", "edit");
+  const [hoForm, setHoForm] = useState({ from: "", to: "", override: "", note: "" });
+  const [hoCalc, setHoCalc] = useState(null); // { calculated, weeks[] } after Calculate
   const [certDraft, setCertDraft] = useState({ name: "RSA", other: "", expiry: "", file: null });
   const [docFile, setDocFile] = useState(null); // a document to upload for the staff to sign
   const [certFileKey, setCertFileKey] = useState(0); // bump to clear the cert file input after each add
@@ -737,6 +744,65 @@ export default function StaffDirectoryPage() {
     return () => unsubs.forEach((u) => u());
   }, [profile?.id, groupId, canKeysView, venues]); // eslint-disable-line react-hooks/exhaustive-deps
   const heldKeys = useMemo(() => Object.values(profileKeys).flat(), [profileKeys]);
+
+  useEffect(() => { setHoForm({ from: "", to: "", override: "", note: "" }); setHoCalc(null); }, [profile?.id]);
+  // ── Hours owed (Job 7A) handlers ──
+  // calculated = Σ contractedWeekStatus(...).shortBy over every week the range touches —
+  // the planner's ONE calculator, never a rewrite. Boundary weeks count WHOLE (the
+  // contract is weekly; a range that starts mid-week still judges that whole week).
+  const computeHoursOwed = () => {
+    if (!hoForm.from || !hoForm.to || hoForm.from > hoForm.to) return showToast("Pick a valid date range (from ≤ to)");
+    const [fy, fm, fd] = hoForm.from.split("-").map(Number);
+    const start = new Date(fy, fm - 1, fd);
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7)); // local Monday of the first week
+    const weeks = [];
+    for (const d = new Date(start); localDateKey(d) <= hoForm.to; d.setDate(d.getDate() + 7)) {
+      const wk = weekKeyOf(new Date(d));
+      const staffShifts = shifts.filter((sh) => sh.staffId === profile.id && (sh.weekKey || "") === wk);
+      // LEAVE WEEKS COUNT AS 0 SHORT: the Shift Planner shows no under-hours warning
+      // for a week with approved leave (contractedWeekStatus's onLeave arm → status
+      // "leave", shortBy 0, NOT prorated — "a leave week is not an under-rostered
+      // week"). The same rule must hold here, or the owner would record hours owed
+      // for a week the planner itself excuses.
+      const days = Array.from({ length: 7 }, (_, i) => { const x = new Date(d); x.setDate(x.getDate() + i); return localDateKey(x); });
+      const onLeave = (leave || []).some((l) => l.status === "Approved" && l.staffId === profile.id
+        && days.some((k) => (l.startDate || "") <= k && (l.endDate || l.startDate || "") >= k));
+      const cw = contractedWeekStatus(profile, staffShifts, (sh) => effectiveBreak(sh, stations, group).paidHours, onLeave);
+      weeks.push({ wk, monday: localDateKey(d), status: cw.status, shortBy: cw.shortBy, hours: cw.hours, min: cw.min });
+    }
+    const calculated = Math.round(weeks.reduce((a, w) => a + w.shortBy, 0) * 100) / 100;
+    setHoCalc({ calculated, weeks });
+  };
+  const saveHoursOwed = async () => {
+    if (!hoCalc) return showToast("Calculate the range first");
+    const override = hoForm.override === "" ? null : Number(hoForm.override);
+    if (hoForm.override !== "" && (isNaN(override) || override < 0)) return showToast("Override must be a number");
+    const entry = {
+      id: `ho-${Date.now()}`,
+      startDate: hoForm.from, endDate: hoForm.to, // business dates — local YYYY-MM-DD from the inputs
+      calculated: hoCalc.calculated,
+      override, // null = owner accepted the calculated number
+      note: (hoForm.note || "").trim(),
+      at: new Date().toISOString(), // a MOMENT, not a business date — ISO is correct here (arrayUnion can't hold serverTimestamp)
+      by: actorName,
+    };
+    try {
+      await updateDoc(staffDoc(groupId, profile.id), { hoursOwed: arrayUnion(entry), updatedAt: serverTimestamp() });
+      setProfile((p) => ({ ...p, hoursOwed: [...(p.hoursOwed || []), entry] }));
+      logChange("staff.hoursOwed", `Hours owed recorded for ${fullName(profile)}: ${override ?? hoCalc.calculated}h (${hoForm.from} → ${hoForm.to})`, { staffId: profile.id });
+      setHoForm({ from: "", to: "", override: "", note: "" }); setHoCalc(null);
+      showToast("Hours owed entry saved");
+    } catch { showToast("Could not save hours owed"); }
+  };
+  const deleteHoursOwed = async (entry) => {
+    if (!window.confirm(`Delete the hours-owed entry ${entry.startDate} → ${entry.endDate}?`)) return;
+    try {
+      await updateDoc(staffDoc(groupId, profile.id), { hoursOwed: arrayRemove(entry), updatedAt: serverTimestamp() });
+      setProfile((p) => ({ ...p, hoursOwed: (p.hoursOwed || []).filter((h) => h.id !== entry.id) }));
+      logChange("staff.hoursOwed", `Hours owed entry deleted for ${fullName(profile)} (${entry.startDate} → ${entry.endDate})`, { staffId: profile.id });
+      showToast("Entry deleted");
+    } catch { showToast("Could not delete entry"); }
+  };
   // Upload an EXTERNALLY-signed contract PDF: create a MINIMAL contracts doc, then hand the
   // bytes to the EXISTING uploadSignedContract callable — it stores the PDF on the LOCKED
   // Storage path (client can never touch it), flips status → "signed" and adds the staff
@@ -1115,6 +1181,12 @@ export default function StaffDirectoryPage() {
       ...(profile.records || []).map((r) => ({ at: r.at, by: r.by, tag: r.type, text: r.note })),
       ...tDone.filter((a) => a.verifyNote).map((a) => ({ at: a.verifiedAt, by: a.verifiedBy, tag: "Training sign-off", text: `${a.moduleTitle}: ${a.verifyNote}` })),
       ...notes.map((n) => ({ at: n.createdAt || n.at, by: n.by, tag: n.type || "Note", text: n.note || n.text })),
+      // Hours owed (Job 7A): the override shows FIRST but the calculated number stays
+      // visible, so a changed figure is never silent.
+      ...(profile.hoursOwed || []).map((h) => ({
+        at: h.at, by: h.by, tag: "Hours owed",
+        text: `${h.startDate} → ${h.endDate}: ${h.override != null ? `${h.override}h owed (override — calculated ${h.calculated}h)` : `${h.calculated}h owed`}${h.note ? ` — ${h.note}` : ""}`,
+      })),
     ].filter((t) => t.text).sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
     const Stat = ({ n, l }) => <div style={{ flex: 1, textAlign: "center", padding: "8px 4px", background: "var(--gray-light)", borderRadius: 8 }}><div style={{ fontSize: 18, fontWeight: 700 }}>{n}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{l}</div></div>;
     // hours worked by period, split Mon–Fri vs Sat/Sun (shift date = weekKey + day index)
@@ -1716,6 +1788,46 @@ export default function StaffDirectoryPage() {
                     <div key={k}><div className="form-label">{k}</div><div style={{ fontSize: 13 }}>{v}</div></div>
                   ))}
                 </div>
+
+                {/* ── Hours owed (Job 7A) — owner-only editor + entries. Both numbers
+                    always show when overridden, so a change is never silent. */}
+                {canHoursOwed && (
+                  <div style={{ marginTop: 16 }}>
+                    <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">Hours owed</span><span className="card-sub">contracted minus rostered over a date range — leave weeks count as 0</span></div>
+                    {(profile.hoursOwed || []).map((h) => (
+                      <div key={h.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)", gap: 8, flexWrap: "wrap" }}>
+                        <span>
+                          <strong>{h.startDate} → {h.endDate}</strong>{" · "}
+                          {h.override != null
+                            ? <><span className="pill pill-amber">{h.override}h owed (override)</span> <span style={{ color: "var(--gray)" }}>calculated {h.calculated}h</span></>
+                            : <span className="pill pill-blue">{h.calculated}h owed</span>}
+                          {h.note ? <span style={{ color: "var(--gray)" }}> — {h.note}</span> : null}
+                          <span style={{ color: "var(--gray)", fontSize: 10 }}> · {h.by}{h.at ? ` · ${tsLabel(h.at)}` : ""}</span>
+                        </span>
+                        <button className="btn btn-sm btn-danger" onClick={() => deleteHoursOwed(h)}>✕</button>
+                      </div>
+                    ))}
+                    {!(profile.hoursOwed || []).length && <div style={{ fontSize: 12, color: "var(--gray)" }}>No hours-owed entries yet.</div>}
+                    <div style={{ display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap", marginTop: 10 }}>
+                      <div className="form-group" style={{ margin: 0 }}><label className="form-label" style={{ fontSize: 11 }}>From</label><input type="date" className="form-input" value={hoForm.from} onChange={(e) => { setHoForm((p) => ({ ...p, from: e.target.value })); setHoCalc(null); }} /></div>
+                      <div className="form-group" style={{ margin: 0 }}><label className="form-label" style={{ fontSize: 11 }}>To</label><input type="date" className="form-input" value={hoForm.to} onChange={(e) => { setHoForm((p) => ({ ...p, to: e.target.value })); setHoCalc(null); }} /></div>
+                      <button className="btn btn-sm" onClick={computeHoursOwed}>Calculate</button>
+                    </div>
+                    {hoCalc && (
+                      <div style={{ marginTop: 10, background: "var(--gray-light)", borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ fontSize: 13 }}>Calculated: <strong>{hoCalc.calculated}h short</strong> <span style={{ color: "var(--gray)", fontSize: 11 }}>across {hoCalc.weeks.length} week{hoCalc.weeks.length === 1 ? "" : "s"}</span></div>
+                        <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>
+                          {hoCalc.weeks.map((w) => `${w.monday}: ${w.status === "leave" ? "leave (0)" : w.status === "none" ? "no contract (0)" : `${fmtHours(w.shortBy)}h short`}`).join(" · ")}
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap", marginTop: 8 }}>
+                          <div className="form-group" style={{ margin: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Override (optional)</label><input type="number" min="0" step="0.25" className="form-input" style={{ width: 120 }} value={hoForm.override} onChange={(e) => setHoForm((p) => ({ ...p, override: e.target.value }))} placeholder={`${hoCalc.calculated}`} /></div>
+                          <div className="form-group" style={{ margin: 0, flex: 1, minWidth: 160 }}><label className="form-label" style={{ fontSize: 11 }}>Note (optional)</label><input className="form-input" value={hoForm.note} onChange={(e) => setHoForm((p) => ({ ...p, note: e.target.value }))} placeholder="e.g. to be made up in September" /></div>
+                          <button className="btn btn-sm btn-primary" onClick={saveHoursOwed}>Save entry</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Documents to sign (#8): owner uploads, staff e-acknowledges */}
                 <div style={{ marginTop: 16 }}>

@@ -29,6 +29,12 @@ export const RG_MODULES = [
   // An explicit permissions.pos = "none" revokes the POS for an individual.
   { key: "pos", label: "POS", path: "/rg/pos" },
   { key: "supplier", label: "Supplier Ordering", path: "/rg/supplier" },
+  // Hours owed (Job 7) — recording how many hours a staffer is short over a date range.
+  // NO page of its own: the editor lives inside the Staff Directory profile, so `path`
+  // points there. Entering hours owed is an OWNER job by default (edit seeded to owner
+  // only); the owner can grant others in User Management — never hardcoded. Mirrored in
+  // MyMorOps lib/rgConfig (keep levels in sync — shared employee.permissions data).
+  { key: "hoursOwed", label: "Hours Owed", path: "/rg/staff" },
   // Keys — who holds physical keys to which store. Deliberately a simple record list,
   // not a workflow. Levels: admin edit, manager view, staff none — and NO approve
   // (permissions.test.js enforces that only leave/availability carry approve).
@@ -111,10 +117,10 @@ export const RG_ROLES = [
 
 // Default permission matrix per role (per module → level).
 export const DEFAULT_PERMISSIONS = {
-  owner: { staff: "edit", shifts: "edit", leave: "approve", availability: "approve", training: "edit", checklists: "edit", temperature: "edit", performance: "edit", reports: "view", messages: "edit", notifications: "edit", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", pos: "edit", supplier: "edit", keys: "edit", compliance: "edit", contracts: "edit" },
-  storeAdmin: { staff: "edit", shifts: "edit", leave: "approve", availability: "approve", training: "edit", checklists: "edit", temperature: "edit", performance: "view", reports: "view", messages: "edit", notifications: "edit", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", pos: "edit", supplier: "edit", keys: "edit", compliance: "edit", contracts: "edit" },
-  manager: { staff: "view", shifts: "edit", leave: "edit", availability: "approve", training: "edit", checklists: "edit", temperature: "edit", performance: "view", reports: "view", messages: "edit", notifications: "view", calendar: "view", usermgmt: "none", settings: "none", stock: "edit", menus: "edit", pos: "edit", supplier: "view", keys: "view", compliance: "edit", contracts: "none" },
-  staff: { staff: "none", shifts: "view", leave: "view", availability: "view", training: "view", checklists: "edit", temperature: "edit", performance: "none", reports: "none", messages: "view", notifications: "none", calendar: "view", usermgmt: "none", settings: "none", stock: "none", menus: "none", pos: "view", supplier: "none", keys: "none", compliance: "view", contracts: "none" },
+  owner: { staff: "edit", shifts: "edit", leave: "approve", availability: "approve", training: "edit", checklists: "edit", temperature: "edit", performance: "edit", reports: "view", messages: "edit", notifications: "edit", hoursOwed: "edit", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", pos: "edit", supplier: "edit", keys: "edit", compliance: "edit", contracts: "edit" },
+  storeAdmin: { staff: "edit", shifts: "edit", leave: "approve", availability: "approve", training: "edit", checklists: "edit", temperature: "edit", performance: "view", reports: "view", messages: "edit", notifications: "edit", hoursOwed: "none", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", pos: "edit", supplier: "edit", keys: "edit", compliance: "edit", contracts: "edit" },
+  manager: { staff: "view", shifts: "edit", leave: "edit", availability: "approve", training: "edit", checklists: "edit", temperature: "edit", performance: "view", reports: "view", messages: "edit", notifications: "view", hoursOwed: "none", calendar: "view", usermgmt: "none", settings: "none", stock: "edit", menus: "edit", pos: "edit", supplier: "view", keys: "view", compliance: "edit", contracts: "none" },
+  staff: { staff: "none", shifts: "view", leave: "view", availability: "view", training: "view", checklists: "edit", temperature: "edit", performance: "none", reports: "none", messages: "view", notifications: "none", hoursOwed: "none", calendar: "view", usermgmt: "none", settings: "none", stock: "none", menus: "none", pos: "view", supplier: "none", keys: "none", compliance: "view", contracts: "none" },
 };
 
 export const defaultPermsForRole = (role) => ({ ...(DEFAULT_PERMISSIONS[role] || DEFAULT_PERMISSIONS.staff) });
