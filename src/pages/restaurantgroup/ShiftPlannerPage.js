@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot, deleteField } from "firebase/firestore";
+import { addDoc, updateDoc, deleteDoc, doc, collection, getDoc, getDocs, query, where, serverTimestamp, onSnapshot, deleteField } from "firebase/firestore";
 import { useRG } from "./RGContext";
 import { venueCol, staffInVenue, publicHolidaysDoc, auditLogCol } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
@@ -7,6 +7,8 @@ import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, bounded
 import { staffAreas, staffAtStation, areaBreakRule, areaPinned, areaExclusive, orderedAreas, shiftSectionArea, shiftAreaOf as shiftAreaOfShared } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import { contractedLabelForStaff, contractedWeekStatus, fmtContractedRange } from "./contractedHours";
+import { newClockInPayload, reduceState, computeWorked, toMillis } from "./timeEntry";
+import { matchTimeEntry } from "./shiftTimeLink";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 import AvailabilityEditor from "./AvailabilityEditor";
 
@@ -60,7 +62,7 @@ const cellClass = (type) =>
 // from the owner's configured areas (group.areas / areaOrder / areaBreak). See groupedRows.
 
 export default function ShiftPlannerPage() {
-  const { groupId, group, staff, scopedStaff, shifts, venues, stations, roles, assignments, perfNotes, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, me, myStaff, myScope, noteErr, myVenues } = useRG();
+  const { groupId, group, staff, scopedStaff, shifts, timeEntries, venues, stations, roles, assignments, perfNotes, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, me, myStaff, myScope, noteErr, myVenues } = useRG();
   const canEdit = can("shifts", "edit");
   // Amend-from-planner (availability:edit — managers/owners hold approve, which ranks
   // above edit): the availability chip opens the SHARED AvailabilityEditor for that
@@ -154,35 +156,48 @@ export default function ShiftPlannerPage() {
   // fallback (NOT grey — light grey is reserved for the availability state, a later batch).
   const venueColorOf = (venueId) => venues.find((v) => v.id === venueId)?.color || "#334155";
 
-  // ── Clock in / out (staff, today's own shift) ──
+  // ── Clock in / out (staff, today's own shift) — Job 9 ──
+  // Writes go to venues/{v}/timeEntries — the Availability-clock collection, the ONE
+  // source of truth for worked time and pay (decision: Ops wins). Admin NEVER writes
+  // clock times onto the shift document any more; the legacy clockInAt/... fields
+  // still on old shift docs are frozen history nobody reads (deliberately ignored,
+  // not migrated). Entry/break machinery is the shared pure module (timeEntry.js,
+  // mirror of Ops) — state machine + breaks-as-subcollection-docs.
   const todayIdx = (new Date().getDay() + 6) % 7;
-  const fmtClock = (iso) => { try { return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
+  const todayKeyLocal = localDateKey(new Date());
+  // Timestamp | Date | ISO string → local h:mm label ("" when unresolved/absent)
+  const fmtClock = (v) => { const ms = toMillis(typeof v === "string" ? new Date(v) : v); return ms == null ? "" : new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); };
   const curWk = weekKeyOf(mondayOf(0));
   const myTodayShifts = useMemo(
     () => (myStaff ? shifts.filter((sh) => sh.staffId === myStaff.id && (sh.weekKey || curWk) === curWk && sh.day === todayIdx) : []),
     [shifts, myStaff, curWk, todayIdx]
   );
-  const CLOCK_LABELS = { clockInAt: "Clocked in — have a good shift!", breakStartAt: "Break started", breakEndAt: "Back from break", clockOutAt: "Clocked out — see you next time!" };
-  const clock = async (sh, field) => {
+  const myEntryFor = (venueId) => (timeEntries || []).find((e) => myStaff && e.staffId === myStaff.id && e.businessDate === todayKeyLocal && e.venueId === venueId) || null;
+  const entryRefOf = (e) => doc(venueCol(groupId, e.venueId, "timeEntries"), e.id);
+  const breaksColOf = (e) => collection(entryRefOf(e), "breaks");
+  const clockIn = async (sh) => {
+    if (!myStaff) return;
     try {
-      await updateDoc(doc(venueCol(groupId, sh.venueId, "shifts"), sh.id), { [field]: new Date().toISOString() });
-      showToast(CLOCK_LABELS[field] || "Time recorded");
-    } catch { showToast("Could not record time"); }
+      const v = venues.find((x) => x.id === sh.venueId);
+      await addDoc(venueCol(groupId, sh.venueId, "timeEntries"), {
+        ...newClockInPayload({ staff: myStaff, venueId: sh.venueId, venueName: v?.name || "", awardCode: v?.awardCode ?? null, enteredByUid: me?.uid || me?.id || "" }),
+        clockInAt: serverTimestamp(), createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+      });
+      showToast("Clocked in — have a good shift!");
+    } catch { showToast("Could not clock in"); }
   };
-  // admin punch edit: set a clock field to a time-of-day on the shift's own date, or clear it
-  // CLOCK edits only touch TODAY's shifts of the CURRENT week (myToday filters
-  // weekKey === curWk), so the local current-week Monday is the correct anchor.
-  // Never re-parse the stored weekKey — it's UTC-shifted, which anchored the
-  // written clock timestamps one day early.
-  const shiftDateObj = (sh) => { const d = mondayOf(0); d.setDate(d.getDate() + (sh.day || 0)); return d; };
-  const hhmm = (iso) => { if (!iso) return ""; const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
-  const setClock = async (sh, field, timeStr) => {
+  const clockAction = async (entry, action) => {
+    const patch = reduceState(entry, action);
+    if (!patch) return;
     try {
-      let val = null;
-      if (timeStr) { const [h, m] = timeStr.split(":").map(Number); const d = shiftDateObj(sh); d.setHours(h || 0, m || 0, 0, 0); val = d.toISOString(); }
-      await updateDoc(doc(venueCol(groupId, sh.venueId, "shifts"), sh.id), { [field]: val });
-      setShiftDetail((p) => (p && p.id === sh.id ? { ...p, [field]: val } : p));
-    } catch { showToast("Could not update time"); }
+      if (patch.break === "open") await addDoc(breaksColOf(entry), { startAt: serverTimestamp(), endAt: null, paid: false });
+      if (patch.break === "close" || patch.break === "closeIfOpen") {
+        const open = await getDocs(query(breaksColOf(entry), where("endAt", "==", null)));
+        await Promise.all(open.docs.map((b) => updateDoc(b.ref, { endAt: serverTimestamp() })));
+      }
+      await updateDoc(entryRefOf(entry), { ...patch.entryUpdate, updatedAt: serverTimestamp() });
+      showToast(action === "pause" ? "Break started" : action === "resume" ? "Back from break" : "Clocked out — see you next time!");
+    } catch { showToast("Could not record time"); }
   };
   // manual break override — same updateDoc path as the punch edits. null clears the field
   // (deleteField) so the shift reverts to the area-derived automatic value. The stored
@@ -831,18 +846,23 @@ export default function ShiftPlannerPage() {
       {myTodayShifts.length > 0 && (
         <div className="card" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <strong style={{ fontSize: 13 }}>⏱ Your shift today</strong>
-          {myTodayShifts.map((sh) => (
-            <div key={sh.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-              <span>{sh.start}–{sh.end} · {sh.venue}{sh.station ? ` · ${sh.station}` : ""}</span>
-              {sh.clockInAt && <span className="pill pill-green">In {fmtClock(sh.clockInAt)}</span>}
-              {sh.breakStartAt && <span className="pill pill-amber">Break {fmtClock(sh.breakStartAt)}{sh.breakEndAt ? `–${fmtClock(sh.breakEndAt)}` : ""}</span>}
-              {sh.clockOutAt && <span className="pill pill-gray">Out {fmtClock(sh.clockOutAt)}</span>}
-              {!sh.clockInAt && <button className="btn btn-sm btn-primary" onClick={() => clock(sh, "clockInAt")}>Clock in</button>}
-              {sh.clockInAt && !sh.clockOutAt && !sh.breakStartAt && <button className="btn btn-sm" onClick={() => clock(sh, "breakStartAt")}>Start break</button>}
-              {sh.breakStartAt && !sh.breakEndAt && !sh.clockOutAt && <button className="btn btn-sm" onClick={() => clock(sh, "breakEndAt")}>End break</button>}
-              {sh.clockInAt && !sh.clockOutAt && (!sh.breakStartAt || sh.breakEndAt) && <button className="btn btn-sm" onClick={() => clock(sh, "clockOutAt")}>Clock out</button>}
-            </div>
-          ))}
+          {/* Job 9: buttons drive the timeEntries state machine (Ops's clock system) —
+              the shift doc is never written. Legacy sh.clockInAt pills are GONE. */}
+          {myTodayShifts.map((sh) => {
+            const en = myEntryFor(sh.venueId);
+            return (
+              <div key={sh.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                <span>{sh.start}–{sh.end} · {sh.venue}{sh.station ? ` · ${sh.station}` : ""}</span>
+                {en?.clockInAt && <span className="pill pill-green">In {fmtClock(en.clockInAt)}</span>}
+                {en?.status === "on_break" && <span className="pill pill-amber">On break</span>}
+                {en?.clockOutAt && <span className="pill pill-gray">Out {fmtClock(en.clockOutAt)}</span>}
+                {!en && <button className="btn btn-sm btn-primary" onClick={() => clockIn(sh)}>Clock in</button>}
+                {en?.status === "clocked_in" && <button className="btn btn-sm" onClick={() => clockAction(en, "pause")}>Start break</button>}
+                {en?.status === "on_break" && <button className="btn btn-sm" onClick={() => clockAction(en, "resume")}>End break</button>}
+                {en && en.status !== "clocked_out" && <button className="btn btn-sm" onClick={() => clockAction(en, "clockOut")}>Clock out</button>}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1097,20 +1117,28 @@ export default function ShiftPlannerPage() {
                 </select>
               </div>
             )}
-            {/* Punch — clock in / break / clock out; admins can edit the times */}
-            <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10, marginTop: 12 }}>
-              <div className="form-label" style={{ marginBottom: 6 }}>Punch{canEdit ? " · admin can edit" : ""}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                {[["Clock in", "clockInAt"], ["Break start", "breakStartAt"], ["Break end", "breakEndAt"], ["Clock out", "clockOutAt"]].map(([lbl, field]) => (
-                  <div key={field}>
-                    <div className="form-label">{lbl}</div>
-                    {canEdit
-                      ? <input type="time" className="form-input" value={hhmm(shiftDetail[field])} onChange={(e) => setClock(shiftDetail, field, e.target.value)} />
-                      : <div style={{ fontSize: 13 }}>{shiftDetail[field] ? fmtClock(shiftDetail[field]) : "—"}</div>}
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Actual time (Job 9) — READ-ONLY, from the matched timeEntries record
+                (staff + venue + business date). The editable shift-doc punch grid is
+                GONE: Admin never writes clock times onto shift documents any more;
+                punches happen through the clock flow (Ops kiosk, or "Your shift
+                today" above) and live in timeEntries only. */}
+            {(() => {
+              const en = matchTimeEntry(shiftDetail, timeEntries);
+              return (
+                <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10, marginTop: 12 }}>
+                  <div className="form-label" style={{ marginBottom: 6 }}>Actual time (clock)</div>
+                  {!en ? (
+                    <div style={{ fontSize: 12, color: "var(--gray)" }}>Did not clock in — no time entry for this day/venue.</div>
+                  ) : (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12 }}>
+                      <span className="pill pill-green">In {fmtClock(en.clockInAt) || "—"}</span>
+                      {en.clockOutAt ? <span className="pill pill-gray">Out {fmtClock(en.clockOutAt)}</span> : <span className="pill pill-amber">in progress — no clock-out</span>}
+                      {en.status === "on_break" && <span className="pill pill-amber">on break</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div style={{ marginTop: 12 }}><div className="form-label">Notes</div><div style={{ fontSize: 13, color: shiftDetail.notes ? "var(--ink)" : "var(--gray)" }}>{shiftDetail.notes || "No notes"}</div></div>
             <div className="btn-row">
               {canEdit && <button className="btn btn-primary" onClick={() => openEdit(shiftDetail)}>Edit shift</button>}
