@@ -1,14 +1,14 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { addDoc, updateDoc, deleteDoc, doc, collection, getDoc, getDocs, query, where, serverTimestamp, onSnapshot, deleteField } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueCol, staffInVenue, publicHolidaysDoc, auditLogCol } from "../../utils/restaurantGroupPaths";
+import { venueCol, staffInVenue, staffPrivateDoc, publicHolidaysDoc, auditLogCol } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, isPHForAnyState, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { fullName, downloadCsv, weekKeyOf, localDateKey, FULL_DAY_TIMES, boundedTimes, hoursEnvelopeForDay, HOURS_KEYS, leaveLabel, fmtHours, parseShiftTime, deriveBreak, shiftBreakRule as shiftBreakRuleShared, effectiveBreak as effectiveBreakShared } from "./rgUtils";
-import { staffAreas, staffAtStation, areaBreakRule, areaPinned, areaExclusive, orderedAreas, shiftSectionArea, shiftAreaOf as shiftAreaOfShared } from "./staffStructureUtils";
+import { staffAreas, staffAtStation, areaBreakRule, areaPinned, areaExclusive, orderedAreas, shiftSectionArea, shiftAreaOf as shiftAreaOfShared, rateSplitFromPrivate } from "./staffStructureUtils";
 import { stationsForArea } from "./itemDrilldown";
 import { contractedLabelForStaff, contractedWeekStatus, fmtContractedRange } from "./contractedHours";
 import { newClockInPayload, reduceState, computeWorked, toMillis } from "./timeEntry";
-import { matchTimeEntry } from "./shiftTimeLink";
+import { matchTimeEntry, shiftBusinessDate } from "./shiftTimeLink";
 import StaffCapabilityCard from "./StaffCapabilityCard";
 import AvailabilityEditor from "./AvailabilityEditor";
 
@@ -199,6 +199,8 @@ export default function ShiftPlannerPage() {
       showToast(action === "pause" ? "Break started" : action === "resume" ? "Back from break" : "Clocked out — see you next time!");
     } catch { showToast("Could not record time"); }
   };
+
+
   // manual break override — same updateDoc path as the punch edits. null clears the field
   // (deleteField) so the shift reverts to the area-derived automatic value. The stored
   // breakMins mirror is kept EFFECTIVE in the same write so it never goes stale (nothing
@@ -250,6 +252,75 @@ export default function ShiftPlannerPage() {
     const d = new Date(monday); d.setDate(monday.getDate() + i);
     return localDateKey(d);
   }), [offset]); // eslint-disable-line react-hooks/exhaustive-deps -- monday derives 1:1 from offset
+
+  // ── Pay from actuals (Job 9) — worked time (timeEntries minus UNPAID breaks,
+  // computeWorked) × the person's REAL rate (private/details, rateSplitFromPrivate).
+  // can("pay","view") gates the SURFACE (owner-granted in User Management, decision:
+  // never hardcoded); the RULES keep rates owner/storeAdmin-only (decision 1A), so a
+  // granted plain manager sees "rate unavailable", never a number. Salaried staff
+  // (annualSalary, no hourly rate) show "Salaried", not an hourly figure.
+  const canPay = can("pay", "view");
+  const [detailPay, setDetailPay] = useState(null); // null = loading · {none} | {workedMinutes, unpaidBreakMinutes, open, pay, salaried, rateMissing, denied}
+  useEffect(() => {
+    setDetailPay(null);
+    if (!canPay || !shiftDetail || !groupId) return;
+    const en = matchTimeEntry(shiftDetail, timeEntries);
+    if (!en) { setDetailPay({ none: true }); return; }
+    let dead = false;
+    (async () => {
+      let breaks = [];
+      try { breaks = (await getDocs(breaksColOf(en))).docs.map((b) => b.data()); } catch { /* breaks unreadable → gross-only figure */ }
+      const { workedMinutes, unpaidBreakMinutes } = computeWorked(en, breaks);
+      const open = toMillis(en.clockOutAt) == null; // forgot to clock out → pay pending, never negative/zero-paid
+      let pay = null, salaried = false, rateMissing = false, denied = false;
+      try {
+        const p = (await getDoc(staffPrivateDoc(groupId, shiftDetail.staffId))).data() || {};
+        const { hourlyRate, annualSalary } = rateSplitFromPrivate(p);
+        const rate = Number(hourlyRate);
+        if (rate > 0) pay = Math.round((workedMinutes / 60) * rate * 100) / 100;
+        else if (String(annualSalary ?? "").trim() !== "") salaried = true;
+        else rateMissing = true;
+      } catch { denied = true; } // rules: rates are owner/storeAdmin-only (decision 1A)
+      if (!dead) setDetailPay({ workedMinutes, unpaidBreakMinutes, open, pay, salaried, rateMissing, denied });
+    })();
+    return () => { dead = true; };
+  }, [shiftDetail?.id, canPay, groupId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Unrostered actuals (Job 9): clock entries this week with NO matching shift.
+  // Worked unrostered time IS paid — timeEntries is the source of truth — so it must
+  // be visible to managers instead of hiding in a collection nobody opens.
+  const unrostered = useMemo(() => (timeEntries || []).filter((e) => weekDates.includes(e.businessDate)
+    && !weekShiftsAllVenues.some((sh) => sh.staffId === e.staffId && sh.venueId === e.venueId && shiftBusinessDate(sh) === e.businessDate)),
+    [timeEntries, weekDates, weekShiftsAllVenues]);
+  const [unroInfo, setUnroInfo] = useState({}); // entryId -> {workedMinutes, open, pay, salaried}
+  useEffect(() => {
+    if (!canEdit || !unrostered.length || !groupId) { setUnroInfo({}); return; }
+    let dead = false;
+    (async () => {
+      const rateCache = {};
+      const out = {};
+      for (const en of unrostered.slice(0, 20)) {
+        let breaks = [];
+        try { breaks = (await getDocs(breaksColOf(en))).docs.map((b) => b.data()); } catch { /* gross-only */ }
+        const w = computeWorked(en, breaks);
+        const open = toMillis(en.clockOutAt) == null;
+        let pay = null, salaried = false;
+        if (canPay) {
+          if (!(en.staffId in rateCache)) {
+            try { rateCache[en.staffId] = rateSplitFromPrivate((await getDoc(staffPrivateDoc(groupId, en.staffId))).data() || {}); }
+            catch { rateCache[en.staffId] = null; }
+          }
+          const r = rateCache[en.staffId];
+          const rate = Number(r?.hourlyRate);
+          if (rate > 0) pay = Math.round((w.workedMinutes / 60) * rate * 100) / 100;
+          else if (r && String(r.annualSalary ?? "").trim() !== "") salaried = true;
+        }
+        out[en.id] = { ...w, open, pay, salaried };
+      }
+      if (!dead) setUnroInfo(out);
+    })();
+    return () => { dead = true; };
+  }, [unrostered, canEdit, canPay, groupId]); // eslint-disable-line react-hooks/exhaustive-deps
   // single venue → that venue's state; "all venues" → PH if it's a holiday in ANY venue state.
   // venueState: top-level state OR address.state, normalised to a code ("Victoria" → "VIC")
   const phState = selectedVenue !== "all" ? venueState(venues.find((v) => v.id === selectedVenue)) : null;
@@ -942,6 +1013,25 @@ export default function ShiftPlannerPage() {
           ⚠ {underContract.length} staff under contracted hours: {underContract.map(({ s, cw }, i) => `${fullName(s)} ${fmtHours(cw.shortBy)}h${i === 0 ? " short" : ""}`).join(" · ")}
         </div>
       )}
+      {/* Unrostered actuals (Job 9) — clock entries with no matching shift this week.
+          Unrostered work IS paid (timeEntries is the source of truth), so it must be
+          seen, not buried. Pay figures only for pay:view holders. */}
+      {canEdit && unrostered.length > 0 && (
+        <div style={{ background: "#eef2ff", border: "1px solid #6366f1", color: "#3730a3", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 12 }}>
+          ⏱ {unrostered.length} unrostered clock entr{unrostered.length === 1 ? "y" : "ies"} this week:{" "}
+          {unrostered.slice(0, 20).map((en, i) => {
+            const info = unroInfo[en.id];
+            return (
+              <span key={en.id}>
+                {i > 0 ? " · " : ""}
+                <strong>{en.staffName || "?"}</strong> {en.businessDate} {fmtClock(en.clockInAt)}{en.clockOutAt ? `–${fmtClock(en.clockOutAt)}` : " (no clock-out)"} ({en.venue || ""})
+                {info ? <> — {fmtHours(info.workedMinutes / 60)}h{canPay ? (info.open ? ", pay pending" : info.pay != null ? `, $${info.pay.toLocaleString()}` : info.salaried ? ", salaried" : ", no rate") : ""}</> : null}
+              </span>
+            );
+          })}
+          {unrostered.length > 20 ? " · …" : ""}
+        </div>
+      )}
       {/* Roster grid */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 260px)", "--rg-zoom": zoom }}>
@@ -1128,13 +1218,28 @@ export default function ShiftPlannerPage() {
                 <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10, marginTop: 12 }}>
                   <div className="form-label" style={{ marginBottom: 6 }}>Actual time (clock)</div>
                   {!en ? (
-                    <div style={{ fontSize: 12, color: "var(--gray)" }}>Did not clock in — no time entry for this day/venue.</div>
+                    <div style={{ fontSize: 12, color: "var(--gray)" }}>Did not clock in — no time entry for this day/venue.{canPay ? " No pay from actuals." : ""}</div>
                   ) : (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12 }}>
-                      <span className="pill pill-green">In {fmtClock(en.clockInAt) || "—"}</span>
-                      {en.clockOutAt ? <span className="pill pill-gray">Out {fmtClock(en.clockOutAt)}</span> : <span className="pill pill-amber">in progress — no clock-out</span>}
-                      {en.status === "on_break" && <span className="pill pill-amber">on break</span>}
-                    </div>
+                    <>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12 }}>
+                        <span className="pill pill-green">In {fmtClock(en.clockInAt) || "—"}</span>
+                        {en.clockOutAt ? <span className="pill pill-gray">Out {fmtClock(en.clockOutAt)}</span> : <span className="pill pill-amber">in progress — no clock-out</span>}
+                        {en.status === "on_break" && <span className="pill pill-amber">on break</span>}
+                      </div>
+                      {/* Pay from actuals (Job 9) — pay:view holders only; rates stay
+                          owner/storeAdmin-only in the rules, hence "rate unavailable" */}
+                      {canPay && detailPay && !detailPay.none && (
+                        <div style={{ fontSize: 12, marginTop: 6 }}>
+                          Worked <strong>{fmtHours(detailPay.workedMinutes / 60)}h</strong>
+                          {detailPay.unpaidBreakMinutes > 0 ? ` (− ${detailPay.unpaidBreakMinutes}m unpaid break)` : ""} ·{" "}
+                          {detailPay.open ? <span className="pill pill-amber">pay pending — no clock-out</span>
+                            : detailPay.pay != null ? <strong>Pay ${detailPay.pay.toLocaleString()}</strong>
+                            : detailPay.salaried ? <span className="pill pill-gray">Salaried</span>
+                            : detailPay.denied ? <span className="pill pill-gray" title="Rates are owner/storeAdmin-only in the rules">rate unavailable</span>
+                            : <span className="pill pill-gray">no rate set</span>}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               );
