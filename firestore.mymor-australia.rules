@@ -58,6 +58,15 @@ service cloud.firestore {
         || (rgHasEmp() && rgEmp().groupId == gid
             && rgEmp().get('permissions', {}).get('messages', '') == 'approve');
     }
+    // Notifications (Job 6f): who may SEND — write authored/broadcast notifications
+    // and manage schedules. Written the same way as rgCanApproveLeave (the template),
+    // but edit-or-above: sending is an edit-level act, and an owner-granted 'approve'
+    // must not silently LOSE the ability edit carries.
+    function rgCanSendNotifications(gid) {
+      return rgIsGroupAdmin(gid)
+        || (rgHasEmp() && rgEmp().groupId == gid
+            && rgEmp().get('permissions', {}).get('notifications', '') in ['edit', 'approve']);
+    }
      match /restaurantGroups/{groupId} {
 
       allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
@@ -310,9 +319,32 @@ service cloud.firestore {
         allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
       }
-      // ── Messaging / notifications (group members) ──
+      // ── Messaging / notifications ──
+      // Notifications (Job 6f): reads stay group-member (the bell feed). SENDING is
+      // enforced here, not just by the hidden sidebar item:
+      //   - authored/broadcast docs (type "custom" — the Notifications page + the
+      //     scheduler's sends) require rgCanSendNotifications;
+      //   - NON-custom types stay member-writable: system alert side-channels write
+      //     client-side fire-and-forget (temperature out-of-range, checklist notifies)
+      //     from staff-tier users, and blocking those breaks real alerts. Stated
+      //     boundary: a member could forge a non-custom-typed doc — the authored
+      //     broadcast path is what this rule enforces.
+      //   - members may update ONLY readBy (read receipts); senders may edit/delete.
+      // notificationsArchive (6e) deliberately has NO match — client reads are denied;
+      // only the Admin-SDK cleanup function touches it.
       match /notifications/{notificationId} {
-        allow read, write: if rgIsSuper() || rgIsGroupMember(groupId);
+        allow read: if rgIsSuper() || rgIsGroupMember(groupId);
+        allow create: if rgIsSuper() || rgCanSendNotifications(groupId)
+          || (rgIsGroupMember(groupId) && request.resource.data.get('type', '') != 'custom');
+        allow update: if rgIsSuper() || rgCanSendNotifications(groupId)
+          || (rgIsGroupMember(groupId)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']));
+        allow delete: if rgIsSuper() || rgCanSendNotifications(groupId);
+      }
+      // Scheduled notifications (6c): authoring surface for senders only — read AND write
+      // (the schedules list itself reveals what management broadcasts, so no member read).
+      match /scheduledNotifications/{schedId} {
+        allow read, write: if rgIsSuper() || rgCanSendNotifications(groupId);
       }
       // Group-chat conversations (Job 5) — MEMBER-ONLY, WhatsApp-like. The doc carries
       // memberUids[] (Firebase auth uids); only listed members read it, so both apps
