@@ -95,6 +95,9 @@ export const conversationsCol = (groupId) => groupCol(groupId, "conversations");
 // Help cards ("How to use MyMor") — read: any member; write: owner/storeAdmin (rules).
 export const helpCardsCol = (groupId) => groupCol(groupId, "helpCards");
 export const notificationsCol = (groupId) => groupCol(groupId, "notifications");
+// Scheduled notifications (Job 6c) — authored in Admin, fired hourly by the
+// rgScheduledNotifications Function. Reads/writes gated by rgCanSendNotifications.
+export const scheduledNotificationsCol = (groupId) => groupCol(groupId, "scheduledNotifications");
 // Deterministic conversation id for a pair of staff ids (order-independent).
 export const convId = (a, b) => [String(a), String(b)].sort().join("__");
 
