@@ -268,7 +268,9 @@ export function RGProvider({ children }) {
       // "availability" reuses the SAME per-venue onSnapshot machinery (no ad-hoc listener).
       // It lives in restaurantGroupPaths.PER_VENUE_COLLECTIONS conceptually; extended here
       // locally to keep this change within the two in-scope files.
-      [...PER_VENUE_COLLECTIONS, "availability"]
+      // "timeEntries" (Job 9): the Availability-clock actuals — the source of truth for
+      // pay. Member-read in the live rules (same as Ops's fan-out), so no tier gate.
+      [...PER_VENUE_COLLECTIONS, "availability", "timeEntries"]
         .filter((coll) => managerTier || !MGR_ONLY_VENUE_COLLS.includes(coll)) // staff-tier: skip manager+-read venue collections (expected denial)
         .forEach((coll) => {
         unsubs.push(onSnapshot(
@@ -311,6 +313,7 @@ export function RGProvider({ children }) {
   const stations = useMemo(() => flat("stations", "order"), [pv.stations]); // eslint-disable-line react-hooks/exhaustive-deps
   const equipment = useMemo(() => flat("equipment", "order"), [pv.equipment]); // eslint-disable-line react-hooks/exhaustive-deps
   const stock = useMemo(() => flat("stock"), [pv.stock]); // eslint-disable-line react-hooks/exhaustive-deps
+  const timeEntries = useMemo(() => flat("timeEntries"), [pv.timeEntries]); // eslint-disable-line react-hooks/exhaustive-deps
   // ── Availability DUAL-READ (Phase 3c) ── merges the LEGACY per-venue docs (status-era,
   // venueId/venue stamped by the fan-out) with the NEW cluster-scoped group-level docs into
   // the one informational array downstream consumes (staffId, date, available, allDay,
@@ -446,7 +449,7 @@ export function RGProvider({ children }) {
   }, [myNotifications, myStaff, me]);
 
   const value = useMemo(() => ({
-    groupId, group, venues, staff, draftStaff, shifts, leave, availability, modules, assignments, sops, sopAssignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
+    groupId, group, venues, staff, draftStaff, shifts, leave, timeEntries, availability, modules, assignments, sops, sopAssignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
     announcements, messages, unreadMessages, myNotifications, unreadNotifications,
     inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
     resolvedMenuItems, menuInstanceById, venueMenuInstances,
@@ -454,7 +457,7 @@ export function RGProvider({ children }) {
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue, myVenues,
     me, groupRole, myPerms, can, myStaff, myScope, scopedStaff,
     loading, loadErrors, noteErr, showToast,
-  }), [groupId, group, venues, staff, draftStaff, shifts, leave, availability, modules, assignments, sops, sopAssignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
+  }), [groupId, group, venues, staff, draftStaff, shifts, leave, timeEntries, availability, modules, assignments, sops, sopAssignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
       inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
       resolvedMenuItems, menuInstanceById, venueMenuInstances,
