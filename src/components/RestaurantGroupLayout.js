@@ -42,6 +42,10 @@ const NAV = [
   { key: "contractsSent", path: "/rg/contracts/sent", permKey: "contracts", label: "Sent Contracts", Icon: FileCheck, title: "Sent Contracts" },
   { key: "contractsTemplates", path: "/rg/contracts/templates", permKey: "contracts", label: "Contract Templates", Icon: BookOpen, title: "Contract Templates" },
   { key: "messages", path: "/rg/messages", label: "Messages", Icon: MessageCircle, title: "Messages" },
+  // Notifications (Job 6a) — its OWN `notifications` permission module (NOT `messages`).
+  // visibleNav's can(key,"view") filter hides this at permission `none`; hiding the menu
+  // is NOT security — rgCanSendNotifications in the rules (6f) is the real enforcement.
+  { key: "notifications", path: "/rg/notifications", label: "Notifications", Icon: Bell, title: "Notifications" },
   { key: "calendar", path: "/rg/calendar", label: "Calendar", Icon: CalendarRange, title: "Calendar" },
   { key: "usermgmt", path: "/rg/users", label: "User Management", Icon: ShieldCheck, title: "User Management" },
   { key: "settings", path: "/rg/settings", label: "Settings", Icon: SlidersHorizontal, title: "Settings" },

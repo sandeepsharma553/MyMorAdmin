@@ -11,6 +11,7 @@ import PerformancePage from "../pages/restaurantgroup/PerformancePage";
 import ReportsPage from "../pages/restaurantgroup/ReportsPage";
 import UserManagementPage from "../pages/restaurantgroup/UserManagementPage";
 import MessagingPage from "../pages/restaurantgroup/MessagingPage";
+import NotificationsPage from "../pages/restaurantgroup/NotificationsPage";
 import CalendarPage from "../pages/restaurantgroup/CalendarPage";
 import SettingsPage from "../pages/restaurantgroup/SettingsPage";
 import StockPage from "../pages/restaurantgroup/StockPage";
@@ -58,6 +59,7 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/contracts/sent" element={P("contracts", <SentContractsPage />)} />
       <Route path="/rg/contracts/templates" element={P("contracts", <ContractTemplatesPage />)} />
       <Route path="/rg/messages" element={P("messages", <MessagingPage />)} />
+      <Route path="/rg/notifications" element={P("notifications", <NotificationsPage />)} />
       <Route path="/rg/calendar" element={P("calendar", <CalendarPage />)} />
       <Route path="/rg/users" element={P("usermgmt", <UserManagementPage />)} />
       <Route path="/rg/settings" element={P("settings", <SettingsPage />)} />
