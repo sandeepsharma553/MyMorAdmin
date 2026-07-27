@@ -13,6 +13,9 @@ import { logoutAdmin } from "../app/features/AuthSlice";
 import "../pages/restaurantgroup/restaurantGroup.css";
 
 const NAV = [
+  // Dashboard (Job 8) — cards are individually gated by their own section's permission;
+  // this item itself follows the `dashboard` module (view for every role by default).
+  { key: "dashboard", path: "/rg/dashboard", label: "Dashboard", Icon: BarChart3, title: "Dashboard" },
   { key: "staff", path: "/rg/staff", label: "Staff Directory", Icon: Users, title: "Staff Directory" },
   { key: "shifts", path: "/rg/shifts", label: "Shift Planner", Icon: CalendarDays, title: "Shift Planner" },
   { key: "leave", path: "/rg/leave", label: "Leave Requests", Icon: FileText, title: "Leave Requests" },
