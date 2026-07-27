@@ -12,6 +12,7 @@ import ReportsPage from "../pages/restaurantgroup/ReportsPage";
 import UserManagementPage from "../pages/restaurantgroup/UserManagementPage";
 import MessagingPage from "../pages/restaurantgroup/MessagingPage";
 import NotificationsPage from "../pages/restaurantgroup/NotificationsPage";
+import DashboardPage from "../pages/restaurantgroup/DashboardPage";
 import CalendarPage from "../pages/restaurantgroup/CalendarPage";
 import SettingsPage from "../pages/restaurantgroup/SettingsPage";
 import StockPage from "../pages/restaurantgroup/StockPage";
@@ -32,6 +33,7 @@ export default function RestaurantGroupRoutes() {
     <Routes>
       {/* staff needs only "self" (Phase 5a): a self-tier user reaches the page but sees
           ONLY their own read-only profile — the page itself scopes on can("staff","view"). */}
+      <Route path="/rg/dashboard" element={P("dashboard", <DashboardPage />)} />
       <Route path="/rg/staff" element={P("staff", <StaffDirectoryPage />, "self")} />
       <Route path="/rg/shifts" element={P("shifts", <ShiftPlannerPage />)} />
       <Route path="/rg/leave" element={P("leave", <LeaveRequestsPage />)} />
