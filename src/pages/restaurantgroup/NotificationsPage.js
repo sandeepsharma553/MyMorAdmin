@@ -38,8 +38,8 @@ export default function NotificationsPage() {
 
   const sorted = useMemo(() => [...rows].sort((a, b) => (b.at?.seconds || 0) - (a.at?.seconds || 0)), [rows]);
   const staffName = (id) => { const s = staff.find((x) => x.id === id); return s ? (s.displayName || fullName(s)) : ""; };
-  // Audience label — today's `to` values: "all" | "managers" | a staffId (6b adds tiers)
-  const audienceLabel = (to) => (to === "all" ? "Everyone" : to === "managers" ? "Managers" : (staffName(to) || "One person"));
+  // Audience label — `to` values (6b tiers): "all" | "managers" | "staffOnly" | a staffId
+  const audienceLabel = (to) => (to === "all" ? "Everyone" : to === "managers" ? "Managers & above" : to === "staffOnly" ? "Staff only" : (staffName(to) || "One person"));
   const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
 
   return (

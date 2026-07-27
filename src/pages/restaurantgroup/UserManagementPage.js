@@ -49,15 +49,22 @@ export default function UserManagementPage() {
 
   const [permUser, setPermUser] = useState(null);
   const [permDraft, setPermDraft] = useState({});
+  // "This account is a kiosk" (Job 6b) — a staff-doc FLAG, not a permission level.
+  // Both apps' notification feeds exclude kiosk accounts from the broadcast tiers
+  // ("all" / "staffOnly") so a shared iPad never collects notifications. The rest of
+  // the kiosk scrubbing (directory/planner/PIN-grid visibility) is Job 10 — this flag
+  // is only what the notification audiences need, and Job 10 will build on it.
+  const [kioskDraft, setKioskDraft] = useState(false);
   const openPerms = (s) => {
     setPermUser(s);
     setPermDraft({ ...defaultPermsForStaffRole(s.role), ...(s.permissions && !Array.isArray(s.permissions) ? s.permissions : {}) });
+    setKioskDraft(!!s.isKiosk);
   };
   const applyRoleDefaults = () => setPermDraft(defaultPermsForStaffRole(permUser.role));
   const savePerms = async () => {
     // 1) staff doc — the source of truth. If this fails, stop and report.
     try {
-      await updateDoc(doc(staffCol(groupId), permUser.id), { permissions: permDraft, updatedAt: serverTimestamp() });
+      await updateDoc(doc(staffCol(groupId), permUser.id), { permissions: permDraft, isKiosk: kioskDraft, updatedAt: serverTimestamp() });
     } catch { return showToast("Could not save permissions"); }
     // 2) mirror to the login doc — isolated, so a sync failure doesn't masquerade as a total failure.
     if (permUser.adminUid) {
@@ -185,6 +192,13 @@ export default function UserManagementPage() {
                 </select>
               </div>
             ))}
+            {/* Kiosk flag (Job 6b) — staff-doc field, not a permission level. Broadcast
+                notifications ("Everyone" / "Staff only") skip kiosk accounts. */}
+            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0 2px", cursor: "pointer" }}>
+              <input type="checkbox" checked={kioskDraft} onChange={(e) => setKioskDraft(e.target.checked)} />
+              <span style={{ fontSize: 12, fontWeight: 500 }}>This account is a kiosk (shared iPad)</span>
+              <span style={{ fontSize: 10, color: "var(--gray)" }}>— excluded from broadcast notifications</span>
+            </label>
             <div className="btn-row">
               <button className="btn btn-primary" onClick={savePerms}>Save permissions</button>
               <button className="btn" onClick={() => setPermUser(null)}>Cancel</button>

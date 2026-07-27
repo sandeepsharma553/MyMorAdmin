@@ -418,13 +418,24 @@ export function RGProvider({ children }) {
     return dm + ann + grp;
   }, [messages, announcements, staff, me, myVenueId, venues]);
 
-  // In-app notification feed: addressed to me, to managers (if I am one), or to everyone.
+  // In-app notification feed — audience tiers (Job 6b, mirrored in Ops):
+  //   "all"       → everyone EXCEPT kiosk accounts
+  //   "managers"  → managers and above (manager/storeAdmin/owner)
+  //   "staffOnly" → staff tier only, EXCEPT kiosk accounts
+  //   a staffId   → that person (a kiosk still receives a direct send — deliberate:
+  //                 only the broadcast tiers exclude the shared iPad)
+  // Kiosk = staff.isKiosk (set in User Management). A shared iPad must not collect
+  // broadcast notifications.
   const myNotifications = useMemo(() => {
     const myId = myStaff?.id || me?.uid || me?.id || null;
     if (!myId) return [];
     const mgr = myScope !== "staff";
+    const kiosk = !!myStaff?.isKiosk;
     return notifications
-      .filter((n) => n.to === "all" || n.to === myId || (n.to === "managers" && mgr))
+      .filter((n) => n.to === myId
+        || (n.to === "all" && !kiosk)
+        || (n.to === "managers" && mgr)
+        || (n.to === "staffOnly" && !mgr && !kiosk))
       .sort((a, b) => (b.at?.seconds || 0) - (a.at?.seconds || 0))
       .slice(0, 80);
   }, [notifications, myStaff, myScope, me]);
