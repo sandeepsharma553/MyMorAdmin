@@ -235,6 +235,9 @@ export default function MessagingPage() {
   // per-member Remove + Add/edit (canEditMembers); venue team channels list the
   // venue's staff read-only (membership comes from Staff Directory venues). ──
   const [groupInfo, setGroupInfo] = useState(false);
+  const [infoTab, setInfoTab] = useState("members"); // members | media | docs (WhatsApp-style)
+  const openGroupInfo = () => { setInfoTab("members"); setGroupInfo(true); };
+  const fmtSize = (n) => (!n ? "" : n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
   const removeMemberDirect = async (c, mid) => {
     const members = (c.memberIds || []).filter((x) => x !== mid);
     if (!members.length) return showToast("A group needs at least one member");
@@ -373,7 +376,7 @@ export default function MessagingPage() {
                   <div
                     style={{ display: "flex", alignItems: "center", gap: 10, cursor: activeResolved.kind !== "dm" ? "pointer" : "default", minWidth: 0 }}
                     title={activeResolved.kind !== "dm" ? "Click for group info" : undefined}
-                    onClick={() => activeResolved.kind !== "dm" && setGroupInfo(true)}
+                    onClick={() => activeResolved.kind !== "dm" && openGroupInfo()}
                   >
                     <div className="staff-avatar" style={{ width: 34, height: 34, fontSize: 12, marginBottom: 0, background: activeResolved.kind === "dm" ? undefined : "var(--ink)" }}>{activeResolved.kind === "dm" ? initials({ name: activeResolved.name }) : (activeResolved.kind === "venue" ? "🏠" : "👥")}</div>
                     <div><div style={{ fontSize: 14, fontWeight: 600 }}>{activeResolved.name}</div>{(headerSub || activeResolved.kind !== "dm") && <div style={{ fontSize: 11, color: "var(--gray)" }}>{headerSub}{activeResolved.kind !== "dm" ? `${headerSub ? " · " : ""}click for group info` : ""}</div>}</div>
@@ -459,9 +462,15 @@ export default function MessagingPage() {
               const s = staff.find((x) => x.id === mid);
               return { id: mid, name: s ? (s.displayName || s.name) : ((convo.memberNames || [])[i] || nameOf(mid) || "Admin"), role: s ? (s.role || "") : "Admin login" };
             });
+        // WhatsApp-style shared content: every attachment ever sent in this conversation
+        const convAtts = msgs.filter((m) => m.conv === activeResolved.key)
+          .flatMap((m) => (m.attachments || []).map((a) => ({ ...a, at: m.at, from: m.fromName || "" })))
+          .sort((a, b) => tsVal(b.at) - tsVal(a.at));
+        const mediaAtts = convAtts.filter((a) => a.type === "image" || a.type === "video");
+        const docAtts = convAtts.filter((a) => a.type !== "image" && a.type !== "video");
         return (
           <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setGroupInfo(false)}>
-            <div className="rg-modal" style={{ maxWidth: 400 }}>
+            <div className="rg-modal" style={{ maxWidth: 440 }}>
               <div className="modal-head"><span className="modal-title">{activeResolved.name}</span><button className="modal-close" onClick={() => setGroupInfo(false)}>✕</button></div>
               <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>
                 {isVenue
@@ -469,23 +478,63 @@ export default function MessagingPage() {
                   : `Group${convo?.createdByName ? ` · created by ${convo.createdByName}` : ""}`}
                 {" · "}{members.length} member{members.length === 1 ? "" : "s"}
               </div>
-              <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
-                {members.map((m) => (
-                  <div key={m.id} className="staff-meta-row" style={{ gap: 10, padding: "7px 4px", borderBottom: "0.5px solid var(--gray-light)", justifyContent: "space-between" }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                      <div className="staff-avatar" style={{ width: 30, height: 30, fontSize: 11, marginBottom: 0 }}>{initials({ name: m.name })}</div>
-                      <span><div style={{ fontSize: 13, fontWeight: 600 }}>{m.name}{m.id === myId ? " (you)" : ""}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{m.role}</div></span>
-                    </span>
-                    {!isVenue && canEditMembers && members.length > 1 && (
-                      <button className="btn btn-sm btn-danger" onClick={() => removeMemberDirect(convo, m.id)}>Remove</button>
-                    )}
-                  </div>
+              <div className="tabs" style={{ marginBottom: 10 }}>
+                {[["members", `Members (${members.length})`], ["media", `Media (${mediaAtts.length})`], ["docs", `Docs (${docAtts.length})`]].map(([id, l]) => (
+                  <button key={id} className={`tab ${infoTab === id ? "active" : ""}`} onClick={() => setInfoTab(id)}>{l}</button>
                 ))}
-                {members.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", padding: 8 }}>No members found.</div>}
               </div>
-              {!isVenue && canEditMembers && convo && (
-                <div className="btn-row" style={{ marginTop: 10 }}>
-                  <button className="btn btn-primary" onClick={() => { setGroupInfo(false); openEditMembers(convo); }}>Add / edit members</button>
+
+              {infoTab === "members" && (
+                <>
+                  <div style={{ maxHeight: "48vh", overflowY: "auto" }}>
+                    {members.map((m) => (
+                      <div key={m.id} className="staff-meta-row" style={{ gap: 10, padding: "7px 4px", borderBottom: "0.5px solid var(--gray-light)", justifyContent: "space-between" }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                          <div className="staff-avatar" style={{ width: 30, height: 30, fontSize: 11, marginBottom: 0 }}>{initials({ name: m.name })}</div>
+                          <span><div style={{ fontSize: 13, fontWeight: 600 }}>{m.name}{m.id === myId ? " (you)" : ""}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{m.role}</div></span>
+                        </span>
+                        {!isVenue && canEditMembers && members.length > 1 && (
+                          <button className="btn btn-sm btn-danger" onClick={() => removeMemberDirect(convo, m.id)}>Remove</button>
+                        )}
+                      </div>
+                    ))}
+                    {members.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", padding: 8 }}>No members found.</div>}
+                  </div>
+                  {!isVenue && canEditMembers && convo && (
+                    <div className="btn-row" style={{ marginTop: 10 }}>
+                      <button className="btn btn-primary" onClick={() => { setGroupInfo(false); openEditMembers(convo); }}>+ Add members</button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {infoTab === "media" && (
+                <div style={{ maxHeight: "48vh", overflowY: "auto" }}>
+                  {mediaAtts.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", padding: 8 }}>No photos or videos shared yet.</div>}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(92px, 1fr))", gap: 6 }}>
+                    {mediaAtts.map((a, i) => (
+                      <div key={i} style={{ cursor: "pointer" }} title={`${a.name || ""}${a.from ? ` · ${a.from}` : ""} · ${fmtTs(a.at)}`} onClick={() => window.open(a.url, "_blank")}>
+                        {a.type === "image"
+                          ? <img src={a.url} alt={a.name} style={{ width: "100%", height: 92, objectFit: "cover", borderRadius: 8, display: "block" }} />
+                          : <div style={{ width: "100%", height: 92, borderRadius: 8, background: "var(--gray-light)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🎬</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {infoTab === "docs" && (
+                <div style={{ maxHeight: "48vh", overflowY: "auto" }}>
+                  {docAtts.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", padding: 8 }}>No documents shared yet.</div>}
+                  {docAtts.map((a, i) => (
+                    <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="staff-meta-row" style={{ gap: 10, padding: "8px 4px", borderBottom: "0.5px solid var(--gray-light)", textDecoration: "none", color: "var(--ink)" }}>
+                      <span style={{ fontSize: 18 }}>📎</span>
+                      <span style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || "Document"}</div>
+                        <div style={{ fontSize: 10, color: "var(--gray)" }}>{[a.from, fmtTs(a.at), fmtSize(a.size)].filter(Boolean).join(" · ")}</div>
+                      </span>
+                    </a>
+                  ))}
                 </div>
               )}
             </div>
