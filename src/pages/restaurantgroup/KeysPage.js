@@ -110,7 +110,12 @@ export default function KeysPage() {
             </div>
             <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label" style={{ fontSize: 11 }}>Key</label>
-              <input className="form-input" value={form.keyLabel} onChange={set("keyLabel")} placeholder="e.g. Front door / Master #2" />
+              {/* datalist = the keys that already exist at the picked store, so "which
+                  keys are there" is one click away while still allowing a new name */}
+              <input className="form-input" list="rg-key-suggestions" value={form.keyLabel} onChange={set("keyLabel")} placeholder="e.g. Front door / Master #2" />
+              <datalist id="rg-key-suggestions">
+                {[...new Set(Object.values(byVenue).flat().filter((r) => r.venueId === form.venueId).map((r) => r.keyLabel).filter(Boolean))].map((l) => <option key={l} value={l} />)}
+              </datalist>
             </div>
             <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label" style={{ fontSize: 11 }}>How many</label>
@@ -143,18 +148,23 @@ export default function KeysPage() {
         </div>
       )}
 
-      {/* Keys per person — total count per holder (sums the qty on each record),
-          scoped to the venue filter like the table below */}
+      {/* Keys per person — total count per holder (sums the qty on each record) PLUS
+          which keys they hold, scoped to the venue filter like the table below */}
       {rows.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
           <span style={{ fontSize: 11, color: "var(--gray)" }}>Keys per person:</span>
           {Object.values(rows.reduce((m, r) => {
             const k = r.staffId || `n:${(r.holderName || "").toLowerCase()}`;
-            m[k] = m[k] || { name: r.holderName || "—", count: 0 };
-            m[k].count += Number(r.qty) || 1;
+            const qty = Number(r.qty) || 1;
+            m[k] = m[k] || { name: r.holderName || "—", count: 0, keys: [] };
+            m[k].count += qty;
+            m[k].keys.push(`${r.keyLabel}${qty > 1 ? ` ×${qty}` : ""}${selectedVenue === "all" && venues.length > 1 ? ` (${venueName(r.venueId)})` : ""}`);
             return m;
           }, {})).sort((a, b) => b.count - a.count).map((h) => (
-            <span key={h.name} className="pill pill-blue">{h.name}: {h.count} key{h.count === 1 ? "" : "s"}</span>
+            <span key={h.name} className="pill pill-blue" title={h.keys.join(", ")}>
+              {h.name}: {h.count} key{h.count === 1 ? "" : "s"}
+              <span style={{ fontWeight: 400, opacity: 0.85 }}> — {h.keys.join(", ")}</span>
+            </span>
           ))}
         </div>
       )}
