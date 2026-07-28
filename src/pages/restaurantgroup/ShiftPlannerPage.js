@@ -64,6 +64,13 @@ const cellClass = (type) =>
 export default function ShiftPlannerPage() {
   const { groupId, group, staff, scopedStaff, shifts, timeEntries, venues, stations, roles, assignments, perfNotes, leave, availability, labourTargets, selectedVenue, selectedVenueName, showToast, can, me, myStaff, myScope, noteErr, myVenues } = useRG();
   const canEdit = can("shifts", "edit");
+  // STAFF-tier roster privacy (owner ruling): a staff login sees FULL detail only on
+  // their OWN shifts. Everyone else's render as a plain time block — no role/station,
+  // no notes, no break split, no detail modal, no hours totals, no contracted line.
+  // Managers/owners are unchanged.
+  const staffViewer = myScope === "staff";
+  const isMyShift = (sh) => !!myStaff && sh.staffId === myStaff.id;
+  const isMyRow = (s) => !!myStaff && s.id === myStaff.id;
   // Amend-from-planner (availability:edit — managers/owners hold approve, which ranks
   // above edit): the availability chip opens the SHARED AvailabilityEditor for that
   // staffer. For everyone else the chip stays the inert info block it always was.
@@ -755,9 +762,9 @@ export default function ShiftPlannerPage() {
                   {g.members.map((s) => (
                 <tr key={s.id}>
                   <td style={{ padding: "6px 10px", borderBottom: "0.5px solid var(--border)" }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--red)" }} onClick={() => setCapStaff(s)} title="View capability">{fullName(s)}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, cursor: (!staffViewer || isMyRow(s)) ? "pointer" : "default", color: "var(--red)" }} onClick={() => (!staffViewer || isMyRow(s)) && setCapStaff(s)} title={(!staffViewer || isMyRow(s)) ? "View capability" : undefined}>{fullName(s)}</div>
                     <div style={{ fontSize: 9, color: "var(--gray)" }}>{s.role}</div>
-                    {contractedLabelForStaff(s) && (
+                    {contractedLabelForStaff(s) && !(staffViewer && !isMyRow(s)) && (
                       <div style={{ fontSize: 8, color: "var(--gray)" }}>Contracted: {contractedLabelForStaff(s)}</div>
                     )}
                   </td>
@@ -777,14 +784,19 @@ export default function ShiftPlannerPage() {
                               On leave: {leaveLabel(lv)}
                             </div>
                           )}
-                          {shs.map((sh) => (
+                          {shs.map((sh) => (staffViewer && !isMyShift(sh) ? (
+                            // someone ELSE's shift, staff viewer: time block only (mirror main grid)
+                            <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff", opacity: 0.8 }}>
+                              <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}</div>
+                            </div>
+                          ) : (
                             <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff" }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                               <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                               {/* multi-venue pane: venue initials on the chip (main-grid convention) */}
                               <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{vids.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
                               {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{fmtHours(b.grossHours)}h gross · {fmtHours(b.paidHours)}h paid · {fmtHours(b.unpaidHours)}h unpaid</div> : null; })()}
                             </div>
-                          ))}
+                          )))}
                           {avs.map((a) => renderAvailChip(a, s))}
                           {canEdit && !closedDay && !lv && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 6px" }} onClick={() => openAdd(s.id, day, addVenueFor(s))}>+</div>}
                         </div>
@@ -807,16 +819,17 @@ export default function ShiftPlannerPage() {
   };
 
   // one staff row in the main (categorized) roster — name is clickable → capability card
+  // (staff viewer: own card only — mirror Ops's canOpenCap privacy rule)
   const renderRow = (s) => (
     <tr key={s.id}>
       <td style={{ padding: "8px 14px", borderBottom: "0.5px solid var(--border)" }}>
-        <div style={{ fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--red)" }} onClick={() => setCapStaff(s)} title="View capability (certs, training, history)">{fullName(s)}</div>
+        <div style={{ fontSize: 11, fontWeight: 600, cursor: (!staffViewer || isMyRow(s)) ? "pointer" : "default", color: "var(--red)" }} onClick={() => (!staffViewer || isMyRow(s)) && setCapStaff(s)} title={(!staffViewer || isMyRow(s)) ? "View capability (certs, training, history)" : undefined}>{fullName(s)}</div>
         <div style={{ fontSize: 10, color: "var(--gray)" }}>{s.role}</div>
         {/* contracted hours under the name — RANGE-aware ("38–40h/wk" when a max exists) via
             the ONE shared formatter (contractedLabelForStaff: Casual gate + min>0 baked in, so
             this and the split pane can't drift). Mirror populates on staff-edit / contract
-            write-back, no bulk migration, so blank is EXPECTED. */}
-        {contractedLabelForStaff(s) && (
+            write-back, no bulk migration, so blank is EXPECTED. staff viewer: own row only. */}
+        {contractedLabelForStaff(s) && !(staffViewer && !isMyRow(s)) && (
           <div style={{ fontSize: 9, color: "var(--gray)" }}>Contracted: {contractedLabelForStaff(s)}</div>
         )}
       </td>
@@ -836,13 +849,18 @@ export default function ShiftPlannerPage() {
                   On leave: {leaveLabel(lv)}
                 </div>
               )}
-              {shs.map((sh) => (
+              {shs.map((sh) => (staffViewer && !isMyShift(sh) ? (
+                // someone ELSE's shift, staff viewer: time block only — no details, no click
+                <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff", opacity: 0.8 }}>
+                  <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}</div>
+                </div>
+              ) : (
                 <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff", boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
                   <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
                   <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
                   {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{fmtHours(b.grossHours)}h gross · {fmtHours(b.paidHours)}h paid · {fmtHours(b.unpaidHours)}h unpaid</div> : null; })()}
                 </div>
-              ))}
+              )))}
               {avs.map((a) => renderAvailChip(a, s))}
               {canEdit && !closedDay && !lv && <div className="shift-cell" style={{ cursor: "pointer", color: "var(--gray)", textAlign: "center", minHeight: 0, padding: "2px 8px" }} onClick={() => openAdd(s.id, day)}>+</div>}
               {!canEdit && shs.length === 0 && !lv && <div className="shift-cell shift-off" style={{ textAlign: "center", opacity: 0.5 }}>·</div>}
@@ -852,6 +870,8 @@ export default function ShiftPlannerPage() {
       })}
       <td style={{ textAlign: "center", fontSize: 11, fontWeight: 600, borderBottom: "0.5px solid var(--border)" }}>
         {(() => {
+          // staff viewer: hours totals are detail — own row only
+          if (staffViewer && !isMyRow(s)) return <div style={{ color: "var(--gray)", fontWeight: 400 }}>—</div>;
           // PAID total headline (gross − EFFECTIVE break, override-aware) + gross/unpaid
           // subline. The break is area-driven per shift — see effectiveBreak.
           // Issue 6: ALL-VENUES by design — a person's hours are theirs, not the venue's
@@ -1289,7 +1309,8 @@ export default function ShiftPlannerPage() {
               {dShifts.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Shifts</div>
                 {detailShiftSections(dShifts).map(([area, rows]) => <React.Fragment key={area}>
                   <div className="form-label" style={{ marginTop: 6, fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: 0.4 }}>{area} · {rows.length}</div>
-                  {rows.map((s) => <div key={s.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span><strong>{s.start}–{s.end}</strong> · {nameOf(s.staffId)}</span><span style={{ color: "var(--gray)" }}>{shortRole(s.role)}{s.station ? ` · ${s.station}` : ""} · {s.venue}</span></div>)}
+                  {/* staff viewer: others' rows keep time + name only (roster privacy) */}
+                  {rows.map((s) => <div key={s.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span><strong>{s.start}–{s.end}</strong> · {nameOf(s.staffId)}</span>{!(staffViewer && !isMyShift(s)) && <span style={{ color: "var(--gray)" }}>{shortRole(s.role)}{s.station ? ` · ${s.station}` : ""} · {s.venue}</span>}</div>)}
                 </React.Fragment>)}</>}
               {dLeave.length > 0 && <><div className="form-label" style={{ marginTop: 10 }}>Approved leave <span style={{ fontWeight: 400, color: "var(--gray)" }}>(group-wide)</span></div>
                 {dLeave.map((l) => <div key={l.id} style={{ fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill pill-amber">{leaveLabel(l)}</span> {nameOf(l.staffId)} <span style={{ color: "var(--gray)" }}>· {l.dates}</span></div>)}</>}
