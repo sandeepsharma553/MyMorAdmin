@@ -100,6 +100,21 @@ export default function KeysPage() {
   const th = { padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--gray)", borderBottom: "0.5px solid var(--border)" };
   const td = { padding: "8px 12px", fontSize: 12, borderBottom: "0.5px solid var(--gray-light)" };
 
+  // ONE table row per PERSON (owner preference): records grouped by staffId (name
+  // fallback for non-staff holders), count sums each record's qty.
+  const grouped = useMemo(() => {
+    const m = {};
+    rows.forEach((r) => {
+      const k = r.staffId || `n:${(r.holderName || "").toLowerCase()}`;
+      m[k] = m[k] || { key: k, name: r.holderName || "—", staffId: r.staffId || null, records: [], count: 0, staffGone: false };
+      m[k].records.push(r);
+      m[k].count += Number(r.qty) || 1;
+      if (r.staffId && !activeStaff.some((s) => s.id === r.staffId)) m[k].staffGone = true;
+    });
+    return Object.values(m).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows, activeStaff]);
+  const [holderPopup, setHolderPopup] = useState(null); // grouped key → the small keys popup
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
@@ -163,38 +178,38 @@ export default function KeysPage() {
         </div>
       )}
 
-      {/* the list */}
+      {/* the list — ONE row per PERSON: first two key names (… when more), and a count
+          pill that opens a small popup listing every key (with edit/remove per record) */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
             <thead>
               <tr style={{ background: "var(--gray-light)" }}>
-                <th style={th}>Key</th>
-                <th style={th}>Store</th>
                 <th style={th}>Held by</th>
-                <th style={th}>Issued</th>
-                <th style={th}>Notes</th>
-                {editable && <th style={{ ...th, textAlign: "right" }}></th>}
+                <th style={th}>Keys</th>
+                <th style={th}>Count</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={`${r.venueId}:${r.id}`}>
-                  <td style={{ ...td, fontWeight: 600 }}>{r.keyLabel}{(Number(r.qty) || 1) > 1 ? <span className="pill pill-blue" style={{ marginLeft: 6 }}>× {r.qty}</span> : null}</td>
-                  <td style={td}>{venueName(r.venueId)}</td>
-                  <td style={td}>{r.holderName}{r.staffId && !activeStaff.some((s) => s.id === r.staffId) && <span style={{ color: "var(--red)", fontSize: 10, marginLeft: 6 }}>staff record gone — chase this key</span>}</td>
-                  <td style={td}>{r.issuedOn || "—"}</td>
-                  <td style={{ ...td, color: "var(--gray)" }}>{r.notes || ""}</td>
-                  {editable && (
-                    <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                      <button className="btn btn-sm" onClick={() => openEdit(r)}>Edit</button>
-                      <button className="btn btn-sm btn-danger" style={{ marginLeft: 6 }} onClick={() => remove(r)}>✕</button>
-                    </td>
-                  )}
+              {grouped.map((g) => (
+                <tr key={g.key}>
+                  <td style={{ ...td, fontWeight: 600 }}>
+                    {g.name}
+                    {g.staffGone && <span style={{ color: "var(--red)", fontSize: 10, marginLeft: 6 }}>staff record gone — chase these keys</span>}
+                  </td>
+                  <td style={td}>
+                    {g.records.slice(0, 2).map((r) => `${r.keyLabel}${(Number(r.qty) || 1) > 1 ? ` ×${r.qty}` : ""}`).join(", ")}
+                    {g.records.length > 2 ? " …" : ""}
+                  </td>
+                  <td style={td}>
+                    <button className="pill pill-blue" style={{ border: "none", cursor: "pointer" }} title="Click to see all keys" onClick={() => setHolderPopup(g.key)}>
+                      {g.count} key{g.count === 1 ? "" : "s"}
+                    </button>
+                  </td>
                 </tr>
               ))}
-              {rows.length === 0 && (
-                <tr><td colSpan={editable ? 6 : 5} style={{ padding: 20, color: "var(--gray)", fontSize: 13 }}>
+              {grouped.length === 0 && (
+                <tr><td colSpan={3} style={{ padding: 20, color: "var(--gray)", fontSize: 13 }}>
                   No key records yet{editable ? " — add who holds each store key." : "."}
                 </td></tr>
               )}
@@ -202,6 +217,33 @@ export default function KeysPage() {
           </table>
         </div>
       </div>
+
+      {/* small popup — every key this person holds; edit/remove per record */}
+      {holderPopup && (() => {
+        const g = grouped.find((x) => x.key === holderPopup);
+        if (!g) return null; // last record removed → grouping gone; overlay closes below
+        return (
+          <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setHolderPopup(null)}>
+            <div className="rg-modal" style={{ maxWidth: 400 }}>
+              <div className="modal-head"><span className="modal-title">{g.name} — {g.count} key{g.count === 1 ? "" : "s"}</span><button className="modal-close" onClick={() => setHolderPopup(null)}>✕</button></div>
+              {g.records.map((r) => (
+                <div key={`${r.venueId}:${r.id}`} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)", gap: 8 }}>
+                  <span>
+                    <strong>{r.keyLabel}</strong>{(Number(r.qty) || 1) > 1 ? ` ×${r.qty}` : ""}
+                    <span style={{ color: "var(--gray)" }}> · {venueName(r.venueId)}{r.issuedOn ? ` · ${r.issuedOn}` : ""}{r.notes ? ` · ${r.notes}` : ""}</span>
+                  </span>
+                  {editable && (
+                    <span style={{ display: "inline-flex", gap: 6, whiteSpace: "nowrap" }}>
+                      <button className="btn btn-sm" onClick={() => { setHolderPopup(null); openEdit(r); }}>Edit</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => remove(r)}>✕</button>
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }
