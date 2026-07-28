@@ -43,7 +43,8 @@ export default function UserManagementPage() {
   }, [groupId, canKeysView, venues]); // eslint-disable-line react-hooks/exhaustive-deps
   const keyCountByStaff = useMemo(() => {
     const m = {};
-    Object.values(keysByVenue).flat().forEach((k) => { if (k.staffId) m[k.staffId] = (m[k.staffId] || 0) + 1; });
+    // each record counts its qty ("Master #2 × 3" = 3 keys)
+    Object.values(keysByVenue).flat().forEach((k) => { if (k.staffId) m[k.staffId] = (m[k.staffId] || 0) + (Number(k.qty) || 1); });
     return m;
   }, [keysByVenue]);
 

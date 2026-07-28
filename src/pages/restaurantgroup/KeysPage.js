@@ -15,7 +15,7 @@ import { fullName, localDateKey } from "./rgUtils";
    survives staff departures; staffId links back while the person exists.
    ========================================================================== */
 
-const EMPTY = { venueId: "", staffId: "", holderName: "", keyLabel: "", issuedOn: "", notes: "" };
+const EMPTY = { venueId: "", staffId: "", holderName: "", keyLabel: "", qty: 1, issuedOn: "", notes: "" };
 
 export default function KeysPage() {
   const { groupId, venues, scopedStaff, selectedVenue, can, showToast, noteErr } = useRG();
@@ -45,7 +45,7 @@ export default function KeysPage() {
   const [form, setForm] = useState(null); // null = closed; {id?} = edit
   const activeStaff = useMemo(() => (scopedStaff || []).filter((s) => s.status !== "Left"), [scopedStaff]);
   const openAdd = () => setForm({ ...EMPTY, venueId: selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || ""), issuedOn: localDateKey(new Date()) });
-  const openEdit = (r) => setForm({ id: r.id, prevVenueId: r.venueId, venueId: r.venueId, staffId: r.staffId || "", holderName: r.holderName || "", keyLabel: r.keyLabel || "", issuedOn: r.issuedOn || "", notes: r.notes || "" });
+  const openEdit = (r) => setForm({ id: r.id, prevVenueId: r.venueId, venueId: r.venueId, staffId: r.staffId || "", holderName: r.holderName || "", keyLabel: r.keyLabel || "", qty: r.qty || 1, issuedOn: r.issuedOn || "", notes: r.notes || "" });
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
   const setStaff = (e) => {
     const staffId = e.target.value;
@@ -62,6 +62,7 @@ export default function KeysPage() {
     const rec = {
       keyLabel, holderName,
       staffId: form.staffId || null,
+      qty: Math.max(1, Number(form.qty) || 1), // how many of THIS key they hold
       issuedOn: form.issuedOn || "",
       notes: (form.notes || "").trim(),
       updatedAt: serverTimestamp(),
@@ -112,6 +113,10 @@ export default function KeysPage() {
               <input className="form-input" value={form.keyLabel} onChange={set("keyLabel")} placeholder="e.g. Front door / Master #2" />
             </div>
             <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" style={{ fontSize: 11 }}>How many</label>
+              <input type="number" min="1" className="form-input" value={form.qty} onChange={set("qty")} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label" style={{ fontSize: 11 }}>Held by (staff)</label>
               <select className="form-input" value={form.staffId} onChange={setStaff}>
                 <option value="">— not on staff / type below —</option>
@@ -138,6 +143,22 @@ export default function KeysPage() {
         </div>
       )}
 
+      {/* Keys per person — total count per holder (sums the qty on each record),
+          scoped to the venue filter like the table below */}
+      {rows.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+          <span style={{ fontSize: 11, color: "var(--gray)" }}>Keys per person:</span>
+          {Object.values(rows.reduce((m, r) => {
+            const k = r.staffId || `n:${(r.holderName || "").toLowerCase()}`;
+            m[k] = m[k] || { name: r.holderName || "—", count: 0 };
+            m[k].count += Number(r.qty) || 1;
+            return m;
+          }, {})).sort((a, b) => b.count - a.count).map((h) => (
+            <span key={h.name} className="pill pill-blue">{h.name}: {h.count} key{h.count === 1 ? "" : "s"}</span>
+          ))}
+        </div>
+      )}
+
       {/* the list */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
@@ -155,7 +176,7 @@ export default function KeysPage() {
             <tbody>
               {rows.map((r) => (
                 <tr key={`${r.venueId}:${r.id}`}>
-                  <td style={{ ...td, fontWeight: 600 }}>{r.keyLabel}</td>
+                  <td style={{ ...td, fontWeight: 600 }}>{r.keyLabel}{(Number(r.qty) || 1) > 1 ? <span className="pill pill-blue" style={{ marginLeft: 6 }}>× {r.qty}</span> : null}</td>
                   <td style={td}>{venueName(r.venueId)}</td>
                   <td style={td}>{r.holderName}{r.staffId && !activeStaff.some((s) => s.id === r.staffId) && <span style={{ color: "var(--red)", fontSize: 10, marginLeft: 6 }}>staff record gone — chase this key</span>}</td>
                   <td style={td}>{r.issuedOn || "—"}</td>

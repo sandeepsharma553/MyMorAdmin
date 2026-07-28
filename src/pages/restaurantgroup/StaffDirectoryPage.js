@@ -1772,10 +1772,12 @@ export default function StaffDirectoryPage() {
                         {pCerts.map((c, i) => { const st = certStatus(c.expiry); return <span key={i} className={`pill ${st.pill}`}>{c.name}{c.expiry ? ` · ${c.expiry}` : ""}{st.note ? ` (${st.note})` : ""}</span>; })}
                       </span>
                     ) : "Not yet obtained";
+                    // total counts each record's qty ("Master #2 × 3" = 3 keys)
+                    const keyTotal = heldKeys.reduce((a, k) => a + (Number(k.qty) || 1), 0);
                     const keysCell = heldKeys.length ? (
                       <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 4 }}>
-                        <span className="pill pill-blue">{heldKeys.length} {heldKeys.length === 1 ? "key" : "keys"}</span>
-                        {heldKeys.map((k) => <span key={`${k.venueId}:${k.id}`} className="pill pill-gray">{k.keyLabel}{venues.length > 1 ? ` · ${venueName(k.venueId)}` : ""}</span>)}
+                        <span className="pill pill-blue">{keyTotal} {keyTotal === 1 ? "key" : "keys"}</span>
+                        {heldKeys.map((k) => <span key={`${k.venueId}:${k.id}`} className="pill pill-gray">{k.keyLabel}{(Number(k.qty) || 1) > 1 ? ` × ${k.qty}` : ""}{venues.length > 1 ? ` · ${venueName(k.venueId)}` : ""}</span>)}
                       </span>
                     ) : "None";
                     return [["Employment", profile.type], ["Weekly hours", hoursWk ? `${fmtHours(hoursWk)}h · this week` : "— (no shifts)"], ["Start date", profile.start || "—"],
