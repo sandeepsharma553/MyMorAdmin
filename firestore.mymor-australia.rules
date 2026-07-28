@@ -441,5 +441,12 @@ service cloud.firestore {
     match /{coll}/{rest=**} {
       allow read, write: if isSignedIn() && coll != 'restaurantGroups' && !rgIsGroupUser();
     }
+    // FCM push tokens (rgPushOnNotification reads these via the Admin SDK; the apps
+    // write their own on login — MyMorOps src/lib/push.js). Own-uid only. NOTE: the
+    // catch-all above denies rg-group users, so this explicit grant is what lets the
+    // Ops iPad save its token. Deployed via console 2026-07-28; file synced after.
+    match /userTokens/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
   }
 }
