@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueCol, groupDoc, contractClassificationsDoc, contractDefaultsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
+import { venueCol, venueDoc, groupDoc, contractClassificationsDoc, contractDefaultsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS, DEFAULT_UNIT_TYPES } from "./rgConfig";
 import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaBreakRule, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, empTypeIsSalaried } from "./staffStructureUtils";
@@ -170,11 +170,14 @@ export default function SettingsPage() {
   };
 
   // ── Temperature units (fridges/freezers/etc.) ──
-  // Unit TYPES are owner-configured on the group doc (group.tempUnitTypes[{name,min,max}]);
-  // DEFAULT_UNIT_TYPES is the in-memory seed when none are configured (never auto-written).
-  // A type's min/max is only the DEFAULT range prefilled on new units — renaming or removing
-  // a type never touches existing units or past readings (they keep their own stored strings).
-  const unitTypes = group?.tempUnitTypes?.length ? group.tempUnitTypes : DEFAULT_UNIT_TYPES;
+  // Unit TYPES are PER-VENUE (owner ruling): each venue's list lives on ITS venue doc
+  // (venues/{vid}.tempUnitTypes[{name,min,max}]). Fallback chain: venue's own list →
+  // the group-level list (pre-per-venue saves) → DEFAULT_UNIT_TYPES, in-memory only
+  // (never auto-written). A type's min/max is only the DEFAULT range prefilled on new
+  // units — renaming or removing a type never touches existing units or past readings.
+  const venueRec = venues.find((v) => v.id === venueTab);
+  const unitTypes = venueRec?.tempUnitTypes?.length ? venueRec.tempUnitTypes
+    : (group?.tempUnitTypes?.length ? group.tempUnitTypes : DEFAULT_UNIT_TYPES);
   // Case-insensitive lookup: Ops historically stored lowercase type keys ("fridge").
   const unitTypeOf = (name) => unitTypes.find((t) => (t.name || "").toLowerCase() === String(name || "").toLowerCase());
   const SUGGESTED_UNITS = [["Fridge 1", "Fridge"], ["Fridge 2", "Fridge"], ["Freezer 1", "Freezer"], ["Cool room", "Cool room"], ["Hot hold", "Hot hold"], ["Grill", "Grill"]];
@@ -210,9 +213,12 @@ export default function SettingsPage() {
     try { await deleteDoc(doc(venueCol(groupId, venueTab, "equipment"), e.id)); showToast("Unit removed"); }
     catch { showToast("Could not remove"); }
   };
-  // Unit-type editor — PH pattern: edits stay in local rows, a single Save writes the group doc.
-  // typeRows === null means "mirror the live config"; it becomes an array on first edit.
+  // Unit-type editor — PH pattern: edits stay in local rows, a single Save writes the
+  // VENUE doc. typeRows === null means "mirror the live config"; it becomes an array on
+  // first edit — and RESETS on a venue switch so one venue's unsaved rows can never be
+  // saved onto another venue.
   const [typeRows, setTypeRows] = useState(null);
+  useEffect(() => { setTypeRows(null); }, [venueTab]);
   const shownTypeRows = typeRows ?? unitTypes.map((t) => ({ name: t.name || "", min: t.min ?? "", max: t.max ?? "" }));
   const typeSet = (i, k, v) => setTypeRows(shownTypeRows.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)));
   const typeAdd = () => setTypeRows([...shownTypeRows, { name: "", min: "", max: "" }]);
@@ -230,7 +236,7 @@ export default function SettingsPage() {
       if (mn !== null && mx !== null && mn >= mx) return showToast(`${r.name}: default min must be less than max`);
       next.push({ name: r.name, min: mn, max: mx });
     }
-    try { await updateDoc(groupDoc(groupId), { tempUnitTypes: next }); setTypeRows(null); showToast("Unit types saved"); }
+    try { await updateDoc(venueDoc(groupId, venueTab), { tempUnitTypes: next }); setTypeRows(null); showToast(`Unit types saved for ${venueName(venueTab) || "this venue"}`); }
     catch { showToast("Could not save unit types"); }
   };
 
@@ -553,7 +559,7 @@ export default function SettingsPage() {
 
           <div className="card" style={{ marginTop: 14 }}>
             <div className="card-head">
-              <div><span className="card-title">Unit types</span><span className="card-sub">Shared across all venues — each type sets the default safe range prefilled on a new unit. Renaming or removing a type never changes existing units or past readings.</span></div>
+              <div><span className="card-title">Unit types</span><span className="card-sub">{venueName(venueTab) || "This venue"} — each type sets the default safe range prefilled on a new unit. Every venue keeps its own type list. Renaming or removing a type never changes existing units or past readings.</span></div>
               {editable && <button className="btn btn-sm" onClick={typeAdd}>+ Add type</button>}
             </div>
             {shownTypeRows.map((r, i) => (
