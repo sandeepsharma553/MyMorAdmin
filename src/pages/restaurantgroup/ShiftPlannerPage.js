@@ -812,7 +812,8 @@ export default function ShiftPlannerPage() {
           </table>
         </div>
         <div style={{ padding: "8px 12px", background: "var(--gray-light)", borderTop: "0.5px solid var(--border)", fontSize: 11 }}>
-          <span style={{ color: "var(--gray)" }}>Paid hours this week: </span><strong>{fmtHours(gh)}</strong>
+          {/* staff viewer: pane totals are management info too */}
+          {!staffViewer && <><span style={{ color: "var(--gray)" }}>Paid hours this week: </span><strong>{fmtHours(gh)}</strong></>}
         </div>
       </div>
     );
@@ -1092,23 +1093,29 @@ export default function ShiftPlannerPage() {
           </table>
         </div>
         <div style={{ padding: "12px 14px", background: "var(--gray-light)", borderTop: "0.5px solid var(--border)", display: "flex", gap: 20, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Total paid hours this week: </span><strong>{fmtHours(totalHours)}</strong></div>
-          {/* labour $ / % are management info — shifts:edit only (staff still sees hours + break split below) */}
-          {canEdit && (
+          {/* roster-wide totals are management info — staff viewers see none of them
+              (roster privacy: their own hours live in their row + their profile) */}
+          {!staffViewer && (
             <>
-              <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Est. labour cost: </span><strong>${labourCost.toLocaleString()}</strong></div>
-              <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Labour %: </span><strong>{labourPct}%</strong> <span style={{ color: "var(--gray)" }}>(target 20–25%)</span></div>
+              <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Total paid hours this week: </span><strong>{fmtHours(totalHours)}</strong></div>
+              {/* labour $ / % are management info — shifts:edit only */}
+              {canEdit && (
+                <>
+                  <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Est. labour cost: </span><strong>${labourCost.toLocaleString()}</strong></div>
+                  <div style={{ fontSize: 11 }}><span style={{ color: "var(--gray)" }}>Labour %: </span><strong>{labourPct}%</strong> <span style={{ color: "var(--gray)" }}>(target 20–25%)</span></div>
+                </>
+              )}
+              <div style={{ fontSize: 11, width: "100%", color: "var(--gray)" }}>
+                Mon–Fri <strong>{fmtHours(hoursByType.mf)}h</strong> · Sat <strong>{fmtHours(hoursByType.sat)}h</strong> · Sun <strong>{fmtHours(hoursByType.sun)}h</strong> · PH <strong>{fmtHours(hoursByType.ph)}h</strong> · Paid <strong>{fmtHours(weekSplit.paid)}h</strong> · Unpaid <strong>{fmtHours(weekSplit.unpaid)}h</strong>
+                <span style={{ marginLeft: 16 }}>Fortnight paid total: <strong>{fmtHours(fortnightHours)}h</strong></span>
+              </div>
+              {/* per-type approved-leave days for the visible week (Phase 4c) — only types present */}
+              {Object.keys(weekLeave).length > 0 && (
+                <div style={{ fontSize: 11, width: "100%", color: "var(--gray)" }}>
+                  On leave this week (days): {Object.entries(weekLeave).map(([t, n]) => `${t}: ${n}`).join(" · ")}
+                </div>
+              )}
             </>
-          )}
-          <div style={{ fontSize: 11, width: "100%", color: "var(--gray)" }}>
-            Mon–Fri <strong>{fmtHours(hoursByType.mf)}h</strong> · Sat <strong>{fmtHours(hoursByType.sat)}h</strong> · Sun <strong>{fmtHours(hoursByType.sun)}h</strong> · PH <strong>{fmtHours(hoursByType.ph)}h</strong> · Paid <strong>{fmtHours(weekSplit.paid)}h</strong> · Unpaid <strong>{fmtHours(weekSplit.unpaid)}h</strong>
-            <span style={{ marginLeft: 16 }}>Fortnight paid total: <strong>{fmtHours(fortnightHours)}h</strong></span>
-          </div>
-          {/* per-type approved-leave days for the visible week (Phase 4c) — only types present */}
-          {Object.keys(weekLeave).length > 0 && (
-            <div style={{ fontSize: 11, width: "100%", color: "var(--gray)" }}>
-              On leave this week (days): {Object.entries(weekLeave).map(([t, n]) => `${t}: ${n}`).join(" · ")}
-            </div>
           )}
         </div>
       </div>
