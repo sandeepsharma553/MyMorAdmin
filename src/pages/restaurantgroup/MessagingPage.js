@@ -622,8 +622,15 @@ export default function MessagingPage() {
             <div className="form-group"><label className="form-label">Pick who to add ({grpMembers.length} selected)</label>
               <div style={{ maxHeight: "44vh", overflowY: "auto", border: "0.5px solid var(--border)", borderRadius: 8 }}>
                 {(() => {
+                  // venue channels: membership is STAFF-based (base members join by staff
+                  // record, no login needed) — so the picker offers every active staffer,
+                  // not just login-holders like the custom-group picker (whose read rule is
+                  // memberUids-scoped). A login-less member can't read messages until they
+                  // get a login — same as any base member without one.
                   const current = new Set(venueChannelMemberIds(editVenueRec));
-                  const candidates = contactable.filter((s) => !current.has(s.id));
+                  const candidates = staff
+                    .filter((s) => s.status !== "Left" && !current.has(s.id))
+                    .sort((a, b) => (a.displayName || a.name || "").localeCompare(b.displayName || b.name || ""));
                   return candidates.length ? candidates.map((s) => {
                     const on = grpMembers.includes(s.id);
                     return (
@@ -633,7 +640,7 @@ export default function MessagingPage() {
                         <div><div style={{ fontSize: 13, fontWeight: 600 }}>{s.displayName || s.name}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{s.role}</div></div>
                       </label>
                     );
-                  }) : <div style={{ fontSize: 12, color: "var(--gray)", padding: 12 }}>Everyone with a login is already in this channel.</div>;
+                  }) : <div style={{ fontSize: 12, color: "var(--gray)", padding: 12 }}>Everyone is already in this channel.</div>;
                 })()}
               </div>
             </div>

@@ -2146,8 +2146,10 @@ export default function StaffDirectoryPage() {
                 {/* Coaching & mistake records */}
                 <div style={{ marginTop: 16 }}>
                   <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">Coaching & mistake records</span></div>
-                  {(profile.records || []).slice().reverse().map((r) => (
-                    <div key={r.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  {/* key carries the index too — a verify→unverify→verify cycle left some
+                      profiles with two records sharing the deterministic train-<id> */}
+                  {(profile.records || []).slice().reverse().map((r, i) => (
+                    <div key={`${r.id}-${i}`} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                       <span style={{ fontSize: 12 }}><span className={`pill ${recPill(r.type)}`}>{r.type}</span> {r.note} <span style={{ color: "var(--gray)" }}>· {fmtDate(r.at)} · {r.by}</span></span>
                       {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeRecord(r)}>✕</button>}
                     </div>

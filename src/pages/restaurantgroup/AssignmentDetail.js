@@ -155,7 +155,9 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
       if (assignment.staffId && !assignment.verified) {
         await updateDoc(doc(staffCol(groupId), assignment.staffId), {
           records: arrayUnion({
-            id: `${V.recordIdPrefix}${assignment.id}`, type: V.recordType,
+            // timestamped so a verify→unverify→verify cycle never mints two records
+            // with the same id (deterministic ids collided in profile lists)
+            id: `${V.recordIdPrefix}${assignment.id}-${Date.now()}`, type: V.recordType,
             note: `Signed off "${assignment.moduleTitle}"${note ? ` — ${note}` : ""}`,
             at: new Date().toISOString(), by: actorName || "Trainer",
           }),

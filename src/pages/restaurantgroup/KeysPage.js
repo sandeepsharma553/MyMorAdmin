@@ -72,8 +72,10 @@ export default function KeysPage() {
       updatedAt: serverTimestamp(),
     };
     try {
+      let saved = 1;
       if (form.id) {
-        // edit = ONE record (one key). Store move deletes + recreates, as before.
+        // edit = ONE record (one key). qty keeps the record's stored value (no qty
+        // box — owner request). Store move deletes + recreates, as before.
         const rec = { ...base, keyLabel: keyRows[0].label, qty: keyRows[0].qty };
         if (form.prevVenueId === form.venueId) {
           await setDoc(doc(venueCol(groupId, form.venueId, "keys"), form.id), rec, { merge: true });
@@ -82,12 +84,20 @@ export default function KeysPage() {
           await addDoc(venueCol(groupId, form.venueId, "keys"), { ...rec, createdAt: serverTimestamp() });
         }
       } else {
-        // add = one record PER key row, same holder/store/date/notes
-        await Promise.all(keyRows.map((r) => addDoc(venueCol(groupId, form.venueId, "keys"),
+        // add: qty is AUTOMATIC (owner request — no qty box). Typing the same key on
+        // two rows makes ×2: one doc per DISTINCT label, qty = how many rows carry it
+        // (doc shape unchanged: one doc = one keyLabel + qty).
+        const merged = [];
+        keyRows.forEach((r) => {
+          const hit = merged.find((m) => m.label === r.label);
+          if (hit) hit.qty += 1; else merged.push({ label: r.label, qty: 1 });
+        });
+        saved = merged.length;
+        await Promise.all(merged.map((r) => addDoc(venueCol(groupId, form.venueId, "keys"),
           { ...base, keyLabel: r.label, qty: r.qty, createdAt: serverTimestamp() })));
       }
       setForm(null);
-      showToast(keyRows.length > 1 ? `${keyRows.length} key records saved` : "Key record saved");
+      showToast(saved > 1 ? `${saved} key records saved` : "Key record saved");
     } catch { showToast("Could not save key record"); }
   };
 
@@ -137,19 +147,17 @@ export default function KeysPage() {
             </div>
             <div className="form-group" style={{ margin: 0, gridColumn: "span 2" }}>
               <label className="form-label" style={{ fontSize: 11 }}>Key{form.keys.length > 1 ? "s" : ""}</label>
-              {/* one row per key — one submit can issue several DIFFERENT keys at once;
-                  datalist = the picked store's existing key names */}
+              {/* one row per key — one submit can issue several DIFFERENT keys at once.
+                  Owner preference: NO name suggestions (datalist removed) and NO qty box —
+                  every key is typed fresh; typing the same key on two rows saves it once
+                  with ×2 (qty is automatic). */}
               {form.keys.map((kr, i) => (
                 <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
-                  <input className="form-input" style={{ flex: 1 }} list="rg-key-suggestions" value={kr.label} onChange={(e) => setKeyRow(i, "label", e.target.value)} placeholder="e.g. Front door / Master #2" />
-                  <input type="number" min="1" className="form-input" style={{ width: 90 }} title="How many of this key" value={kr.qty} onChange={(e) => setKeyRow(i, "qty", e.target.value)} />
+                  <input className="form-input" style={{ flex: 1 }} value={kr.label} onChange={(e) => setKeyRow(i, "label", e.target.value)} placeholder="e.g. Front door / Master #2" />
                   {!form.id && form.keys.length > 1 && <button className="btn btn-sm btn-danger" onClick={() => removeKeyRow(i)}>✕</button>}
                 </div>
               ))}
               {!form.id && <button className="btn btn-sm" onClick={addKeyRow}>+ Add another key</button>}
-              <datalist id="rg-key-suggestions">
-                {[...new Set(Object.values(byVenue).flat().filter((r) => r.venueId === form.venueId).map((r) => r.keyLabel).filter(Boolean))].map((l) => <option key={l} value={l} />)}
-              </datalist>
             </div>
             <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label" style={{ fontSize: 11 }}>Held by (staff)</label>
