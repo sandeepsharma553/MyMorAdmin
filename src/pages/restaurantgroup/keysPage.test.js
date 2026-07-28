@@ -1,11 +1,13 @@
-/* Keys module (PDF Item 3) — render lock for the simple key-register list.
- * Mocks RGContext + firestore (repo pattern: the page's import chain pulls
- * firebase). Verifies: rows render across venues, the venue picker filters,
- * edit gating (Add button only at can("keys","edit")), and the departed-staff
+/* Keys module (PDF Item 3) — render lock for the key register, now GROUPED one
+ * row per PERSON (owner ruling): first key names in the Keys cell, a count pill
+ * that opens the per-person popup (store / notes / edit live THERE, not in the
+ * table). Mocks RGContext + firestore (repo pattern: the page's import chain
+ * pulls firebase). Verifies: grouped rows render across venues, the popup shows
+ * store + notes, the venue picker filters, edit gating, and the departed-staff
  * chase flag. Config lock: the module exists in RG_MODULES + all four roles,
  * with NO approve level (permissions.test.js's guard owns that rule globally). */
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 jest.mock("firebase/app", () => ({ getApp: jest.fn() }));
 jest.mock("../../firebase", () => ({ db: {} }));
@@ -39,15 +41,20 @@ test("module is wired: RG_MODULES entry + levels in all four roles, no approve",
   expect(DEFAULT_PERMISSIONS.staff.keys).toBe("none");
 });
 
-test("renders key records from every venue with store names", () => {
+test("renders one grouped row per person; the count popup carries store + notes", () => {
   render(<KeysPage />);
-  expect(screen.getByText("Front door")).toBeInTheDocument();
-  expect(screen.getByText("Back door")).toBeInTheDocument();
-  expect(screen.getByText("Mad Benji")).toBeInTheDocument();
-  expect(screen.getByText("Hey Sister")).toBeInTheDocument();
-  expect(screen.getByText("spare in safe")).toBeInTheDocument();
+  // grouped rows: holder + their key names in the Keys cell
+  expect(screen.getByText("Mei Chen")).toBeInTheDocument();
+  expect(screen.getByText("Old Manager")).toBeInTheDocument();
+  expect(screen.getByText(/Front door/)).toBeInTheDocument();
+  expect(screen.getByText(/Back door/)).toBeInTheDocument();
   // departed holder (staffId no longer in scopedStaff) gets the chase flag
   expect(screen.getByText(/staff record gone/)).toBeInTheDocument();
+  // store + notes moved INTO the popup — open Old Manager's count pill
+  // (grouped rows sort by name: Mei Chen first, Old Manager second)
+  fireEvent.click(screen.getAllByText("1 key")[1]);
+  expect(screen.getByText(/Hey Sister/)).toBeInTheDocument();
+  expect(screen.getByText(/spare in safe/)).toBeInTheDocument();
 });
 
 test("venue picker filters the list", () => {
