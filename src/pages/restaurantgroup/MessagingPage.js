@@ -256,11 +256,13 @@ export default function MessagingPage() {
   // ── Edit group members (Job 5) — WhatsApp-like: whoever is removed loses the
   // conversation (and, once the member-only rules are live, its history too). ──
   const [editConv, setEditConv] = useState(null); // conversation doc being edited
-  const openEditMembers = (c) => { setEditConv(c); setGrpMembers([...(c.memberIds || [])]); setPick("editMembers"); };
+  // ADD-ONLY picker: existing members never appear here (removal lives on the Group
+  // info Members tab) — the list is only people who are NOT in the group yet.
+  const openEditMembers = (c) => { setEditConv(c); setGrpMembers([]); setPick("editMembers"); };
   const saveMembers = async () => {
     if (!editConv) return;
-    const members = Array.from(new Set(grpMembers));
-    if (!members.length) return showToast("A group needs at least one member");
+    if (!grpMembers.length) return showToast("Pick who to add");
+    const members = Array.from(new Set([...(editConv.memberIds || []), ...grpMembers]));
     const memberUids = memberUidsOf(members);
     if (!memberUids.length) return showToast("At least one member needs a login");
     try {
@@ -269,7 +271,7 @@ export default function MessagingPage() {
         memberUids, updatedAt: serverTimestamp(),
       });
       setPick(null); setEditConv(null); setGrpMembers([]);
-      showToast("Members updated");
+      showToast(`${grpMembers.length} member${grpMembers.length === 1 ? "" : "s"} added`);
     } catch { showToast("Could not update members"); }
   };
 
@@ -381,9 +383,9 @@ export default function MessagingPage() {
                     <div className="staff-avatar" style={{ width: 34, height: 34, fontSize: 12, marginBottom: 0, background: activeResolved.kind === "dm" ? undefined : "var(--ink)" }}>{activeResolved.kind === "dm" ? initials({ name: activeResolved.name }) : (activeResolved.kind === "venue" ? "🏠" : "👥")}</div>
                     <div><div style={{ fontSize: 14, fontWeight: 600 }}>{activeResolved.name}</div>{(headerSub || activeResolved.kind !== "dm") && <div style={{ fontSize: 11, color: "var(--gray)" }}>{headerSub}{activeResolved.kind !== "dm" ? `${headerSub ? " · " : ""}click for group info` : ""}</div>}</div>
                   </div>
-                  {/* Job 5: add/remove members — owner/storeAdmin or a messages:approve grant */}
+                  {/* Job 5: add/remove members live on the Group info popup (Members tab) */}
                   {activeResolved.kind === "group" && activeResolved.convo && canEditMembers && (
-                    <button className="btn btn-sm" style={{ marginLeft: "auto" }} onClick={() => openEditMembers(activeResolved.convo)}>Edit members</button>
+                    <button className="btn btn-sm" style={{ marginLeft: "auto" }} onClick={openGroupInfo}>Members</button>
                   )}
                 </div>
                 <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -548,22 +550,12 @@ export default function MessagingPage() {
       {pick === "editMembers" && editConv && (
         <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && (setPick(null), setEditConv(null))}>
           <div className="rg-modal" style={{ maxWidth: 460 }}>
-            <div className="modal-head"><span className="modal-title">Edit members — {editConv.name}</span><button className="modal-close" onClick={() => { setPick(null); setEditConv(null); }}>✕</button></div>
-            <div className="form-group"><label className="form-label">Members ({grpMembers.length})</label>
+            <div className="modal-head"><span className="modal-title">Add members — {editConv.name}</span><button className="modal-close" onClick={() => { setPick(null); setEditConv(null); }}>✕</button></div>
+            <div className="form-group"><label className="form-label">Pick who to add ({grpMembers.length} selected)</label>
               <div style={{ maxHeight: "44vh", overflowY: "auto", border: "0.5px solid var(--border)", borderRadius: 8 }}>
-                {/* current members with no staff record (e.g. the owner) — still removable */}
-                {(editConv.memberIds || []).filter((mid) => !contactable.some((s) => s.id === mid)).map((mid) => {
-                  const on = grpMembers.includes(mid);
-                  const label = nameOf(mid) || (editConv.memberNames || [])[(editConv.memberIds || []).indexOf(mid)] || "Admin";
-                  return (
-                    <label key={mid} className="staff-meta-row" style={{ gap: 10, padding: "8px 10px", borderBottom: "0.5px solid var(--gray-light)", cursor: "pointer" }}>
-                      <input type="checkbox" checked={on} onChange={() => setGrpMembers((p) => on ? p.filter((x) => x !== mid) : [...p, mid])} />
-                      <div className="staff-avatar" style={{ width: 28, height: 28, fontSize: 11, marginBottom: 0 }}>{initials({ name: label })}</div>
-                      <div><div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>Admin login</div></div>
-                    </label>
-                  );
-                })}
-                {contactable.map((s) => {
+                {/* ONLY non-members — current members are managed (removed) on the Group
+                    info Members tab, so they never clutter this list */}
+                {contactable.filter((s) => !(editConv.memberIds || []).includes(s.id)).map((s) => {
                   const on = grpMembers.includes(s.id);
                   return (
                     <label key={s.id} className="staff-meta-row" style={{ gap: 10, padding: "8px 10px", borderBottom: "0.5px solid var(--gray-light)", cursor: "pointer" }}>
@@ -573,9 +565,12 @@ export default function MessagingPage() {
                     </label>
                   );
                 })}
+                {contactable.filter((s) => !(editConv.memberIds || []).includes(s.id)).length === 0 && (
+                  <div style={{ fontSize: 12, color: "var(--gray)", padding: 12 }}>Everyone with a login is already in this group.</div>
+                )}
               </div>
             </div>
-            <div className="btn-row"><button className="btn btn-primary" onClick={saveMembers}>Save members</button><button className="btn" onClick={() => { setPick(null); setEditConv(null); }}>Cancel</button></div>
+            <div className="btn-row"><button className="btn btn-primary" onClick={saveMembers}>Add</button><button className="btn" onClick={() => { setPick(null); setEditConv(null); }}>Cancel</button></div>
           </div>
         </div>
       )}
