@@ -13,7 +13,7 @@ export const RG_MODULES = [
   // sidebar item; THE RULE: no second permission system). This module only governs
   // whether the page itself appears, so it seeds "view" for every role; an owner can
   // still hide it per person in User Management.
-  { key: "dashboard", label: "Dashboard", path: "/rg/dashboard" },
+  { key: "dashboard", label: "Dashboard", path: "/rg/dashboard", desc: "The overview page — each card inside still follows its own section permission" },
   { key: "staff", label: "Staff Directory", path: "/rg/staff" },
   { key: "shifts", label: "Shift Planner", path: "/rg/shifts" },
   { key: "leave", label: "Leave Requests", path: "/rg/leave" },
@@ -41,13 +41,13 @@ export const RG_MODULES = [
   // rules keep owner/storeAdmin-only — granting pay:view to a plain manager shows the
   // pay surfaces but their rate reads are denied, so values render "rate unavailable".
   // Widening rates beyond admins is a rules/schema decision, not a client one.
-  { key: "pay", label: "Pay", path: "/rg/shifts" },
+  { key: "pay", label: "Pay", path: "/rg/shifts", desc: "See calculated pay from clock in/out (rates stay owner/store-admin only)" },
   // Hours owed (Job 7) — recording how many hours a staffer is short over a date range.
   // NO page of its own: the editor lives inside the Staff Directory profile, so `path`
   // points there. Entering hours owed is an OWNER job by default (edit seeded to owner
   // only); the owner can grant others in User Management — never hardcoded. Mirrored in
   // MyMorOps lib/rgConfig (keep levels in sync — shared employee.permissions data).
-  { key: "hoursOwed", label: "Hours Owed", path: "/rg/staff" },
+  { key: "hoursOwed", label: "Hours Owed", path: "/rg/staff", desc: "Record hours a staffer is short (on the staff profile) — owner job by default" },
   // Keys — who holds physical keys to which store. Deliberately a simple record list,
   // not a workflow. Levels: admin edit, manager view, staff none — and NO approve
   // (permissions.test.js enforces that only leave/availability carry approve).
@@ -56,7 +56,7 @@ export const RG_MODULES = [
   { key: "keys", label: "Keys", path: "/rg/keys" },
   { key: "compliance", label: "Awards & Compliance", path: "/rg/compliance" },
   { key: "contracts", label: "Contract Generator", path: "/rg/contracts" },
-  { key: "messages", label: "Messages", path: "/rg/messages" },
+  { key: "messages", label: "Messages", path: "/rg/messages", desc: "Approve = can also add/remove group-chat members" },
   // Notifications — writing/sending notifications to staff (Job 6). Its OWN module,
   // deliberately NOT the `messages` permission (chat access ≠ notify-the-team access).
   // Levels: owner/storeAdmin edit (can send), manager view (sees the sent history),
@@ -64,7 +64,7 @@ export const RG_MODULES = [
   // approve). Sending is enforced server-side by rgCanSendNotifications in the rules
   // (6f); this module also drives the sidebar item (hidden at `none`). Mirrored in
   // MyMorOps lib/rgConfig (keep levels in sync — shared employee.permissions data).
-  { key: "notifications", label: "Notifications", path: "/rg/notifications" },
+  { key: "notifications", label: "Notifications", path: "/rg/notifications", desc: "Edit = can send/schedule notifications to staff; View = sees the sent history" },
   { key: "calendar", label: "Calendar", path: "/rg/calendar" },
   { key: "usermgmt", label: "User Management", path: "/rg/users" },
   { key: "settings", label: "Settings", path: "/rg/settings" },

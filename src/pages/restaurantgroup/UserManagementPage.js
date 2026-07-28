@@ -186,9 +186,13 @@ export default function UserManagementPage() {
               <button className="btn btn-sm" onClick={applyRoleDefaults}>Reset to role default</button>
             </div>
             {RG_MODULES.map((m) => (
-              <div key={m.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
-                <span style={{ fontSize: 12, fontWeight: 500 }}>{m.label}</span>
-                <select className="form-input" style={{ width: 130 }} value={permDraft[m.key] || "none"} onChange={(e) => setPermDraft((p) => ({ ...p, [m.key]: e.target.value }))}>
+              <div key={m.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ fontSize: 12, fontWeight: 500, display: "block" }}>{m.label}</span>
+                  {/* what the newer permissions actually control — so the owner isn't guessing */}
+                  {m.desc && <span style={{ fontSize: 10, color: "var(--gray)", display: "block" }}>{m.desc}</span>}
+                </span>
+                <select className="form-input" style={{ width: 130, flexShrink: 0 }} value={permDraft[m.key] || "none"} onChange={(e) => setPermDraft((p) => ({ ...p, [m.key]: e.target.value }))}>
                   {(m.key === "staff" ? LEVEL_OPTS_STAFF : LEVEL_OPTS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>
