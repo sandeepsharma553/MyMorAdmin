@@ -163,27 +163,6 @@ export default function KeysPage() {
         </div>
       )}
 
-      {/* Keys per person — total count per holder (sums the qty on each record) PLUS
-          which keys they hold, scoped to the venue filter like the table below */}
-      {rows.length > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
-          <span style={{ fontSize: 11, color: "var(--gray)" }}>Keys per person:</span>
-          {Object.values(rows.reduce((m, r) => {
-            const k = r.staffId || `n:${(r.holderName || "").toLowerCase()}`;
-            const qty = Number(r.qty) || 1;
-            m[k] = m[k] || { name: r.holderName || "—", count: 0, keys: [] };
-            m[k].count += qty;
-            m[k].keys.push(`${r.keyLabel}${qty > 1 ? ` ×${qty}` : ""}${selectedVenue === "all" && venues.length > 1 ? ` (${venueName(r.venueId)})` : ""}`);
-            return m;
-          }, {})).sort((a, b) => b.count - a.count).map((h) => (
-            <span key={h.name} className="pill pill-blue" title={h.keys.join(", ")}>
-              {h.name}: {h.count} key{h.count === 1 ? "" : "s"}
-              <span style={{ fontWeight: 400, opacity: 0.85 }}> — {h.keys.join(", ")}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
       {/* the list */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
