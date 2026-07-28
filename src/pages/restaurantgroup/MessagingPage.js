@@ -3,7 +3,7 @@ import { addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, where, serverTime
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
 import { useRG } from "./RGContext";
-import { announcementsCol, messagesCol, conversationsCol, convId } from "../../utils/restaurantGroupPaths";
+import { announcementsCol, messagesCol, conversationsCol, convId, staffInVenue } from "../../utils/restaurantGroupPaths";
 import { initials } from "./rgUtils";
 
 const fmtTs = (ts) => {
@@ -175,7 +175,7 @@ export default function MessagingPage() {
       .forEach((m) => updateDoc(doc(messagesCol(groupId), m.id), { readBy: arrayUnion(myId) }).catch(() => {}));
   }, [activeKey, thread, myId, groupId]);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [thread.length, activeKey]);
-  useEffect(() => { setDraft(""); setPendingFiles([]); }, [activeKey]); // clear composer when switching conversations
+  useEffect(() => { setDraft(""); setPendingFiles([]); setGroupInfo(false); }, [activeKey]); // clear composer + info popup when switching conversations
 
   const onFiles = async (e) => {
     const files = Array.from(e.target.files || []); if (fileRef.current) fileRef.current.value = "";
@@ -229,6 +229,25 @@ export default function MessagingPage() {
       setActiveKey(`grp_${ref.id}`); setTab("direct"); setPick(null); setGrpName(""); setGrpMembers([]);
       showToast("Group created");
     } catch { showToast("Could not create group"); }
+  };
+
+  // ── Group info (WhatsApp-style): header click → members popup. Group chats offer
+  // per-member Remove + Add/edit (canEditMembers); venue team channels list the
+  // venue's staff read-only (membership comes from Staff Directory venues). ──
+  const [groupInfo, setGroupInfo] = useState(false);
+  const removeMemberDirect = async (c, mid) => {
+    const members = (c.memberIds || []).filter((x) => x !== mid);
+    if (!members.length) return showToast("A group needs at least one member");
+    const memberUids = memberUidsOf(members);
+    if (!memberUids.length) return showToast("At least one member needs a login");
+    try {
+      await updateDoc(doc(conversationsCol(groupId), c.id), {
+        memberIds: members,
+        memberNames: members.map((m) => nameOf(m) || (c.memberNames || [])[(c.memberIds || []).indexOf(m)] || ""),
+        memberUids, updatedAt: serverTimestamp(),
+      });
+      showToast("Member removed");
+    } catch { showToast("Could not remove member"); }
   };
 
   // ── Edit group members (Job 5) — WhatsApp-like: whoever is removed loses the
@@ -350,8 +369,15 @@ export default function MessagingPage() {
             {activeResolved ? (
               <>
                 <div style={{ padding: 12, borderBottom: "0.5px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-                  <div className="staff-avatar" style={{ width: 34, height: 34, fontSize: 12, marginBottom: 0, background: activeResolved.kind === "dm" ? undefined : "var(--ink)" }}>{activeResolved.kind === "dm" ? initials({ name: activeResolved.name }) : (activeResolved.kind === "venue" ? "🏠" : "👥")}</div>
-                  <div><div style={{ fontSize: 14, fontWeight: 600 }}>{activeResolved.name}</div>{headerSub && <div style={{ fontSize: 11, color: "var(--gray)" }}>{headerSub}</div>}</div>
+                  {/* WhatsApp-style: click the group/channel identity for group info (members) */}
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 10, cursor: activeResolved.kind !== "dm" ? "pointer" : "default", minWidth: 0 }}
+                    title={activeResolved.kind !== "dm" ? "Click for group info" : undefined}
+                    onClick={() => activeResolved.kind !== "dm" && setGroupInfo(true)}
+                  >
+                    <div className="staff-avatar" style={{ width: 34, height: 34, fontSize: 12, marginBottom: 0, background: activeResolved.kind === "dm" ? undefined : "var(--ink)" }}>{activeResolved.kind === "dm" ? initials({ name: activeResolved.name }) : (activeResolved.kind === "venue" ? "🏠" : "👥")}</div>
+                    <div><div style={{ fontSize: 14, fontWeight: 600 }}>{activeResolved.name}</div>{(headerSub || activeResolved.kind !== "dm") && <div style={{ fontSize: 11, color: "var(--gray)" }}>{headerSub}{activeResolved.kind !== "dm" ? `${headerSub ? " · " : ""}click for group info` : ""}</div>}</div>
+                  </div>
                   {/* Job 5: add/remove members — owner/storeAdmin or a messages:approve grant */}
                   {activeResolved.kind === "group" && activeResolved.convo && canEditMembers && (
                     <button className="btn btn-sm" style={{ marginLeft: "auto" }} onClick={() => openEditMembers(activeResolved.convo)}>Edit members</button>
@@ -420,6 +446,52 @@ export default function MessagingPage() {
           </div>
         </div>
       )}
+
+      {/* Group info (WhatsApp-style) — members of the open group/venue channel */}
+      {groupInfo && activeResolved && activeResolved.kind !== "dm" && (() => {
+        const isVenue = activeResolved.kind === "venue";
+        const convo = !isVenue ? convos.find((c) => `grp_${c.id}` === activeResolved.key) : null;
+        const vid = isVenue ? activeResolved.key.slice(6) : null;
+        const members = isVenue
+          ? staff.filter((s) => staffInVenue(s, vid) && s.status !== "Left").map((s) => ({ id: s.id, name: s.displayName || s.name, role: s.role || "" }))
+            .sort((a, b) => a.name.localeCompare(b.name))
+          : (convo?.memberIds || []).map((mid, i) => {
+              const s = staff.find((x) => x.id === mid);
+              return { id: mid, name: s ? (s.displayName || s.name) : ((convo.memberNames || [])[i] || nameOf(mid) || "Admin"), role: s ? (s.role || "") : "Admin login" };
+            });
+        return (
+          <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setGroupInfo(false)}>
+            <div className="rg-modal" style={{ maxWidth: 400 }}>
+              <div className="modal-head"><span className="modal-title">{activeResolved.name}</span><button className="modal-close" onClick={() => setGroupInfo(false)}>✕</button></div>
+              <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>
+                {isVenue
+                  ? "Venue team channel — members are this venue's staff (managed in Staff Directory)"
+                  : `Group${convo?.createdByName ? ` · created by ${convo.createdByName}` : ""}`}
+                {" · "}{members.length} member{members.length === 1 ? "" : "s"}
+              </div>
+              <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
+                {members.map((m) => (
+                  <div key={m.id} className="staff-meta-row" style={{ gap: 10, padding: "7px 4px", borderBottom: "0.5px solid var(--gray-light)", justifyContent: "space-between" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                      <div className="staff-avatar" style={{ width: 30, height: 30, fontSize: 11, marginBottom: 0 }}>{initials({ name: m.name })}</div>
+                      <span><div style={{ fontSize: 13, fontWeight: 600 }}>{m.name}{m.id === myId ? " (you)" : ""}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{m.role}</div></span>
+                    </span>
+                    {!isVenue && canEditMembers && members.length > 1 && (
+                      <button className="btn btn-sm btn-danger" onClick={() => removeMemberDirect(convo, m.id)}>Remove</button>
+                    )}
+                  </div>
+                ))}
+                {members.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", padding: 8 }}>No members found.</div>}
+              </div>
+              {!isVenue && canEditMembers && convo && (
+                <div className="btn-row" style={{ marginTop: 10 }}>
+                  <button className="btn btn-primary" onClick={() => { setGroupInfo(false); openEditMembers(convo); }}>Add / edit members</button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Edit group members (Job 5) — current members (removable) + everyone with a
           login (addable). Removing someone takes the chat off their screen; with the
