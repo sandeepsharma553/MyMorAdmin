@@ -15,7 +15,9 @@ import { fullName, localDateKey } from "./rgUtils";
    survives staff departures; staffId links back while the person exists.
    ========================================================================== */
 
-const EMPTY = { venueId: "", staffId: "", holderName: "", keyLabel: "", qty: 1, issuedOn: "", notes: "" };
+// `keys` rows let ONE submit issue several DIFFERENT keys to the same person; each row
+// becomes its own record (doc shape unchanged: one doc = one keyLabel + qty).
+const EMPTY = { venueId: "", staffId: "", holderName: "", keys: [{ label: "", qty: 1 }], issuedOn: "", notes: "" };
 
 export default function KeysPage() {
   const { groupId, venues, scopedStaff, selectedVenue, can, showToast, noteErr } = useRG();
@@ -45,8 +47,11 @@ export default function KeysPage() {
   const [form, setForm] = useState(null); // null = closed; {id?} = edit
   const activeStaff = useMemo(() => (scopedStaff || []).filter((s) => s.status !== "Left"), [scopedStaff]);
   const openAdd = () => setForm({ ...EMPTY, venueId: selectedVenue !== "all" ? selectedVenue : (venues[0]?.id || ""), issuedOn: localDateKey(new Date()) });
-  const openEdit = (r) => setForm({ id: r.id, prevVenueId: r.venueId, venueId: r.venueId, staffId: r.staffId || "", holderName: r.holderName || "", keyLabel: r.keyLabel || "", qty: r.qty || 1, issuedOn: r.issuedOn || "", notes: r.notes || "" });
+  const openEdit = (r) => setForm({ id: r.id, prevVenueId: r.venueId, venueId: r.venueId, staffId: r.staffId || "", holderName: r.holderName || "", keys: [{ label: r.keyLabel || "", qty: r.qty || 1 }], issuedOn: r.issuedOn || "", notes: r.notes || "" });
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  const setKeyRow = (i, k, v) => setForm((p) => ({ ...p, keys: p.keys.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)) }));
+  const addKeyRow = () => setForm((p) => ({ ...p, keys: [...p.keys, { label: "", qty: 1 }] }));
+  const removeKeyRow = (i) => setForm((p) => ({ ...p, keys: p.keys.length > 1 ? p.keys.filter((_, idx) => idx !== i) : p.keys }));
   const setStaff = (e) => {
     const staffId = e.target.value;
     const s = activeStaff.find((x) => x.id === staffId);
@@ -54,28 +59,35 @@ export default function KeysPage() {
   };
 
   const save = async () => {
-    const keyLabel = (form.keyLabel || "").trim();
     const holderName = (form.holderName || "").trim();
     if (!form.venueId) return showToast("Pick a store");
-    if (!keyLabel) return showToast("Enter which key (e.g. Front door)");
+    const keyRows = (form.keys || []).map((r) => ({ label: (r.label || "").trim(), qty: Math.max(1, Number(r.qty) || 1) })).filter((r) => r.label);
+    if (!keyRows.length) return showToast("Enter which key (e.g. Front door)");
     if (!holderName) return showToast("Enter who holds it");
-    const rec = {
-      keyLabel, holderName,
+    const base = {
+      holderName,
       staffId: form.staffId || null,
-      qty: Math.max(1, Number(form.qty) || 1), // how many of THIS key they hold
       issuedOn: form.issuedOn || "",
       notes: (form.notes || "").trim(),
       updatedAt: serverTimestamp(),
     };
     try {
-      if (form.id && form.prevVenueId === form.venueId) {
-        await setDoc(doc(venueCol(groupId, form.venueId, "keys"), form.id), rec, { merge: true });
+      if (form.id) {
+        // edit = ONE record (one key). Store move deletes + recreates, as before.
+        const rec = { ...base, keyLabel: keyRows[0].label, qty: keyRows[0].qty };
+        if (form.prevVenueId === form.venueId) {
+          await setDoc(doc(venueCol(groupId, form.venueId, "keys"), form.id), rec, { merge: true });
+        } else {
+          await deleteDoc(doc(venueCol(groupId, form.prevVenueId, "keys"), form.id));
+          await addDoc(venueCol(groupId, form.venueId, "keys"), { ...rec, createdAt: serverTimestamp() });
+        }
       } else {
-        if (form.id) await deleteDoc(doc(venueCol(groupId, form.prevVenueId, "keys"), form.id)); // moved store
-        await addDoc(venueCol(groupId, form.venueId, "keys"), { ...rec, createdAt: serverTimestamp() });
+        // add = one record PER key row, same holder/store/date/notes
+        await Promise.all(keyRows.map((r) => addDoc(venueCol(groupId, form.venueId, "keys"),
+          { ...base, keyLabel: r.label, qty: r.qty, createdAt: serverTimestamp() })));
       }
       setForm(null);
-      showToast("Key record saved");
+      showToast(keyRows.length > 1 ? `${keyRows.length} key records saved` : "Key record saved");
     } catch { showToast("Could not save key record"); }
   };
 
@@ -108,18 +120,21 @@ export default function KeysPage() {
                 {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </div>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" style={{ fontSize: 11 }}>Key</label>
-              {/* datalist = the keys that already exist at the picked store, so "which
-                  keys are there" is one click away while still allowing a new name */}
-              <input className="form-input" list="rg-key-suggestions" value={form.keyLabel} onChange={set("keyLabel")} placeholder="e.g. Front door / Master #2" />
+            <div className="form-group" style={{ margin: 0, gridColumn: "span 2" }}>
+              <label className="form-label" style={{ fontSize: 11 }}>Key{form.keys.length > 1 ? "s" : ""}</label>
+              {/* one row per key — one submit can issue several DIFFERENT keys at once;
+                  datalist = the picked store's existing key names */}
+              {form.keys.map((kr, i) => (
+                <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                  <input className="form-input" style={{ flex: 1 }} list="rg-key-suggestions" value={kr.label} onChange={(e) => setKeyRow(i, "label", e.target.value)} placeholder="e.g. Front door / Master #2" />
+                  <input type="number" min="1" className="form-input" style={{ width: 90 }} title="How many of this key" value={kr.qty} onChange={(e) => setKeyRow(i, "qty", e.target.value)} />
+                  {!form.id && form.keys.length > 1 && <button className="btn btn-sm btn-danger" onClick={() => removeKeyRow(i)}>✕</button>}
+                </div>
+              ))}
+              {!form.id && <button className="btn btn-sm" onClick={addKeyRow}>+ Add another key</button>}
               <datalist id="rg-key-suggestions">
                 {[...new Set(Object.values(byVenue).flat().filter((r) => r.venueId === form.venueId).map((r) => r.keyLabel).filter(Boolean))].map((l) => <option key={l} value={l} />)}
               </datalist>
-            </div>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" style={{ fontSize: 11 }}>How many</label>
-              <input type="number" min="1" className="form-input" value={form.qty} onChange={set("qty")} />
             </div>
             <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label" style={{ fontSize: 11 }}>Held by (staff)</label>
