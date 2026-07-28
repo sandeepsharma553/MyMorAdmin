@@ -119,6 +119,18 @@ export default function MessagingPage() {
     try { await deleteDoc(doc(announcementsCol(groupId), a.id)); showToast("Deleted"); } catch { showToast("Could not delete"); }
   };
 
+  // ── Venue channel membership (WhatsApp-style, owner ruling) ── default = the venue's
+  // staff, with per-channel OVERRIDES on the venue doc: chatRemovedIds[] (taken out of
+  // the channel — stays out even though they remain venue staff) and chatExtraIds[]
+  // (added in from outside the venue). New venue staff auto-join unless previously
+  // removed. Declared BEFORE convList — the memo below calls it during render.
+  const venueChannelMemberIds = (v) => {
+    const removed = new Set(v.chatRemovedIds || []);
+    const base = staff.filter((s) => staffInVenue(s, v.id) && s.status !== "Left").map((s) => s.id);
+    const extra = (v.chatExtraIds || []).filter((id) => !removed.has(id) && !base.includes(id));
+    return [...base.filter((id) => !removed.has(id)), ...extra];
+  };
+
   // ── conversations (DMs + venue groups + custom groups) ──
   const convList = useMemo(() => {
     const list = [];
@@ -244,18 +256,6 @@ export default function MessagingPage() {
   const openGroupInfo = () => { setInfoTab("members"); setGroupInfo(true); };
   const fmtSize = (n) => (!n ? "" : n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
-  // ── Venue channel membership (WhatsApp-style, owner ruling) ── default = the venue's
-  // staff, with per-channel OVERRIDES on the venue doc: chatRemovedIds[] (taken out of
-  // the channel — stays out even though they remain venue staff) and chatExtraIds[]
-  // (added in from outside the venue). New venue staff auto-join unless previously
-  // removed. UX boundary like the rest of the messages model: the rules still let any
-  // group member read venue_ messages via the DB directly.
-  const venueChannelMemberIds = (v) => {
-    const removed = new Set(v.chatRemovedIds || []);
-    const base = staff.filter((s) => staffInVenue(s, v.id) && s.status !== "Left").map((s) => s.id);
-    const extra = (v.chatExtraIds || []).filter((id) => !removed.has(id) && !base.includes(id));
-    return [...base.filter((id) => !removed.has(id)), ...extra];
-  };
   const removeVenueMember = async (v, mid) => {
     const chatRemovedIds = Array.from(new Set([...(v.chatRemovedIds || []), mid]));
     const chatExtraIds = (v.chatExtraIds || []).filter((x) => x !== mid);
