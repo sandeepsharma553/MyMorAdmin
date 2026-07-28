@@ -415,9 +415,18 @@ export function RGProvider({ children }) {
     const myVenueIds = myStaff?.venueIds || (myVenueId && myVenueId !== "all" ? [myVenueId] : venues.map((v) => v.id));
     const dm = messages.filter((m) => m.toId === myId && !(m.readBy || []).includes(myId)).length;
     const ann = announcements.filter((a) => (a.scope === "all" || myVenueIds.includes(a.scope)) && !(a.readBy || []).includes(myId)).length;
-    // venue team-group messages (conv = "venue_<venueId>") I haven't read
-    const grp = messages.filter((m) => typeof m.conv === "string" && m.conv.startsWith("venue_")
-      && myVenueIds.includes(m.conv.slice(6)) && m.fromId !== myId && !(m.readBy || []).includes(myId)).length;
+    // venue team-group messages (conv = "venue_<venueId>") I haven't read — honours the
+    // channel overrides (chatRemovedIds/chatExtraIds): a removed member's badge must not
+    // count a channel they can't open
+    const grp = messages.filter((m) => {
+      if (typeof m.conv !== "string" || !m.conv.startsWith("venue_")) return false;
+      const vid = m.conv.slice(6);
+      const v = venues.find((x) => x.id === vid);
+      const sid = myStaff?.id;
+      const removed = !!(sid && (v?.chatRemovedIds || []).includes(sid));
+      const extra = !!(sid && (v?.chatExtraIds || []).includes(sid));
+      return ((myVenueIds.includes(vid) && !removed) || extra) && m.fromId !== myId && !(m.readBy || []).includes(myId);
+    }).length;
     return dm + ann + grp;
   }, [messages, announcements, staff, me, myVenueId, venues]);
 

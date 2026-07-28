@@ -3,7 +3,7 @@ import { addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, where, serverTime
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
 import { useRG } from "./RGContext";
-import { announcementsCol, messagesCol, conversationsCol, convId, staffInVenue } from "../../utils/restaurantGroupPaths";
+import { announcementsCol, messagesCol, conversationsCol, convId, staffInVenue, venueDoc } from "../../utils/restaurantGroupPaths";
 import { initials } from "./rgUtils";
 
 const fmtTs = (ts) => {
@@ -122,9 +122,14 @@ export default function MessagingPage() {
   // ── conversations (DMs + venue groups + custom groups) ──
   const convList = useMemo(() => {
     const list = [];
-    // venue team groups (for each venue I belong to)
-    venues.filter((v) => myVenueIds.includes(v.id)).forEach((v) => {
-      list.push({ key: `venue_${v.id}`, kind: "venue", name: `${v.name} team` });
+    // venue team groups — membership honours the channel overrides: removed members
+    // lose the channel (canEditMembers holders keep their own venues' channels so they
+    // can manage them); chatExtraIds members gain it even from outside the venue
+    venues.forEach((v) => {
+      const memberIds = venueChannelMemberIds(v);
+      const visible = memberIds.includes(myId)
+        || (myVenueIds.includes(v.id) && (canEditMembers || !(v.chatRemovedIds || []).includes(myId)));
+      if (visible) list.push({ key: `venue_${v.id}`, kind: "venue", name: `${v.name} team`, venueRec: v });
     });
     // custom groups I'm a member of (the query already scopes by memberUids; the
     // memberIds check stays as a belt for owner-created legacy shapes)
@@ -148,7 +153,7 @@ export default function MessagingPage() {
       const unread = cm.filter((m) => m.fromId !== myId && !(m.readBy || []).includes(myId)).length;
       return { ...c, last, unread };
     }).sort((a, b) => tsVal(b.last?.at) - tsVal(a.last?.at));
-  }, [venues, myVenueIds, convos, msgs, myId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [venues, myVenueIds, convos, msgs, myId, staff, canEditMembers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [activeKey, setActiveKey] = useState(null);
   const active = useMemo(() => convList.find((c) => c.key === activeKey) || null, [convList, activeKey]);
@@ -238,6 +243,33 @@ export default function MessagingPage() {
   const [infoTab, setInfoTab] = useState("members"); // members | media | docs (WhatsApp-style)
   const openGroupInfo = () => { setInfoTab("members"); setGroupInfo(true); };
   const fmtSize = (n) => (!n ? "" : n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+  // ── Venue channel membership (WhatsApp-style, owner ruling) ── default = the venue's
+  // staff, with per-channel OVERRIDES on the venue doc: chatRemovedIds[] (taken out of
+  // the channel — stays out even though they remain venue staff) and chatExtraIds[]
+  // (added in from outside the venue). New venue staff auto-join unless previously
+  // removed. UX boundary like the rest of the messages model: the rules still let any
+  // group member read venue_ messages via the DB directly.
+  const venueChannelMemberIds = (v) => {
+    const removed = new Set(v.chatRemovedIds || []);
+    const base = staff.filter((s) => staffInVenue(s, v.id) && s.status !== "Left").map((s) => s.id);
+    const extra = (v.chatExtraIds || []).filter((id) => !removed.has(id) && !base.includes(id));
+    return [...base.filter((id) => !removed.has(id)), ...extra];
+  };
+  const removeVenueMember = async (v, mid) => {
+    const chatRemovedIds = Array.from(new Set([...(v.chatRemovedIds || []), mid]));
+    const chatExtraIds = (v.chatExtraIds || []).filter((x) => x !== mid);
+    try { await updateDoc(venueDoc(groupId, v.id), { chatRemovedIds, chatExtraIds }); showToast("Member removed from channel"); }
+    catch { showToast("Could not remove member"); }
+  };
+  const addVenueMembers = async (v, ids) => {
+    const chatRemovedIds = (v.chatRemovedIds || []).filter((x) => !ids.includes(x));
+    const inVenue = (id) => staff.some((s) => s.id === id && staffInVenue(s, v.id));
+    const chatExtraIds = Array.from(new Set([...(v.chatExtraIds || []).filter((x) => !chatRemovedIds.includes(x)), ...ids.filter((id) => !inVenue(id))]));
+    try { await updateDoc(venueDoc(groupId, v.id), { chatRemovedIds, chatExtraIds }); showToast(`${ids.length} member${ids.length === 1 ? "" : "s"} added`); }
+    catch { showToast("Could not add members"); }
+  };
+  const [editVenueRec, setEditVenueRec] = useState(null); // venue whose channel members are being added
   const removeMemberDirect = async (c, mid) => {
     const members = (c.memberIds || []).filter((x) => x !== mid);
     if (!members.length) return showToast("A group needs at least one member");
@@ -457,9 +489,12 @@ export default function MessagingPage() {
         const isVenue = activeResolved.kind === "venue";
         const convo = !isVenue ? convos.find((c) => `grp_${c.id}` === activeResolved.key) : null;
         const vid = isVenue ? activeResolved.key.slice(6) : null;
+        const vRec = isVenue ? venues.find((v) => v.id === vid) : null;
         const members = isVenue
-          ? staff.filter((s) => staffInVenue(s, vid) && s.status !== "Left").map((s) => ({ id: s.id, name: s.displayName || s.name, role: s.role || "" }))
-            .sort((a, b) => a.name.localeCompare(b.name))
+          ? venueChannelMemberIds(vRec || { id: vid }).map((mid) => {
+              const s = staff.find((x) => x.id === mid);
+              return { id: mid, name: s ? (s.displayName || s.name) : (nameOf(mid) || "—"), role: s?.role || "" };
+            }).sort((a, b) => a.name.localeCompare(b.name))
           : (convo?.memberIds || []).map((mid, i) => {
               const s = staff.find((x) => x.id === mid);
               return { id: mid, name: s ? (s.displayName || s.name) : ((convo.memberNames || [])[i] || nameOf(mid) || "Admin"), role: s ? (s.role || "") : "Admin login" };
@@ -476,7 +511,7 @@ export default function MessagingPage() {
               <div className="modal-head"><span className="modal-title">{activeResolved.name}</span><button className="modal-close" onClick={() => setGroupInfo(false)}>✕</button></div>
               <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>
                 {isVenue
-                  ? "Venue team channel — members are this venue's staff (managed in Staff Directory)"
+                  ? "Venue team channel — the venue's staff join automatically; you can add or remove anyone here"
                   : `Group${convo?.createdByName ? ` · created by ${convo.createdByName}` : ""}`}
                 {" · "}{members.length} member{members.length === 1 ? "" : "s"}
               </div>
@@ -495,16 +530,20 @@ export default function MessagingPage() {
                           <div className="staff-avatar" style={{ width: 30, height: 30, fontSize: 11, marginBottom: 0 }}>{initials({ name: m.name })}</div>
                           <span><div style={{ fontSize: 13, fontWeight: 600 }}>{m.name}{m.id === myId ? " (you)" : ""}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{m.role}</div></span>
                         </span>
-                        {!isVenue && canEditMembers && members.length > 1 && (
-                          <button className="btn btn-sm btn-danger" onClick={() => removeMemberDirect(convo, m.id)}>Remove</button>
+                        {canEditMembers && members.length > 1 && (
+                          <button className="btn btn-sm btn-danger" onClick={() => (isVenue ? removeVenueMember(vRec, m.id) : removeMemberDirect(convo, m.id))}>Remove</button>
                         )}
                       </div>
                     ))}
                     {members.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", padding: 8 }}>No members found.</div>}
                   </div>
-                  {!isVenue && canEditMembers && convo && (
+                  {canEditMembers && (isVenue ? vRec : convo) && (
                     <div className="btn-row" style={{ marginTop: 10 }}>
-                      <button className="btn btn-primary" onClick={() => { setGroupInfo(false); openEditMembers(convo); }}>+ Add members</button>
+                      <button className="btn btn-primary" onClick={() => {
+                        setGroupInfo(false);
+                        if (isVenue) { setEditVenueRec(vRec); setGrpMembers([]); setPick("addVenueMembers"); }
+                        else openEditMembers(convo);
+                      }}>+ Add members</button>
                     </div>
                   )}
                 </>
@@ -571,6 +610,37 @@ export default function MessagingPage() {
               </div>
             </div>
             <div className="btn-row"><button className="btn btn-primary" onClick={saveMembers}>Add</button><button className="btn" onClick={() => { setPick(null); setEditConv(null); }}>Cancel</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* Add members to a VENUE channel — only people not already in the channel */}
+      {pick === "addVenueMembers" && editVenueRec && (
+        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && (setPick(null), setEditVenueRec(null))}>
+          <div className="rg-modal" style={{ maxWidth: 460 }}>
+            <div className="modal-head"><span className="modal-title">Add members — {editVenueRec.name} team</span><button className="modal-close" onClick={() => { setPick(null); setEditVenueRec(null); }}>✕</button></div>
+            <div className="form-group"><label className="form-label">Pick who to add ({grpMembers.length} selected)</label>
+              <div style={{ maxHeight: "44vh", overflowY: "auto", border: "0.5px solid var(--border)", borderRadius: 8 }}>
+                {(() => {
+                  const current = new Set(venueChannelMemberIds(editVenueRec));
+                  const candidates = contactable.filter((s) => !current.has(s.id));
+                  return candidates.length ? candidates.map((s) => {
+                    const on = grpMembers.includes(s.id);
+                    return (
+                      <label key={s.id} className="staff-meta-row" style={{ gap: 10, padding: "8px 10px", borderBottom: "0.5px solid var(--gray-light)", cursor: "pointer" }}>
+                        <input type="checkbox" checked={on} onChange={() => setGrpMembers((p) => on ? p.filter((x) => x !== s.id) : [...p, s.id])} />
+                        <div className="staff-avatar" style={{ width: 28, height: 28, fontSize: 11, marginBottom: 0 }}>{initials(s)}</div>
+                        <div><div style={{ fontSize: 13, fontWeight: 600 }}>{s.displayName || s.name}</div><div style={{ fontSize: 10, color: "var(--gray)" }}>{s.role}</div></div>
+                      </label>
+                    );
+                  }) : <div style={{ fontSize: 12, color: "var(--gray)", padding: 12 }}>Everyone with a login is already in this channel.</div>;
+                })()}
+              </div>
+            </div>
+            <div className="btn-row">
+              <button className="btn btn-primary" onClick={async () => { if (!grpMembers.length) return showToast("Pick who to add"); await addVenueMembers(editVenueRec, grpMembers); setPick(null); setEditVenueRec(null); setGrpMembers([]); }}>Add</button>
+              <button className="btn" onClick={() => { setPick(null); setEditVenueRec(null); setGrpMembers([]); }}>Cancel</button>
+            </div>
           </div>
         </div>
       )}
