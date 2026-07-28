@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, query, where, setDoc, serverTimestamp, arrayUnion, arrayRemove, onSnapshot } from "firebase/firestore";
+import { addDoc, updateDoc, deleteDoc, doc, collection, getDoc, getDocs, query, where, setDoc, serverTimestamp, arrayUnion, arrayRemove, onSnapshot } from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from "firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
@@ -18,6 +18,7 @@ import { contractedNum, contractedSplitFromPrivate, contractedWeekStatus } from 
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
 import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, weekKeyOf, localDateKey, fmtHours, effectiveBreak } from "./rgUtils";
+import { computeWorked, toMillis } from "./timeEntry";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
 import ChecklistAssignmentDetail from "./ChecklistAssignmentDetail";
@@ -137,7 +138,7 @@ const blankForm = (defaultVenue) => ({
 });
 
 export default function StaffDirectoryPage() {
-  const { groupId, group, staff, draftStaff, scopedStaff, venues, shifts, leave, assignments, checklistAssignments, modules, sops, sopAssignments, checklists, perfNotes, stations, roles, areas, empTypes, selectedVenue, showToast, can, me, myStaff, noteErr } = useRG();
+  const { groupId, group, staff, draftStaff, scopedStaff, venues, shifts, timeEntries, leave, assignments, checklistAssignments, modules, sops, sopAssignments, checklists, perfNotes, stations, roles, areas, empTypes, selectedVenue, showToast, can, me, myStaff, noteErr } = useRG();
   const canEdit = can("staff", "edit");
   // Phase 5a: false for the "self" tier — they get ONLY their own read-only profile below.
   const canViewAll = can("staff", "view");
@@ -746,6 +747,27 @@ export default function StaffDirectoryPage() {
   const heldKeys = useMemo(() => Object.values(profileKeys).flat(), [profileKeys]);
 
   useEffect(() => { setHoForm({ from: "", to: "", override: "", note: "" }); setHoCalc(null); }, [profile?.id]);
+
+  // Breaks for the open profile's time entries (one-shot per entry) so the History's
+  // "Worked (clock)" figure = gross − UNPAID breaks — the same computeWorked the pay
+  // calculator uses, never a second formula.
+  const [entryBreaksMap, setEntryBreaksMap] = useState({});
+  const myEntryCount = profile ? (timeEntries || []).filter((e) => e.staffId === profile.id).length : 0;
+  useEffect(() => {
+    setEntryBreaksMap({});
+    if (!profile?.id || !groupId || !myEntryCount) return;
+    const mine = (timeEntries || []).filter((e) => e.staffId === profile.id).slice(0, 100);
+    let dead = false;
+    (async () => {
+      const out = {};
+      await Promise.all(mine.map(async (e) => {
+        try { out[e.id] = (await getDocs(collection(doc(venueCol(groupId, e.venueId, "timeEntries"), e.id), "breaks"))).docs.map((b) => b.data()); }
+        catch { out[e.id] = []; }
+      }));
+      if (!dead) setEntryBreaksMap(out);
+    })();
+    return () => { dead = true; };
+  }, [profile?.id, groupId, myEntryCount]); // eslint-disable-line react-hooks/exhaustive-deps
   // ── Hours owed (Job 7A) handlers ──
   // calculated = Σ contractedWeekStatus(...).shortBy over every week the range touches —
   // the planner's ONE calculator, never a rewrite. Boundary weeks count WHOLE (the
@@ -1271,6 +1293,31 @@ export default function StaffDirectoryPage() {
         <div style={{ fontSize: 11, color: "var(--gray)", margin: "-8px 0 14px" }}>
           Rostered <strong>{fmtHours(grossTot)}h</strong> · Breaks <strong>{breakTot} min</strong> · <strong>{fmtHours(paidTot)}h</strong> paid · <strong>{fmtHours(unpaidTot)}h</strong> unpaid
         </div>
+        {/* Worked vs rostered (Job 9 follow-up): ACTUAL clock time (Ops timeEntries,
+            unpaid breaks deducted) against the planner's rostered paid hours for the
+            same period — the gap is what's still pending. */}
+        {(() => {
+          const entryDate = (e) => { const [y, m, d] = String(e.businessDate || "").split("-").map(Number); return y ? new Date(y, m - 1, d) : null; };
+          const periodEntries = (timeEntries || []).filter((e) => e.staffId === profile.id && inPeriod(entryDate(e)));
+          let workedMin = 0, openNow = 0;
+          periodEntries.forEach((e) => {
+            workedMin += computeWorked(e, entryBreaksMap[e.id] || []).workedMinutes;
+            if (toMillis(e.clockInAt) != null && toMillis(e.clockOutAt) == null) openNow++;
+          });
+          const workedH = workedMin / 60;
+          const pendingH = Math.max(0, paidTot - workedH);
+          return (
+            <div style={{ fontSize: 12, marginTop: 4, padding: "6px 10px", background: "var(--gray-light)", borderRadius: 8 }}>
+              Worked (clock) <strong>{fmtHours(workedH)}h</strong> of <strong>{fmtHours(paidTot)}h</strong> rostered
+              {" · "}
+              {pendingH > 0
+                ? <span style={{ color: "#b45309", fontWeight: 600 }}>{fmtHours(pendingH)}h pending</span>
+                : <span style={{ color: "#16a34a", fontWeight: 600 }}>nothing pending</span>}
+              {openNow > 0 && <span style={{ color: "var(--gray)" }}> · {openNow} still clocked in</span>}
+              {periodEntries.length === 0 && <span style={{ color: "var(--gray)" }}> · no clock entries this period</span>}
+            </div>
+          );
+        })()}
         <Head t="Shift history" />
         {sh.length ? sh.slice(0, 40).map((x) => (
           <div key={x.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
