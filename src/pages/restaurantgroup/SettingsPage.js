@@ -15,13 +15,18 @@ const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").r
 const LOCATION_TYPES_SEED = ["Single Location", "Multiple Locations"];
 
 export default function SettingsPage() {
-  const { groupId, group, venues, stations, equipment, roles, areas, empTypes, can, showToast, me } = useRG();
+  const { groupId, group, venues, stations, equipment, roles, areas, empTypes, selectedVenue, can, showToast, me } = useRG();
   const editable = can("settings", "edit");
   const isOwner = me?.groupRole === "owner"; // legal-entity editing is owner-only
   const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
   const [tab, setTab] = useState("structure");
   const [venueTab, setVenueTab] = useState(venues[0]?.id || "");
   useEffect(() => { if (!venueTab && venues[0]) setVenueTab(venues[0].id); }, [venues]); // eslint-disable-line
+  // Venue-scoped sections (Temperature units, Stations, Stock lists) FOLLOW the global
+  // top-bar venue picker: picking "Hey Sister" up top must show Hey Sister's units, not
+  // the first venue's. The local venue tabs still work for quick side-by-side hopping;
+  // "All venues" leaves them free.
+  useEffect(() => { if (selectedVenue && selectedVenue !== "all") setVenueTab(selectedVenue); }, [selectedVenue]);
 
   // ── Contract settings (gated subcollection docs; loaded on mount) ──
   const [classLevels, setClassLevels] = useState([]);
