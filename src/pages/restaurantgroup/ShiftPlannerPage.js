@@ -509,7 +509,7 @@ export default function ShiftPlannerPage() {
       // single-area sections (incl. exclusive ones) are labelled by their area name
       return [areaPinned(group, g.label) ? 0 : 1, idx(g.label)];
     };
-    return [...sections.values()]
+    const out = [...sections.values()]
       .map((g) => ({ ...g, areas: [...g.areaSet], members: g.members.slice().sort(staffSort) }))
       .filter((g) => areaFilter === "all" || g.areas.includes(areaFilter))
       .sort((a, b) => {
@@ -517,10 +517,25 @@ export default function ShiftPlannerPage() {
         for (let i = 0; i < Math.max(ra.length, rb.length); i++) { const d = (ra[i] ?? -1) - (rb[i] ?? -1); if (d) return d; }
         return a.label.localeCompare(b.label);
       });
+    // owner request (Jul 2026): the LOGGED-IN person's row is hoisted into a pinned
+    // "You" section at the VERY top of the grid (above Management/pinned areas) — on a
+    // shared device you find yourself instantly. One row per person: they leave their
+    // area section (an emptied section drops). Both grids (main + split) share this.
+    // Mirror Ops RosterGrid.
+    if (myStaff?.id) {
+      const mine = [];
+      out.forEach((g) => {
+        const i = g.members.findIndex((m) => m.id === myStaff.id);
+        if (i >= 0) mine.push(g.members.splice(i, 1)[0]);
+      });
+      if (mine.length) return [{ key: "__me__", label: "You", areaSet: new Set(), areas: [], members: mine }, ...out.filter((g) => g.members.length)];
+      return out.filter((g) => g.members.length);
+    }
+    return out;
   };
   const groupedRows = useMemo(
     () => groupRowsFor(rows.filter((s) => staffAtStation(s, effStation, weekShifts)), (s) => staffAreas(s)),
-    [rows, areaFilter, effStation, weekShifts, sortBy, group] // eslint-disable-line react-hooks/exhaustive-deps
+    [rows, areaFilter, effStation, weekShifts, sortBy, group, myStaff?.id] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // #5 distinct staff currently shown in the main grid (across all groups) — the basis
@@ -791,9 +806,9 @@ export default function ShiftPlannerPage() {
                             </div>
                           ) : (
                             <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff" }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
-                              <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
+                              <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}</div>
                               {/* multi-venue pane: venue initials on the chip (main-grid convention) */}
-                              <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{vids.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
+                              <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{vids.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}{sh.notes ? <span style={{ fontSize: 13, marginLeft: 4 }}>📝</span> : ""}</div>
                               {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{fmtHours(b.grossHours)}h gross · {fmtHours(b.paidHours)}h paid · {fmtHours(b.unpaidHours)}h unpaid</div> : null; })()}
                             </div>
                           )))}
@@ -857,8 +872,8 @@ export default function ShiftPlannerPage() {
                 </div>
               ) : (
                 <div key={sh.id} className="shift-cell" style={{ background: venueColorOf(sh.venueId), color: "#fff", boxShadow: (effStation !== "all" && sh.stationId === effStation) ? "0 0 0 2px var(--red)" : undefined }} title={sh.notes ? sh.notes : "Click to view"} onClick={() => setShiftDetail(sh)}>
-                  <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}{sh.notes ? " 📝" : ""}</div>
-                  <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}</div>
+                  <div style={{ fontWeight: 600 }}>{sh.start}–{sh.end}</div>
+                  <div style={{ opacity: 0.8 }}>{(sh.role || "").replace(/^(FOH|BOH) — /, "")}{sh.station ? ` · ${sh.station}` : ""}{shs.length > 1 && sh.venue ? ` · ${sh.venue.split(" ").map((w) => w[0]).join("")}` : ""}{sh.notes ? <span style={{ fontSize: 13, marginLeft: 4 }}>📝</span> : ""}</div>
                   {(() => { const b = effectiveBreak(sh); return b.breakMins > 0 ? <div style={{ fontSize: 9, opacity: 0.75 }}>{fmtHours(b.grossHours)}h gross · {fmtHours(b.paidHours)}h paid · {fmtHours(b.unpaidHours)}h unpaid</div> : null; })()}
                 </div>
               )))}
@@ -1271,7 +1286,16 @@ export default function ShiftPlannerPage() {
                 </div>
               );
             })()}
-            <div style={{ marginTop: 12 }}><div className="form-label">Notes</div><div style={{ fontSize: 13, color: shiftDetail.notes ? "var(--ink)" : "var(--gray)" }}>{shiftDetail.notes || "No notes"}</div></div>
+            {/* note = a manager wrote something the staffer MUST see — amber box, big
+                text (owner request Jul 2026); mirror Ops noteBox */}
+            {shiftDetail.notes ? (
+              <div style={{ marginTop: 12, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#92400e", textTransform: "uppercase", marginBottom: 4 }}>📝 Note for this shift</div>
+                <div style={{ fontSize: 14, color: "var(--ink)", lineHeight: "20px" }}>{shiftDetail.notes}</div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 12 }}><div className="form-label">Notes</div><div style={{ fontSize: 13, color: "var(--gray)" }}>No notes</div></div>
+            )}
             <div className="btn-row">
               {canEdit && <button className="btn btn-primary" onClick={() => openEdit(shiftDetail)}>Edit shift</button>}
               {canEdit && <button className="btn btn-danger" onClick={async () => { if (window.confirm(`Remove ${shiftDetail.staffName}'s ${shiftDetail.start}–${shiftDetail.end} shift?`)) { await removeShift(shiftDetail); setShiftDetail(null); } }}>Remove shift</button>}
