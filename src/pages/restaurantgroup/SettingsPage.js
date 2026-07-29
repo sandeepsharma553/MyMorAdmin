@@ -332,6 +332,36 @@ export default function SettingsPage() {
     await saveClusters(clusters.filter((x) => x.id !== c.id));
     showToast("Cluster deleted");
   };
+  // ── Availability lock per cluster (fortnightly lock, Jul 2026) ── fields live ON the
+  // cluster object ({ lockCycle, anchorDate, openDays }) — same whole-array saveClusters
+  // write as rename/delete; the anchor snaps to its Monday via the anchorMonday twin.
+  // The settings:edit gate here is UI-ONLY convenience: the enforced boundary is the
+  // group-doc update rule (owner/storeAdmin — rgIsGroupAdmin), which these writes ride.
+  // Snap a YYYY-MM-DD to its week's MONDAY (local construction — never new Date(string),
+  // which parses UTC and can shift the day). Invalid → "".
+  // ⚠ KEEP byte-identical to ChecklistsPage.js and Ops ChecklistsScreen.js (anchorMonday).
+  const anchorMonday = (s) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s || "")) return "";
+    const [y, m, d] = s.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return "";
+    dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  };
+  const [lockEdit, setLockEdit] = useState(null); // { id, lockCycle, anchorDate, openDays } buffer
+  const saveClusterLock = async () => {
+    if (!lockEdit) return;
+    const fortnightly = lockEdit.lockCycle === "fortnightly";
+    const anchor = fortnightly ? anchorMonday(lockEdit.anchorDate) : "";
+    if (fortnightly && !anchor) return showToast("Pick a valid anchor date for the fortnight");
+    const n = Number(lockEdit.openDays);
+    const openDays = Number.isFinite(n) && n >= 1 ? Math.round(n) : (fortnightly ? 14 : 21);
+    await saveClusters(clusters.map((c) => (c.id === lockEdit.id
+      ? { ...c, lockCycle: fortnightly ? "fortnightly" : "weekly", anchorDate: anchor, openDays }
+      : c)));
+    setLockEdit(null);
+    showToast("Availability lock saved");
+  };
 
   // ── Leave types (Phase 4a) ── group.leaveTypes = string[] (mirror Areas: whole-array
   // writes; order here = chooser order, drag to reorder). "Other" is PERMANENT in the
@@ -630,28 +660,54 @@ export default function SettingsPage() {
             {/* CLUSTERS (Phase 3a) — named labour pools of venues; venue.clusterId is assigned
                 in Venue Manager. Delete BLOCKS while venues are still assigned. */}
             <div className="card">
-              <div className="card-head"><div><span className="card-title">Clusters</span><span className="card-sub">Labour pools of venues — availability will be posted per cluster · assign venues in Venue Manager</span></div></div>
+              <div className="card-head"><div><span className="card-title">Clusters</span><span className="card-sub">Labour pools of venues — availability is posted per cluster, and its lock cycle is set per cluster · assign venues in Venue Manager</span></div></div>
               {clusters.map((c) => {
                 const count = venues.filter((v) => v.clusterId === c.id).length;
                 return (
-                  <div key={c.id} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
-                    {clusterEdit?.id === c.id ? (
-                      <span style={{ display: "inline-flex", gap: 6, flex: 1 }}>
-                        <input className="form-input" value={clusterEdit.name} onChange={(e) => setClusterEdit((p) => ({ ...p, name: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && renameCluster()} autoFocus />
-                        <button className="btn btn-sm btn-primary" onClick={renameCluster}>Save</button>
-                        <button className="btn btn-sm" onClick={() => setClusterEdit(null)}>Cancel</button>
-                      </span>
-                    ) : (
-                      <>
-                        <span style={{ fontSize: 13 }}>{c.name} <span style={{ fontSize: 11, color: "var(--gray)" }}>· {count} venue{count === 1 ? "" : "s"}</span></span>
-                        {editable && (
-                          <span style={{ display: "inline-flex", gap: 4 }}>
-                            <button className="btn btn-sm" onClick={() => setClusterEdit({ id: c.id, name: c.name })}>Rename</button>
-                            <button className="btn btn-sm btn-danger" title={count ? "Blocked — reassign its venues first" : "Delete cluster"} onClick={() => removeCluster(c)}>✕</button>
-                          </span>
-                        )}
-                      </>
-                    )}
+                  <div key={c.id} style={{ borderBottom: "0.5px solid var(--gray-light)" }}>
+                    <div className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0" }}>
+                      {clusterEdit?.id === c.id ? (
+                        <span style={{ display: "inline-flex", gap: 6, flex: 1 }}>
+                          <input className="form-input" value={clusterEdit.name} onChange={(e) => setClusterEdit((p) => ({ ...p, name: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && renameCluster()} autoFocus />
+                          <button className="btn btn-sm btn-primary" onClick={renameCluster}>Save</button>
+                          <button className="btn btn-sm" onClick={() => setClusterEdit(null)}>Cancel</button>
+                        </span>
+                      ) : (
+                        <>
+                          <span style={{ fontSize: 13 }}>{c.name} <span style={{ fontSize: 11, color: "var(--gray)" }}>· {count} venue{count === 1 ? "" : "s"}</span></span>
+                          {editable && (
+                            <span style={{ display: "inline-flex", gap: 4 }}>
+                              <button className="btn btn-sm" onClick={() => setClusterEdit({ id: c.id, name: c.name })}>Rename</button>
+                              <button className="btn btn-sm btn-danger" title={count ? "Blocked — reassign its venues first" : "Delete cluster"} onClick={() => removeCluster(c)}>✕</button>
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {/* availability lock — per cluster (weekly default = today's behaviour) */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", padding: "0 0 7px 0", fontSize: 11, color: "var(--gray)" }}>
+                      {lockEdit?.id === c.id ? (
+                        <>
+                          <select className="form-input" style={{ width: 120 }} value={lockEdit.lockCycle} onChange={(e) => setLockEdit((p) => ({ ...p, lockCycle: e.target.value }))}>
+                            <option value="weekly">Weekly</option>
+                            <option value="fortnightly">Fortnightly</option>
+                          </select>
+                          {lockEdit.lockCycle === "fortnightly" && (
+                            <>
+                              <input type="date" className="form-input" style={{ width: 150 }} value={lockEdit.anchorDate} onChange={(e) => setLockEdit((p) => ({ ...p, anchorDate: e.target.value }))} title="Anchor — picks WHICH fortnight locks; snapped to its Monday on save. Dates before it keep the weekly lock." />
+                              <input type="number" min="1" className="form-input" style={{ width: 80 }} value={lockEdit.openDays} onChange={(e) => setLockEdit((p) => ({ ...p, openDays: e.target.value }))} title="Editable days shown after the locked block" />
+                            </>
+                          )}
+                          <button className="btn btn-sm btn-primary" onClick={saveClusterLock}>Save</button>
+                          <button className="btn btn-sm" onClick={() => setLockEdit(null)}>Cancel</button>
+                        </>
+                      ) : (
+                        <>
+                          <span>Availability lock: {c.lockCycle === "fortnightly" ? `fortnightly from ${c.anchorDate || "?"} · ${c.openDays || 14} open days` : "weekly (default)"}</span>
+                          {editable && <button className="btn btn-sm" onClick={() => setLockEdit({ id: c.id, lockCycle: c.lockCycle === "fortnightly" ? "fortnightly" : "weekly", anchorDate: c.anchorDate || "", openDays: c.openDays || (c.lockCycle === "fortnightly" ? 14 : 21) })}>Edit</button>}
+                        </>
+                      )}
+                    </div>
                   </div>
                 );
               })}
