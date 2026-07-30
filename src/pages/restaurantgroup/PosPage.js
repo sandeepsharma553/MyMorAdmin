@@ -131,6 +131,10 @@ export default function PosPage() {
     groupId, group, menuItems, resolvedMenuItems, menuInstanceById, modifierGroups, menuCategories,
     selectedVenue, selectedVenueName, showToast, myStaff, me, loading,
   } = useRG();
+  // Job 8: SOFT-REMOVED items (instance.removed === true) are OFF this menu —
+  // skipped entirely, unlike 86/hidden which grey the tile. Every POS derivation
+  // below reads menuLive, never resolvedMenuItems directly.
+  const menuLive = useMemo(() => resolvedMenuItems.filter((m) => m.removed !== true), [resolvedMenuItems]);
   // Job 4: categories are the venue's menuCategories DOCS (position-ordered);
   // at "all" there are none and every category renders as a text fallback tile.
   const venueCats = useMemo(
@@ -188,24 +192,24 @@ export default function PosPage() {
     if (searchAll && query) {
       // fallback: same query across ALL items — plain alphabetical, mixed
       // categories (each tile carries its category label in this mode)
-      return resolvedMenuItems.filter(matches)
+      return menuLive.filter(matches)
         .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
     }
     // Job 4: items order by their instance POSITION (builder-arranged); anything
     // without one follows alphabetically — it never vanishes.
     return byPosition(
-      resolvedMenuItems.filter((m) => posCatKeyOf(m, venueCats) === cat).filter(matches),
+      menuLive.filter((m) => posCatKeyOf(m, venueCats) === cat).filter(matches),
       (m) => m.position,
       (m) => m.displayName || ""
     );
-  }, [resolvedMenuItems, cat, q, searchAll, venueCats]);
+  }, [menuLive, cat, q, searchAll, venueCats]);
   // Job 4: SCREEN-A tiles from the venue's category DOCS in position order —
   // active + has-items only — plus text-fallback tiles for docless categories
   // (alphabetical, appended) so no item is unreachable. The retired pin lists
   // (group.posCategoryOrder / posItemOrder) are no longer read anywhere.
   const allCatTiles = useMemo(
-    () => posCategoryTiles(venueCats, resolvedMenuItems),
-    [venueCats, resolvedMenuItems]
+    () => posCategoryTiles(venueCats, menuLive),
+    [venueCats, menuLive]
   );
   // `cat` state holds the tile KEY (doc id or "text:<raw>"); name resolved here.
   const catName = cat == null ? "" : (allCatTiles.find((t) => t.key === cat)?.name || String(cat).replace(/^text:/, ""));

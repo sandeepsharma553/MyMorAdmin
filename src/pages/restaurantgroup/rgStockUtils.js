@@ -91,7 +91,11 @@ export const INSTANCE_OVERRIDE_FIELDS = ["sellPrice", "variants", "hasVariants",
 // Instance-only state — always read from the instance when present (both modes).
 // categoryId/position (Job 3/4): the venue's category doc ref + POS tile order —
 // per-venue by nature, so they live here and flow onto the resolved item.
-export const INSTANCE_STATE_FIELDS = ["linked", "available", "e86", "e86Reason", "e86By", "e86At", "e86Back", "recipeSourceId", "categoryId", "position", "stationId", "prepMinutes"];
+// removed (Job 8): SOFT REMOVE — true = off this venue's menu (POS skips it,
+// rgSellOrder refuses it) while the instance keeps its price/recipe/station.
+// Deliberately NOT named "active": `available` (the 86 system) already exists
+// and two same-idiom booleans would invite the exact confusion.
+export const INSTANCE_STATE_FIELDS = ["linked", "available", "e86", "e86Reason", "e86By", "e86At", "e86Back", "recipeSourceId", "categoryId", "position", "stationId", "prepMinutes", "removed"];
 
 // Resolve a menu item AT a venue: template is the base; a linked instance inherits
 // it, a separate instance's non-null values win wholesale (template fills gaps —

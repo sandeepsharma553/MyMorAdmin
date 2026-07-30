@@ -83,6 +83,7 @@ export default function MenusPage() {
   const vItems = useMemo(() => {
     const ql = q.trim().toLowerCase();
     return resolvedMenuItems
+      .filter((m) => m.removed !== true) // Job 8: soft-removed items live in the builder's Inactive view only
       .filter((m) => (!ql || (m.displayName || "").toLowerCase().includes(ql)) && (!fCat || m.category === fCat))
       .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
   }, [resolvedMenuItems, q, fCat]);
@@ -210,10 +211,20 @@ export default function MenusPage() {
   const catItems = useMemo(
     () => (selCat
       ? byPosition(
-          resolvedMenuItems.filter((m) => posCatKeyOf(m, venueCats) === selCat.id),
+          resolvedMenuItems.filter((m) => m.removed !== true && posCatKeyOf(m, venueCats) === selCat.id),
           (m) => m.position, (m) => m.displayName || "")
       : []),
     [selCat, resolvedMenuItems, venueCats]
+  );
+  // Job 8 SOFT REMOVE — removed items keep their instance (price/recipe/station)
+  // and live in the Inactive view; 86 is a DIFFERENT state (still on the menu,
+  // greyed, coming back) and stays in the main grid.
+  const [builderView, setBuilderView] = useState("menu"); // menu | inactive
+  useEffect(() => { setBuilderView("menu"); }, [selectedVenue]);
+  const removedItems = useMemo(
+    () => resolvedMenuItems.filter((m) => m.removed === true)
+      .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || "")),
+    [resolvedMenuItems]
   );
   const [dragBItem, setDragBItem] = useState(null);
   const dropBItem = async (to) => {
@@ -309,7 +320,9 @@ export default function MenusPage() {
     } catch { /* counts are cosmetic — the tab still works without them */ }
   };
   useEffect(() => { if (groupId && venues.length) loadVenueCounts(); }, [groupId, venueIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const venueTabCount = (vid) => (vid === selectedVenue ? resolvedMenuItems.length : venueCounts[vid]);
+  // selected venue counts LIVE items (removed excluded); other venues use the
+  // server aggregate, which cannot see the removed flag — close enough for a tab.
+  const venueTabCount = (vid) => (vid === selectedVenue ? resolvedMenuItems.filter((m) => m.removed !== true).length : venueCounts[vid]);
   const selItem = selItemId ? resolvedMenuItems.find((m) => (m.templateId || m.id) === selItemId) || null : null;
 
   // Price at the selected venue — the ONE shared resolver (rgStockUtils), mirrors
@@ -340,7 +353,7 @@ export default function MenusPage() {
     setE86Form({ id: "", reason: E86_REASONS[0], back: E86_BACK[0] });
   };
   // 86 list is venue-scoped (instance e86); at "all" it shows legacy template flags.
-  const e86List = useMemo(() => resolvedMenuItems.filter((m) => m.e86), [resolvedMenuItems]);
+  const e86List = useMemo(() => resolvedMenuItems.filter((m) => m.e86 && m.removed !== true), [resolvedMenuItems]);
 
   // ── availability bulk ──
   const setAll = async (available) => {
@@ -863,11 +876,42 @@ export default function MenusPage() {
 
               {/* MIDDLE — the selected category's items, drag = exactly the POS order */}
               <div className="card" style={{ flex: "2 1 400px", minWidth: 330 }}>
-                <div className="card-head"><div>
-                  <span className="card-title">{selCat ? selCat.name : "Items"}</span>
-                  <span className="card-sub">{catItems.length} item{catItems.length === 1 ? "" : "s"} at {selectedVenueName} · drag to arrange — this is the POS order</span>
-                </div></div>
-                {catItems.map((m, i) => (
+                <div className="card-head" style={{ alignItems: "center" }}>
+                  <div>
+                    <span className="card-title">{builderView === "inactive" ? "Inactive items" : (selCat ? selCat.name : "Items")}</span>
+                    <span className="card-sub">{builderView === "inactive"
+                      ? `${removedItems.length} removed from ${selectedVenueName} — instance kept (price, recipe, station); re-add is one tap`
+                      : `${catItems.length} item${catItems.length === 1 ? "" : "s"} at ${selectedVenueName} · drag to arrange — this is the POS order`}</span>
+                  </div>
+                  <div className="tabs" style={{ marginLeft: "auto" }}>
+                    <button className={`tab ${builderView === "menu" ? "active" : ""}`} onClick={() => setBuilderView("menu")}>Menu</button>
+                    <button className={`tab ${builderView === "inactive" ? "active" : ""}`} onClick={() => setBuilderView("inactive")}>Inactive{removedItems.length ? ` (${removedItems.length})` : ""}</button>
+                  </div>
+                </div>
+                {builderView === "inactive" && (
+                  <>
+                    {removedItems.map((m) => (
+                      <div key={m.templateId || m.id} className="staff-meta-row"
+                        onClick={() => setSelItemId(m.templateId || m.id)}
+                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 6px", borderBottom: "0.5px solid var(--gray-light)",
+                          cursor: "pointer", background: selItemId === (m.templateId || m.id) ? "#f4f0fa" : "transparent", borderRadius: 6 }}>
+                        {m.imageUrl && <img src={m.imageUrl} alt="" loading="lazy" style={{ width: 24, height: 24, objectFit: "cover", borderRadius: 4 }} />}
+                        <span style={{ fontSize: 13, fontWeight: 500 }}>{m.displayName}</span>
+                        <span className="pill" style={{ background: "#f4f4f5", color: "var(--gray)" }}>{money(incGst(sellAt(m), m.gstApplicable !== false))} kept</span>
+                        {stationName(m.stationId) && <span className="pill" style={{ background: "#f4f4f5", color: "var(--gray)" }}>{stationName(m.stationId)}</span>}
+                        {canEdit && (
+                          <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }} onClick={(e) => { e.stopPropagation(); saveInstPrice(m, { removed: false }, `${m.displayName} is back on the ${selectedVenueName} menu — price and station kept`); }}>
+                            Re-add
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {removedItems.length === 0 && (
+                      <div style={{ fontSize: 12, color: "var(--gray)", padding: "6px 0" }}>Nothing removed at {selectedVenueName}. Remove an item from its detail pane — it keeps its price, recipe and station here.</div>
+                    )}
+                  </>
+                )}
+                {builderView === "menu" && catItems.map((m, i) => (
                   <div key={m.templateId || m.id} className="staff-meta-row" draggable={canEdit}
                     onDragStart={() => setDragBItem(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropBItem(i)} onDragEnd={() => setDragBItem(null)}
                     onClick={() => setSelItemId(m.templateId || m.id)}
@@ -881,16 +925,16 @@ export default function MenusPage() {
                     <span style={{ fontSize: 13, fontWeight: 500, textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</span>
                     {Number.isFinite(Number(m.position)) && m.position !== null ? null : <span className="pill pill-amber" title="Not arranged yet — sorts last, alphabetically, until dragged">unplaced</span>}
                     {m.available === false && !m.e86 && <span className="pill pill-amber">hidden</span>}
-                    {m.e86 && <span className="pill pill-red">86</span>}
+                    {m.e86 && <span className="pill pill-red" title={`86’d — ${m.e86Reason || "no reason"} · by ${m.e86By || "?"} · back: ${m.e86Back || "Unknown"}`}>86 · {m.e86Reason || "no reason"} · back {m.e86Back || "?"}</span>}
                     {!hasVenuePrice(m, { menuInstanceById, selectedVenue }) && <span className="pill pill-red" title="No venue price — the POS refuses this item until one is set">no price</span>}
                     {stationName(m.stationId) && <span className="pill" style={{ background: "#f4f4f5", color: "var(--gray)" }}>{stationName(m.stationId)}{m.prepMinutes ? ` · ${m.prepMinutes}m` : ""}</span>}
                     <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--gray)" }}>{money(incGst(sellAt(m), m.gstApplicable !== false))}</span>
                   </div>
                 ))}
-                {selCat && catItems.length === 0 && (
+                {builderView === "menu" && selCat && catItems.length === 0 && (
                   <div style={{ fontSize: 12, color: "var(--gray)", padding: "6px 0" }}>No items in {selCat.name} at {selectedVenueName} yet.</div>
                 )}
-                {canEdit && catItems.length > 0 && (
+                {builderView === "menu" && canEdit && catItems.length > 0 && (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 10, padding: "8px 6px", background: "#fafafa", borderRadius: 8 }}>
                     <button className="btn btn-sm" onClick={() => setBulkSel(bulkSel.size === catItems.length ? new Set() : new Set(catItems.map((m) => m.templateId || m.id)))}>
                       {bulkSel.size === catItems.length ? "Clear selection" : `Select all ${catItems.length}`}
@@ -905,7 +949,7 @@ export default function MenusPage() {
                     <button className="btn btn-primary btn-sm" disabled={!bulkSel.size} onClick={applyBulk}>Apply to {bulkSel.size || "…"}</button>
                   </div>
                 )}
-                {canEdit && (
+                {builderView === "menu" && canEdit && (
                   <div onClick={openClone}
                     style={{ border: "1.5px dashed var(--gray-light)", borderRadius: 8, padding: "12px 10px", marginTop: 10,
                       textAlign: "center", fontSize: 13, color: "var(--gray)", cursor: "pointer" }}>
@@ -995,18 +1039,29 @@ export default function MenusPage() {
                         ) : <span>{selItem.prepMinutes ?? `${prepDefault} (default)`}</span>}
                         <span style={{ color: "var(--gray)" }}>min</span>
                       </div>
-                      <div><span style={{ color: "var(--gray)" }}>Status: </span>{selItem.e86 ? <span className="pill pill-red">86’d — {selItem.e86Reason || "no reason"}</span> : selItem.available !== false ? <span className="pill pill-green">available</span> : <span className="pill pill-amber">hidden from POS</span>}</div>
+                      <div><span style={{ color: "var(--gray)" }}>Status: </span>{selItem.removed === true ? <span className="pill" style={{ background: "#f4f4f5", color: "var(--gray)" }}>removed — not on this menu (price/recipe/station kept)</span> : selItem.e86 ? <span className="pill pill-red">86’d — {selItem.e86Reason || "no reason"} · by {selItem.e86By || "?"} · back {selItem.e86Back || "Unknown"}</span> : selItem.available !== false ? <span className="pill pill-green">available</span> : <span className="pill pill-amber">hidden from POS</span>}</div>
                       <div><span style={{ color: "var(--gray)" }}>Modifiers: </span>{(selItem.modifierGroupIds || []).length} group{(selItem.modifierGroupIds || []).length === 1 ? "" : "s"}</div>
                     </div>
                     {canEdit && (
                       <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
                         <button className="btn btn-primary btn-sm" onClick={() => openItem(selItem)}>Edit item</button>
-                        {selItem.e86
-                          ? <button className="btn btn-sm" onClick={() => remove86(selItem)}>Remove 86</button>
-                          : <button className="btn btn-sm" style={{ color: "var(--red)" }} onClick={() => quick86(selItem)}>86 it</button>}
-                        <button className="btn btn-sm" onClick={() => patchItem(selItem, { available: selItem.available === false }, selItem.available === false ? "Available on POS" : "Hidden from POS")} disabled={selItem.e86}>
-                          {selItem.available === false ? "Show on POS" : "Hide from POS"}
-                        </button>
+                        {selItem.removed === true ? (
+                          <button className="btn btn-sm" onClick={() => saveInstPrice(selItem, { removed: false }, `${selItem.displayName} is back on the ${selectedVenueName} menu — price and station kept`)}>Re-add to menu</button>
+                        ) : (
+                          <>
+                            {selItem.e86
+                              ? <button className="btn btn-sm" onClick={() => remove86(selItem)}>Remove 86</button>
+                              : <button className="btn btn-sm" style={{ color: "var(--red)" }} onClick={() => quick86(selItem)}>86 it</button>}
+                            <button className="btn btn-sm" onClick={() => patchItem(selItem, { available: selItem.available === false }, selItem.available === false ? "Available on POS" : "Hidden from POS")} disabled={selItem.e86}>
+                              {selItem.available === false ? "Show on POS" : "Hide from POS"}
+                            </button>
+                            {/* Job 8 SOFT REMOVE — off the menu, instance survives (≠ 86: sold out, coming back) */}
+                            <button className="btn btn-sm" style={{ color: "var(--red)" }} title="Take off this venue's menu — keeps the venue price, recipe and station for re-adding"
+                              onClick={() => saveInstPrice(selItem, { removed: true }, `${selItem.displayName} removed from ${selectedVenueName} — find it in the Inactive tab`)}>
+                              Remove from menu
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </>
