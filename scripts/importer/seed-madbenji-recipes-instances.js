@@ -15,7 +15,9 @@
  *      Matched sheet items with NO recipe get one created (rec_<n> convention) and
  *      linked via template.recipeId merge (only when recipeId is null).
  *   3. Ingredients resolve to inventoryItems by normalised name (existing inv-###
- *      reused; missing ones created as inv-mb-<slug>, full field parity, cost 0).
+ *      reused; missing ones created as inv-mb-<slug>, full field parity, cost 0,
+ *      plus a qty-0 stock row in EVERY venue — no stock row means rgSellOrder
+ *      silently skips the deduction).
  *
  * TEST DATA: ingredient lists are approximate (flat sheet extraction — starred
  * composites like "*Pulled Pork + Cheese*" and "NO CHEESE" become literal inventory
@@ -40,6 +42,15 @@ const db = getFirestore(admin.app(), DATABASE_ID);
 const g = db.collection("restaurantGroups").doc(GROUP);
 const TS = FieldValue.serverTimestamp();
 const SEED = "madbenji-test";
+
+// ── canonical status rule — keep in sync with src/pages/restaurantgroup/rgStockUtils.js ──
+const computeStockStatus = (qty, reorderPoint, par) => {
+  const q = Number(qty) || 0;
+  if (q <= 0) return "critical";
+  if (q <= (Number(reorderPoint) || 0)) return "critical";
+  if (q <= (Number(par) || 0) * 0.5) return "low";
+  return "ok";
+};
 
 // ── the 40-item sheet extraction (from MadBenji_Seed_Instructions.md — approximate) ──
 const MENU = [
@@ -116,12 +127,14 @@ const INV_ALIASES = Object.fromEntries(Object.entries(INV_ALIASES_RAW).map(([k, 
 (async () => {
   console.log(`# madbenji recipes+instances seed  ${APPLY ? "(APPLY)" : "(DRY-RUN — no writes)"}  db=${DATABASE_ID}  group=${GROUP}  venue=${VENUE}\n`);
 
-  const [items, recs, inv, instSnap] = await Promise.all([
+  const [items, recs, inv, instSnap, venuesSnap] = await Promise.all([
     g.collection("menuItems").get(),
     g.collection("recipes").get(),
     g.collection("inventoryItems").get(),
     g.collection("venues").doc(VENUE).collection("menuItems").get(),
+    g.collection("venues").get(),
   ]);
+  const venueIds = venuesSnap.docs.map((d) => d.id);
 
   const templates = items.docs.map((d) => ({ id: d.id, ...d.data() }));
   const recById = {}; recs.forEach((d) => (recById[d.id] = d.data()));
@@ -142,7 +155,7 @@ const INV_ALIASES = Object.fromEntries(Object.entries(INV_ALIASES_RAW).map(([k, 
   inv.forEach((d) => { const k = norm(d.data().name); if (k && !invByNorm[k]) invByNorm[k] = { id: d.id, ...d.data() }; });
 
   const ops = []; // { ref, data, merge, label }
-  const stats = { instances: 0, instSkip: 0, recFill: 0, recCreate: 0, recSkip: 0, linkSet: 0, invCreate: 0, invReuse: 0 };
+  const stats = { instances: 0, instSkip: 0, recFill: 0, recCreate: 0, recSkip: 0, linkSet: 0, invCreate: 0, invReuse: 0, stockCreate: 0 };
   const unmatchedItems = [];
   const invCreated = [];
 
@@ -159,6 +172,16 @@ const INV_ALIASES = Object.fromEntries(Object.entries(INV_ALIASES_RAW).map(([k, 
     invByNorm[k] = rec; stats.invCreate++; invCreated.push(`${id} "${name}"`);
     ops.push({ ref: g.collection("inventoryItems").doc(id),
       data: { ...rec, id: undefined, createdAt: TS, updatedAt: TS, _seed: SEED }, label: `inventoryItems/${id} "${name}"` });
+    // a new master item gets a stock row in EVERY venue so the join has no holes —
+    // same doc id as the inventory item, per StockPage.js create (rgSellOrder SKIPS
+    // deduction for an item with no stock row at the selling venue)
+    for (const vid of venueIds) {
+      ops.push({ ref: g.collection("venues").doc(vid).collection("stock").doc(id),
+        data: { qtyOnHand: 0, par: 0, reorderPoint: 0, reorderQty: 0,
+          status: computeStockStatus(0, 0, 0), lastCountedAt: null, updatedAt: TS, _seed: SEED },
+        label: `venues/${vid}/stock/${id} "${name}"` });
+      stats.stockCreate++;
+    }
     return rec;
   };
 
@@ -217,6 +240,7 @@ const INV_ALIASES = Object.fromEntries(Object.entries(INV_ALIASES_RAW).map(([k, 
   console.log(`  recipes create:     ${stats.recCreate}   (+ ${stats.linkSet} template recipeId links)`);
   console.log(`  recipes skipped:    ${stats.recSkip}   (already have ingredients / collision)`);
   console.log(`  inventory create:   ${stats.invCreate}   reuse: ${stats.invReuse}`);
+  console.log(`  stock rows create:  ${stats.stockCreate}   (new inv items × ${venueIds.length} venues, qty 0)`);
   console.log(`  total writes:       ${ops.length}`);
   if (unmatchedItems.length) console.log(`\n  !! sheet items with NO live template (SKIPPED): ${unmatchedItems.join(" · ")}`);
   if (invCreated.length) console.log(`\n  new inventory items:\n    ${invCreated.join("\n    ")}`);
