@@ -89,7 +89,9 @@ export const stripUndefined = (obj) => {
 // Fields a LINKED instance may override; everything else inherits the template.
 export const INSTANCE_OVERRIDE_FIELDS = ["sellPrice", "variants", "hasVariants", "variantGroupName", "modifierGroupIds", "recipeId"];
 // Instance-only state — always read from the instance when present (both modes).
-export const INSTANCE_STATE_FIELDS = ["linked", "available", "e86", "e86Reason", "e86By", "e86At", "e86Back", "recipeSourceId"];
+// categoryId/position (Job 3/4): the venue's category doc ref + POS tile order —
+// per-venue by nature, so they live here and flow onto the resolved item.
+export const INSTANCE_STATE_FIELDS = ["linked", "available", "e86", "e86Reason", "e86By", "e86At", "e86Back", "recipeSourceId", "categoryId", "position"];
 
 // Resolve a menu item AT a venue: template is the base; a linked instance inherits
 // it, a separate instance's non-null values win wholesale (template fills gaps —
@@ -258,18 +260,39 @@ export const MOD_KIND_DEFAULTS = {
   choose: { type: "single", required: true,  pricing: "free" },
 };
 
-// ── POS pinned-first ordering ── group.posCategoryOrder = string[] (categories)
-// and group.posItemOrder = { [category]: string[] } (item ids) — read-time only,
-// the POS never writes them. Anything in `pinned` leads IN LIST ORDER; everything
-// else follows alphabetically by nameOf. Pure + total: a missing/absent list means
-// pure alphabetical (legacy behaviour), a stale entry (deleted item, renamed
-// category) simply drops out — no crash, no hole — and duplicates are ignored.
-export const pinnedFirst = (arr, pinned, idOf, nameOf) => {
-  const list = [...new Set((Array.isArray(pinned) ? pinned : []).map(String))];
-  const byId = new Map((arr || []).map((x) => [String(idOf(x)), x]));
-  const head = list.map((id) => byId.get(id)).filter((x) => x !== undefined);
-  const headSet = new Set(head);
-  const tail = (arr || []).filter((x) => !headSet.has(x))
-    .sort((a, b) => String(nameOf(a)).localeCompare(String(nameOf(b))));
-  return [...head, ...tail];
+// ── POS position ordering (Job 4 — replaced pinnedFirst / the retired pin lists
+// group.posCategoryOrder + group.posItemOrder, which are now legacy data nothing
+// reads). Byte-identical twin in Ops lib/rgStockUtils.js — keep in sync.
+// Anything WITHOUT a position must NOT vanish: it follows the positioned run,
+// alphabetical. Pure + total — no crash, no hole.
+export const byPosition = (arr, posOf, nameOf) => {
+  const withPos = [], without = [];
+  (arr || []).forEach((x) => (Number.isFinite(Number(posOf(x))) && posOf(x) !== null && posOf(x) !== "" ? withPos : without).push(x));
+  withPos.sort((a, b) => Number(posOf(a)) - Number(posOf(b)));
+  without.sort((a, b) => String(nameOf(a)).localeCompare(String(nameOf(b))));
+  return [...withPos, ...without];
+};
+// Which category KEY an item belongs to at a venue: the instance's categoryId
+// when it points at a real doc; else a name match on the emoji-stripped legacy
+// text; else a synthetic "text:<raw>" key so the item still gets a tile.
+export const posCatKeyOf = (m, venueCats) => {
+  if (m?.categoryId && (venueCats || []).some((c) => c.id === m.categoryId)) return m.categoryId;
+  const raw = m?.category || "Uncategorised";
+  const byName = (venueCats || []).find((c) => c.name === stripEmoji(raw));
+  return byName ? byName.id : `text:${raw}`;
+};
+// SCREEN-A category tiles: active category docs in position order (empty ones
+// hidden, deactivated ones hidden — their items stay reachable via search-all),
+// then synthetic tiles for docless categories, alphabetical, so no item is
+// unreachable. Returns [{ key, name, colour, count }].
+export const posCategoryTiles = (venueCats, items) => {
+  const counts = {};
+  (items || []).forEach((m) => { const k = posCatKeyOf(m, venueCats); counts[k] = (counts[k] || 0) + 1; });
+  const docTiles = byPosition((venueCats || []).filter((c) => c.active !== false), (c) => c.position, (c) => c.name)
+    .filter((c) => counts[c.id])
+    .map((c) => ({ key: c.id, name: c.name, colour: c.colour || null, count: counts[c.id] }));
+  const strays = Object.keys(counts).filter((k) => k.startsWith("text:"))
+    .map((k) => ({ key: k, name: stripEmoji(k.slice(5)) || k.slice(5), colour: null, count: counts[k] }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return [...docTiles, ...strays];
 };

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRG } from "./RGContext";
 import { sellOrder } from "./sellOrder";
-import { money, incGst, resolvedSellPrice, DEFAULT_MENU_CATEGORIES, resolvePosNotePresets, pinnedFirst, modGroupKind } from "./rgStockUtils";
+import { money, incGst, resolvedSellPrice, resolvePosNotePresets, modGroupKind, posCategoryTiles, posCatKeyOf, byPosition } from "./rgStockUtils";
 import "./PosPage.css";
 
 /* POS Terminal — Phase 2 (order-entry grid + modifier modal + service-mode + send).
@@ -45,8 +45,8 @@ const resolveModGroups = (m, modifierGroups) => {
     .filter((x) => x.g);
   return { resolved, missing: declared.length - resolved.length };
 };
-// an item's browse bucket — items with no category land in "Uncategorised" so
-// they stay reachable now that the category-first flow has no "All" view
+// an item's legacy text bucket — kept ONLY for the search-all tile label; the
+// browse buckets are posCatKeyOf keys (category DOC id, or a text: fallback)
 const catOf = (m) => m?.category || "Uncategorised";
 
 // ── modifier DISPLAY treatment by GROUP KIND (COSMETIC ONLY — the payload
@@ -128,10 +128,15 @@ const tintOf = (id) => {
 
 export default function PosPage() {
   const {
-    groupId, group, menuItems, resolvedMenuItems, menuInstanceById, modifierGroups,
+    groupId, group, menuItems, resolvedMenuItems, menuInstanceById, modifierGroups, menuCategories,
     selectedVenue, selectedVenueName, showToast, myStaff, me, loading,
   } = useRG();
-  const categories = group?.menuCategories?.length ? group.menuCategories : DEFAULT_MENU_CATEGORIES;
+  // Job 4: categories are the venue's menuCategories DOCS (position-ordered);
+  // at "all" there are none and every category renders as a text fallback tile.
+  const venueCats = useMemo(
+    () => (menuCategories || []).filter((c) => c.venueId === selectedVenue),
+    [menuCategories, selectedVenue]
+  );
 
   // category-first flow: cat === null → SCREEN A (category grid, the POS opens
   // here); cat set → SCREEN B (that category's item grid). There is no "All"
@@ -183,41 +188,28 @@ export default function PosPage() {
       return resolvedMenuItems.filter(matches)
         .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
     }
-    return pinnedFirst(
-      resolvedMenuItems.filter((m) => catOf(m) === cat).filter(matches),
-      group?.posItemOrder?.[cat],
-      (m) => m.templateId || m.id,
+    // Job 4: items order by their instance POSITION (builder-arranged); anything
+    // without one follows alphabetically — it never vanishes.
+    return byPosition(
+      resolvedMenuItems.filter((m) => posCatKeyOf(m, venueCats) === cat).filter(matches),
+      (m) => m.position,
       (m) => m.displayName || ""
     );
-  }, [resolvedMenuItems, cat, q, searchAll, group]);
-  // the EXISTING category source of truth (group.menuCategories → defaults),
-  // filtered to categories that have items — plus any stray item-borne
-  // categories appended, so no item is unreachable now that "All" is gone.
-  const liveCats = useMemo(() => {
-    const configured = categories.filter((c) => resolvedMenuItems.some((m) => catOf(m) === c));
-    const stray = [...new Set(resolvedMenuItems.map(catOf))]
-      .filter((c) => !categories.includes(c))
-      .sort((a, b) => a.localeCompare(b));
-    return [...configured, ...stray];
-  }, [categories, resolvedMenuItems]);
-  // pinned categories lead (group.posCategoryOrder — read-time only), rest alphabetical
-  const orderedCats = useMemo(
-    () => pinnedFirst(liveCats, group?.posCategoryOrder, (c) => c, (c) => c),
-    [liveCats, group]
+  }, [resolvedMenuItems, cat, q, searchAll, venueCats]);
+  // Job 4: SCREEN-A tiles from the venue's category DOCS in position order —
+  // active + has-items only — plus text-fallback tiles for docless categories
+  // (alphabetical, appended) so no item is unreachable. The retired pin lists
+  // (group.posCategoryOrder / posItemOrder) are no longer read anywhere.
+  const allCatTiles = useMemo(
+    () => posCategoryTiles(venueCats, resolvedMenuItems),
+    [venueCats, resolvedMenuItems]
   );
-  const pinnedCatSet = useMemo(
-    () => new Set((Array.isArray(group?.posCategoryOrder) ? group.posCategoryOrder : []).map(String)),
-    [group]
-  );
-  const catCounts = useMemo(() => {
-    const mp = {};
-    resolvedMenuItems.forEach((m) => { const c = catOf(m); mp[c] = (mp[c] || 0) + 1; });
-    return mp;
-  }, [resolvedMenuItems]);
+  // `cat` state holds the tile KEY (doc id or "text:<raw>"); name resolved here.
+  const catName = cat == null ? "" : (allCatTiles.find((t) => t.key === cat)?.name || String(cat).replace(/^text:/, ""));
   // SCREEN A tiles: search filters the CATEGORY GRID (substring on the name)
   const catQuery = q.trim().toLowerCase();
-  const catTiles = cat == null ? orderedCats.filter((c) => !catQuery || c.toLowerCase().includes(catQuery)) : [];
-  const openCat = (c) => { setCat(c); setQ(""); setSearchAll(false); };
+  const catTiles = cat == null ? allCatTiles.filter((c) => !catQuery || c.name.toLowerCase().includes(catQuery)) : [];
+  const openCat = (key) => { setCat(key); setQ(""); setSearchAll(false); };
   const backToCats = () => { setCat(null); setQ(""); setSearchAll(false); };
 
   // inc-GST estimate of what the server will charge: rgSellOrder taxes the WHOLE
@@ -401,7 +393,7 @@ export default function PosPage() {
         </svg>
       </span>
       <input className="pos-search" autoFocus value={q} onChange={(e) => { setQ(e.target.value); setSearchAll(false); }}
-        placeholder={cat == null ? "Search categories…" : `Search in ${cat}…`} />
+        placeholder={cat == null ? "Search categories…" : `Search in ${catName}…`} />
       {q !== "" && (
         <button className="pos-search-clear" onClick={() => { setQ(""); setSearchAll(false); }} title="Clear search" aria-label="Clear search">×</button>
       )}
@@ -417,14 +409,15 @@ export default function PosPage() {
           item grid overflow sideways instead of wrapping. */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         {cat == null ? (
-          /* SCREEN A — category tiles: pinned (★) lead, then alphabetical */
+          /* SCREEN A — category tiles in builder-arranged POSITION order */
           <>
             {searchBox}
             <div className="pos-cat-grid">
               {catTiles.map((c) => (
-                <div key={c} className="pos-tile pos-tile--tap pos-cat-tile" onClick={() => openCat(c)}>
-                  <div className="pos-cat-tile-name">{pinnedCatSet.has(c) && <span className="pos-cat-star">★ </span>}{c}</div>
-                  <div className="pos-cat-tile-sub">{catCounts[c] || 0} item{(catCounts[c] || 0) === 1 ? "" : "s"}</div>
+                <div key={c.key} className="pos-tile pos-tile--tap pos-cat-tile" onClick={() => openCat(c.key)}
+                  style={c.colour ? { borderLeft: `4px solid ${c.colour}` } : undefined}>
+                  <div className="pos-cat-tile-name">{c.name}</div>
+                  <div className="pos-cat-tile-sub">{c.count} item{c.count === 1 ? "" : "s"}</div>
                 </div>
               ))}
               {catTiles.length === 0 && (
@@ -439,9 +432,9 @@ export default function PosPage() {
           <div className="pos-b-body">
             <div className="pos-b-rail">
               <button className="pos-back" style={{ marginBottom: 6 }} onClick={backToCats}>← Categories</button>
-              {orderedCats.map((c) => (
-                <button key={c} className={`pos-cat ${cat === c ? "pos-cat--on" : ""}`} onClick={() => openCat(c)}>
-                  {pinnedCatSet.has(c) ? "★ " : ""}{c}
+              {allCatTiles.map((c) => (
+                <button key={c.key} className={`pos-cat ${cat === c.key ? "pos-cat--on" : ""}`} onClick={() => openCat(c.key)}>
+                  {c.name}
                 </button>
               ))}
             </div>
@@ -450,7 +443,7 @@ export default function PosPage() {
               {searchAll && q.trim() !== "" && (
                 <div className="pos-searchall-note">
                   Showing matches across all categories.
-                  <button className="pos-back" style={{ marginLeft: 8 }} onClick={() => setSearchAll(false)}>Back to {cat}</button>
+                  <button className="pos-back" style={{ marginLeft: 8 }} onClick={() => setSearchAll(false)}>Back to {catName}</button>
                 </div>
               )}
               <div className="pos-item-grid">
@@ -477,8 +470,8 @@ export default function PosPage() {
                   {q.trim()
                     ? searchAll
                       ? <>No items match “{q.trim()}” anywhere. <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => { setQ(""); setSearchAll(false); }}>Clear search</button></>
-                      : <>No matches in {cat} — search all items? <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => setSearchAll(true)}>Search all items</button></>
-                    : <>No items in {cat} at {selectedVenueName}.</>}
+                      : <>No matches in {catName} — search all items? <button className="pos-mode" style={{ marginLeft: 8 }} onClick={() => setSearchAll(true)}>Search all items</button></>
+                    : <>No items in {catName} at {selectedVenueName}.</>}
                 </div>
               )}
               </div>

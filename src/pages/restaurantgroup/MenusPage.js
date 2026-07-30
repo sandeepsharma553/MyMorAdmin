@@ -1,18 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, setDoc, serverTimestamp, writeBatch, deleteField, getDocs, updateDoc, runTransaction } from "firebase/firestore";
+import { addDoc, setDoc, serverTimestamp, writeBatch, deleteField, getDocs, runTransaction, deleteDoc, getCountFromServer } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useRG } from "./RGContext";
-import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc, menuItemsCol, venueMenuItemsCol, venueMenuItemDoc, groupDoc, menuCategoriesCol, menuCategoryDoc } from "../../utils/restaurantGroupPaths";
+import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc, menuItemsCol, venueMenuItemsCol, venueMenuItemDoc, menuCategoriesCol, menuCategoryDoc } from "../../utils/restaurantGroupPaths";
 import { sellOrder } from "./sellOrder";
 import {
   incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost, venueSellPrice, resolvedSellPrice,
   DEFAULT_MENU_CATEGORIES, modGroupKind, MOD_KINDS, MOD_KIND_DEFAULTS,
-  stripEmoji, categorySlug, CATEGORY_COLOURS,
+  stripEmoji, categorySlug, CATEGORY_COLOURS, byPosition, posCatKeyOf,
 } from "./rgStockUtils";
-
-// POS browse bucket for an uncategorised item — MUST match PosPage's catOf()
-// ("Uncategorised"), since posItemOrder is keyed by the bucket the POS reads.
-const posCatOf = (m) => m?.category || "Uncategorised";
 
 // Modifier-group picker sections, in display order (kind via modGroupKind).
 const KIND_SECTIONS = [
@@ -46,13 +42,13 @@ export default function MenusPage() {
   const {
     groupId, group, venues, menuItems, recipes, modifierGroups, inventoryItems, stock, menuCategories,
     resolvedMenuItems, menuInstanceById,
-    selectedVenue, selectedVenueName, venueName, can, showToast, me, myStaff,
+    selectedVenue, setSelectedVenue, selectedVenueName, venueName, can, showToast, me, myStaff,
   } = useRG();
   const canEdit = can("menus", "edit");
   const actor = myStaff?.displayName || myStaff?.name || me?.name || me?.email || "Admin";
   const categories = group?.menuCategories?.length ? group.menuCategories : DEFAULT_MENU_CATEGORIES;
 
-  const [tab, setTab] = useState("overview"); // overview | availability | e86 | recipes | modifiers | pricing
+  const [tab, setTab] = useState("builder"); // builder | availability | e86 | recipes | modifiers | pricing
   const [q, setQ] = useState("");
   const [fCat, setFCat] = useState("");
 
@@ -91,93 +87,10 @@ export default function MenusPage() {
       .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
   }, [resolvedMenuItems, q, fCat]);
 
-  // ── POS pinning (group.posCategoryOrder / group.posItemOrder) ── the POS
-  // reads these via rgStockUtils.pinnedFirst (pinned lead in list order, rest
-  // alphabetical, absent = pure alphabetical). This is the ONLY writer. Same
-  // whole-array/whole-map updateDoc pattern as the Settings picklists
-  // (leaveTypes / posNotePresets) — never dot-notation: category names are
-  // free text and would break Firestore field paths.
-  const posCategoryOrder = useMemo(
-    () => (Array.isArray(group?.posCategoryOrder) ? group.posCategoryOrder.map(String) : []),
-    [group]
-  );
-  const posItemOrder = useMemo(
-    () => (group?.posItemOrder && typeof group.posItemOrder === "object" && !Array.isArray(group.posItemOrder) ? group.posItemOrder : {}),
-    [group]
-  );
-  // the id the POS resolver keys on: pinnedFirst(..., (m) => m.templateId || m.id, ...)
-  const itemPinKey = (m) => m.templateId || m.id;
-  // every pinnable category: the configured list + stray item-borne ones
-  // (incl. "Uncategorised"), same derivation as the POS's category universe
-  const pinnableCats = useMemo(() => {
-    const stray = [...new Set(menuItems.map(posCatOf))]
-      .filter((c) => !categories.includes(c))
-      .sort((a, b) => a.localeCompare(b));
-    return [...categories, ...stray];
-  }, [categories, menuItems]);
-  const savePosCategoryOrder = async (next) => {
-    if (!canEdit) return; // write-time re-check, same hard rule as patchItem
-    try { await updateDoc(groupDoc(groupId), { posCategoryOrder: next }); }
-    catch (e) { showToast(`Could not save POS category order: ${e?.code || e?.message || "error"}`); }
-  };
-  const savePosItemOrder = async (nextMap) => {
-    if (!canEdit) return;
-    try { await updateDoc(groupDoc(groupId), { posItemOrder: nextMap }); }
-    catch (e) { showToast(`Could not save POS item order: ${e?.code || e?.message || "error"}`); }
-  };
-  const toggleCatPin = (c) => {
-    if (!canEdit) return;
-    savePosCategoryOrder(posCategoryOrder.includes(c) ? posCategoryOrder.filter((x) => x !== c) : [...posCategoryOrder, c]);
-  };
-  const isItemPinned = (m) => (Array.isArray(posItemOrder[posCatOf(m)]) ? posItemOrder[posCatOf(m)] : []).includes(String(itemPinKey(m)));
-  const toggleItemPin = (m) => {
-    if (!canEdit) return;
-    const ck = posCatOf(m);
-    const id = String(itemPinKey(m));
-    const cur = Array.isArray(posItemOrder[ck]) ? posItemOrder[ck].map(String) : [];
-    const nextList = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-    const next = { ...posItemOrder };
-    if (nextList.length) next[ck] = nextList; else delete next[ck]; // never leave empty arrays behind
-    savePosItemOrder(next);
-  };
-  // picker-row unpin: removes from the PICKER's category key explicitly — an
-  // item whose category changed after pinning still lives under its OLD key,
-  // and toggleItemPin (keyed by current category) would touch the wrong bucket.
-  const unpinFromCat = (id, ck) => {
-    if (!canEdit) return;
-    const cur = Array.isArray(posItemOrder[ck]) ? posItemOrder[ck].map(String) : [];
-    const nextList = cur.filter((x) => x !== String(id));
-    const next = { ...posItemOrder };
-    if (nextList.length) next[ck] = nextList; else delete next[ck];
-    savePosItemOrder(next);
-  };
-  // drag-to-reorder (pinned rows only) — mirrors the Settings dropLeaveType pattern
-  const [dragPinCat, setDragPinCat] = useState(null);
-  const dropPinCat = async (to) => {
-    const from = dragPinCat; setDragPinCat(null);
-    if (from === null || from === to) return;
-    const next = [...posCategoryOrder]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
-    await savePosCategoryOrder(next);
-  };
-  const [pinItemsCat, setPinItemsCat] = useState("");
-  const pinCat = pinItemsCat || pinnableCats[0] || "";
-  // pinned item rows for the picker — resolved to TEMPLATE docs (pinning is
-  // group-global); ids that no longer resolve (deleted items) render NO ghost
-  // row and stay orphaned in the array until the next reorder rewrites it.
-  const pinnedItemRows = useMemo(() => {
-    const ids = Array.isArray(posItemOrder[pinCat]) ? posItemOrder[pinCat].map(String) : [];
-    return ids.map((id) => ({ id, m: menuItems.find((x) => x.id === id) })).filter((r) => r.m);
-  }, [posItemOrder, pinCat, menuItems]);
-  const [dragPinItem, setDragPinItem] = useState(null);
-  const dropPinItem = async (to) => {
-    const from = dragPinItem; setDragPinItem(null);
-    if (from === null || from === to) return;
-    // rewritten from the RENDERED (valid) rows — a reorder therefore also
-    // prunes any orphaned ids of deleted items in this category
-    const next = pinnedItemRows.map((r) => r.id);
-    const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
-    await savePosItemOrder({ ...posItemOrder, [pinCat]: next });
-  };
+  // ── Job 4: the pin lists (group.posCategoryOrder / posItemOrder) are RETIRED.
+  // This page was their only writer and the POS no longer reads them — the fields
+  // stay on the group doc as inert legacy data. Order now lives on the documents:
+  // menuCategories.position (left pane) and instance.position (middle pane).
 
   // ── Job 3: per-venue menu CATEGORIES (documents, not text) ──────────────────
   // The category doc id is stable across renames — instances reference it via
@@ -282,6 +195,67 @@ export default function MenusPage() {
         : stripEmoji(m.category || "Uncategorised") === cat.name;
     }).length;
 
+  // ── Job 4 BUILDER ── venue tabs + three panes (categories | items | detail).
+  const [selCatKey, setSelCatKey] = useState(null); // left-pane category (doc id)
+  const [selItemId, setSelItemId] = useState(null); // middle-pane item (template id)
+  useEffect(() => { setSelItemId(null); }, [selectedVenue, selCatKey]);
+  // keep the selection valid as the venue/category set changes
+  useEffect(() => {
+    if (venueCats.length && !venueCats.some((c) => c.id === selCatKey)) setSelCatKey(venueCats[0].id);
+    if (!venueCats.length && selCatKey !== null) setSelCatKey(null);
+  }, [venueCats, selCatKey]);
+  const selCat = venueCats.find((c) => c.id === selCatKey) || null;
+  // middle pane: this category's items AT THIS VENUE — exactly the POS order
+  // (byPosition: positioned first, position-less last alphabetically, never hidden)
+  const catItems = useMemo(
+    () => (selCat
+      ? byPosition(
+          resolvedMenuItems.filter((m) => posCatKeyOf(m, venueCats) === selCat.id),
+          (m) => m.position, (m) => m.displayName || "")
+      : []),
+    [selCat, resolvedMenuItems, venueCats]
+  );
+  const [dragBItem, setDragBItem] = useState(null);
+  const dropBItem = async (to) => {
+    const from = dragBItem; setDragBItem(null);
+    if (from === null || from === to || !canEdit || !selCat || selectedVenue === "all") return;
+    const next = [...catItems]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
+    try {
+      // whole-category position rewrite 0..n-1; also normalises categoryId onto
+      // any legacy text-matched instance as it gets arranged
+      const batch = writeBatch(db);
+      next.forEach((m, i) => batch.set(venueMenuItemDoc(groupId, selectedVenue, m.templateId || m.id),
+        { position: i, categoryId: selCat.id, updatedAt: serverTimestamp() }, { merge: true }));
+      await batch.commit();
+    } catch (e) { showToast(`Could not save order: ${e?.code || e?.message || "error"}`); }
+  };
+  // delete a category — BLOCKED while items remain (never orphan items)
+  const deleteCategory = async (cat) => {
+    if (!canEdit) return;
+    const n = catItemCount(cat);
+    if (n > 0) return showToast(`"${cat.name}" still has ${n} item${n === 1 ? "" : "s"} — move them to another category first`);
+    try {
+      await deleteDoc(menuCategoryDoc(groupId, cat.venueId, cat.id));
+      showToast(`Category "${cat.name}" deleted`);
+    } catch (e) { showToast(`Could not delete: ${e?.code || e?.message || "error"}`); }
+  };
+  // venue tabs: how many items each venue sells (server-side count aggregates;
+  // the SELECTED venue tracks the live subscription instead)
+  const [venueCounts, setVenueCounts] = useState({});
+  const venueIdsKey = venues.map((v) => v.id).join(",");
+  const loadVenueCounts = async () => {
+    try {
+      const entries = await Promise.all(venues.map(async (v) => {
+        const s = await getCountFromServer(venueMenuItemsCol(groupId, v.id));
+        return [v.id, s.data().count];
+      }));
+      setVenueCounts(Object.fromEntries(entries));
+    } catch { /* counts are cosmetic — the tab still works without them */ }
+  };
+  useEffect(() => { if (groupId && venues.length) loadVenueCounts(); }, [groupId, venueIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const venueTabCount = (vid) => (vid === selectedVenue ? resolvedMenuItems.length : venueCounts[vid]);
+  const selItem = selItemId ? resolvedMenuItems.find((m) => (m.templateId || m.id) === selItemId) || null : null;
+
   const foodCostOf = (m) => menuItemFoodCost(m, resolvedRecipeByMenuItemId, itemById);
   // Price at the selected venue — the ONE shared resolver (rgStockUtils), mirrors
   // the server priority: instance.sellPrice → legacy venuePrices → template.
@@ -289,10 +263,6 @@ export default function MenusPage() {
   // Pricing/Recipes tabs cost at recipeVenue; when a venue is selected recipeVenue
   // is locked to it, so sellAt applies. At "all" fall back to legacy venuePrices.
   const sellAtCostVenue = (m) => (selectedVenue === "all" ? venueSellPrice(m, recipeVenue) : sellAt(m));
-  const marginOf = (m) => marginPct(sellAt(m), foodCostOf(m));
-  // Takeaway price is null = "same as dine-in sellPrice" (back-compat: items saved
-  // before takeawayPrice existed have no field). Variants carry their own takeawayPrice.
-  const effectiveTakeaway = (m) => (m.takeawayPrice == null ? Number(m.sellPrice) || 0 : Number(m.takeawayPrice) || 0);
 
   const patchItem = async (m, patch, okMsg) => {
     if (!canEdit) return; // write-time re-check (hard rule) — mirrors Ops MenusScreen; UI-disable alone is not a gate
@@ -568,6 +538,7 @@ export default function MenusPage() {
       }
       showToast(`${ids.length} item${ids.length === 1 ? "" : "s"} added to ${venueName(cloneModal.venueId) || "venue"}`);
       setCloneModal(null);
+      loadVenueCounts(); // keep the builder's venue tabs honest after adding
     } catch (e) {
       showToast(`Could not add: ${e?.code || e?.message || "error"}`);
       setCloneModal((p) => (p ? { ...p, busy: false } : p));
@@ -684,16 +655,6 @@ export default function MenusPage() {
   };
   const attachedCount = (g) => menuItems.filter((m) => (m.modifierGroupIds || []).includes(g.id)).length;
 
-  const marginPill = (m) => {
-    const mg = marginOf(m);
-    return <span className="pill" style={{ background: "#f4f4f5", color: marginColor(mg), fontWeight: 600 }}>{mg}%</span>;
-  };
-  const recipePill = (m) => {
-    const r = resolvedRecipeByMenuItemId[m.templateId || m.id];
-    return r
-      ? <span className="pill pill-green" style={{ cursor: canEdit ? "pointer" : "default" }} onClick={() => canEdit && openRecipe(m)}>{(r.ingredients || []).length} ings</span>
-      : <span className="pill pill-amber" style={{ cursor: canEdit ? "pointer" : "default" }} onClick={() => canEdit && openRecipe(m)}>No recipe</span>;
-  };
 
   // Phase 3 — venue-aware food cost for the Pricing/Margins screen (cost at the
   // selected venue via Phase 2 venueCost). overview/availability keep group cost.
@@ -717,18 +678,17 @@ export default function MenusPage() {
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div className="tabs">
-          <button className={`tab ${tab === "overview" ? "active" : ""}`} onClick={() => setTab("overview")}>Menu overview</button>
+          <button className={`tab ${tab === "builder" ? "active" : ""}`} onClick={() => setTab("builder")}>Menu builder</button>
           <button className={`tab ${tab === "availability" ? "active" : ""}`} onClick={() => setTab("availability")}>Availability</button>
           <button className={`tab ${tab === "e86" ? "active" : ""}`} onClick={() => setTab("e86")}>86 list{e86List.length ? ` (${e86List.length})` : ""}</button>
           <button className={`tab ${tab === "recipes" ? "active" : ""}`} onClick={() => setTab("recipes")}>Recipe costing</button>
           <button className={`tab ${tab === "modifiers" ? "active" : ""}`} onClick={() => setTab("modifiers")}>Modifier groups</button>
-          <button className={`tab ${tab === "categories" ? "active" : ""}`} onClick={() => setTab("categories")}>Categories</button>
           <button className={`tab ${tab === "pricing" ? "active" : ""}`} onClick={() => setTab("pricing")}>Pricing & margins</button>
         </div>
         <div style={{ fontSize: 12, color: "var(--gray)" }}>{selectedVenueName} · {vItems.length} items</div>
       </div>
 
-      {(tab === "overview" || tab === "availability" || tab === "pricing") && (
+      {(tab === "availability" || tab === "pricing") && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <input className="form-input" style={{ width: 200 }} placeholder="Search menu…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -748,98 +708,148 @@ export default function MenusPage() {
         </div>
       )}
 
-      {tab === "overview" && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          {/* POS LAYOUT — writes group.posCategoryOrder / group.posItemOrder,
-              the two arrays the POS's pinnedFirst() reads. Same editable-list
-              pattern as the Settings picklists: whole-array writes, drag to
-              reorder, ✕ to unpin. Read-only view when !canEdit. */}
-          <div className="card-head"><div><span className="card-title">POS layout</span><span className="card-sub">Pinned categories &amp; items lead on the POS, in this order — everything unpinned stays alphabetical</span></div></div>
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-            <div style={{ flex: "1 1 280px", minWidth: 260 }}>
-              <div className="form-label">Pinned categories (★ lead the category grid)</div>
-              {posCategoryOrder.filter((c) => pinnableCats.includes(c)).map((c, i) => (
-                <div key={c} className="staff-meta-row" draggable={canEdit}
-                  onDragStart={() => setDragPinCat(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropPinCat(i)} onDragEnd={() => setDragPinCat(null)}
-                  style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)", cursor: canEdit ? "grab" : "default", opacity: dragPinCat === i ? 0.5 : 1 }}>
-                  <span style={{ fontSize: 13 }}>{canEdit && <span style={{ color: "var(--gray)", marginRight: 6 }} title="Drag to reorder">⠿</span>}★ {c}</span>
-                  {canEdit && <button className="btn btn-sm btn-danger" title="Unpin (falls back into the alphabetical run)" onClick={() => toggleCatPin(c)}>✕</button>}
-                </div>
-              ))}
-              {posCategoryOrder.filter((c) => pinnableCats.includes(c)).length === 0 && (
-                <div style={{ fontSize: 12, color: "var(--gray)", padding: "6px 0" }}>None pinned — the POS category grid is alphabetical.</div>
-              )}
-              {canEdit && (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
-                  {pinnableCats.filter((c) => !posCategoryOrder.includes(c)).map((c) => (
-                    <button key={c} className="btn btn-sm" title="Pin to the top of the POS" onClick={() => toggleCatPin(c)}>☆ {c}</button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div style={{ flex: "1 1 280px", minWidth: 260 }}>
-              <div className="form-label">Pinned items within a category</div>
-              <select className="form-input" style={{ width: 200, marginBottom: 8 }} value={pinCat} onChange={(e) => setPinItemsCat(e.target.value)}>
-                {pinnableCats.map((c) => <option key={c} value={c}>{c}{(posItemOrder[c] || []).length ? ` (${(posItemOrder[c] || []).length}★)` : ""}</option>)}
-              </select>
-              {pinnedItemRows.map((r, i) => (
-                <div key={r.id} className="staff-meta-row" draggable={canEdit}
-                  onDragStart={() => setDragPinItem(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropPinItem(i)} onDragEnd={() => setDragPinItem(null)}
-                  style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)", cursor: canEdit ? "grab" : "default", opacity: dragPinItem === i ? 0.5 : 1 }}>
-                  <span style={{ fontSize: 13 }}>{canEdit && <span style={{ color: "var(--gray)", marginRight: 6 }} title="Drag to reorder">⠿</span>}★ {r.m.displayName}</span>
-                  {canEdit && <button className="btn btn-sm btn-danger" title="Unpin (falls back into the alphabetical run)" onClick={() => unpinFromCat(r.id, pinCat)}>✕</button>}
-                </div>
-              ))}
-              {pinnedItemRows.length === 0 && (
-                <div style={{ fontSize: 12, color: "var(--gray)", padding: "6px 0" }}>
-                  No pinned items in {pinCat || "this category"} — star items with ★ in the table below.
-                </div>
-              )}
-            </div>
+      {tab === "builder" && (
+        <>
+          {/* venue tabs — this IS the global venue picker (setSelectedVenue), rendered
+              as tabs with live sold-item counts; not a second selector */}
+          <div className="card" style={{ marginBottom: 16, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {venues.map((v) => (
+              <button key={v.id} className={`tab ${selectedVenue === v.id ? "active" : ""}`} onClick={() => setSelectedVenue(v.id)}>
+                {v.name} <span style={{ color: "var(--gray)", fontSize: 11 }}>({venueTabCount(v.id) ?? "…"} items)</span>
+              </button>
+            ))}
+            {canEdit && selectedVenue !== "all" && (
+              <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }} onClick={() => openItem(null)}>+ New menu item</button>
+            )}
           </div>
-        </div>
-      )}
-      {tab === "overview" && (
-        <div className="card">
-          <div style={{ overflowX: "auto" }}>
-            <table className="data-table">
-              <thead><tr><th title="Pinned to the top of its POS category">★</th><th>Item</th><th>Category</th><th>POS ID</th><th>Sell inc-GST</th><th>Food cost</th><th>Margin</th><th>Recipe</th><th>Available</th><th>86</th><th></th></tr></thead>
-              <tbody>
-                {vItems.map((m) => (
-                  <tr key={m.id} style={{ opacity: m.e86 ? 0.55 : 1 }}>
-                    <td>
-                      <button className="btn btn-sm" disabled={!canEdit}
-                        title={isItemPinned(m) ? "Unpin from the POS" : "Pin to the top of its POS category"}
-                        style={{ border: "none", background: "transparent", fontSize: 14, color: isItemPinned(m) ? "#9A1BA8" : "var(--gray)", padding: "2px 4px" }}
-                        onClick={() => toggleItemPin(m)}>{isItemPinned(m) ? "★" : "☆"}</button>
-                    </td>
-                    <td><strong style={{ textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</strong>
-                      {m.hasVariants && <span className="pill" style={{ marginLeft: 6, background: "#eef2ff", color: "#4338ca" }}>{(m.variants || []).length} sizes</span>}
-                      {m.isCombo && <span className="pill" style={{ marginLeft: 6, background: "#ecfeff", color: "#0e7490" }}>Combo</span>}
-                      {m.kitchenName && <div style={{ fontSize: 11, color: "var(--gray)" }}>{m.kitchenName}</div>}</td>
-                    <td><span className="pill pill-blue">{m.category}</span></td>
-                    <td style={{ fontSize: 12, color: "var(--gray)" }}>{m.posId || "—"}</td>
-                    <td><strong>{money(incGst(sellAt(m), m.gstApplicable !== false))}</strong><div style={{ fontSize: 11, color: "var(--gray)" }}>{money(sellAt(m))} ex{sellAt(m) !== (Number(m.sellPrice) || 0) ? " · venue" : ""}</div>{m.takeawayPrice != null && <div style={{ fontSize: 11, color: "var(--gray)" }}>TA {money(incGst(effectiveTakeaway(m), m.gstApplicable !== false))}</div>}</td>
-                    <td>{money(foodCostOf(m))}</td>
-                    <td>{marginPill(m)}</td>
-                    <td>{recipePill(m)}</td>
-                    <td>
-                      <input type="checkbox" checked={m.available !== false} disabled={!canEdit || m.e86}
-                        onChange={(e) => patchItem(m, { available: e.target.checked }, e.target.checked ? "Available on POS" : "Hidden from POS")} />
-                    </td>
-                    <td>
-                      {canEdit && (m.e86
-                        ? <button className="btn btn-sm" onClick={() => remove86(m)}>Remove 86</button>
-                        : <button className="btn btn-sm" style={{ color: "var(--red)" }} onClick={() => quick86(m)}>86 it</button>)}
-                    </td>
-                    <td>{canEdit && <button className="btn btn-sm" onClick={() => openItem(m)}>Edit</button>}</td>
-                  </tr>
+          {selectedVenue === "all" ? (
+            <div className="card" style={{ color: "var(--gray)", fontSize: 13 }}>
+              Items and their POS order are per-venue — pick a venue tab above to build its menu.
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+              {/* LEFT — this venue's categories (the Job 3 manager), drag = POS order */}
+              <div className="card" style={{ flex: "1 1 270px", minWidth: 260 }}>
+                <div className="card-head"><div><span className="card-title">Categories</span><span className="card-sub">Drag to set POS order · rename holds items (they point at the id)</span></div></div>
+                {venueCats.map((c, i) => (
+                  <div key={c.id} className="staff-meta-row" draggable={canEdit}
+                    onDragStart={() => setDragCat(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropCat(i)} onDragEnd={() => setDragCat(null)}
+                    onClick={() => setSelCatKey(c.id)}
+                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 6px", borderBottom: "0.5px solid var(--gray-light)",
+                      cursor: canEdit ? "grab" : "pointer", opacity: (dragCat === i ? 0.5 : 1) * (c.active === false ? 0.55 : 1),
+                      background: selCatKey === c.id ? "#f4f0fa" : "transparent", borderRadius: 6 }}>
+                    {canEdit && <span style={{ color: "var(--gray)" }} title="Drag to reorder">⠿</span>}
+                    <input type="color" value={c.colour || "#8C867E"} disabled={!canEdit} title="Category colour"
+                      style={{ width: 24, height: 24, padding: 0, border: "none", background: "transparent", cursor: canEdit ? "pointer" : "default" }}
+                      onClick={(e) => e.stopPropagation()} onChange={(e) => patchCategory(c, { colour: e.target.value })} />
+                    {canEdit ? (
+                      <input className="form-input" style={{ width: 130, fontSize: 12 }} defaultValue={c.name} key={`${c.id}-${c.name}`}
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={(e) => renameCategory(c, e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
+                    ) : <span style={{ fontSize: 13, fontWeight: 500 }}>{c.name}</span>}
+                    <span className="pill" style={{ background: "#f4f4f5", color: "var(--gray)" }}>{catItemCount(c)}</span>
+                    {c.active === false && <span className="pill pill-amber">off</span>}
+                    {canEdit && (
+                      <span style={{ marginLeft: "auto", display: "flex", gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                        <button className="btn btn-sm" title={c.active === false ? "Reactivate (shows on POS)" : "Deactivate (hides from POS)"}
+                          onClick={() => patchCategory(c, { active: c.active === false }, c.active === false ? `"${c.name}" reactivated` : `"${c.name}" deactivated`)}>
+                          {c.active === false ? "On" : "Off"}
+                        </button>
+                        <button className="btn btn-sm btn-danger" title="Delete (blocked while it still has items)" onClick={() => deleteCategory(c)}>✕</button>
+                      </span>
+                    )}
+                  </div>
                 ))}
-                {vItems.length === 0 && <tr><td colSpan={11} style={{ color: "var(--gray)" }}>No menu items for {selectedVenueName}.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                {venueCats.length === 0 && (
+                  <div style={{ fontSize: 12, color: "var(--gray)", padding: "6px 0" }}>No categories at {selectedVenueName} yet — add one, or copy from another venue.</div>
+                )}
+                {canEdit && (
+                  <>
+                    <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+                      <input className="form-input" style={{ flex: 1, minWidth: 120 }} placeholder="New category (no emoji)"
+                        value={newCatName} onChange={(e) => setNewCatName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") addCategory(); }} />
+                      <button className="btn btn-primary btn-sm" onClick={addCategory}>+ Add</button>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginTop: 10, alignItems: "center" }}>
+                      <select className="form-input" style={{ flex: 1, minWidth: 120 }} value={catCopyFrom} onChange={(e) => setCatCopyFrom(e.target.value)}>
+                        <option value="">Copy from venue…</option>
+                        {venues.filter((v) => v.id !== selectedVenue).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                      </select>
+                      <button className="btn btn-sm" disabled={!catCopyFrom || catBusy} onClick={copyCategories}>{catBusy ? "Copying…" : "Copy"}</button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* MIDDLE — the selected category's items, drag = exactly the POS order */}
+              <div className="card" style={{ flex: "2 1 400px", minWidth: 330 }}>
+                <div className="card-head"><div>
+                  <span className="card-title">{selCat ? selCat.name : "Items"}</span>
+                  <span className="card-sub">{catItems.length} item{catItems.length === 1 ? "" : "s"} at {selectedVenueName} · drag to arrange — this is the POS order</span>
+                </div></div>
+                {catItems.map((m, i) => (
+                  <div key={m.templateId || m.id} className="staff-meta-row" draggable={canEdit}
+                    onDragStart={() => setDragBItem(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropBItem(i)} onDragEnd={() => setDragBItem(null)}
+                    onClick={() => setSelItemId(m.templateId || m.id)}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 6px", borderBottom: "0.5px solid var(--gray-light)",
+                      cursor: canEdit ? "grab" : "pointer", opacity: (dragBItem === i ? 0.5 : 1) * (m.e86 ? 0.55 : 1),
+                      background: selItemId === (m.templateId || m.id) ? "#f4f0fa" : "transparent", borderRadius: 6 }}>
+                    {canEdit && <span style={{ color: "var(--gray)" }} title="Drag to arrange">⠿</span>}
+                    <span style={{ fontSize: 11, color: "var(--gray)", width: 18, textAlign: "right" }}>{i + 1}.</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</span>
+                    {Number.isFinite(Number(m.position)) && m.position !== null ? null : <span className="pill pill-amber" title="Not arranged yet — sorts last, alphabetically, until dragged">unplaced</span>}
+                    {m.available === false && !m.e86 && <span className="pill pill-amber">hidden</span>}
+                    {m.e86 && <span className="pill pill-red">86</span>}
+                    <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--gray)" }}>{money(incGst(sellAt(m), m.gstApplicable !== false))}</span>
+                  </div>
+                ))}
+                {selCat && catItems.length === 0 && (
+                  <div style={{ fontSize: 12, color: "var(--gray)", padding: "6px 0" }}>No items in {selCat.name} at {selectedVenueName} yet.</div>
+                )}
+                {canEdit && (
+                  <div onClick={openClone}
+                    style={{ border: "1.5px dashed var(--gray-light)", borderRadius: 8, padding: "12px 10px", marginTop: 10,
+                      textAlign: "center", fontSize: 13, color: "var(--gray)", cursor: "pointer" }}>
+                    + Add from library — create a venue instance for a group item
+                  </div>
+                )}
+              </div>
+
+              {/* RIGHT — the selected item: what applies AT THIS VENUE */}
+              <div className="card" style={{ flex: "1 1 270px", minWidth: 260 }}>
+                <div className="card-head"><div><span className="card-title">{selItem ? selItem.displayName : "Item detail"}</span><span className="card-sub">{selItem ? `at ${selectedVenueName}` : "click an item in the middle pane"}</span></div></div>
+                {selItem && (
+                  <>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+                      <div><span style={{ color: "var(--gray)" }}>Mode: </span>{selItem._mode === "separate" ? <span className="pill pill-amber">separate copy</span> : <span className="pill pill-green">linked to template</span>}</div>
+                      <div><span style={{ color: "var(--gray)" }}>Category: </span>{venueCats.find((c) => c.id === posCatKeyOf(selItem, venueCats))?.name || stripEmoji(selItem.category || "Uncategorised")}</div>
+                      <div><span style={{ color: "var(--gray)" }}>Price here: </span><strong>{money(incGst(sellAt(selItem), selItem.gstApplicable !== false))}</strong> <span style={{ color: "var(--gray)" }}>({money(sellAt(selItem))} ex{sellAt(selItem) !== (Number(menuItems.find((t) => t.id === (selItem.templateId || selItem.id))?.sellPrice) || 0) ? " · venue override" : " · template price"})</span></div>
+                      {selItem.hasVariants && <div><span style={{ color: "var(--gray)" }}>Sizes: </span>{(selItem.variants || []).map((v) => v.label).join(", ")}</div>}
+                      <div><span style={{ color: "var(--gray)" }}>POS position: </span>{Number.isFinite(Number(selItem.position)) && selItem.position !== null ? `#${Number(selItem.position) + 1} in category` : "unplaced (sorts last)"}</div>
+                      <div><span style={{ color: "var(--gray)" }}>POS ID: </span>{selItem.posId || "—"}</div>
+                      <div><span style={{ color: "var(--gray)" }}>Status: </span>{selItem.e86 ? <span className="pill pill-red">86’d — {selItem.e86Reason || "no reason"}</span> : selItem.available !== false ? <span className="pill pill-green">available</span> : <span className="pill pill-amber">hidden from POS</span>}</div>
+                      <div><span style={{ color: "var(--gray)" }}>Modifiers: </span>{(selItem.modifierGroupIds || []).length} group{(selItem.modifierGroupIds || []).length === 1 ? "" : "s"}</div>
+                    </div>
+                    {canEdit && (
+                      <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+                        <button className="btn btn-primary btn-sm" onClick={() => openItem(selItem)}>Edit item</button>
+                        {selItem.e86
+                          ? <button className="btn btn-sm" onClick={() => remove86(selItem)}>Remove 86</button>
+                          : <button className="btn btn-sm" style={{ color: "var(--red)" }} onClick={() => quick86(selItem)}>86 it</button>}
+                        <button className="btn btn-sm" onClick={() => patchItem(selItem, { available: selItem.available === false }, selItem.available === false ? "Available on POS" : "Hidden from POS")} disabled={selItem.e86}>
+                          {selItem.available === false ? "Show on POS" : "Hide from POS"}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+                {!selItem && <div style={{ fontSize: 12, color: "var(--gray)" }}>Nothing selected.</div>}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {tab === "availability" && (
@@ -992,70 +1002,6 @@ export default function MenusPage() {
             </table>
           </div>
         </div>
-      )}
-
-      {tab === "categories" && selectedVenue === "all" && (
-        <div className="card" style={{ color: "var(--gray)", fontSize: 13 }}>
-          Categories are per-venue — select a venue (top-right) to manage its category list.
-        </div>
-      )}
-      {tab === "categories" && selectedVenue !== "all" && (
-        <>
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-head">
-              <div><span className="card-title">Categories — {selectedVenueName}</span><span className="card-sub">Drag to set the POS order · rename touches the category document only — items keep pointing at it</span></div>
-            </div>
-            {venueCats.map((c, i) => (
-              <div key={c.id} className="staff-meta-row" draggable={canEdit}
-                onDragStart={() => setDragCat(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropCat(i)} onDragEnd={() => setDragCat(null)}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "0.5px solid var(--gray-light)", cursor: canEdit ? "grab" : "default", opacity: (dragCat === i ? 0.5 : 1) * (c.active === false ? 0.55 : 1) }}>
-                {canEdit && <span style={{ color: "var(--gray)" }} title="Drag to reorder">⠿</span>}
-                <input type="color" value={c.colour || "#8C867E"} disabled={!canEdit} title="Category colour"
-                  style={{ width: 28, height: 28, padding: 0, border: "none", background: "transparent", cursor: canEdit ? "pointer" : "default" }}
-                  onChange={(e) => patchCategory(c, { colour: e.target.value })} />
-                {canEdit ? (
-                  <input className="form-input" style={{ width: 220 }} defaultValue={c.name} key={`${c.id}-${c.name}`}
-                    onBlur={(e) => renameCategory(c, e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
-                ) : <span style={{ fontSize: 13, fontWeight: 500 }}>{c.name}</span>}
-                <span className="pill" style={{ background: "#f4f4f5", color: "var(--gray)" }}>{catItemCount(c)} item{catItemCount(c) === 1 ? "" : "s"}</span>
-                {c.active === false && <span className="pill pill-amber">inactive</span>}
-                <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                  {canEdit && (
-                    <button className="btn btn-sm" onClick={() => patchCategory(c, { active: c.active === false }, c.active === false ? `"${c.name}" reactivated` : `"${c.name}" deactivated`)}>
-                      {c.active === false ? "Reactivate" : "Deactivate"}
-                    </button>
-                  )}
-                </span>
-              </div>
-            ))}
-            {venueCats.length === 0 && (
-              <div style={{ fontSize: 12, color: "var(--gray)", padding: "6px 0" }}>
-                No categories at {selectedVenueName} yet — add one below, or copy them from another venue.
-              </div>
-            )}
-            {canEdit && (
-              <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
-                <input className="form-input" style={{ width: 220 }} placeholder="New category name (no emoji)"
-                  value={newCatName} onChange={(e) => setNewCatName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") addCategory(); }} />
-                <button className="btn btn-primary btn-sm" onClick={addCategory}>+ Add category</button>
-              </div>
-            )}
-          </div>
-          {canEdit && (
-            <div className="card" style={{ maxWidth: 560 }}>
-              <div className="card-head"><div><span className="card-title">Copy categories from another venue</span><span className="card-sub">Names, colours and order — existing categories here are never overwritten</span></div></div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <select className="form-input" style={{ width: 220 }} value={catCopyFrom} onChange={(e) => setCatCopyFrom(e.target.value)}>
-                  <option value="">Choose venue…</option>
-                  {venues.filter((v) => v.id !== selectedVenue).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
-                <button className="btn btn-sm" disabled={!catCopyFrom || catBusy} onClick={copyCategories}>{catBusy ? "Copying…" : "Copy"}</button>
-              </div>
-            </div>
-          )}
-        </>
       )}
 
       {tab === "pricing" && (
