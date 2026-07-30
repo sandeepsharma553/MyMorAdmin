@@ -719,11 +719,25 @@ export default function MenusPage() {
   const openRecipe = (m) => {
     // venue-resolved: a separate instance opens its OWN cloned recipe.
     const r = resolvedRecipeByMenuItemId[m.templateId || m.id];
-    // normalise lines: netQty (fallback qty) is the entered amount; recipeUnit
-    // defaults to the item's recipeUnit. Phase 1 — backward compatible.
-    setRecEditor({ menuItemId: m.templateId || m.id, recipeId: r?.id || null, ingredients: (r?.ingredients || []).map((g) => ({
+    // Job 11: variant ingredient OVERRIDES — per-variant columns over the ONE
+    // base recipe. Overrides live on the INSTANCE's variants (their Job 5 home),
+    // so they're editable only with a venue selected. Blank = same as base;
+    // 0 is a real value ("none in this size").
+    const varLabels = selectedVenue !== "all" && m.hasVariants ? (m.variants || []).map((v) => v.label).filter(Boolean) : [];
+    const variantOv = {};
+    varLabels.forEach((lab) => {
+      const v = (m.variants || []).find((x) => x.label === lab);
+      variantOv[lab] = Object.fromEntries((v?.ingredientOverrides || []).filter((o) => o && o.itemId).map((o) => [o.itemId, String(o.qty)]));
+    });
+    // rows = base recipe ∪ override-only itemIds (additions render with blank base)
+    const baseRows = (r?.ingredients || []).map((g) => ({
       itemId: g.itemId, netQty: g.netQty != null ? g.netQty : g.qty, recipeUnit: g.recipeUnit || recipeUnitOf(g.itemId),
-    })) });
+    }));
+    const baseIds = new Set(baseRows.map((g) => g.itemId));
+    const extraIds = [...new Set(varLabels.flatMap((lab) => Object.keys(variantOv[lab])))].filter((id) => !baseIds.has(id));
+    setRecEditor({ menuItemId: m.templateId || m.id, recipeId: r?.id || null,
+      ingredients: [...baseRows, ...extraIds.map((id) => ({ itemId: id, netQty: "", recipeUnit: recipeUnitOf(id) }))],
+      varLabels, variantOv });
   };
   const recMenuItem = recEditor
     ? (resolvedMenuItems.find((m) => (m.templateId || m.id) === recEditor.menuItemId) || menuItems.find((m) => m.id === recEditor.menuItemId))
@@ -749,6 +763,21 @@ export default function MenusPage() {
       }
       if (!isVenueClone) {
         await setDoc(menuItemDoc(groupId, recEditor.menuItemId), { recipeId, updatedAt: serverTimestamp() }, { merge: true });
+      }
+      // Job 11: persist variant ingredient overrides onto the INSTANCE's variants
+      // (whole-array write). Blank cells = inherit base (no entry); 0 kept as 0.
+      if ((recEditor.varLabels || []).length && selectedVenue !== "all") {
+        const inst = menuInstanceById[recEditor.menuItemId];
+        const curVars = Array.isArray(inst?.variants) ? inst.variants : [];
+        const nextVars = curVars.map((v) => {
+          const cells = recEditor.variantOv[v.label] || {};
+          const ovs = Object.entries(cells)
+            .filter(([, val]) => val !== "" && val != null && !isNaN(Number(val)) && Number(val) >= 0)
+            .map(([itemId, val]) => ({ itemId, qty: Number(val) }));
+          const { ingredientOverrides, ...rest } = v;
+          return ovs.length ? { ...rest, ingredientOverrides: ovs } : rest;
+        });
+        await setDoc(venueMenuItemDoc(groupId, selectedVenue, recEditor.menuItemId), { variants: nextVars, updatedAt: serverTimestamp() }, { merge: true });
       }
       showToast("Recipe saved — POS sales now deduct these ingredients");
       setRecEditor(null);
@@ -1746,6 +1775,16 @@ export default function MenusPage() {
         <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setRecEditor(null)}>
           <div className="rg-modal" style={{ maxWidth: 600 }}>
             <div className="modal-head"><span className="modal-title">Recipe — {recMenuItem.displayName}</span><button className="modal-close" onClick={() => setRecEditor(null)}>✕</button></div>
+            {(recEditor.varLabels || []).length > 0 && (
+              <div style={{ display: "flex", gap: 8, marginBottom: 4, fontSize: 11, color: "var(--gray)" }}>
+                <span style={{ flex: 1 }}>Ingredient</span>
+                <span style={{ width: 90 }}>Base</span>
+                {recEditor.varLabels.map((lab) => <span key={lab} style={{ width: 74 }}>{lab}</span>)}
+                <span style={{ width: 44 }} />
+                <span style={{ width: 60 }} />
+                <span style={{ width: 30 }} />
+              </div>
+            )}
             {recEditor.ingredients.map((g, i) => {
               const inv = itemById[g.itemId];
               const lc = inv ? grossStockQty(g, inv) * venueCost(inv, recipeStockByItem[g.itemId]) : 0; // gross × this venue's cost
@@ -1759,13 +1798,20 @@ export default function MenusPage() {
                   </select>
                   <input className="form-input" style={{ width: 90 }} type="number" step="0.001" value={g.netQty} placeholder="net qty"
                     onChange={(e) => setRecEditor((p) => ({ ...p, ingredients: p.ingredients.map((x, j) => (j === i ? { ...x, netQty: e.target.value } : x)) }))} />
+                  {/* Job 11: one override cell per variant — blank = same as base, 0 = none */}
+                  {(recEditor.varLabels || []).map((lab) => (
+                    <input key={lab} className="form-input" style={{ width: 74, background: (recEditor.variantOv[lab]?.[g.itemId] ?? "") === "" ? "#fafafa" : "#fff" }}
+                      type="number" step="0.001" min="0" placeholder="= base" title={`${lab}: blank = base qty, 0 = none`}
+                      value={recEditor.variantOv[lab]?.[g.itemId] ?? ""}
+                      onChange={(e) => setRecEditor((p) => ({ ...p, variantOv: { ...p.variantOv, [lab]: (() => { const m2 = { ...(p.variantOv[lab] || {}) }; if (e.target.value === "") delete m2[g.itemId]; else m2[g.itemId] = e.target.value; return m2; })() } }))} />
+                  ))}
                   <span style={{ fontSize: 11, color: "var(--gray)", width: 44 }}>{ru}</span>
                   <span style={{ fontSize: 12, fontWeight: 600, width: 60, textAlign: "right" }}>{money(lc)}</span>
                   <button className="btn btn-sm" onClick={() => setRecEditor((p) => ({ ...p, ingredients: p.ingredients.filter((_, j) => j !== i) }))}>✕</button>
                 </div>
               );
             })}
-            <div style={{ fontSize: 11, color: "var(--gray)", margin: "2px 0 8px" }}>Enter the <strong>net</strong> amount in the item's recipe unit; stock deducts the gross (after yield).</div>
+            <div style={{ fontSize: 11, color: "var(--gray)", margin: "2px 0 8px" }}>Enter the <strong>net</strong> amount in the item's recipe unit; stock deducts the gross (after yield).{(recEditor.varLabels || []).length > 0 && <> Variant columns override SPECIFIC ingredients — blank = same as base, <strong>0 = none in that size</strong>; a row with blank base and a variant qty is added only for that variant. Never a multiplier.</>}</div>
             <button className="btn btn-sm" onClick={() => setRecEditor((p) => ({ ...p, ingredients: [...p.ingredients, { itemId: "", netQty: "", recipeUnit: "" }] }))}>+ Add ingredient</button>
             <div style={{ borderTop: "0.5px solid var(--border)", marginTop: 12, paddingTop: 10, fontSize: 13 }}>
               {/* sell at the costing venue (instance-resolved), matching recCost's venue base. */}
