@@ -296,6 +296,83 @@ export default function MenusPage() {
     } catch (e) { showToast(`Could not apply: ${e?.code || e?.message || "error"}`); }
   };
 
+  // ── Job 9: COPY SETTINGS from another venue ─────────────────────────────────
+  // Copies Prices / Stations / Prep / Modifier attachments for items BOTH venues
+  // sell — it never ADDS items, and it never touches 86 state (today's kitchen
+  // situation), removed (a settings copy must not silently re-add), category,
+  // position, linked or recipeId. Stations are per-venue documents: matched by
+  // NAME through the target's own station docs; no matching name = that item's
+  // station is left alone and counted as skipped.
+  const [copySettings, setCopySettings] = useState(null); // { srcVid, srcInsts, opts, busy }
+  const openCopySettings = () => {
+    if (!canEdit || selectedVenue === "all") return;
+    setCopySettings({ srcVid: "", srcInsts: null, opts: { prices: true, stations: false, prep: false, mods: false }, busy: false });
+  };
+  const loadCopySettingsSource = async (vid) => {
+    setCopySettings((p) => (p ? { ...p, srcVid: vid, srcInsts: null } : p));
+    if (!vid) return;
+    try {
+      const snap = await getDocs(venueMenuItemsCol(groupId, vid));
+      setCopySettings((p) => (p && p.srcVid === vid ? { ...p, srcInsts: snap.docs.map((d) => ({ id: d.id, ...d.data() })) } : p));
+    } catch (e) { showToast(`Could not load that venue's menu: ${e?.code || e?.message || "error"}`); }
+  };
+  // the PLAN is computed up front so the confirm button can say exactly what changes
+  const copyPlan = useMemo(() => {
+    if (!copySettings?.srcInsts || !copySettings.srcVid) return null;
+    const o = copySettings.opts;
+    const srcStations = stations.filter((s) => s.venueId === copySettings.srcVid);
+    let stationSkips = 0, removedSkipped = 0;
+    const writes = [];
+    for (const s of copySettings.srcInsts) {
+      const tgt = menuInstanceById[s.id];
+      if (!tgt) continue;                                   // this venue doesn't sell it — copying never adds
+      if (tgt.removed === true) { removedSkipped++; continue; } // not sold here today — never silently re-add
+      const patch = {};
+      if (o.prices) {
+        if (s.sellPrice != null && !isNaN(Number(s.sellPrice))) patch.sellPrice = Number(s.sellPrice); // never copy a MISSING price
+        if (s.takeawayPrice !== undefined) patch.takeawayPrice = s.takeawayPrice; // null is a value ("same as dine-in")
+        if (Array.isArray(s.variants)) {
+          patch.hasVariants = s.hasVariants === true;
+          patch.variantGroupName = s.variantGroupName || "";
+          patch.variants = s.variants.map((v) => ({ ...v }));
+        }
+      }
+      if (o.stations) {
+        if (s.stationId) {
+          const srcName = srcStations.find((x) => x.id === s.stationId)?.name;
+          const tgtStation = srcName ? venueStations.find((x) => x.name === srcName) : null;
+          if (tgtStation) patch.stationId = tgtStation.id;
+          else stationSkips++;                              // no station with that NAME here — leave as-is
+        } else {
+          patch.stationId = null;                           // the source's setting IS "no station" — overwrite
+        }
+      }
+      if (o.prep) patch.prepMinutes = s.prepMinutes ?? null; // null = group default, a real setting
+      if (o.mods) patch.modifierOverrides = s.modifierOverrides ? JSON.parse(JSON.stringify(s.modifierOverrides)) : deleteField(); // absent = inherit template — true overwrite
+      if (Object.keys(patch).length) writes.push({ id: s.id, patch });
+    }
+    return { writes, stationSkips, removedSkipped };
+  }, [copySettings, menuInstanceById, stations, venueStations]);
+  const applyCopySettings = async () => {
+    if (!canEdit || !copySettings || !copyPlan || copySettings.busy || !copyPlan.writes.length) return;
+    setCopySettings((p) => ({ ...p, busy: true }));
+    try {
+      for (let i = 0; i < copyPlan.writes.length; i += 400) {
+        const batch = writeBatch(db);
+        copyPlan.writes.slice(i, i + 400).forEach(({ id, patch }) =>
+          batch.set(venueMenuItemDoc(groupId, selectedVenue, id), { ...patch, updatedAt: serverTimestamp() }, { merge: true }));
+        await batch.commit();
+      }
+      showToast(`${copyPlan.writes.length} item${copyPlan.writes.length === 1 ? "" : "s"} updated at ${selectedVenueName}`
+        + (copyPlan.stationSkips ? ` · ${copyPlan.stationSkips} station assignment${copyPlan.stationSkips === 1 ? "" : "s"} skipped (no matching station here)` : "")
+        + (copyPlan.removedSkipped ? ` · ${copyPlan.removedSkipped} removed item${copyPlan.removedSkipped === 1 ? "" : "s"} untouched` : ""));
+      setCopySettings(null);
+    } catch (e) {
+      showToast(`Could not copy: ${e?.code || e?.message || "error"}`);
+      setCopySettings((p) => (p ? { ...p, busy: false } : p));
+    }
+  };
+
   // delete a category — BLOCKED while items remain (never orphan items)
   const deleteCategory = async (cat) => {
     if (!canEdit) return;
@@ -810,7 +887,10 @@ export default function MenusPage() {
               </button>
             ))}
             {canEdit && selectedVenue !== "all" && (
-              <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }} onClick={() => openItem(null)}>+ New menu item</button>
+              <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                <button className="btn btn-sm" onClick={openCopySettings}>Copy settings from venue…</button>
+                <button className="btn btn-primary btn-sm" onClick={() => openItem(null)}>+ New menu item</button>
+              </span>
             )}
           </div>
           {selectedVenue === "all" ? (
@@ -1576,6 +1656,42 @@ export default function MenusPage() {
 
       {/* clone-to-venue modal — bulk "Add items to a venue" (select-all default,
           per-item deselect; existing instances shown as already-added, never overwritten) */}
+      {/* Job 9 — copy settings from another venue (confirm-with-counts; overwrites) */}
+      {copySettings && (
+        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && !copySettings.busy && setCopySettings(null)}>
+          <div className="rg-modal" style={{ maxWidth: 460 }}>
+            <div className="modal-head"><span className="modal-title">Copy settings to {selectedVenueName}</span><button className="modal-close" onClick={() => !copySettings.busy && setCopySettings(null)}>✕</button></div>
+            <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 10 }}>
+              Copies settings for items BOTH venues sell — it never adds items, and never touches 86 or removed state.
+            </div>
+            <div className="form-label">Copy from</div>
+            <select className="form-input" style={{ width: "100%", marginBottom: 10 }} value={copySettings.srcVid} onChange={(e) => loadCopySettingsSource(e.target.value)}>
+              <option value="">Choose venue…</option>
+              {venues.filter((v) => v.id !== selectedVenue).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+            {[["prices", "Prices (dine-in, takeaway, variant prices)"], ["stations", "Stations (matched by name — no match = skipped)"], ["prep", "Prep times"], ["mods", "Modifier attachments (venue overrides)"]].map(([k, label]) => (
+              <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", cursor: "pointer", fontSize: 13 }}>
+                <input type="checkbox" checked={copySettings.opts[k]} onChange={(e) => setCopySettings((p) => ({ ...p, opts: { ...p.opts, [k]: e.target.checked } }))} />
+                {label}
+              </label>
+            ))}
+            <div style={{ fontSize: 12, marginTop: 10, padding: "8px 10px", background: "#fffbeb", borderRadius: 8, color: "#92400e" }}>
+              {!copySettings.srcVid ? "Pick a source venue to see what would change."
+                : !copySettings.srcInsts ? "Loading source menu…"
+                : !copyPlan || !copyPlan.writes.length ? "Nothing to copy — no overlapping items with the chosen settings."
+                : <>This <strong>overwrites</strong> settings on <strong>{copyPlan.writes.length}</strong> item{copyPlan.writes.length === 1 ? "" : "s"} both venues sell.
+                    {copyPlan.stationSkips ? <> {copyPlan.stationSkips} station assignment{copyPlan.stationSkips === 1 ? "" : "s"} will be skipped (no station with that name at {selectedVenueName}).</> : null}
+                    {copyPlan.removedSkipped ? <> {copyPlan.removedSkipped} removed item{copyPlan.removedSkipped === 1 ? " stays" : "s stay"} untouched in Inactive.</> : null}</>}
+            </div>
+            <div className="btn-row">
+              <button className="btn btn-primary" disabled={!copyPlan || !copyPlan.writes.length || copySettings.busy} onClick={applyCopySettings}>
+                {copySettings.busy ? "Copying…" : copyPlan && copyPlan.writes.length ? `Copy to ${copyPlan.writes.length} item${copyPlan.writes.length === 1 ? "" : "s"}` : "Copy"}
+              </button>
+              <button className="btn" onClick={() => !copySettings.busy && setCopySettings(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
       {cloneModal && (
         <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && !cloneModal.busy && setCloneModal(null)}>
           <div className="rg-modal" style={{ maxWidth: 560 }}>
