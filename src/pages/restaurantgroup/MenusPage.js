@@ -7,7 +7,7 @@ import { sellOrder } from "./sellOrder";
 import {
   incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost, venueSellPrice, resolvedSellPrice,
   DEFAULT_MENU_CATEGORIES, modGroupKind, MOD_KINDS, MOD_KIND_DEFAULTS,
-  stripEmoji, categorySlug, CATEGORY_COLOURS, byPosition, posCatKeyOf, hasVenuePrice,
+  stripEmoji, categorySlug, CATEGORY_COLOURS, byPosition, posCatKeyOf, hasVenuePrice, resolvePrepMinutes,
 } from "./rgStockUtils";
 
 // Modifier-group picker sections, in display order (kind via modGroupKind).
@@ -40,7 +40,7 @@ const fmtWhen = (iso) => { try { return new Date(iso).toLocaleString("en-AU", { 
 
 export default function MenusPage() {
   const {
-    groupId, group, venues, menuItems, recipes, modifierGroups, inventoryItems, stock, menuCategories,
+    groupId, group, venues, menuItems, recipes, modifierGroups, inventoryItems, stock, menuCategories, stations,
     resolvedMenuItems, menuInstanceById,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, can, showToast, me, myStaff,
   } = useRG();
@@ -244,6 +244,47 @@ export default function MenusPage() {
     const vars = (m.variants || []).map((v, i) => (i === idx ? { ...v, sellPrice: Number(val) || 0 } : { ...v }));
     saveInstPrice(m, { variants: vars, hasVariants: true }, `${vars[idx]?.label || "Variant"} price saved for ${selectedVenueName}`);
   };
+  // ── Job 6: stations + prep time on the INSTANCE ─────────────────────────────
+  // Stations are the EXISTING per-venue documents (Settings → Stations) — an
+  // item's stationId only means something at its own venue. Doc ids are slugs
+  // of the name (SettingsPage convention), so "Grill" is `grill` everywhere.
+  const slugName = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""); // ⚠ keep identical to SettingsPage slug
+  const venueStations = useMemo(
+    () => stations.filter((s) => s.venueId === selectedVenue).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    [stations, selectedVenue]
+  );
+  // a deleted station must not break items pointing at it: resolve to null → "no station"
+  const stationName = (id) => venueStations.find((s) => s.id === id)?.name || null;
+  const prepDefault = resolvePrepMinutes(group);
+  // ── Job 6 BULK EDIT ── select many items in the middle pane, set station /
+  // prep for all at once (283 items; one-at-a-time would never get filled in)
+  const [bulkSel, setBulkSel] = useState(() => new Set());
+  const [bulkStation, setBulkStation] = useState("");
+  const [bulkPrep, setBulkPrep] = useState("");
+  useEffect(() => { setBulkSel(new Set()); }, [selectedVenue, selCatKey]);
+  const toggleBulk = (id) => setBulkSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const applyBulk = async () => {
+    if (!canEdit || selectedVenue === "all" || !bulkSel.size) return;
+    if (!bulkStation && bulkPrep === "") return showToast("Pick a station and/or a prep time to apply");
+    const patch = {};
+    if (bulkStation) patch.stationId = bulkStation === "__none" ? null : bulkStation;
+    if (bulkPrep !== "") {
+      const n = Number(bulkPrep);
+      if (isNaN(n) || n <= 0) return showToast("Prep time must be a positive number of minutes");
+      patch.prepMinutes = n;
+    }
+    try {
+      const ids = [...bulkSel];
+      for (let i = 0; i < ids.length; i += 400) {
+        const batch = writeBatch(db);
+        ids.slice(i, i + 400).forEach((id) => batch.set(venueMenuItemDoc(groupId, selectedVenue, id), { ...patch, updatedAt: serverTimestamp() }, { merge: true }));
+        await batch.commit();
+      }
+      showToast(`${ids.length} item${ids.length === 1 ? "" : "s"} updated${patch.stationId !== undefined ? ` · station ${patch.stationId ? stationName(patch.stationId) || patch.stationId : "cleared"}` : ""}${patch.prepMinutes ? ` · ${patch.prepMinutes} min` : ""}`);
+      setBulkSel(new Set()); setBulkStation(""); setBulkPrep("");
+    } catch (e) { showToast(`Could not apply: ${e?.code || e?.message || "error"}`); }
+  };
+
   // delete a category — BLOCKED while items remain (never orphan items)
   const deleteCategory = async (cat) => {
     if (!canEdit) return;
@@ -333,6 +374,7 @@ export default function MenusPage() {
     const m = rm ? (menuItems.find((x) => x.id === tid) || rm) : null;
     setEditor(m ? {
     id: tid, displayName: m.displayName || "", kitchenName: m.kitchenName || "", category: m.category || categories[0],
+    defaultStationName: m.defaultStationName || "",
     sellPrice: m.sellPrice ?? "", cost: m.cost ?? "", gstApplicable: m.gstApplicable !== false,
     venueIds: m.venueIds || [], posId: m.posId || "", modifierGroupIds: m.modifierGroupIds || [], available: m.available !== false,
     // Option A — per-venue price overrides. origVenuePrices keeps the saved keys so
@@ -355,6 +397,7 @@ export default function MenusPage() {
     instSellPrice: selectedVenue !== "all" && menuInstanceById[tid]?.sellPrice != null ? menuInstanceById[tid].sellPrice : "",
   } : {
     id: null, displayName: "", kitchenName: "", category: categories[0], sellPrice: "", cost: "",
+    defaultStationName: "",
     gstApplicable: true, venueIds: selectedVenue !== "all" ? [selectedVenue] : venues.map((v) => v.id),
     posId: "", modifierGroupIds: [], available: true,
     takeawayPrice: "", hasVariants: false, variantGroupName: "", variants: [], isCombo: false, comboGroups: [],
@@ -430,6 +473,9 @@ export default function MenusPage() {
     // authoritative "sold here" signal for sales).
     const data = {
       displayName: editor.displayName.trim(), kitchenName: editor.kitchenName || "", category: editor.category,
+      // Job 6: a station NAME (not id) — station ids are per-venue slugs of the
+      // name, so this seeds instance.stationId wherever a matching station exists
+      defaultStationName: (editor.defaultStationName || "").trim(),
       sellPrice, cost: Number(editor.cost) || 0, gstApplicable: !!editor.gstApplicable,
       venueIds: editor.venueIds, posId: editor.posId || "", modifierGroupIds: editor.modifierGroupIds,
       takeawayPrice,
@@ -547,6 +593,10 @@ export default function MenusPage() {
           // at sale time. Variants copied WHOLE — venue variant pricing.
           const vpRaw = t?.venuePrices?.[cloneModal.venueId];
           const seedPrice = vpRaw != null && !isNaN(Number(vpRaw)) ? Number(vpRaw) : (Number(t?.sellPrice) || 0);
+          // Job 6: template's default station NAME → this venue's station doc id
+          // (ids are name-slugs). No matching station at this venue = no seed.
+          const stnId = t?.defaultStationName ? slugName(t.defaultStationName) : null;
+          const stnSeed = stnId && stations.some((s) => s.venueId === cloneModal.venueId && s.id === stnId) ? { stationId: stnId } : {};
           batch.set(venueMenuItemDoc(groupId, cloneModal.venueId, id), {
             linked: true, available: true, e86: false,
             sellPrice: seedPrice,
@@ -555,6 +605,7 @@ export default function MenusPage() {
             variantGroupName: t?.hasVariants ? (t.variantGroupName || "") : "",
             variants: t?.hasVariants ? (t.variants || []).map((v) => ({ ...v })) : [],
             ...(catId ? { categoryId: catId } : {}),
+            ...stnSeed,
             createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
           });
         });
@@ -820,6 +871,7 @@ export default function MenusPage() {
                     style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 6px", borderBottom: "0.5px solid var(--gray-light)",
                       cursor: canEdit ? "grab" : "pointer", opacity: (dragBItem === i ? 0.5 : 1) * (m.e86 ? 0.55 : 1),
                       background: selItemId === (m.templateId || m.id) ? "#f4f0fa" : "transparent", borderRadius: 6 }}>
+                    {canEdit && <input type="checkbox" checked={bulkSel.has(m.templateId || m.id)} onChange={() => toggleBulk(m.templateId || m.id)} onClick={(e) => e.stopPropagation()} title="Select for bulk edit" />}
                     {canEdit && <span style={{ color: "var(--gray)" }} title="Drag to arrange">⠿</span>}
                     <span style={{ fontSize: 11, color: "var(--gray)", width: 18, textAlign: "right" }}>{i + 1}.</span>
                     <span style={{ fontSize: 13, fontWeight: 500, textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</span>
@@ -827,11 +879,27 @@ export default function MenusPage() {
                     {m.available === false && !m.e86 && <span className="pill pill-amber">hidden</span>}
                     {m.e86 && <span className="pill pill-red">86</span>}
                     {!hasVenuePrice(m, { menuInstanceById, selectedVenue }) && <span className="pill pill-red" title="No venue price — the POS refuses this item until one is set">no price</span>}
+                    {stationName(m.stationId) && <span className="pill" style={{ background: "#f4f4f5", color: "var(--gray)" }}>{stationName(m.stationId)}{m.prepMinutes ? ` · ${m.prepMinutes}m` : ""}</span>}
                     <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--gray)" }}>{money(incGst(sellAt(m), m.gstApplicable !== false))}</span>
                   </div>
                 ))}
                 {selCat && catItems.length === 0 && (
                   <div style={{ fontSize: 12, color: "var(--gray)", padding: "6px 0" }}>No items in {selCat.name} at {selectedVenueName} yet.</div>
+                )}
+                {canEdit && catItems.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 10, padding: "8px 6px", background: "#fafafa", borderRadius: 8 }}>
+                    <button className="btn btn-sm" onClick={() => setBulkSel(bulkSel.size === catItems.length ? new Set() : new Set(catItems.map((m) => m.templateId || m.id)))}>
+                      {bulkSel.size === catItems.length ? "Clear selection" : `Select all ${catItems.length}`}
+                    </button>
+                    <span style={{ fontSize: 12, color: "var(--gray)" }}>{bulkSel.size} selected</span>
+                    <select className="form-input" style={{ width: 140 }} value={bulkStation} onChange={(e) => setBulkStation(e.target.value)}>
+                      <option value="">Station…</option>
+                      <option value="__none">— clear station —</option>
+                      {venueStations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    <input className="form-input" type="number" min="1" step="1" style={{ width: 90 }} placeholder="Prep min" value={bulkPrep} onChange={(e) => setBulkPrep(e.target.value)} />
+                    <button className="btn btn-primary btn-sm" disabled={!bulkSel.size} onClick={applyBulk}>Apply to {bulkSel.size || "…"}</button>
+                  </div>
                 )}
                 {canEdit && (
                   <div onClick={openClone}
@@ -887,6 +955,29 @@ export default function MenusPage() {
                       {selItem.hasVariants && <div><span style={{ color: "var(--gray)" }}>Sizes: </span>{(selItem.variants || []).map((v) => v.label).join(", ")}</div>}
                       <div><span style={{ color: "var(--gray)" }}>POS position: </span>{Number.isFinite(Number(selItem.position)) && selItem.position !== null ? `#${Number(selItem.position) + 1} in category` : "unplaced (sorts last)"}</div>
                       <div><span style={{ color: "var(--gray)" }}>POS ID: </span>{selItem.posId || "—"}</div>
+                      {/* Job 6 — kitchen routing: station + prep time live on THIS venue's instance */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ color: "var(--gray)" }}>Station: </span>
+                        {canEdit ? (
+                          <select className="form-input" style={{ width: 150 }}
+                            value={venueStations.some((s) => s.id === selItem.stationId) ? selItem.stationId : ""}
+                            onChange={(e) => saveInstPrice(selItem, { stationId: e.target.value || null }, e.target.value ? `Station set to ${stationName(e.target.value)}` : "Station cleared")}>
+                            <option value="">— no station —</option>
+                            {venueStations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          </select>
+                        ) : <span>{stationName(selItem.stationId) || "—"}</span>}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ color: "var(--gray)" }}>Prep time: </span>
+                        {canEdit ? (
+                          <input className="form-input" type="number" min="1" step="1" style={{ width: 90 }}
+                            placeholder={`${prepDefault} (default)`}
+                            key={`prep-${selItem.templateId || selItem.id}-${selItem.prepMinutes}`} defaultValue={selItem.prepMinutes ?? ""}
+                            onBlur={(e) => { const raw = e.target.value; const v = raw === "" ? null : Number(raw); if (v !== null && (isNaN(v) || v <= 0)) return showToast("Prep time must be a positive number of minutes"); if (v !== (selItem.prepMinutes ?? null)) saveInstPrice(selItem, { prepMinutes: v }, v === null ? `Prep time cleared — uses the ${prepDefault} min default` : `Prep time set to ${v} min`); }}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
+                        ) : <span>{selItem.prepMinutes ?? `${prepDefault} (default)`}</span>}
+                        <span style={{ color: "var(--gray)" }}>min</span>
+                      </div>
                       <div><span style={{ color: "var(--gray)" }}>Status: </span>{selItem.e86 ? <span className="pill pill-red">86’d — {selItem.e86Reason || "no reason"}</span> : selItem.available !== false ? <span className="pill pill-green">available</span> : <span className="pill pill-amber">hidden from POS</span>}</div>
                       <div><span style={{ color: "var(--gray)" }}>Modifiers: </span>{(selItem.modifierGroupIds || []).length} group{(selItem.modifierGroupIds || []).length === 1 ? "" : "s"}</div>
                     </div>
@@ -1140,6 +1231,11 @@ export default function MenusPage() {
                   {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select></div>
               <div><div className="form-label">POS ID</div><input className="form-input" value={editor.posId} onChange={(e) => setEditor((p) => ({ ...p, posId: e.target.value }))} /></div>
+              <div><div className="form-label">Default station (seeds venues on add)</div>
+                <input className="form-input" list="station-names" value={editor.defaultStationName} placeholder="e.g. Grill"
+                  onChange={(e) => setEditor((p) => ({ ...p, defaultStationName: e.target.value }))} />
+                <datalist id="station-names">{[...new Set(stations.map((s) => s.name))].map((n) => <option key={n} value={n} />)}</datalist>
+              </div>
             </div>
             )}
             {editorTab === "pricing" && (<>

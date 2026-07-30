@@ -5,7 +5,7 @@ import { venueCol, venueDoc, groupDoc, contractClassificationsDoc, contractDefau
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS, DEFAULT_UNIT_TYPES } from "./rgConfig";
 import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaBreakRule, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, empTypeIsSalaried } from "./staffStructureUtils";
-import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS, resolvePosNotePresets } from "./rgStockUtils";
+import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS, resolvePosNotePresets, resolvePrepMinutes } from "./rgStockUtils";
 
 const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
 
@@ -406,6 +406,17 @@ export default function SettingsPage() {
     await saveNotePresets(next); showToast("Preset added");
   };
   const removeNotePreset = async (t) => { await saveNotePresets(removeFromList(posNotePresets, t)); };
+  // ── Default prep time (Job 6) ── group.defaultPrepMinutes (number) — same
+  // group-doc whole-value pattern as posNotePresets; resolver seeds the default.
+  // Per-item instance.prepMinutes overrides it; blank there = this value.
+  const prepDefault = resolvePrepMinutes(group);
+  const savePrepDefault = async (raw) => {
+    const n = Number(raw);
+    if (isNaN(n) || n <= 0) return showToast("Prep time must be a positive number of minutes");
+    if (n === prepDefault) return;
+    try { await updateDoc(groupDoc(groupId), { defaultPrepMinutes: n }); showToast(`Default prep time set to ${n} min`); }
+    catch { showToast("Could not save default prep time"); }
+  };
   const dropNotePreset = async (to) => {
     const from = dragNote; setDragNote(null);
     if (from === null || from === to) return;
@@ -756,6 +767,18 @@ export default function SettingsPage() {
                   <button className="btn btn-primary" onClick={addNotePreset}>Add</button>
                 </div>
               )}
+            </div>
+            {/* DEFAULT PREP TIME (Job 6) — group-wide fallback for items with no
+                per-item prep time; the kitchen display reads item → this default. */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Default prep time</span><span className="card-sub">Minutes assumed for any menu item without its own prep time (set per item in the menu builder)</span></div></div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input className="form-input" type="number" min="1" step="1" style={{ width: 110 }} disabled={!editable}
+                  key={`prep-${prepDefault}`} defaultValue={prepDefault}
+                  onBlur={(e) => editable && savePrepDefault(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
+                <span style={{ fontSize: 12, color: "var(--gray)" }}>minutes</span>
+              </div>
             </div>
             {/* ROLES */}
             <div className="card">

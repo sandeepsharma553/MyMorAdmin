@@ -91,7 +91,7 @@ export const INSTANCE_OVERRIDE_FIELDS = ["sellPrice", "variants", "hasVariants",
 // Instance-only state — always read from the instance when present (both modes).
 // categoryId/position (Job 3/4): the venue's category doc ref + POS tile order —
 // per-venue by nature, so they live here and flow onto the resolved item.
-export const INSTANCE_STATE_FIELDS = ["linked", "available", "e86", "e86Reason", "e86By", "e86At", "e86Back", "recipeSourceId", "categoryId", "position"];
+export const INSTANCE_STATE_FIELDS = ["linked", "available", "e86", "e86Reason", "e86By", "e86At", "e86Back", "recipeSourceId", "categoryId", "position", "stationId", "prepMinutes"];
 
 // Resolve a menu item AT a venue: template is the base; a linked instance inherits
 // it, a separate instance's non-null values win wholesale (template fills gaps —
@@ -240,6 +240,14 @@ export const CATEGORY_COLOURS = [
 // string sent as the line's `notes` — the server (rgSellOrder) trims and caps at 200.
 export const DEFAULT_POS_NOTE_PRESETS = ["No cutlery", "Extra napkins", "Allergy — check", "Well done", "Cut in half", "Rush"];
 export const resolvePosNotePresets = (group) => (group?.posNotePresets?.length ? group.posNotePresets : DEFAULT_POS_NOTE_PRESETS);
+
+// ── Default prep time (Job 6 — kitchen display groundwork) ── group-level
+// default, minutes. Same pattern as posNotePresets: a field on the group doc,
+// whole-value writes from Settings, resolver seeds the default. An instance's
+// prepMinutes overrides it per item; null/absent = use this venue-wide default.
+export const DEFAULT_PREP_MINUTES = 10;
+export const resolvePrepMinutes = (group) =>
+  (Number(group?.defaultPrepMinutes) > 0 ? Number(group.defaultPrepMinutes) : DEFAULT_PREP_MINUTES);
 
 // ── modifier-group KIND ── semantic category of a modifier group. The imported
 // MobiPOS data carries no kind field — the name prefix is the only signal
