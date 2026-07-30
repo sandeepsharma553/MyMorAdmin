@@ -117,16 +117,27 @@ export const resolveMenuItemAtVenue = (template, instance) => {
   return r;
 };
 
-// The ONE client-side sell-price resolver (hoisted from the identical sellAt copies
-// in MenusPage / PosPage / Ops MenusScreen). Mirrors the server priority in
-// rgSellOrder: instance.sellPrice → legacy template.venuePrices[venueId] →
-// template sellPrice. "all" has no venue context → raw template price.
+// The ONE client-side sell-price resolver. Job 5 — THE VENUE IS THE TRUTH: at a
+// venue the INSTANCE's own price is the only price (seeded from the template on
+// add, backfilled once); the template is never read again at sale time and the
+// legacy template.venuePrices map is dead data. A missing instance price reads
+// $0 — rgSellOrder REFUSES such a line rather than charging $0 silently.
+// "all" is a template-display context only → raw template price.
+// Keep IDENTICAL to the Ops copy and in sync with rgSellOrder's resolution.
 export const resolvedSellPrice = (m, { menuInstanceById, menuItems, selectedVenue }) => {
   if (selectedVenue === "all") return Number(m?.sellPrice) || 0;
   const inst = menuInstanceById?.[m?.templateId || m?.id];
-  if (inst && inst.sellPrice != null && !isNaN(Number(inst.sellPrice))) return Number(inst.sellPrice);
-  const t = (menuItems || []).find((x) => x.id === (m?.templateId || m?.id)) || m;
-  return venueSellPrice(t, selectedVenue);
+  return inst && inst.sellPrice != null && !isNaN(Number(inst.sellPrice)) ? Number(inst.sellPrice) : 0;
+};
+
+// Job 5: does this item HAVE a price at this venue? Missing (null) is NOT $0 —
+// zero is a legal deliberate price (open items); only an ABSENT instance price
+// renders "No price", cannot be added to an order, and is REFUSED by rgSellOrder
+// with the same meaning. Keep IDENTICAL in Admin + Ops.
+export const hasVenuePrice = (m, { menuInstanceById, selectedVenue }) => {
+  if (selectedVenue === "all") return m?.sellPrice != null && !isNaN(Number(m.sellPrice));
+  const inst = menuInstanceById?.[m?.templateId || m?.id];
+  return !!inst && inst.sellPrice != null && !isNaN(Number(inst.sellPrice));
 };
 
 // Food cost of a recipe at current ingredient costs (ex-GST). cost is per stock

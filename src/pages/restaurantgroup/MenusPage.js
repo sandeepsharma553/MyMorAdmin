@@ -7,7 +7,7 @@ import { sellOrder } from "./sellOrder";
 import {
   incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost, venueSellPrice, resolvedSellPrice,
   DEFAULT_MENU_CATEGORIES, modGroupKind, MOD_KINDS, MOD_KIND_DEFAULTS,
-  stripEmoji, categorySlug, CATEGORY_COLOURS, byPosition, posCatKeyOf,
+  stripEmoji, categorySlug, CATEGORY_COLOURS, byPosition, posCatKeyOf, hasVenuePrice,
 } from "./rgStockUtils";
 
 // Modifier-group picker sections, in display order (kind via modGroupKind).
@@ -229,6 +229,21 @@ export default function MenusPage() {
       await batch.commit();
     } catch (e) { showToast(`Could not save order: ${e?.code || e?.message || "error"}`); }
   };
+  // Job 5 — right-pane price writes: the INSTANCE for the selected venue only.
+  // The template is a seed, never a sale-time source; arranging/pricing one
+  // venue can never move another's.
+  const saveInstPrice = async (m, patch, okMsg) => {
+    if (!canEdit || selectedVenue === "all") return;
+    try {
+      await setDoc(venueMenuItemDoc(groupId, selectedVenue, m.templateId || m.id), { ...patch, updatedAt: serverTimestamp() }, { merge: true });
+      showToast(okMsg || `Venue price saved for ${selectedVenueName}`);
+    } catch (e) { showToast(`Could not save price: ${e?.code || e?.message || "error"}`); }
+  };
+  // whole-array variant write (the instance's own list — venue variant pricing)
+  const saveVariantPrice = (m, idx, val) => {
+    const vars = (m.variants || []).map((v, i) => (i === idx ? { ...v, sellPrice: Number(val) || 0 } : { ...v }));
+    saveInstPrice(m, { variants: vars, hasVariants: true }, `${vars[idx]?.label || "Variant"} price saved for ${selectedVenueName}`);
+  };
   // delete a category — BLOCKED while items remain (never orphan items)
   const deleteCategory = async (cat) => {
     if (!canEdit) return;
@@ -256,7 +271,6 @@ export default function MenusPage() {
   const venueTabCount = (vid) => (vid === selectedVenue ? resolvedMenuItems.length : venueCounts[vid]);
   const selItem = selItemId ? resolvedMenuItems.find((m) => (m.templateId || m.id) === selItemId) || null : null;
 
-  const foodCostOf = (m) => menuItemFoodCost(m, resolvedRecipeByMenuItemId, itemById);
   // Price at the selected venue — the ONE shared resolver (rgStockUtils), mirrors
   // the server priority: instance.sellPrice → legacy venuePrices → template.
   const sellAt = (m) => resolvedSellPrice(m, { menuInstanceById, menuItems, selectedVenue });
@@ -524,12 +538,22 @@ export default function MenusPage() {
       for (let i = 0; i < ids.length; i += 400) {
         const batch = writeBatch(db);
         ids.slice(i, i + 400).forEach((id) => {
+          const t = menuItems.find((x) => x.id === id);
           // Job 3: new instances point at the venue's category DOC (renames-safe).
-          // No matching doc (category not configured at that venue yet) = omit;
-          // the POS falls back to item.category text until Job 4.
-          const catId = venueCategoryIdFor(cloneModal.venueId, menuItems.find((x) => x.id === id)?.category);
+          const catId = venueCategoryIdFor(cloneModal.venueId, t?.category);
+          // Job 5 COPY ON ADD — the VENUE is the truth: the template's price is a
+          // starting value copied ONCE here (today's venue-resolved value: legacy
+          // venuePrices override, else template sellPrice) and never read again
+          // at sale time. Variants copied WHOLE — venue variant pricing.
+          const vpRaw = t?.venuePrices?.[cloneModal.venueId];
+          const seedPrice = vpRaw != null && !isNaN(Number(vpRaw)) ? Number(vpRaw) : (Number(t?.sellPrice) || 0);
           batch.set(venueMenuItemDoc(groupId, cloneModal.venueId, id), {
             linked: true, available: true, e86: false,
+            sellPrice: seedPrice,
+            takeawayPrice: t?.takeawayPrice ?? null,
+            hasVariants: t?.hasVariants === true,
+            variantGroupName: t?.hasVariants ? (t.variantGroupName || "") : "",
+            variants: t?.hasVariants ? (t.variants || []).map((v) => ({ ...v })) : [],
             ...(catId ? { categoryId: catId } : {}),
             createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
           });
@@ -802,6 +826,7 @@ export default function MenusPage() {
                     {Number.isFinite(Number(m.position)) && m.position !== null ? null : <span className="pill pill-amber" title="Not arranged yet — sorts last, alphabetically, until dragged">unplaced</span>}
                     {m.available === false && !m.e86 && <span className="pill pill-amber">hidden</span>}
                     {m.e86 && <span className="pill pill-red">86</span>}
+                    {!hasVenuePrice(m, { menuInstanceById, selectedVenue }) && <span className="pill pill-red" title="No venue price — the POS refuses this item until one is set">no price</span>}
                     <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--gray)" }}>{money(incGst(sellAt(m), m.gstApplicable !== false))}</span>
                   </div>
                 ))}
@@ -825,7 +850,40 @@ export default function MenusPage() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
                       <div><span style={{ color: "var(--gray)" }}>Mode: </span>{selItem._mode === "separate" ? <span className="pill pill-amber">separate copy</span> : <span className="pill pill-green">linked to template</span>}</div>
                       <div><span style={{ color: "var(--gray)" }}>Category: </span>{venueCats.find((c) => c.id === posCatKeyOf(selItem, venueCats))?.name || stripEmoji(selItem.category || "Uncategorised")}</div>
-                      <div><span style={{ color: "var(--gray)" }}>Price here: </span><strong>{money(incGst(sellAt(selItem), selItem.gstApplicable !== false))}</strong> <span style={{ color: "var(--gray)" }}>({money(sellAt(selItem))} ex{sellAt(selItem) !== (Number(menuItems.find((t) => t.id === (selItem.templateId || selItem.id))?.sellPrice) || 0) ? " · venue override" : " · template price"})</span></div>
+                      {/* Job 5 — the VENUE prices this item: these inputs write the
+                          INSTANCE for the selected venue only. Stored EX-GST; the
+                          inc-GST figure alongside is display maths (+10%). */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ color: "var(--gray)" }}>Price here (ex-GST): </span>
+                        {canEdit ? (
+                          <input className="form-input" type="number" step="0.01" min="0" style={{ width: 90 }}
+                            key={`p-${selItem.templateId || selItem.id}-${sellAt(selItem)}`} defaultValue={sellAt(selItem)}
+                            onBlur={(e) => { const v = Number(e.target.value); if (!isNaN(v) && v >= 0 && v !== sellAt(selItem)) saveInstPrice(selItem, { sellPrice: v }); }}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
+                        ) : <strong>{money(sellAt(selItem))}</strong>}
+                        <strong>{money(incGst(sellAt(selItem), selItem.gstApplicable !== false))} inc</strong>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ color: "var(--gray)" }}>Takeaway (ex-GST): </span>
+                        {canEdit ? (
+                          <input className="form-input" type="number" step="0.01" min="0" style={{ width: 90 }} placeholder="same as dine-in"
+                            key={`ta-${selItem.templateId || selItem.id}-${selItem.takeawayPrice}`} defaultValue={selItem.takeawayPrice ?? ""}
+                            onBlur={(e) => { const raw = e.target.value; const v = raw === "" ? null : Number(raw); if ((v === null || (!isNaN(v) && v >= 0)) && v !== (selItem.takeawayPrice ?? null)) saveInstPrice(selItem, { takeawayPrice: v }); }}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
+                        ) : <span>{selItem.takeawayPrice == null ? "same as dine-in" : money(selItem.takeawayPrice)}</span>}
+                      </div>
+                      {selItem.hasVariants && (selItem.variants || []).map((vv, vi) => (
+                        <div key={vv.label || vi} style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 12 }}>
+                          <span style={{ color: "var(--gray)" }}>{vv.label} (ex-GST): </span>
+                          {canEdit ? (
+                            <input className="form-input" type="number" step="0.01" min="0" style={{ width: 90 }}
+                              key={`v-${selItem.templateId || selItem.id}-${vi}-${vv.sellPrice}`} defaultValue={vv.sellPrice ?? 0}
+                              onBlur={(e) => { const v = Number(e.target.value); if (!isNaN(v) && v >= 0 && v !== Number(vv.sellPrice)) saveVariantPrice(selItem, vi, v); }}
+                              onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
+                          ) : <span>{money(vv.sellPrice)}</span>}
+                          <span style={{ color: "var(--gray)" }}>{money(incGst(Number(vv.sellPrice) || 0, selItem.gstApplicable !== false))} inc{vv.isDefault ? " · default" : ""}</span>
+                        </div>
+                      ))}
                       {selItem.hasVariants && <div><span style={{ color: "var(--gray)" }}>Sizes: </span>{(selItem.variants || []).map((v) => v.label).join(", ")}</div>}
                       <div><span style={{ color: "var(--gray)" }}>POS position: </span>{Number.isFinite(Number(selItem.position)) && selItem.position !== null ? `#${Number(selItem.position) + 1} in category` : "unplaced (sorts last)"}</div>
                       <div><span style={{ color: "var(--gray)" }}>POS ID: </span>{selItem.posId || "—"}</div>

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRG } from "./RGContext";
 import { sellOrder } from "./sellOrder";
-import { money, incGst, resolvedSellPrice, resolvePosNotePresets, modGroupKind, posCategoryTiles, posCatKeyOf, byPosition } from "./rgStockUtils";
+import { money, incGst, resolvedSellPrice, resolvePosNotePresets, modGroupKind, posCategoryTiles, posCatKeyOf, byPosition, hasVenuePrice } from "./rgStockUtils";
 import "./PosPage.css";
 
 /* POS Terminal — Phase 2 (order-entry grid + modifier modal + service-mode + send).
@@ -170,6 +170,9 @@ export default function PosPage() {
 
   // the ONE shared price resolver (rgStockUtils) — same value the server charges
   const sellAt = (m) => resolvedSellPrice(m, { menuInstanceById, menuItems, selectedVenue });
+  // Job 5: MISSING price ≠ $0 — unpriced items render "No price" and can't be
+  // added (rgSellOrder refuses them server-side with the same meaning).
+  const priced = (m) => hasVenuePrice(m, { menuInstanceById, selectedVenue });
 
   // item tiles (SCREEN B). The search predicate is UNCHANGED — case-insensitive
   // substring on displayName + kitchenName; only the pool it runs over follows
@@ -265,6 +268,7 @@ export default function PosPage() {
   };
   const tapTile = (m) => {
     if (m.e86 || m.available === false) return;
+    if (!priced(m)) return showToast(`No price at ${selectedVenueName} for ${m.displayName} — set it in the menu builder`);
     // items with RESOLVED modifier groups open the modal; others add straight to
     // the rail — the ONE-TAP fast path for no-modifier items is unchanged (notes
     // for those are added afterwards via the rail line editor).
@@ -452,15 +456,15 @@ export default function PosPage() {
               const hasMods = (m.modifierGroupIds || []).length > 0;
               const tint = tintOf(m.templateId || m.id);
               return (
-                <div key={m.templateId || m.id} className={`pos-tile ${off ? "pos-tile--off" : "pos-tile--tap"}`}
+                <div key={m.templateId || m.id} className={`pos-tile ${off || !priced(m) ? "pos-tile--off" : "pos-tile--tap"}`}
                   onClick={() => !off && tapTile(m)}>
                   <div className="pos-avatar" style={{ background: tint.bg, color: tint.fg }}>{initialsOf(m.displayName)}</div>
                   <div className="pos-tile-name" style={{ textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</div>
                   {searchAll && q.trim() !== "" && <div className="pos-tile-cat">{catOf(m)}</div>}
-                  <div className="pos-tile-price">{money(incGst(sellAt(m), m.gstApplicable !== false))}</div>
-                  {hasMods && !off ? <span className="pos-addons">+add-ons</span> : null}
-                  {(m.e86 || m.available === false) && (
-                    <div className="pos-tile-flag">{m.e86 ? "86’d" : m.available === false ? "hidden" : ""}</div>
+                  <div className="pos-tile-price">{priced(m) ? money(incGst(sellAt(m), m.gstApplicable !== false)) : "No price"}</div>
+                  {hasMods && !off && priced(m) ? <span className="pos-addons">+add-ons</span> : null}
+                  {(m.e86 || m.available === false || !priced(m)) && (
+                    <div className="pos-tile-flag">{m.e86 ? "86’d" : m.available === false ? "hidden" : "no price"}</div>
                   )}
                 </div>
               );
