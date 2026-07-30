@@ -151,7 +151,8 @@ export default function PosPage() {
   const [lines, setLines] = useState([]); // [{ key, menuItemId, displayName, qty, unitPrice, modifiers:[{label,priceDelta}], modDelta }]
   const [serviceMode, setServiceMode] = useState("dinein");
   const [sending, setSending] = useState(false);
-  const [modModal, setModModal] = useState(null); // { item, sel:{[gid]:[labels]}, gid, q, qty, note, notePresets[], editKey }
+  const [modModal, setModModal] = useState(null); // { item, sel:{[gid]:[labels]}, gid, q, qty, note, notePresets[], editKey, combo? }
+  const [comboModal, setComboModal] = useState(null); // Job 12: { item, picks: { [groupIdx]: [menuItemId,…] } }
   const [editSheet, setEditSheet] = useState(null); // { key, presets: [], free: "" } — rail line editor
   const notePresetList = resolvePosNotePresets(group); // global tap-to-add kitchen notes (Settings)
 
@@ -222,10 +223,10 @@ export default function PosPage() {
   // inc-GST estimate of what the server will charge: rgSellOrder taxes the WHOLE
   // line (unit + modifier deltas) by the item's gstApplicable, so incGst per line
   // then × qty mirrors its subtotal + gst exactly (to rounding).
-  const total = lines.reduce((s, l) => s + l.qty * incGst(l.unitPrice + l.modDelta, l.gstApplicable !== false), 0);
+  const total = lines.reduce((s, l) => s + l.qty * incGst(l.unitPrice + l.modDelta + (l.comboDelta || 0), l.gstApplicable !== false), 0);
   // DISPLAY-ONLY breakdown rows: ex-GST sum of the same line values, and GST as
   // the difference from the untouched inc-GST total — no new tax math introduced.
-  const subtotalEx = lines.reduce((s, l) => s + l.qty * (l.unitPrice + l.modDelta), 0);
+  const subtotalEx = lines.reduce((s, l) => s + l.qty * (l.unitPrice + l.modDelta + (l.comboDelta || 0)), 0);
   const gstEst = total - subtotalEx;
 
   // opts = { qty, note } — both optional. qty N goes through the SAME merge/create
@@ -234,9 +235,13 @@ export default function PosPage() {
   const pushLine = (m, mods, opts = {}) => {
     const id = m.templateId || m.id;
     const modDelta = (mods || []).reduce((s, x) => s + x.priceDelta, 0);
+    // Job 12: combo choices ride the line — deltas are CLIENT ESTIMATES like
+    // modifier deltas (the server re-prices from the item's comboGroups, Job 13)
+    const combo = Array.isArray(opts.combo) && opts.combo.length ? opts.combo : null;
+    const comboDelta = (combo || []).reduce((s, c) => s + (Number(c.priceDelta) || 0), 0);
     const note = String(opts.note || "").trim().slice(0, 200);
     const n = Math.max(1, Math.min(MAX_QTY, Number(opts.qty) || 1));
-    const key = `${lineKeyOf(id, mods)}${note ? `|n:${note}` : ""}`;
+    const key = `${lineKeyOf(id, mods)}${combo ? `|cb:${combo.map((c) => c.menuItemId).slice().sort().join("+")}` : ""}${note ? `|n:${note}` : ""}`;
     setLines((prev) => {
       const ex = prev.find((l) => l.key === key);
       if (ex) {
@@ -245,7 +250,7 @@ export default function PosPage() {
       }
       if (prev.length >= MAX_LINES) { showToast(`Max ${MAX_LINES} lines per order (server limit)`); return prev; }
       // gstApplicable rides on the rail line so chips can show inc-GST deltas like the tiles
-      return [...prev, { key, menuItemId: id, displayName: m.displayName || id, qty: n, unitPrice: sellAt(m), modifiers: mods || [], modDelta, gstApplicable: m.gstApplicable !== false, ...(note ? { notes: note } : {}) }];
+      return [...prev, { key, menuItemId: id, displayName: m.displayName || id, qty: n, unitPrice: sellAt(m), modifiers: mods || [], modDelta, ...(combo ? { combo, comboDelta } : { comboDelta: 0 }), gstApplicable: m.gstApplicable !== false, ...(note ? { notes: note } : {}) }];
     });
   };
   // rail editor "Modify" flow: swap one line's config in place (same shape as
@@ -254,9 +259,11 @@ export default function PosPage() {
   const replaceLine = (oldKey, m, mods, opts = {}) => {
     const id = m.templateId || m.id;
     const modDelta = (mods || []).reduce((s, x) => s + x.priceDelta, 0);
+    const combo = Array.isArray(opts.combo) && opts.combo.length ? opts.combo : null; // Job 12: Modify keeps the combo choices
+    const comboDelta = (combo || []).reduce((s, c) => s + (Number(c.priceDelta) || 0), 0);
     const note = String(opts.note || "").trim().slice(0, 200);
     const n = Math.max(1, Math.min(MAX_QTY, Number(opts.qty) || 1));
-    const key = `${lineKeyOf(id, mods)}${note ? `|n:${note}` : ""}`;
+    const key = `${lineKeyOf(id, mods)}${combo ? `|cb:${combo.map((c) => c.menuItemId).slice().sort().join("+")}` : ""}${note ? `|n:${note}` : ""}`;
     setLines((prev) => {
       const idx = prev.findIndex((l) => l.key === oldKey);
       if (idx === -1) return prev;
@@ -266,7 +273,7 @@ export default function PosPage() {
           .map((l) => (l.key === key ? { ...l, qty: Math.min(MAX_QTY, l.qty + n) } : l));
       }
       const next = [...prev];
-      next[idx] = { key, menuItemId: id, displayName: m.displayName || id, qty: n, unitPrice: sellAt(m), modifiers: mods || [], modDelta, gstApplicable: m.gstApplicable !== false, ...(note ? { notes: note } : {}) };
+      next[idx] = { key, menuItemId: id, displayName: m.displayName || id, qty: n, unitPrice: sellAt(m), modifiers: mods || [], modDelta, ...(combo ? { combo, comboDelta } : { comboDelta: 0 }), gstApplicable: m.gstApplicable !== false, ...(note ? { notes: note } : {}) };
       return next;
     });
   };
@@ -284,6 +291,15 @@ export default function PosPage() {
       showToast(loading
         ? `Menu still loading — try “${m.displayName || "this item"}” again in a moment`
         : `Couldn't load options for ${m.displayName || "this item"}. Reload before selling this item.`);
+      return;
+    }
+    // Job 12: COMBOS — isCombo/comboGroups are a DIFFERENT field from
+    // modifierGroupIds. The chooser opens first; when the item ALSO has
+    // modifier groups, the modifier modal follows in the same flow (combo
+    // picks carried through). Variants+combo doesn't crash: the combo prices
+    // off the resolved base/default price.
+    if (m.isCombo && Array.isArray(m.comboGroups) && m.comboGroups.length) {
+      setComboModal({ item: m, picks: {} });
       return;
     }
     if (resolved.length) setModModal({ item: m, sel: {}, gid: null, q: "", qty: 1, note: "", notePresets: [], editKey: null });
@@ -330,7 +346,7 @@ export default function PosPage() {
     }
     const { sel: presets, free } = splitNote(l.notes, notePresetList);
     setEditSheet(null);
-    setModModal({ item: mi, sel, gid: null, q: "", qty: l.qty, note: free, notePresets: presets, editKey: l.key });
+    setModModal({ item: mi, sel, gid: null, q: "", qty: l.qty, note: free, notePresets: presets, editKey: l.key, combo: l.combo }); // Job 12: Modify edits modifiers; combo choices ride through
   };
 
   const send = async () => {
@@ -349,6 +365,10 @@ export default function PosPage() {
           // FULL stored labels — display-side stripping is cosmetic only; the
           // server prices by exact-label match against the modifier group
           ...(l.modifiers?.length ? { modifiers: l.modifiers.slice(0, MAX_MODS).map((x) => ({ label: x.label })) } : {}),
+          // Job 12/13 wire CONTRACT (byte-matched with rgSellOrder): choices as
+          // comboChoices: [{ groupName, menuItemId }] — ids only, the server
+          // prices deltas from the item's own comboGroups, never the client.
+          ...(l.combo?.length ? { comboChoices: l.combo.map((c) => ({ groupName: c.group, menuItemId: c.menuItemId })) } : {}),
           ...(l.notes ? { notes: l.notes } : {}), // kitchen note — server trims/caps at 200
         })),
         reference: `POS-${Date.now().toString().slice(-6)}`,
@@ -527,13 +547,22 @@ export default function PosPage() {
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: "var(--pos-ink)" }}>{l.displayName}</div>
-                  <div style={{ fontSize: 11, color: "var(--pos-ink-soft)" }}>{money(incGst(l.unitPrice + l.modDelta, l.gstApplicable !== false))} each</div>
+                  <div style={{ fontSize: 11, color: "var(--pos-ink-soft)" }}>{money(incGst(l.unitPrice + l.modDelta + (l.comboDelta || 0), l.gstApplicable !== false))} each</div>
                 </div>
                 <button className="pos-step" onClick={(e) => { e.stopPropagation(); bump(l.key, -1); }}>−</button>
                 <span style={{ fontSize: 13, fontWeight: 700, minWidth: 20, textAlign: "center", color: "var(--pos-ink)" }}>{l.qty}</span>
                 <button className="pos-step" onClick={(e) => { e.stopPropagation(); bump(l.key, 1); }}>+</button>
                 <button className="pos-step pos-remove" onClick={(e) => { e.stopPropagation(); removeLine(l.key); }}>✕</button>
               </div>
+              {(l.combo || []).length > 0 && (
+                <div className="pos-line-mods">
+                  {l.combo.map((c) => (
+                    <span key={c.menuItemId} style={{ marginRight: 6 }}>
+                      ▸ {c.name}{c.priceDelta ? ` +${money(incGst(c.priceDelta, l.gstApplicable !== false))}` : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
               {l.modifiers.length > 0 && (
                 <div className="pos-line-mods">
                   {l.modifiers.map((x) => (
@@ -618,6 +647,78 @@ export default function PosPage() {
           labels only, it does NOT validate single/required/min/max — verified in
           rgSellOrder). toggle/minFor/unmet/ok are the EXISTING predicates, reused
           verbatim; everything two-pane is display arrangement around them. */}
+      {/* Job 12 — COMBO CHOOSER (modelled on the modifier modal). One panel per
+          comboGroup; maxChoice enforced on tap; optional:false = at least one
+          pick required (combo groups have NO minSelections/required — see brief);
+          running total updates as choices change. Deltas shown ex→inc like
+          every price; the payload carries IDs only (server prices them, Job 13). */}
+      {comboModal && (() => {
+        const m = comboModal.item;
+        const cgs = (m.comboGroups || []).filter((g) => g && (g.options || []).length);
+        const nameOf = (id) => (menuItems.find((t) => t.id === id)?.displayName) || id;
+        const pickToggle = (gi, g, optId) => setComboModal((p) => {
+          const cur = p.picks[gi] || [];
+          const max = g.maxChoice == null || Number(g.maxChoice) <= 0 ? 1 : Number(g.maxChoice);
+          if (cur.includes(optId)) return { ...p, picks: { ...p.picks, [gi]: cur.filter((x) => x !== optId) } };
+          if (max === 1) return { ...p, picks: { ...p.picks, [gi]: [optId] } }; // single: replace
+          if (cur.length >= max) { showToast(`Max ${max} for ${g.name || "this group"}`); return p; }
+          return { ...p, picks: { ...p.picks, [gi]: [...cur, optId] } };
+        });
+        const chosen = cgs.flatMap((g, gi) => (comboModal.picks[gi] || []).map((optId) => {
+          const opt = (g.options || []).find((o) => o && o.menuItemId === optId);
+          return { group: g.name || `Group ${gi + 1}`, menuItemId: optId, name: nameOf(optId), priceDelta: Number(opt?.priceDelta) || 0 };
+        }));
+        const unmetGroups = cgs.filter((g, gi) => g.optional !== true && (comboModal.picks[gi] || []).length === 0);
+        const ok = unmetGroups.length === 0;
+        const estUnit = sellAt(m) + chosen.reduce((s, c) => s + c.priceDelta, 0);
+        const confirmCombo = () => {
+          if (!ok) return;
+          setComboModal(null);
+          // Careful: an item can have combo groups AND modifier groups — the
+          // modifier modal follows in the same flow, combo picks carried through.
+          const { resolved } = resolveModGroups(m, modifierGroups);
+          if (resolved.length) setModModal({ item: m, sel: {}, gid: null, q: "", qty: 1, note: "", notePresets: [], editKey: null, combo: chosen });
+          else pushLine(m, [], { combo: chosen });
+        };
+        return (
+          <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setComboModal(null)}>
+            <div className="rg-modal pos-m2">
+              <div className="modal-head"><span className="modal-title">{m.displayName}</span><button className="modal-close" onClick={() => setComboModal(null)}>✕</button></div>
+              {cgs.map((g, gi) => {
+                const max = g.maxChoice == null || Number(g.maxChoice) <= 0 ? 1 : Number(g.maxChoice);
+                const cur = comboModal.picks[gi] || [];
+                return (
+                  <div key={gi} style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span>{g.name || `Choice ${gi + 1}`}{g.optional === true ? " (optional)" : ""}</span>
+                      <span style={{ color: cur.length ? "var(--pos-ink-soft)" : "#d97706", fontWeight: 500 }}>
+                        {max > 1 ? `pick up to ${max}` : "pick one"}{g.optional !== true && !cur.length ? " · required" : ""}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {(g.options || []).filter((o) => o && o.menuItemId).map((o) => (
+                        <button key={o.menuItemId} className="pos-mode" style={{
+                          border: cur.includes(o.menuItemId) ? "1.5px solid #9A1BA8" : "1px solid var(--pos-line, #e5e5e5)",
+                          background: cur.includes(o.menuItemId) ? "#f7dcfa" : "#fff", padding: "6px 10px", borderRadius: 8, fontSize: 12 }}
+                          onClick={() => pickToggle(gi, g, o.menuItemId)}>
+                          {nameOf(o.menuItemId)}{Number(o.priceDelta) ? ` +${money(incGst(Number(o.priceDelta), m.gstApplicable !== false))}` : ""}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "0.5px solid var(--pos-line, #e5e5e5)", paddingTop: 10 }}>
+                <strong style={{ fontSize: 15 }}>{money(incGst(estUnit, m.gstApplicable !== false))}</strong>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn" onClick={() => setComboModal(null)}>Cancel</button>
+                  <button className="btn btn-primary" disabled={!ok} title={ok ? "" : `Choose: ${unmetGroups.map((g) => g.name).join(", ")}`} onClick={confirmCombo}>Add</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {modModal && (() => {
         const m = modModal.item;
         const { resolved: groups, missing: missingGroups } = resolveModGroups(m, modifierGroups);
@@ -651,8 +752,8 @@ export default function PosPage() {
         const optQuery = (modModal.q || "").trim().toLowerCase();
         const activeOpts = active ? (active.g.options || []).filter((o) => !optQuery || String(o.label).toLowerCase().includes(optQuery)) : [];
         const confirm = () => {
-          if (modModal.editKey) replaceLine(modModal.editKey, m, chosen, { qty: qtyN, note: noteStr });
-          else pushLine(m, chosen, { qty: qtyN, note: noteStr });
+          if (modModal.editKey) replaceLine(modModal.editKey, m, chosen, { qty: qtyN, note: noteStr, combo: modModal.combo });
+          else pushLine(m, chosen, { qty: qtyN, note: noteStr, combo: modModal.combo });
           setModModal(null);
         };
         return (
