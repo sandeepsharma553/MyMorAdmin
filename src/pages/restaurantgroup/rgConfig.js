@@ -143,6 +143,20 @@ export const DEFAULT_PERMISSIONS = {
 
 export const defaultPermsForRole = (role) => ({ ...(DEFAULT_PERMISSIONS[role] || DEFAULT_PERMISSIONS.staff) });
 
+// ── Manager-tier-only modules (Job 2) ─────────────────────────────────────────
+// The LIVE rules gate these modules' backing collections at rgCanManageStaff =
+// ['owner','storeAdmin','manager'] (inventoryItems, venues/*/stock, suppliers,
+// purchaseOrders), and RGContext only subscribes to them for managerTier. A grant
+// below that tier is a DEAD SWITCH: it passes can(), shows the nav item, and
+// renders a silently blank screen (the staff-tier banner suppression is deliberate
+// — RULE 3). So the client treats these permissions as "none" below manager tier
+// and User Management refuses to offer them. This is a UX-honesty boundary, not a
+// security one — the rules are the enforced boundary (RULE 2).
+export const MANAGER_TIER_ROLES = ["owner", "storeAdmin", "manager"]; // keep byte-identical to rules rgCanManageStaff
+export const MANAGER_ONLY_MODULES = ["stock", "supplier"];
+export const clampPermsForTier = (perms, managerTier) =>
+  managerTier ? perms : { ...perms, ...Object.fromEntries(MANAGER_ONLY_MODULES.map((k) => [k, "none"])) };
+
 // Map a staff job role (Manager / FOH Supervisor / FOH / BOH / Chef …) to a permission groupRole.
 export const roleToGroupRole = (role) =>
   /manager/i.test(role || "") ? "storeAdmin"

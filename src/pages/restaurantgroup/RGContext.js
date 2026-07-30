@@ -9,7 +9,7 @@ import {
   venueMenuItemsCol, labourTargetsDoc,
 } from "../../utils/restaurantGroupPaths";
 import { resolveMenuItemAtVenue } from "./rgStockUtils";
-import { defaultPermsForRole, hasLevel } from "./rgConfig";
+import { defaultPermsForRole, hasLevel, clampPermsForTier } from "./rgConfig";
 import { resolveAreas, resolveRoles, resolveEmpTypes } from "./staffStructureUtils";
 
 const RGContext = createContext(null);
@@ -70,19 +70,25 @@ export function RGProvider({ children }) {
   const employee = useSelector((s) => s.auth.employee);
   const groupId = employee?.groupId || employee?.groupid || null;
   const groupRole = employee?.groupRole || "staff"; // safe default — never auto-grant owner
-  // current user's effective permission map (explicit overrides, else role defaults)
-  const myPerms = useMemo(
-    () => ({ ...defaultPermsForRole(groupRole), ...(employee?.permissions && !Array.isArray(employee.permissions) ? employee.permissions : {}) }),
-    [groupRole, employee?.permissions]
-  );
-  // user's venue scope ("all" or a venueId)
-  const myVenueId = employee?.venueId || "all";
   // Tier flags — hoisted here (were below myStaff) so the subscription effects
   // can gate on them; same groupRole/employee.type source the permission map
   // (defaultPermsForRole → can()) derives from, NOT a new predicate.
   const isOwnerTier = groupRole === "owner" || employee?.type === "superadmin";
   const isManagerTier = groupRole === "manager" || groupRole === "storeAdmin";
   const managerTier = isOwnerTier || isManagerTier; // manager+ (owner/storeAdmin/manager/super)
+  // current user's effective permission map (explicit overrides, else role defaults).
+  // Clamped (Job 2): a stored stock/supplier grant below manager tier is a dead
+  // switch — the rules deny the reads and the subscriptions above never run — so
+  // can() must report "none" rather than pass the nav filter into a blank screen.
+  const myPerms = useMemo(
+    () => clampPermsForTier(
+      { ...defaultPermsForRole(groupRole), ...(employee?.permissions && !Array.isArray(employee.permissions) ? employee.permissions : {}) },
+      managerTier // derived from the same groupRole/employee.type the deps cover
+    ),
+    [groupRole, employee?.permissions, employee?.type] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  // user's venue scope ("all" or a venueId)
+  const myVenueId = employee?.venueId || "all";
 
   const [group, setGroup] = useState(null);
   const [venues, setVenues] = useState([]);

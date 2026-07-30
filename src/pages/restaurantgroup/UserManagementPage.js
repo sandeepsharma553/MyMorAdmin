@@ -3,7 +3,7 @@ import { addDoc, doc, updateDoc, onSnapshot, serverTimestamp } from "firebase/fi
 import { db } from "../../firebase";
 import { useRG } from "./RGContext";
 import { staffCol, auditLogCol, venueCol } from "../../utils/restaurantGroupPaths";
-import { RG_MODULES, RG_ROLES, DEFAULT_PERMISSIONS, defaultPermsForStaffRole, roleToGroupRole, roleMeta, levelMeta } from "./rgConfig";
+import { RG_MODULES, RG_ROLES, DEFAULT_PERMISSIONS, defaultPermsForStaffRole, roleToGroupRole, roleMeta, levelMeta, MANAGER_TIER_ROLES, MANAGER_ONLY_MODULES, clampPermsForTier } from "./rgConfig";
 import { initials } from "./rgUtils";
 
 // approve ranks above edit; used today for leave approval. Selectable per-person/module
@@ -56,24 +56,38 @@ export default function UserManagementPage() {
   // the kiosk scrubbing (directory/planner/PIN-grid visibility) is Job 10 — this flag
   // is only what the notification audiences need, and Job 10 will build on it.
   const [kioskDraft, setKioskDraft] = useState(false);
+  // Target's permission tier — same groupRole field the LIVE rules read
+  // (rgCanManageStaff: owner/storeAdmin/manager), same fallback as the role
+  // ranking above. Below manager tier, stock/supplier are dead switches (rules
+  // deny + RGContext never subscribes), so the modal refuses to offer them and
+  // NORMALIZES any previously stored grant to "none" on open/save — that scrub
+  // is also what un-blanks Ops for an already-granted user (both apps read the
+  // same stored permissions map).
+  const targetMgrTier = (s) => MANAGER_TIER_ROLES.includes(s.groupRole || roleToGroupRole(s.role));
   const openPerms = (s) => {
     setPermUser(s);
-    setPermDraft({ ...defaultPermsForStaffRole(s.role), ...(s.permissions && !Array.isArray(s.permissions) ? s.permissions : {}) });
+    setPermDraft(clampPermsForTier(
+      { ...defaultPermsForStaffRole(s.role), ...(s.permissions && !Array.isArray(s.permissions) ? s.permissions : {}) },
+      targetMgrTier(s)
+    ));
     setKioskDraft(!!s.isKiosk);
   };
-  const applyRoleDefaults = () => setPermDraft(defaultPermsForStaffRole(permUser.role));
+  const applyRoleDefaults = () => setPermDraft(clampPermsForTier(defaultPermsForStaffRole(permUser.role), targetMgrTier(permUser)));
   const savePerms = async () => {
+    // clamp again at save (belt-and-braces — the draft is already clamped on open
+    // and the manager-only selects are disabled below manager tier)
+    const finalPerms = clampPermsForTier(permDraft, targetMgrTier(permUser));
     // 1) staff doc — the source of truth. If this fails, stop and report.
     try {
-      await updateDoc(doc(staffCol(groupId), permUser.id), { permissions: permDraft, isKiosk: kioskDraft, updatedAt: serverTimestamp() });
+      await updateDoc(doc(staffCol(groupId), permUser.id), { permissions: finalPerms, isKiosk: kioskDraft, updatedAt: serverTimestamp() });
     } catch { return showToast("Could not save permissions"); }
     // 2) mirror to the login doc — isolated, so a sync failure doesn't masquerade as a total failure.
     if (permUser.adminUid) {
-      try { await updateDoc(doc(db, "employees", permUser.adminUid), { permissions: permDraft }); }
+      try { await updateDoc(doc(db, "employees", permUser.adminUid), { permissions: finalPerms }); }
       catch { setPermUser(null); return showToast("Permissions saved, but the login didn’t sync. Re-save to retry."); }
     }
-    const changed = RG_MODULES.filter((m) => (permUser.permissions?.[m.key] || defaultPermsForStaffRole(permUser.role)[m.key]) !== permDraft[m.key])
-      .map((m) => `${m.label}=${permDraft[m.key]}`);
+    const changed = RG_MODULES.filter((m) => (permUser.permissions?.[m.key] || defaultPermsForStaffRole(permUser.role)[m.key]) !== finalPerms[m.key])
+      .map((m) => `${m.label}=${finalPerms[m.key]}`);
     try {
       await addDoc(auditLogCol(groupId), {
         action: "perms.update", summary: `Permissions changed for ${permUser.displayName || permUser.name}${changed.length ? `: ${changed.join(", ")}` : ""}`,
@@ -185,18 +199,25 @@ export default function UserManagementPage() {
               <span>{permUser.role} · {venueLabel(permUser)} · {permUser.hasAdminLogin ? "has website login" : "PIN only (applies when they log in)"}</span>
               <button className="btn btn-sm" onClick={applyRoleDefaults}>Reset to role default</button>
             </div>
-            {RG_MODULES.map((m) => (
-              <div key={m.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ fontSize: 12, fontWeight: 500, display: "block" }}>{m.label}</span>
-                  {/* what the newer permissions actually control — so the owner isn't guessing */}
-                  {m.desc && <span style={{ fontSize: 10, color: "var(--gray)", display: "block" }}>{m.desc}</span>}
-                </span>
-                <select className="form-input" style={{ width: 130, flexShrink: 0 }} value={permDraft[m.key] || "none"} onChange={(e) => setPermDraft((p) => ({ ...p, [m.key]: e.target.value }))}>
-                  {(m.key === "staff" ? LEVEL_OPTS_STAFF : LEVEL_OPTS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              </div>
-            ))}
+            {RG_MODULES.map((m) => {
+              // stock/supplier below manager tier: the rules deny the reads, so the
+              // switch would be a lie — refuse to offer it instead of granting a blank screen
+              const locked = MANAGER_ONLY_MODULES.includes(m.key) && !targetMgrTier(permUser);
+              return (
+                <div key={m.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 500, display: "block" }}>{m.label}</span>
+                    {/* what the newer permissions actually control — so the owner isn't guessing */}
+                    {m.desc && <span style={{ fontSize: 10, color: "var(--gray)", display: "block" }}>{m.desc}</span>}
+                    {locked && <span style={{ fontSize: 10, color: "var(--gray)", display: "block", fontStyle: "italic" }}>Manager and above only</span>}
+                  </span>
+                  <select className="form-input" style={{ width: 130, flexShrink: 0 }} value={locked ? "none" : (permDraft[m.key] || "none")} disabled={locked}
+                    onChange={(e) => setPermDraft((p) => ({ ...p, [m.key]: e.target.value }))}>
+                    {(m.key === "staff" ? LEVEL_OPTS_STAFF : LEVEL_OPTS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              );
+            })}
             {/* Kiosk flag (Job 6b) — staff-doc field, not a permission level. Broadcast
                 notifications ("Everyone" / "Staff only") skip kiosk accounts. */}
             <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0 2px", cursor: "pointer" }}>
