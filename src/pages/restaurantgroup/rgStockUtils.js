@@ -245,6 +245,18 @@ export const CATEGORY_COLOURS = [
 export const DEFAULT_POS_NOTE_PRESETS = ["No cutlery", "Extra napkins", "Allergy — check", "Well done", "Cut in half", "Rush"];
 export const resolvePosNotePresets = (group) => (group?.posNotePresets?.length ? group.posNotePresets : DEFAULT_POS_NOTE_PRESETS);
 
+// ── The Ops/Admin menu-editor SPLIT (Job 14) ── Ops OPERATES the menu (86,
+// availability, viewing); Admin BUILDS it. The iPad item editor writes ONLY the
+// fields below — a DELIBERATE subset, not an accidental one. Everything else
+// (takeawayPrice, venuePrices, variants/hasVariants/variantGroupName,
+// isCombo/comboGroups, defaultStationName, imageUrl — and modifier `kind`,
+// which survives Ops modifier saves via merge:true) is Admin-only; Ops renders
+// those READ-ONLY with an "Edit on the web portal" note. A variant item's
+// sellPrice is ALSO not written by Ops (Admin keeps it in step with the default
+// variant — an iPad write would set a price matching no variant).
+// ⚠ Keep this constant + comment byte-identical in Admin and Ops rgStockUtils.
+export const OPS_MENU_EDITOR_FIELDS = ["displayName", "kitchenName", "category", "sellPrice", "cost", "gstApplicable", "venueIds", "posId", "modifierGroupIds"];
+
 // ── Default prep time (Job 6 — kitchen display groundwork) ── group-level
 // default, minutes. Same pattern as posNotePresets: a field on the group doc,
 // whole-value writes from Settings, resolver seeds the default. An instance's
