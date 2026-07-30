@@ -458,7 +458,14 @@ export default function PosPage() {
               return (
                 <div key={m.templateId || m.id} className={`pos-tile ${off || !priced(m) ? "pos-tile--off" : "pos-tile--tap"}`}
                   onClick={() => !off && tapTile(m)}>
-                  <div className="pos-avatar" style={{ background: tint.bg, color: tint.fg }}>{initialsOf(m.displayName)}</div>
+                  {/* Job 7 avatar chain: item photo → category colour + initials →
+                      hash tint + initials. Every step is styled, none reads as broken. */}
+                  {m.imageUrl ? (
+                    <img className="pos-avatar" src={m.imageUrl} alt="" loading="lazy" style={{ objectFit: "cover" }} />
+                  ) : (() => {
+                    const cc = venueCats.find((c) => c.id === posCatKeyOf(m, venueCats))?.colour || null;
+                    return <div className="pos-avatar" style={cc ? { background: cc, color: "#fff" } : { background: tint.bg, color: tint.fg }}>{initialsOf(m.displayName)}</div>;
+                  })()}
                   <div className="pos-tile-name" style={{ textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</div>
                   {searchAll && q.trim() !== "" && <div className="pos-tile-cat">{catOf(m)}</div>}
                   <div className="pos-tile-price">{priced(m) ? money(incGst(sellAt(m), m.gstApplicable !== false)) : "No price"}</div>

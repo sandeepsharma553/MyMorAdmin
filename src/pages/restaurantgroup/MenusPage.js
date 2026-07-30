@@ -467,7 +467,10 @@ export default function MenusPage() {
       : [];
     if (isCombo && !comboGroups.length) return showToast("Add at least one combo group, or turn combo off");
 
-    // TEMPLATE write — definition only. available/e86 are INSTANCE state now and
+    // TEMPLATE write — definition only. imageUrl (Job 7) is a TEMPLATE field —
+    // one photo per item across venues — set today only via console/scripts
+    // (merge:true preserves it); the uploader lands with the storage-security
+    // job. available/e86 are INSTANCE state now and
     // are deliberately NOT written here (existing template flags are left as
     // legacy data; venueIds stays as legacy metadata — instance existence is the
     // authoritative "sold here" signal for sales).
@@ -874,6 +877,7 @@ export default function MenusPage() {
                     {canEdit && <input type="checkbox" checked={bulkSel.has(m.templateId || m.id)} onChange={() => toggleBulk(m.templateId || m.id)} onClick={(e) => e.stopPropagation()} title="Select for bulk edit" />}
                     {canEdit && <span style={{ color: "var(--gray)" }} title="Drag to arrange">⠿</span>}
                     <span style={{ fontSize: 11, color: "var(--gray)", width: 18, textAlign: "right" }}>{i + 1}.</span>
+                    {m.imageUrl && <img src={m.imageUrl} alt="" loading="lazy" style={{ width: 24, height: 24, objectFit: "cover", borderRadius: 4 }} />}
                     <span style={{ fontSize: 13, fontWeight: 500, textDecoration: m.e86 ? "line-through" : "none" }}>{m.displayName}</span>
                     {Number.isFinite(Number(m.position)) && m.position !== null ? null : <span className="pill pill-amber" title="Not arranged yet — sorts last, alphabetically, until dragged">unplaced</span>}
                     {m.available === false && !m.e86 && <span className="pill pill-amber">hidden</span>}
@@ -915,6 +919,19 @@ export default function MenusPage() {
                 <div className="card-head"><div><span className="card-title">{selItem ? selItem.displayName : "Item detail"}</span><span className="card-sub">{selItem ? `at ${selectedVenueName}` : "click an item in the middle pane"}</span></div></div>
                 {selItem && (
                   <>
+                    {/* Job 7 thumbnail slot — renders template.imageUrl when present.
+                        NO uploader here yet: uploads arrive with the storage-security
+                        job (group-scoped path + rules). Field only, deliberately. */}
+                    {selItem.imageUrl ? (
+                      <img src={selItem.imageUrl} alt={selItem.displayName}
+                        style={{ width: "100%", maxWidth: 230, height: 120, objectFit: "cover", borderRadius: 8, marginBottom: 10 }} />
+                    ) : (
+                      <div style={{ width: "100%", maxWidth: 230, height: 56, borderRadius: 8, marginBottom: 10,
+                        border: "1.5px dashed var(--gray-light)", display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 11, color: "var(--gray)" }}>
+                        No photo — uploads arrive with the storage-security job
+                      </div>
+                    )}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
                       <div><span style={{ color: "var(--gray)" }}>Mode: </span>{selItem._mode === "separate" ? <span className="pill pill-amber">separate copy</span> : <span className="pill pill-green">linked to template</span>}</div>
                       <div><span style={{ color: "var(--gray)" }}>Category: </span>{venueCats.find((c) => c.id === posCatKeyOf(selItem, venueCats))?.name || stripEmoji(selItem.category || "Uncategorised")}</div>
