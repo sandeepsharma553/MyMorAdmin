@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, setDoc, serverTimestamp, writeBatch, deleteField, getDocs, updateDoc } from "firebase/firestore";
+import { addDoc, setDoc, serverTimestamp, writeBatch, deleteField, getDocs, updateDoc, runTransaction } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useRG } from "./RGContext";
-import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc, menuItemsCol, venueMenuItemsCol, venueMenuItemDoc, groupDoc } from "../../utils/restaurantGroupPaths";
+import { menuItemDoc, recipesCol, recipeDoc, modifierGroupsCol, modifierGroupDoc, menuItemsCol, venueMenuItemsCol, venueMenuItemDoc, groupDoc, menuCategoriesCol, menuCategoryDoc } from "../../utils/restaurantGroupPaths";
 import { sellOrder } from "./sellOrder";
 import {
   incGst, marginPct, marginColor, money, recipeFoodCost, menuItemFoodCost, grossStockQty, venueCost, venueSellPrice, resolvedSellPrice,
   DEFAULT_MENU_CATEGORIES, modGroupKind, MOD_KINDS, MOD_KIND_DEFAULTS,
+  stripEmoji, categorySlug, CATEGORY_COLOURS,
 } from "./rgStockUtils";
 
 // POS browse bucket for an uncategorised item — MUST match PosPage's catOf()
@@ -43,7 +44,7 @@ const fmtWhen = (iso) => { try { return new Date(iso).toLocaleString("en-AU", { 
 
 export default function MenusPage() {
   const {
-    groupId, group, venues, menuItems, recipes, modifierGroups, inventoryItems, stock,
+    groupId, group, venues, menuItems, recipes, modifierGroups, inventoryItems, stock, menuCategories,
     resolvedMenuItems, menuInstanceById,
     selectedVenue, selectedVenueName, venueName, can, showToast, me, myStaff,
   } = useRG();
@@ -177,6 +178,109 @@ export default function MenusPage() {
     const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
     await savePosItemOrder({ ...posItemOrder, [pinCat]: next });
   };
+
+  // ── Job 3: per-venue menu CATEGORIES (documents, not text) ──────────────────
+  // The category doc id is stable across renames — instances reference it via
+  // categoryId, so a rename touches ONE doc. The POS still reads item.category
+  // text until Job 4; this manager edits the new source of truth.
+  const venueCats = useMemo(
+    () => menuCategories.filter((c) => c.venueId === selectedVenue),
+    [menuCategories, selectedVenue]
+  ); // flat() pre-sorts by position
+  // resolve a legacy free-text category (may carry emoji) to this venue's doc id
+  const venueCategoryIdFor = (vid, rawName) => {
+    const n = stripEmoji(rawName || "Uncategorised");
+    const hit = menuCategories.find((c) => c.venueId === vid && c.name === n);
+    return hit ? hit.id : null;
+  };
+  const [newCatName, setNewCatName] = useState("");
+  const [catCopyFrom, setCatCopyFrom] = useState("");
+  const [dragCat, setDragCat] = useState(null);
+  const [catBusy, setCatBusy] = useState(false);
+  const addCategory = async () => {
+    if (!canEdit || selectedVenue === "all") return;
+    const name = stripEmoji(newCatName);
+    if (!name) return showToast("Category name is required (emoji are stripped)");
+    const id = categorySlug(name);
+    // fast pre-checks against the live list (clear message names the clash) …
+    const nameClash = venueCats.find((c) => (c.name || "").toLowerCase() === name.toLowerCase());
+    if (nameClash) return showToast(`"${nameClash.name}" already exists at ${selectedVenueName}`);
+    const idClash = venueCats.find((c) => c.id === id);
+    if (idClash) return showToast(`Can't add "${name}" — its id "${id}" is taken by "${idClash.name}" (renamed from "${name}"?). Pick a different name.`);
+    try {
+      // … but the WRITE is create-only inside a transaction: slugs collide with
+      // renamed docs ("Breaky"→"Breakfast" keeps id "breaky"; a new "Breaky"
+      // slugs to the same id), and a subscription-lag setDoc would silently
+      // overwrite the renamed doc. The tx re-checks existence server-side.
+      await runTransaction(db, async (tx) => {
+        const ref = menuCategoryDoc(groupId, selectedVenue, id);
+        const snap = await tx.get(ref);
+        if (snap.exists()) throw new Error(`id "${id}" is taken by "${snap.get("name")}" — pick a different name`);
+        tx.set(ref, {
+          name, position: venueCats.length,
+          colour: CATEGORY_COLOURS[venueCats.length % CATEGORY_COLOURS.length],
+          active: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        });
+      });
+      setNewCatName("");
+      showToast(`Category "${name}" added`);
+    } catch (e) { showToast(`Could not add: ${e?.message || e?.code || "error"}`); }
+  };
+  const patchCategory = async (cat, patch, okMsg) => {
+    if (!canEdit) return; // write-time re-check (hard rule)
+    try {
+      await setDoc(menuCategoryDoc(groupId, cat.venueId, cat.id), { ...patch, updatedAt: serverTimestamp() }, { merge: true });
+      if (okMsg) showToast(okMsg);
+    } catch (e) { showToast(`Could not update: ${e?.code || e?.message || "error"}`); }
+  };
+  const renameCategory = (cat, raw) => {
+    const name = stripEmoji(raw);
+    if (!name || name === cat.name) return;
+    patchCategory(cat, { name }, `Renamed to "${name}" — items keep the category (they point at its id)`);
+  };
+  const dropCat = async (to) => {
+    const from = dragCat; setDragCat(null);
+    if (from === null || from === to || !canEdit) return;
+    const next = [...venueCats]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
+    try {
+      const batch = writeBatch(db);
+      next.forEach((c, i) => { if (c.position !== i) batch.set(menuCategoryDoc(groupId, c.venueId, c.id), { position: i, updatedAt: serverTimestamp() }, { merge: true }); });
+      await batch.commit();
+    } catch (e) { showToast(`Could not reorder: ${e?.code || e?.message || "error"}`); }
+  };
+  // "Copy categories from another venue" — create-only (existing ids at this venue
+  // are never touched); copied rows append AFTER existing ones in source order.
+  const copyCategories = async () => {
+    if (!canEdit || selectedVenue === "all" || !catCopyFrom || catBusy) return;
+    setCatBusy(true);
+    try {
+      const snap = await getDocs(menuCategoriesCol(groupId, catCopyFrom));
+      const have = new Set(venueCats.map((c) => c.id));
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((c) => !have.has(c.id));
+      if (!rows.length) { showToast("Nothing to copy — that venue's categories all exist here already"); setCatBusy(false); return; }
+      const base = venueCats.length;
+      const batch = writeBatch(db);
+      rows.sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).forEach((c, i) =>
+        batch.set(menuCategoryDoc(groupId, selectedVenue, c.id), {
+          name: c.name, colour: c.colour || CATEGORY_COLOURS[(base + i) % CATEGORY_COLOURS.length],
+          position: base + i, active: c.active !== false,
+          createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        }));
+      await batch.commit();
+      showToast(`${rows.length} categor${rows.length === 1 ? "y" : "ies"} copied from ${venueName(catCopyFrom) || "venue"}`);
+    } catch (e) { showToast(`Could not copy: ${e?.code || e?.message || "error"}`); }
+    setCatBusy(false);
+  };
+  // items at this venue in this category — joined by the instance's categoryId
+  // (rename-proof: the id never changes), text-matching ONLY for instances that
+  // predate the backfill and carry no categoryId yet.
+  const catItemCount = (cat) =>
+    resolvedMenuItems.filter((m) => {
+      const inst = menuInstanceById[m.templateId || m.id];
+      return inst?.categoryId
+        ? inst.categoryId === cat.id
+        : stripEmoji(m.category || "Uncategorised") === cat.name;
+    }).length;
 
   const foodCostOf = (m) => menuItemFoodCost(m, resolvedRecipeByMenuItemId, itemById);
   // Price at the selected venue — the ONE shared resolver (rgStockUtils), mirrors
@@ -358,7 +462,10 @@ export default function MenusPage() {
       if (editor.id && selectedVenue !== "all" && editor.inst) {
         const raw = editor.instSellPrice;
         const val = raw !== "" && raw != null && !isNaN(Number(raw)) ? Number(raw) : deleteField();
-        await setDoc(venueMenuItemDoc(groupId, selectedVenue, editor.id), { sellPrice: val, updatedAt: serverTimestamp() }, { merge: true });
+        // Job 3: keep the instance pointing at this venue's category DOC. No
+        // matching doc = leave categoryId as-is (POS text fallback until Job 4).
+        const catId = venueCategoryIdFor(selectedVenue, editor.category);
+        await setDoc(venueMenuItemDoc(groupId, selectedVenue, editor.id), { sellPrice: val, ...(catId ? { categoryId: catId } : {}), updatedAt: serverTimestamp() }, { merge: true });
       }
       showToast("Menu item saved");
       setEditor(null);
@@ -446,10 +553,17 @@ export default function MenusPage() {
     try {
       for (let i = 0; i < ids.length; i += 400) {
         const batch = writeBatch(db);
-        ids.slice(i, i + 400).forEach((id) => batch.set(venueMenuItemDoc(groupId, cloneModal.venueId, id), {
-          linked: true, available: true, e86: false,
-          createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-        }));
+        ids.slice(i, i + 400).forEach((id) => {
+          // Job 3: new instances point at the venue's category DOC (renames-safe).
+          // No matching doc (category not configured at that venue yet) = omit;
+          // the POS falls back to item.category text until Job 4.
+          const catId = venueCategoryIdFor(cloneModal.venueId, menuItems.find((x) => x.id === id)?.category);
+          batch.set(venueMenuItemDoc(groupId, cloneModal.venueId, id), {
+            linked: true, available: true, e86: false,
+            ...(catId ? { categoryId: catId } : {}),
+            createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+          });
+        });
         await batch.commit();
       }
       showToast(`${ids.length} item${ids.length === 1 ? "" : "s"} added to ${venueName(cloneModal.venueId) || "venue"}`);
@@ -608,6 +722,7 @@ export default function MenusPage() {
           <button className={`tab ${tab === "e86" ? "active" : ""}`} onClick={() => setTab("e86")}>86 list{e86List.length ? ` (${e86List.length})` : ""}</button>
           <button className={`tab ${tab === "recipes" ? "active" : ""}`} onClick={() => setTab("recipes")}>Recipe costing</button>
           <button className={`tab ${tab === "modifiers" ? "active" : ""}`} onClick={() => setTab("modifiers")}>Modifier groups</button>
+          <button className={`tab ${tab === "categories" ? "active" : ""}`} onClick={() => setTab("categories")}>Categories</button>
           <button className={`tab ${tab === "pricing" ? "active" : ""}`} onClick={() => setTab("pricing")}>Pricing & margins</button>
         </div>
         <div style={{ fontSize: 12, color: "var(--gray)" }}>{selectedVenueName} · {vItems.length} items</div>
@@ -877,6 +992,70 @@ export default function MenusPage() {
             </table>
           </div>
         </div>
+      )}
+
+      {tab === "categories" && selectedVenue === "all" && (
+        <div className="card" style={{ color: "var(--gray)", fontSize: 13 }}>
+          Categories are per-venue — select a venue (top-right) to manage its category list.
+        </div>
+      )}
+      {tab === "categories" && selectedVenue !== "all" && (
+        <>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-head">
+              <div><span className="card-title">Categories — {selectedVenueName}</span><span className="card-sub">Drag to set the POS order · rename touches the category document only — items keep pointing at it</span></div>
+            </div>
+            {venueCats.map((c, i) => (
+              <div key={c.id} className="staff-meta-row" draggable={canEdit}
+                onDragStart={() => setDragCat(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropCat(i)} onDragEnd={() => setDragCat(null)}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "0.5px solid var(--gray-light)", cursor: canEdit ? "grab" : "default", opacity: (dragCat === i ? 0.5 : 1) * (c.active === false ? 0.55 : 1) }}>
+                {canEdit && <span style={{ color: "var(--gray)" }} title="Drag to reorder">⠿</span>}
+                <input type="color" value={c.colour || "#8C867E"} disabled={!canEdit} title="Category colour"
+                  style={{ width: 28, height: 28, padding: 0, border: "none", background: "transparent", cursor: canEdit ? "pointer" : "default" }}
+                  onChange={(e) => patchCategory(c, { colour: e.target.value })} />
+                {canEdit ? (
+                  <input className="form-input" style={{ width: 220 }} defaultValue={c.name} key={`${c.id}-${c.name}`}
+                    onBlur={(e) => renameCategory(c, e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
+                ) : <span style={{ fontSize: 13, fontWeight: 500 }}>{c.name}</span>}
+                <span className="pill" style={{ background: "#f4f4f5", color: "var(--gray)" }}>{catItemCount(c)} item{catItemCount(c) === 1 ? "" : "s"}</span>
+                {c.active === false && <span className="pill pill-amber">inactive</span>}
+                <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                  {canEdit && (
+                    <button className="btn btn-sm" onClick={() => patchCategory(c, { active: c.active === false }, c.active === false ? `"${c.name}" reactivated` : `"${c.name}" deactivated`)}>
+                      {c.active === false ? "Reactivate" : "Deactivate"}
+                    </button>
+                  )}
+                </span>
+              </div>
+            ))}
+            {venueCats.length === 0 && (
+              <div style={{ fontSize: 12, color: "var(--gray)", padding: "6px 0" }}>
+                No categories at {selectedVenueName} yet — add one below, or copy them from another venue.
+              </div>
+            )}
+            {canEdit && (
+              <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <input className="form-input" style={{ width: 220 }} placeholder="New category name (no emoji)"
+                  value={newCatName} onChange={(e) => setNewCatName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") addCategory(); }} />
+                <button className="btn btn-primary btn-sm" onClick={addCategory}>+ Add category</button>
+              </div>
+            )}
+          </div>
+          {canEdit && (
+            <div className="card" style={{ maxWidth: 560 }}>
+              <div className="card-head"><div><span className="card-title">Copy categories from another venue</span><span className="card-sub">Names, colours and order — existing categories here are never overwritten</span></div></div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <select className="form-input" style={{ width: 220 }} value={catCopyFrom} onChange={(e) => setCatCopyFrom(e.target.value)}>
+                  <option value="">Choose venue…</option>
+                  {venues.filter((v) => v.id !== selectedVenue).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+                <button className="btn btn-sm" disabled={!catCopyFrom || catBusy} onClick={copyCategories}>{catBusy ? "Copying…" : "Copy"}</button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {tab === "pricing" && (

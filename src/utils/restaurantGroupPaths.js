@@ -73,6 +73,7 @@ export const PER_VENUE_COLLECTIONS = [
   "performanceNotes", "trainingModules", "trainingAssignments", "checklistAssignments", "kpis",
   "stock",
   "sops", "sopAssignments",
+  "menuCategories", // Job 3: per-venue category docs (member read/write via the venue catch-all rule)
 ];
 
 // A staff member belongs to one venue or many: matches when venueIds includes
@@ -137,6 +138,12 @@ export const orderDoc = (groupId, venueId, orderId) => doc(ordersCol(groupId, ve
 // it under the "venue menu" label (a34bae3 / e539173).
 export const venueMenuItemsCol = (groupId, venueId) => venueCol(groupId, venueId, "menuItems");
 export const venueMenuItemDoc = (groupId, venueId, templateId) => doc(venueMenuItemsCol(groupId, venueId), String(templateId));
+// Per-venue menu CATEGORIES (Job 3) — { name, position, colour, active }. Doc id is a
+// slug of the name at creation and NEVER changes on rename (instances point at it via
+// categoryId — renames rewrite one doc, not every item). Covered by the venue
+// catch-all rule (member read/write); the POS keeps reading item.category text until Job 4.
+export const menuCategoriesCol = (groupId, venueId) => venueCol(groupId, venueId, "menuCategories");
+export const menuCategoryDoc = (groupId, venueId, categoryId) => doc(menuCategoriesCol(groupId, venueId), String(categoryId));
 // Central-kitchen production log (Phase 4) — per venue, covered by the existing
 // venues/{venueId}/{coll}/{docId=**} security rule (group-member read/write).
 export const productionCol = (groupId, venueId) => venueCol(groupId, venueId, "production");

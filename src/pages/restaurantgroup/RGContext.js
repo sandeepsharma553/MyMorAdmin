@@ -313,6 +313,9 @@ export function RGProvider({ children }) {
   const stations = useMemo(() => flat("stations", "order"), [pv.stations]); // eslint-disable-line react-hooks/exhaustive-deps
   const equipment = useMemo(() => flat("equipment", "order"), [pv.equipment]); // eslint-disable-line react-hooks/exhaustive-deps
   const stock = useMemo(() => flat("stock"), [pv.stock]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Job 3: per-venue category docs — rows carry venueId from the fan-out; consumers
+  // filter to their venue and sort by position (flat's sortKey handles the sort).
+  const menuCategories = useMemo(() => flat("menuCategories", "position"), [pv.menuCategories]); // eslint-disable-line react-hooks/exhaustive-deps
   const timeEntries = useMemo(() => flat("timeEntries"), [pv.timeEntries]); // eslint-disable-line react-hooks/exhaustive-deps
   // ── Availability DUAL-READ (Phase 3c) ── merges the LEGACY per-venue docs (status-era,
   // venueId/venue stamped by the fan-out) with the NEW cluster-scoped group-level docs into
@@ -460,7 +463,7 @@ export function RGProvider({ children }) {
   const value = useMemo(() => ({
     groupId, group, venues, staff, draftStaff, shifts, leave, timeEntries, availability, modules, assignments, sops, sopAssignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
     announcements, messages, unreadMessages, myNotifications, unreadNotifications,
-    inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
+    inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock, menuCategories,
     resolvedMenuItems, menuInstanceById, venueMenuInstances,
     awardRates, complianceManual, labourTargets, acksByStaff, acknowledgements,
     selectedVenue, setSelectedVenue, selectedVenueName, venueName, matchVenue, myVenues,
@@ -468,7 +471,7 @@ export function RGProvider({ children }) {
     loading, loadErrors, noteErr, showToast,
   }), [groupId, group, venues, staff, draftStaff, shifts, leave, timeEntries, availability, modules, assignments, sops, sopAssignments, checklistAssignments, checklists, perfNotes, kpis, stations, equipment, roles, areas, empTypes,
       announcements, messages, unreadMessages, myNotifications, unreadNotifications,
-      inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock,
+      inventoryItems, menuItems, recipes, modifierGroups, suppliers, purchaseOrders, stock, menuCategories,
       resolvedMenuItems, menuInstanceById, venueMenuInstances,
       awardRates, complianceManual, labourTargets, acksByStaff, acknowledgements,
       selectedVenue, selectedVenueName, venueName, matchVenue, myVenues, me, groupRole, myPerms, can, myStaff, myScope, scopedStaff, loading, loadErrors, noteErr, showToast]);

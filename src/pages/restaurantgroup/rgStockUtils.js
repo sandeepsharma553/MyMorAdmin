@@ -205,6 +205,21 @@ export const stockCategoryColor = (cat) => ({
   Sauces: "#B86A10", Frozen: "#6B3FA0", Seafood: "#1A55A0", "Asian grocery": "#B86A10", Packaging: "#8C867E",
 }[cat] || "#8C867E");
 
+// ── Menu categories (Job 3 — per-venue category docs) ────────────────────────
+// Category names hold NO emoji (doc rule); free text still typed on legacy
+// item.category may carry them, so both the manager UI and the backfill script
+// strip through the SAME rule (script keeps a Node copy — keep in sync).
+export const stripEmoji = (s) =>
+  String(s || "").replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu, "").replace(/\s+/g, " ").trim();
+// slug for a category DOC ID — set once at creation, never changed by rename.
+export const categorySlug = (name) =>
+  stripEmoji(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "category";
+// default colour cycle for new/backfilled categories (position-indexed).
+export const CATEGORY_COLOURS = [
+  "#D85A30", "#2563eb", "#16a34a", "#d97706", "#9333ea",
+  "#0e7490", "#dc2626", "#4338ca", "#ca8a04", "#059669",
+];
+
 // ── POS kitchen-note presets ── group.posNotePresets = string[] (owner-editable in
 // Settings, whole-array writes — mirrors the leaveTypes/empTypes pattern exactly).
 // Resolver falls back to the seed list when the group has none configured. Presets
