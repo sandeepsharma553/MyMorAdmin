@@ -776,12 +776,13 @@ export default function MenusPage() {
 
   // ── modifier groups ──
   const [modForm, setModForm] = useState(null);
+  const [modIngOpen, setModIngOpen] = useState({}); // Job 10: per-option ingredient-picker expand
   // kind seeds from modGroupKind: an unseeded group shows its DERIVED kind, and
   // saving the form makes that explicit on the doc.
-  const openMod = (g) => setModForm(g ? { ...g, kind: modGroupKind(g), options: (g.options || []).map((o) => ({ ...o })) } : {
+  const openMod = (g) => { setModIngOpen({}); return setModForm(g ? { ...g, kind: modGroupKind(g), options: (g.options || []).map((o) => ({ ...o })) } : {
     id: null, name: "", kind: "add", type: "multi", required: false, minSelections: 0, maxSelections: null, printer: "kitchen",
     options: [{ label: "", priceDelta: 0 }],
-  });
+  }); };
   // "Apply these" — the ONLY path where a kind's template touches type/required.
   // Selecting a kind by itself never rewrites a live group's selection rules
   // (settled decision: suggest, never overwrite). MOD_KIND_DEFAULTS specifies no
@@ -800,10 +801,18 @@ export default function MenusPage() {
     if (!modForm.name.trim()) return showToast("Group name required");
     // Preserve the importer-written per-option posId (preserve-if-present, never invent
     // one) — rebuilding as {label, priceDelta} only silently dropped it on every app edit.
-    const options = modForm.options.filter((o) => (o.label || "").trim()).map((o) => ({
-      label: o.label.trim(), priceDelta: Number(o.priceDelta) || 0,
-      ...(o.posId != null && o.posId !== "" ? { posId: String(o.posId) } : {}),
-    }));
+    const options = modForm.options.filter((o) => (o.label || "").trim()).map((o) => {
+      // Job 10: option INGREDIENTS — same line shape as recipe ingredients
+      // ({ itemId, qty, recipeUnit }); rgSellOrder deducts them per selection.
+      const ings = (o.ingredients || [])
+        .filter((g) => g.itemId && Number(g.qty) > 0)
+        .map((g) => ({ itemId: g.itemId, qty: Number(g.qty), recipeUnit: g.recipeUnit || (itemById[g.itemId]?.recipeUnit || itemById[g.itemId]?.unit || "") }));
+      return {
+        label: o.label.trim(), priceDelta: Number(o.priceDelta) || 0,
+        ...(o.posId != null && o.posId !== "" ? { posId: String(o.posId) } : {}),
+        ...(ings.length ? { ingredients: ings } : {}),
+      };
+    });
     if (!options.length) return showToast("Add at least one option");
     const data = {
       name: modForm.name.trim(), type: modForm.type, required: !!modForm.required,
@@ -1835,12 +1844,39 @@ export default function MenusPage() {
             </div>
             <div className="form-label" style={{ marginTop: 10 }}>Options (price delta in $, negative allowed)</div>
             {modForm.options.map((o, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-                <input className="form-input" style={{ flex: 1 }} placeholder="Label" value={o.label}
-                  onChange={(e) => setModForm((p) => ({ ...p, options: p.options.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) }))} />
-                <input className="form-input" style={{ width: 90 }} type="number" step="0.5" value={o.priceDelta}
-                  onChange={(e) => setModForm((p) => ({ ...p, options: p.options.map((x, j) => (j === i ? { ...x, priceDelta: e.target.value } : x)) }))} />
-                <button className="btn btn-sm" onClick={() => setModForm((p) => ({ ...p, options: p.options.filter((_, j) => j !== i) }))}>✕</button>
+              <div key={i} style={{ marginBottom: 6 }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input className="form-input" style={{ flex: 1 }} placeholder="Label" value={o.label}
+                    onChange={(e) => setModForm((p) => ({ ...p, options: p.options.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) }))} />
+                  <input className="form-input" style={{ width: 90 }} type="number" step="0.5" value={o.priceDelta}
+                    onChange={(e) => setModForm((p) => ({ ...p, options: p.options.map((x, j) => (j === i ? { ...x, priceDelta: e.target.value } : x)) }))} />
+                  <button className="btn btn-sm" title={(o.ingredients || []).length ? "Stock deducted per selection" : "No stock deducted — add ingredients"}
+                    onClick={() => setModIngOpen((p) => ({ ...p, [i]: !p[i] }))}>
+                    🥕 {(o.ingredients || []).filter((g) => g.itemId).length || ""}{modIngOpen[i] ? " ▴" : " ▾"}
+                  </button>
+                  <button className="btn btn-sm" onClick={() => setModForm((p) => ({ ...p, options: p.options.filter((_, j) => j !== i) }))}>✕</button>
+                </div>
+                {/* Job 10 — what this option DEDUCTS (recipe-picker rows reused):
+                    several ingredients per option; qty is the NET recipe-unit
+                    amount, gross/yield applied at sale exactly like recipes. */}
+                {modIngOpen[i] && (
+                  <div style={{ margin: "6px 0 4px 12px", padding: "8px 10px", background: "#fafafa", borderRadius: 8 }}>
+                    {(o.ingredients || []).map((g, gi) => (
+                      <div key={gi} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <select className="form-input" style={{ flex: 1 }} value={g.itemId}
+                          onChange={(e) => setModForm((p) => ({ ...p, options: p.options.map((x, j) => (j === i ? { ...x, ingredients: x.ingredients.map((y, k) => (k === gi ? { ...y, itemId: e.target.value, recipeUnit: itemById[e.target.value]?.recipeUnit || itemById[e.target.value]?.unit || "" } : y)) } : x)) }))}>
+                          <option value="">Choose ingredient…</option>
+                          {inventoryItems.filter((x) => !x.archived).map((x) => <option key={x.id} value={x.id}>{x.name} ({x.recipeUnit || x.unit} · {money(x.cost)})</option>)}
+                        </select>
+                        <input className="form-input" style={{ width: 90 }} type="number" step="0.001" value={g.qty} placeholder="net qty"
+                          onChange={(e) => setModForm((p) => ({ ...p, options: p.options.map((x, j) => (j === i ? { ...x, ingredients: x.ingredients.map((y, k) => (k === gi ? { ...y, qty: e.target.value } : y)) } : x)) }))} />
+                        <span style={{ fontSize: 11, color: "var(--gray)", width: 44 }}>{g.recipeUnit || itemById[g.itemId]?.recipeUnit || itemById[g.itemId]?.unit || ""}</span>
+                        <button className="btn btn-sm" onClick={() => setModForm((p) => ({ ...p, options: p.options.map((x, j) => (j === i ? { ...x, ingredients: x.ingredients.filter((_, k) => k !== gi) } : x)) }))}>✕</button>
+                      </div>
+                    ))}
+                    <button className="btn btn-sm" onClick={() => setModForm((p) => ({ ...p, options: p.options.map((x, j) => (j === i ? { ...x, ingredients: [...(x.ingredients || []), { itemId: "", qty: "", recipeUnit: "" }] } : x)) }))}>+ Add ingredient</button>
+                  </div>
+                )}
               </div>
             ))}
             <button className="btn btn-sm" onClick={() => setModForm((p) => ({ ...p, options: [...p.options, { label: "", priceDelta: 0 }] }))}>+ Add option</button>
