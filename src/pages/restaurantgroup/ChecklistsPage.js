@@ -182,10 +182,12 @@ export default function ChecklistsPage() {
       // Jul 2026): every staff member in this venue matching the area + selected stations
       // who doesn't already hold ANY copy of this checklist (manual, shift-dated, or a
       // prior auto) gets a standing assignment now — same doc shape as manual assign.
-      // Slot-linked checklists are excluded: their assignment follows the shift slot.
+      // BOTH-mechanisms ruling (31 Jul 2026): shift links NO LONGER exclude this —
+      // station staff get standing copies AND rostered staff get slot copies; the
+      // any-copy dup gate below keeps one person from holding both.
       const saved = { ...payload, id: cid };
       let assigned = 0;
-      if (autoStations.length && !(payload.shiftLinks || []).length) {
+      if (autoStations.length) {
         const targets = staff.filter((s) => shouldAutoAssign(saved, s, venue.id) && !checklistAssignments.some((a) => a.staffId === s.id && a.checklistId === cid));
         for (const s of targets) {
           try {

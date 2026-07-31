@@ -938,7 +938,7 @@ export default function MenusPage() {
           ) : (
             <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
               {/* LEFT — this venue's categories (the Job 3 manager), drag = POS order */}
-              <div className="card" style={{ flex: "1 1 270px", minWidth: 260 }}>
+              <div className="card" style={{ flex: "1 1 290px", minWidth: 350 }}>
                 <div className="card-head"><div><span className="card-title">Categories</span><span className="card-sub">Drag to set POS order · rename holds items (they point at the id)</span></div></div>
                 {venueCats.map((c, i) => (
                   <div key={c.id} className="staff-meta-row" draggable={canEdit}
