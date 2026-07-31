@@ -262,7 +262,11 @@ export default function CalendarPage() {
             {detail.sh.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Shifts</div>
               {detailShiftSections(detail.sh).map(([area, rows]) => <React.Fragment key={area}>
                 <div className="form-label" style={{ marginTop: 6, fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: 0.4 }}>{area} · {rows.length}</div>
-                {rows.map((s) => <div key={s.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span><strong>{s.start}–{s.end}</strong> · {nameOf(s.staffId)}</span><span style={{ color: "var(--gray)" }}>{shortRole(s.role)}{s.station ? ` · ${s.station}` : ""} · {s.venue}</span></div>)}
+                {rows.map((s) => <div key={s.id} style={{ borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <div className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0" }}><span><strong>{s.start}–{s.end}</strong> · {nameOf(s.staffId)}</span><span style={{ color: "var(--gray)" }}>{shortRole(s.role)}{s.station ? ` · ${s.station}` : ""} · {s.venue}</span></div>
+                  {/* shift NOTES in the calendar (30 Jul 2026 list) — rostered note, shown to whoever can see the shift */}
+                  {s.notes ? <div style={{ fontSize: 11, color: "#92400e", background: "#fffbeb", borderRadius: 6, padding: "3px 8px", margin: "0 0 5px" }}>📝 {s.notes}</div> : null}
+                </div>)}
               </React.Fragment>)}</>}
             {detail.lv.length > 0 && <><div className="form-label" style={{ marginTop: 10 }}>Approved leave</div>
               {detail.lv.map((l) => <div key={l.id} style={{ fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}><span className="pill pill-amber">{leaveLabel(l)}</span> {nameOf(l.staffId)} <span style={{ color: "var(--gray)" }}>· {l.dates}</span></div>)}</>}

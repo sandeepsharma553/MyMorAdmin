@@ -53,6 +53,9 @@ export default function ChecklistAssignmentDetail({ assignment, liveChecklist, g
     if (!text) { setCmt({ i: null, text: "", priv: false }); return; }
     try {
       await updateDoc(ref(), { [`threads.${i}`]: arrayUnion({ text, by: actorName || "Trainer", at: new Date().toISOString(), private: !!cmt.priv }) });
+      // non-private notes NOTIFY the assignee once saved (30 Jul 2026 list) —
+      // "just for trainers" notes stay silent
+      if (!cmt.priv && assignment.staffId) sendNotification(groupId, { to: assignment.staffId, type: "checklist", title: `Note added on "${assignment.checklistTitle}"`, body: `${actorName || "Trainer"}: ${text}`, venueId: assignment.venueId, by: actorName || "Trainer" });
       setCmt({ i: null, text: "", priv: false });
     } catch { showToast?.("Could not save note"); }
   };
@@ -103,7 +106,8 @@ export default function ChecklistAssignmentDetail({ assignment, liveChecklist, g
                 {canComment && <button className="btn btn-sm" style={{ marginLeft: "auto" }} title="Add a comment on this item" onClick={() => setCmt({ i, text: "", priv: false })}>💬{thread.length ? ` ${thread.length}` : ""}</button>}
               </div>
               {thread.map((c, ci) => (
-                <div key={ci} style={{ fontSize: 11, color: "var(--gray)", margin: "1px 0 0 30px" }}>
+                // notes read in RED (30 Jul 2026 list)
+                <div key={ci} style={{ fontSize: 11, color: "#dc2626", margin: "1px 0 0 30px" }}>
                   💬 <strong>{c.by || "Trainer"}:</strong> {c.text}
                   {c.private && <span className="pill pill-amber" style={{ marginLeft: 5 }}>🔒 trainer-only</span>}
                   {c.at && <span style={{ opacity: 0.7 }}> · {new Date(c.at).toLocaleDateString()}</span>}

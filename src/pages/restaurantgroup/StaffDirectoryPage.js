@@ -96,14 +96,16 @@ const EMPLOYMENT_TERMS_FIELDS = [
 // One source of truth for the private/details doc shape. The reducers below iterate THIS,
 // so the existing setDoc(..., {merge:true}) write path picks up the new keys unchanged.
 const PRIVATE_FIELDS = [...PAYROLL_FIELDS, ...EMPLOYMENT_TERMS_FIELDS];
-// ── Phase 5b: self-service split of the payroll block ──
-// DIRECT: the staffer writes these to their OWN private/details (the Firestore whitelist
-// is key-for-key: the payload must be EXACTLY these four + updatedAt, nothing else).
+// ── Phase 5b (revised Jul 2026): self-service payroll — NO approval flow ──
+// The staffer writes ALL nine keys below to their OWN private/details directly (the
+// owner's 30 Jul 2026 list: "it should just update and then send notification to
+// admin"). The Firestore whitelist is key-for-key (hasOnly) — the payload may contain
+// ONLY whitelisted keys, so saves send exactly the keys that changed + updatedAt.
+// NB: the employment-terms keys and the stored `password` stay NON-self-servable.
+// Phone lives on the PUBLIC staff doc — a self-write of exactly {phone, updatedAt}.
 const SELF_DIRECT_KEYS = ["legalName", "dob", "address", "contactEmail"];
-// REVIEW: money fields — the staffer NEVER writes these to private/; they go into a
-// payrollChangeRequests doc that owner/storeAdmin applies (or declines). NB: the
-// employment-terms keys and the stored `password` are in NEITHER list — not self-servable.
-const SELF_REVIEW_KEYS = ["tfn", "superAccount", "superUsi", "bankBsb", "bankAccount"];
+const SELF_MONEY_KEYS = ["tfn", "superAccount", "superUsi", "bankBsb", "bankAccount"];
+const SELF_KEYS = [...SELF_DIRECT_KEYS, ...SELF_MONEY_KEYS];
 const payrollBlank = () => PRIVATE_FIELDS.reduce((o, f) => { o[f.key] = ""; return o; }, {});
 // String() first: legacy private docs can hold NUMBERS (e.g. rate: 33.05 saved unquoted) —
 // (number).trim() would throw and kill the whole save.
@@ -997,14 +999,13 @@ export default function StaffDirectoryPage() {
     return () => { alive = false; };
   }, [profile, groupId, canPayroll]);
 
-  // ── Phase 5b: self-service payroll (self tier) + owner review of change requests ──
-  // DIRECT keys save straight to private/details (rules whitelist, exact-keys payload);
-  // MONEY keys only ever go to payrollChangeRequests docs — the self view has NO code
-  // path that writes them to private/. Owner applies/declines further below.
+  // ── Phase 5b (revised Jul 2026): self-service payroll — direct save, no approval ──
+  // ALL nine SELF_KEYS save straight to private/details (rules whitelist); phone saves
+  // to the PUBLIC staff doc ({phone, updatedAt} only). Owner review of any LEGACY
+  // pending change requests stays further below.
   const [selfPriv, setSelfPriv] = useState(null); // null = loading, false = read denied (rules not live yet)
-  const [selfDirect, setSelfDirect] = useState(null); // form state for the four DIRECT keys
-  const [selfReq, setSelfReq] = useState(() => SELF_REVIEW_KEYS.reduce((o, k) => { o[k] = ""; return o; }, {}));
-  const [selfReqs, setSelfReqs] = useState([]);
+  const [selfDirect, setSelfDirect] = useState(null); // form state for the nine private keys
+  const [selfPhone, setSelfPhone] = useState("");
   const [selfBusy, setSelfBusy] = useState(false);
   useEffect(() => {
     if (canViewAll || !groupId || !myStaff?.id) return;
@@ -1016,78 +1017,48 @@ export default function StaffDirectoryPage() {
         if (!alive) return;
         const p = d.exists() ? d.data() : {};
         setSelfPriv(p);
-        setSelfDirect(SELF_DIRECT_KEYS.reduce((o, k) => { o[k] = String(p[k] ?? ""); return o; }, {}));
+        setSelfDirect(SELF_KEYS.reduce((o, k) => { o[k] = String(p[k] ?? ""); return o; }, {}));
       })
       .catch(() => { if (alive) setSelfPriv(false); });
-    const unsub = onSnapshot(payrollChangeRequestsCol(groupId, myStaff.id),
-      (snap) => { if (alive) setSelfReqs(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); },
-      () => { if (alive) setSelfReqs([]); noteErr("payroll requests"); }); // self-read rule is LIVE (Phase 5b) — a denial here is a real failure now
-    return () => { alive = false; unsub(); };
+    return () => { alive = false; };
   }, [canViewAll, groupId, myStaff?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const selfPendingReq = selfReqs.find((r) => r.status === "pending") || null;
-  const selfPastReqs = selfReqs.filter((r) => r.status !== "pending").sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+  // keep the phone field in step with the live staff doc (e.g. a manager edits it)
+  useEffect(() => { if (!canViewAll) setSelfPhone(String(myStaff?.phone ?? "")); }, [canViewAll, myStaff?.phone]);
   const saveSelfDirect = async () => {
     if (!myStaff?.id || !selfDirect) return;
     setSelfBusy(true);
     try {
-      // EXACTLY the four whitelisted keys + updatedAt — never spread form state: the rules
-      // whitelist (diff().affectedKeys().hasOnly) rejects the ENTIRE write on any extra key.
-      const payload = {
-        legalName: String(selfDirect.legalName ?? "").trim(),
-        dob: String(selfDirect.dob ?? "").trim(),
-        address: String(selfDirect.address ?? "").trim(),
-        contactEmail: String(selfDirect.contactEmail ?? "").trim(),
-        updatedAt: serverTimestamp(),
-      };
-      // which fields ACTUALLY changed vs the values loaded from private/details — drives
-      // the owner notification + audit line below. Compared BEFORE the local state merge.
-      const changed = SELF_DIRECT_KEYS.filter((k) => String((selfPriv && selfPriv[k]) ?? "").trim() !== payload[k]);
-      await setDoc(staffPrivateDoc(groupId, myStaff.id), payload, { merge: true });
-      setSelfPriv((p) => ({ ...(p || {}), ...payload }));
+      // ONLY the keys that CHANGED + updatedAt — never spread form state: the rules
+      // whitelist (diff().affectedKeys().hasOnly) rejects the ENTIRE write on any extra
+      // key, and a changed-keys payload keeps the four personal keys saving even before
+      // the widened (money-keys) rules are live.
+      const trimmed = SELF_KEYS.reduce((o, k) => { o[k] = String(selfDirect[k] ?? "").trim(); return o; }, {});
+      const changed = SELF_KEYS.filter((k) => String((selfPriv && selfPriv[k]) ?? "").trim() !== trimmed[k]);
+      const phone = String(selfPhone ?? "").trim();
+      const phoneChanged = phone !== String(myStaff.phone ?? "").trim();
+      if (!changed.length && !phoneChanged) { setSelfBusy(false); return showToast("Nothing to save yet"); }
       if (changed.length) {
-        const labels = changed.map((k) => (PAYROLL_FIELDS.find((x) => x.key === k)?.label || k).toLowerCase()).join(", ");
-        const who = myStaff.displayName || fullName(myStaff);
-        // direct edits apply INSTANTLY (no approval, no request doc, no pending dot) — but
-        // the owner must still learn it happened. Same recipient fan-out as
-        // submitSelfRequest (every owner/storeAdmin staff doc; NOT to:"managers", which
-        // also reaches plain managers). Fire-and-forget — sendNotification catches
-        // internally, so a notify failure never fails or rolls back the save.
-        // Field NAMES only — values must never enter a notification (group-readable).
-        staff.filter((x) => ["owner", "storeAdmin"].includes(x.groupRole)).forEach((x) =>
-          sendNotification(groupId, { to: x.id, type: "payroll_details_updated", title: "Personal details updated", body: `${who} updated their personal details (${labels})`, by: who })
-        );
-        // audit: direct self-edits previously had NO audit line — field names only, never values
-        logChange("staff.payroll.selfedit", `${who} updated their personal details: ${labels}`, { staffId: myStaff.id });
+        const payload = changed.reduce((o, k) => { o[k] = trimmed[k]; return o; }, { updatedAt: serverTimestamp() });
+        await setDoc(staffPrivateDoc(groupId, myStaff.id), payload, { merge: true });
+        setSelfPriv((p) => ({ ...(p || {}), ...payload }));
       }
+      // phone lives on the PUBLIC staff doc (directory/planner read it there) — its own
+      // rules whitelist allows a self-write of exactly {phone, updatedAt}
+      if (phoneChanged) await setDoc(staffDoc(groupId, myStaff.id), { phone, updatedAt: serverTimestamp() }, { merge: true });
+      const labels = [...(phoneChanged ? ["phone"] : []), ...changed.map((k) => (PAYROLL_FIELDS.find((x) => x.key === k)?.label || k).toLowerCase())].join(", ");
+      const who = myStaff.displayName || fullName(myStaff);
+      // edits apply INSTANTLY (no approval, no request doc, no pending dot) — but the
+      // owner must still learn it happened: every owner/storeAdmin staff doc (NOT
+      // to:"managers", which also reaches plain managers). Fire-and-forget —
+      // sendNotification catches internally, so a notify failure never fails the save.
+      // Field NAMES only — values must never enter a notification (group-readable).
+      staff.filter((x) => ["owner", "storeAdmin"].includes(x.groupRole)).forEach((x) =>
+        sendNotification(groupId, { to: x.id, type: "payroll_details_updated", title: "Personal details updated", body: `${who} updated their personal details (${labels})`, by: who })
+      );
+      // audit: field names only, never values
+      logChange("staff.payroll.selfedit", `${who} updated their personal details: ${labels}`, { staffId: myStaff.id });
       showToast("Your details were updated");
     } catch { showToast("Could not save — your access may not be enabled yet"); }
-    finally { setSelfBusy(false); }
-  };
-  const submitSelfRequest = async () => {
-    if (!myStaff?.id || selfPendingReq) return;
-    const fields = {};
-    SELF_REVIEW_KEYS.forEach((k) => { const v = String(selfReq[k] ?? "").trim(); if (v) fields[k] = v; });
-    if (!Object.keys(fields).length) return showToast("Fill in at least one field to request a change");
-    setSelfBusy(true);
-    try {
-      await addDoc(payrollChangeRequestsCol(groupId, myStaff.id), {
-        fields, submittedAt: serverTimestamp(), submittedBy: myStaff.displayName || fullName(myStaff),
-        status: "pending", decidedAt: null, decidedBy: "",
-      });
-      // audit: field NAMES only — never values (the auditLog is group-readable)
-      logChange("staff.payroll.request", `${myStaff.displayName || fullName(myStaff)} requested payroll changes: ${Object.keys(fields).join(", ")}`, { staffId: myStaff.id });
-      // notify every owner/storeAdmin so the request is seen without opening the profile.
-      // NOT to:"managers" — that broadcast also reaches plain managers, who cannot apply
-      // these (private/ is owner/storeAdmin-only). Recipients = staff docs with an
-      // owner/storeAdmin groupRole (group-readable; feed routing matches n.to === myStaff.id).
-      // Fire-and-forget (sendNotification catches internally) — never fails the submission.
-      // Body is the staff NAME only — payroll values must never enter a notification.
-      staff.filter((x) => ["owner", "storeAdmin"].includes(x.groupRole)).forEach((x) =>
-        sendNotification(groupId, { to: x.id, type: "payroll_change_request", title: "Payroll change requested", body: `${myStaff.displayName || fullName(myStaff)} requested a change to their payroll details`, by: myStaff.displayName || fullName(myStaff) })
-      );
-      setSelfReq(SELF_REVIEW_KEYS.reduce((o, k) => { o[k] = ""; return o; }, {}));
-      showToast("Change request submitted for review");
-    } catch { showToast("Could not submit the request"); }
     finally { setSelfBusy(false); }
   };
   // owner/storeAdmin side: live-listen to the open profile's change requests
@@ -1543,19 +1514,20 @@ export default function StaffDirectoryPage() {
             <KV k="Areas" v={staffAreas(s).join(", ")} />
             <KV k="Stations" v={(s.stationNames || []).join(", ")} />
             <KV k="Employment" v={s.type} />
-            <KV k="Phone" v={s.phone} />
             <KV k="Start date" v={s.start} />
             <KV k="POS PIN" v={s.pin} />
-            <KV k="Rostered this week" v={`${fmtHours(weeklyHours(s.id, shifts))}h`} />
             <div className="form-label" style={{ marginTop: 12 }}>Certificates</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {(s.certs || []).length
                 ? s.certs.map((c, i) => { const st = certStatus(c.expiry); return <span key={i} className={`pill ${st.pill}`}>{c.name}{c.expiry ? ` · ${c.expiry}` : ""}{st.note ? ` (${st.note})` : ""}</span>; })
                 : <span style={{ fontSize: 12, color: "var(--gray)" }}>None recorded</span>}
             </div>
-            {/* ── Phase 5b: self-service payroll & personal ── DIRECT keys write straight to
-                private/details (rules whitelist); MONEY keys only ever become a change request. */}
-            <div className="form-label" style={{ marginTop: 14 }}>My payroll &amp; personal details</div>
+            {/* ── Phase 5b (revised Jul 2026): self-service payroll & personal ── all nine
+                private keys + phone save DIRECTLY; owners/storeAdmins get a notification. */}
+            <div className="form-label" style={{ marginTop: 14 }}>
+              My payroll &amp; personal details{" "}
+              <span style={{ color: "var(--gray)", fontWeight: 400, fontStyle: "italic" }}>(private — visible to managers/admins only)</span>
+            </div>
             {selfPriv === false ? (
               <div style={{ fontSize: 12, color: "var(--gray)" }}>
                 Your payroll details aren’t available yet — this needs a permissions update on the server.
@@ -1575,46 +1547,27 @@ export default function StaffDirectoryPage() {
                       </div>
                     );
                   })}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Phone</label>
+                    <input className="form-input" type="tel" value={selfPhone} onChange={(e) => setSelfPhone(e.target.value)} placeholder="04xx xxx xxx" autoComplete="off" />
+                  </div>
                 </div>
-                <div className="btn-row" style={{ marginTop: 8 }}>
+                <div className="form-label" style={{ marginTop: 14 }}>Bank / tax / super</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  {SELF_MONEY_KEYS.map((k) => {
+                    const f = PAYROLL_FIELDS.find((x) => x.key === k);
+                    return (
+                      <div key={k} className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label">{f?.label || k}</label>
+                        <input className="form-input" type="text" value={selfDirect[k] || ""} onChange={(e) => setSelfDirect((p) => ({ ...p, [k]: e.target.value }))} placeholder={f?.ph || ""} autoComplete="off" />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="btn-row" style={{ marginTop: 10 }}>
                   <button className="btn btn-sm btn-primary" disabled={selfBusy} onClick={saveSelfDirect}>{selfBusy ? "Saving…" : "Save my details"}</button>
                 </div>
-                <div className="form-label" style={{ marginTop: 14 }}>Bank / tax / super <span style={{ color: "var(--gray)", fontWeight: 400 }}>(changes need manager approval)</span></div>
-                {selfPendingReq ? (
-                  <div style={{ background: "var(--amber-light, #fffbeb)", border: "1px solid var(--amber)", borderRadius: 8, padding: 10, fontSize: 12 }}>
-                    <strong>Pending review</strong> — {Object.keys(selfPendingReq.fields || {}).map((k) => PAYROLL_FIELDS.find((x) => x.key === k)?.label || k).join(", ")}
-                    {selfPendingReq.submittedAt ? ` · submitted ${tsLabel(selfPendingReq.submittedAt)}` : ""}. You can submit another change once this one is reviewed.
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      {SELF_REVIEW_KEYS.map((k) => {
-                        const f = PAYROLL_FIELDS.find((x) => x.key === k);
-                        return (
-                          <div key={k} className="form-group" style={{ margin: 0 }}>
-                            <label className="form-label">{f?.label || k}</label>
-                            <input className="form-input" type="text" value={selfReq[k] || ""} onChange={(e) => setSelfReq((p) => ({ ...p, [k]: e.target.value }))} placeholder={f?.ph || "Leave blank to keep current"} autoComplete="off" />
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="btn-row" style={{ marginTop: 8 }}>
-                      <button className="btn btn-sm" disabled={selfBusy} onClick={submitSelfRequest}>Submit for review</button>
-                    </div>
-                    <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>Only the fields you fill in are submitted; current values stay until a manager approves.</div>
-                  </>
-                )}
-                {selfPastReqs.length > 0 && (
-                  <details style={{ marginTop: 10 }}>
-                    <summary style={{ fontSize: 11, color: "var(--gray)", cursor: "pointer" }}>Past change requests ({selfPastReqs.length})</summary>
-                    {selfPastReqs.map((r) => (
-                      <div key={r.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 11, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
-                        <span>{Object.keys(r.fields || {}).map((k) => PAYROLL_FIELDS.find((x) => x.key === k)?.label || k).join(", ")}</span>
-                        <span><span className={`pill ${r.status === "applied" ? "pill-green" : "pill-red"}`}>{r.status}</span>{r.decidedAt ? ` ${tsLabel(r.decidedAt)}` : ""}</span>
-                      </div>
-                    ))}
-                  </details>
-                )}
+                <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>Changes save straight away and your managers are notified.</div>
               </>
             )}
             <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 14 }}>Roster &amp; profile details above are read-only — ask a manager to update them.</div>

@@ -11,6 +11,19 @@ export const resolveEmpTypes = (group) => (group?.empTypes?.length ? group.empTy
 // the request forms — never part of this list.
 export const resolveLeaveTypes = (group) => (group?.leaveTypes?.length ? group.leaveTypes : DEFAULT_LEAVE_TYPES);
 
+// ── Leave paid/proof companions (30 Jul 2026 list) ── group.leaveTypePaid /
+// group.leaveTypeProof: {typeName: bool} — companion maps beside group.leaveTypes
+// (mirrors empTypeSalaried: plain map keyed by the type NAME, whole-map updateDoc —
+// never dot-notation, names are free text). Key present → that value; key ABSENT →
+// seed defaults: a type is PAID unless its name contains "unpaid"; NO type requires
+// proof. "Other" follows the same rules.
+export const leaveTypeIsPaid = (group, type) => {
+  const m = group?.leaveTypePaid || {};
+  if (typeof m[type] === "boolean") return m[type];
+  return !/unpaid/i.test(String(type || ""));
+};
+export const leaveTypeNeedsProof = (group, type) => (group?.leaveTypeProof || {})[type] === true;
+
 // ── Pay basis by EMPLOYMENT TYPE (Bug 1) ── group.empTypeSalaried: {typeName: bool}, a
 // COMPANION map beside group.empTypes (mirrors areaBreak: plain map keyed by the type
 // NAME, whole-value updateDoc — never dot-notation, names are free text). Key present →

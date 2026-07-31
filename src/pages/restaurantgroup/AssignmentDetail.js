@@ -98,9 +98,20 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
     const d = next.filter(Boolean).length;
     const progress = total ? Math.round((d / total) * 100) : 0;
     const allDone = total > 0 && d >= total;
-    const status = d === 0 ? "Not started" : allDone ? (assignment.verified ? "Complete" : "Awaiting sign-off") : "In progress";
     // self-heal: if the snapshot was empty, persist the resolved sections so it sticks
     const heal = snapSections.length ? {} : { sections, itemsTotal: total, link };
+    // SOPs archive-and-RESET on completion (30 Jul 2026 list): the finished run goes to
+    // the completion archive, then the assignment resets to Not started so it can be run
+    // again — no sign-off lock. Training keeps the Awaiting sign-off → verify flow.
+    if (V.archiveKind === "sop" && allDone) {
+      try {
+        archiveCompletion(groupId, "sop", assignment, { status: "Complete", checks: next, checkMeta: nextMeta, progress: 100, verified: false, completedBy: actorName || assignment.staffName || "" }).catch(() => {});
+        await updateDoc(ref(), { checks: Array(total).fill(false), checkMeta: Array(total).fill(null), progress: 0, status: "Not started", verified: false, verifiedBy: "", verifyNote: "", completedAt: null, ...heal });
+        sendNotification(groupId, { to: "managers", type: V.notifType, title: "SOP completed", body: `${assignment.staffName} completed "${assignment.moduleTitle}" — archived & reset`, venueId: assignment.venueId, by: assignment.staffName });
+      } catch { showToast?.("Could not save"); }
+      return;
+    }
+    const status = d === 0 ? "Not started" : allDone ? (assignment.verified ? "Complete" : "Awaiting sign-off") : "In progress";
     // if a verified assignment drops below complete, clear the sign-off — never "verified" + incomplete
     const clearVerify = (!allDone && assignment.verified) ? { verified: false, verifiedBy: "", verifyNote: "", completedAt: null } : {};
     try {
@@ -130,6 +141,9 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
     try {
       // append to the per-item thread; `private` notes are visible to trainers/managers only
       await updateDoc(ref(), { [`threads.${flatI}`]: arrayUnion({ text, by: actorName || "Trainer", at: new Date().toISOString(), private: !!cmt.priv }) });
+      // non-private notes NOTIFY the assignee once saved (30 Jul 2026 list) —
+      // "just for trainers" notes stay silent
+      if (!cmt.priv && assignment.staffId) sendNotification(groupId, { to: assignment.staffId, type: V.notifType, title: `Note added on "${assignment.moduleTitle}"`, body: `${actorName || "Trainer"}: ${text}`, venueId: assignment.venueId, by: actorName || "Trainer" });
       setCmt({ i: null, text: "", priv: false });
     } catch { showToast?.("Could not save note"); }
   };
@@ -218,7 +232,8 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
                     </div>
                   )}
                   {thread.map((c, ci) => (
-                    <div key={ci} style={{ fontSize: 11, color: "var(--gray)", margin: "1px 0 0 30px" }}>
+                    // notes read in RED (30 Jul 2026 list)
+                    <div key={ci} style={{ fontSize: 11, color: "#dc2626", margin: "1px 0 0 30px" }}>
                       💬 <strong>{c.by || "Trainer"}:</strong> {c.text}
                       {c.private && <span className="pill pill-amber" style={{ marginLeft: 5 }}>🔒 trainer-only</span>}
                       {c.at && <span style={{ opacity: 0.7 }}> · {new Date(c.at).toLocaleDateString()}</span>}

@@ -762,7 +762,7 @@ export default function ShiftPlannerPage() {
                 <th style={{ ...th, textAlign: "left", width: "calc(100px * var(--rg-zoom, 1))", padding: "8px 10px" }}>Staff</th>
                 {/* PH header treatment mirrors the MAIN grid (8fd1887): #fef3c7 wash + 9px
                     #b45309 "PH" badge, spread BEFORE closed so closed's opacity still wins */}
-                {DAYS.map((d, i) => <th key={d} style={{ ...th, padding: "8px 4px", cursor: "pointer", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (vClosed(i) ? "Venue closed this day" : "Click for day detail")} onClick={() => setDayDetail({ day: i, vid: vids })}>{d}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 3 }}>PH</span>}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</th>)}
+                {DAYS.map((d, i) => <th key={d} style={{ ...th, padding: "8px 4px", cursor: "pointer", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (vClosed(i) ? "Venue closed this day" : "Click for day detail")} onClick={() => setDayDetail({ day: i, vid: vids })}>{d}{weekDates[i] ? ` ${Number(weekDates[i].slice(8, 10))}` : ""}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 3 }}>PH</span>}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</th>)}
               </tr>
             </thead>
             <tbody>

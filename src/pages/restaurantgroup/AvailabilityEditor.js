@@ -189,7 +189,10 @@ export default function AvailabilityEditor({ staff, onSaved }) {
   // Phase 3e: per-day options bounded to the CLUSTER's widest hours-envelope (earliest
   // open −1h … latest close +1h across the pool's venues, per-venue fallback); the
   // FULL-DAY list when no venue in the cluster has usable hours that day.
-  const timesFor = (d) => boundedTimes(clusterEnvelopeForDay(venues, clusterId, dayKeyOfDate(d)));
+  // 30-MIN increments (30 Jul 2026 list): the shared envelope list is 15-min (planner
+  // keeps it) — availability keeps only the :00/:30 options. Stored :15/:45 values from
+  // before the change stay selectable via optsWith below.
+  const timesFor = (d) => boundedTimes(clusterEnvelopeForDay(venues, clusterId, dayKeyOfDate(d))).filter((t) => /:(00|30)[ap]m$/.test(t));
   // an out-of-range stored window stays selectable (prepended) — union-in, like the planner
   const optsWith = (T, v) => (v && !T.includes(v) ? [v, ...T] : T);
   const [edits, setEdits] = useState({});
@@ -221,7 +224,7 @@ export default function AvailabilityEditor({ staff, onSaved }) {
     const lastEndIdx = T.indexOf(w[w.length - 1]?.end); // new window starts where the last one ends
     const nineIdx = T.indexOf("9:00am"); // 9:00am default when in range, else the day's earliest option
     const startIdx = lastEndIdx >= 0 ? Math.min(lastEndIdx, T.length - 2) : (nineIdx >= 0 ? nineIdx : 0);
-    const endIdx = Math.min(startIdx + 16, T.length - 1); // default 4h span
+    const endIdx = Math.min(startIdx + 8, T.length - 1); // default 4h span (30-min steps)
     w.push({ start: T[startIdx], end: T[endIdx] });
     change(d, { windows: w, allDay: false });
   };
@@ -231,7 +234,7 @@ export default function AvailabilityEditor({ staff, onSaved }) {
     const T = timesFor(d);
     const v = val(d);
     const s = T.indexOf("9:00am") >= 0 ? T.indexOf("9:00am") : 0;
-    const w = (v.windows || []).length ? v.windows : [{ start: T[s], end: T[Math.min(s + 16, T.length - 1)] }]; // 4h from 9:00am (or the day's start)
+    const w = (v.windows || []).length ? v.windows : [{ start: T[s], end: T[Math.min(s + 8, T.length - 1)] }]; // 4h from 9:00am (or the day's start), 30-min steps
     change(d, { allDay: false, windows: w });
   };
   // cluster switch: edits are keyed by date only, so carry-over would cross-write clusters
@@ -313,6 +316,12 @@ export default function AvailabilityEditor({ staff, onSaved }) {
       {clusterIds.length > 1 && !clusterId && (
         <div className="card" style={{ marginBottom: 8, fontSize: 12, color: "var(--gray)" }}>Pick a cluster above to set your availability.</div>
       )}
+
+      {/* Friday-lock disclaimer (30 Jul 2026 list) — the lock itself is isDayLocked */}
+      <div className="card" style={{ marginBottom: 8, padding: "10px 14px", background: "#fffbeb", border: "1px solid #fde68a", fontSize: 12, color: "#92400e", fontWeight: 600 }}>
+        Availability closes at 11:59pm Friday. After the cutoff the next two weeks are locked and
+        can't be edited — ask a manager if something changes.
+      </div>
 
       {/* PASSED section — the locked prefix, GROUPED BY WEEK: each week one collapsed
           <details> row (same idiom as the self-profile's past change requests) that

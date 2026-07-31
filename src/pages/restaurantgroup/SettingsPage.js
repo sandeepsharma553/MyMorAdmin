@@ -4,7 +4,7 @@ import { useRG } from "./RGContext";
 import { venueCol, venueDoc, groupDoc, contractClassificationsDoc, contractDefaultsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS, DEFAULT_UNIT_TYPES } from "./rgConfig";
-import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaBreakRule, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, empTypeIsSalaried } from "./staffStructureUtils";
+import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaBreakRule, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, leaveTypeIsPaid, leaveTypeNeedsProof, empTypeIsSalaried } from "./staffStructureUtils";
 import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS, resolvePosNotePresets, resolvePrepMinutes } from "./rgStockUtils";
 
 const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
@@ -383,6 +383,16 @@ export default function SettingsPage() {
     await saveLeaveTypes(next); showToast("Leave type added");
   };
   const removeLeaveType = async (t) => { await saveLeaveTypes(removeFromList(leaveTypes, t)); };
+  // Paid/proof companions (30 Jul 2026 list) — {typeName: bool} maps beside leaveTypes
+  // (mirror empTypeSalaried: whole-map writes, never dot-notation — names are free text).
+  const toggleLeavePaid = async (t) => {
+    const m = { ...(group?.leaveTypePaid || {}) }; m[t] = !leaveTypeIsPaid(group, t);
+    try { await updateDoc(groupDoc(groupId), { leaveTypePaid: m }); } catch { showToast("Could not save"); }
+  };
+  const toggleLeaveProof = async (t) => {
+    const m = { ...(group?.leaveTypeProof || {}) }; m[t] = !leaveTypeNeedsProof(group, t);
+    try { await updateDoc(groupDoc(groupId), { leaveTypeProof: m }); } catch { showToast("Could not save"); }
+  };
   const dropLeaveType = async (to) => {
     const from = dragLeave; setDragLeave(null);
     if (from === null || from === to) return;
@@ -733,13 +743,18 @@ export default function SettingsPage() {
             {/* LEAVE TYPES (Phase 4a) — owner-editable chooser list for leave requests.
                 "Other + free text" is permanent/appended by the forms and NOT in this list. */}
             <div className="card">
-              <div className="card-head"><div><span className="card-title">Leave types</span><span className="card-sub">Offered in leave requests — drag to reorder · "Other + free text" is always available and not listed here</span></div></div>
+              <div className="card-head"><div><span className="card-title">Leave types</span><span className="card-sub">Offered in leave requests — drag to reorder · "Other + free text" is always available and not listed here · Paid and "needs screenshot" per type</span></div></div>
               {leaveTypes.map((t, i) => (
                 <div key={t} className="staff-meta-row" draggable={editable}
                   onDragStart={() => setDragLeave(i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropLeaveType(i)} onDragEnd={() => setDragLeave(null)}
                   style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)", cursor: editable ? "grab" : "default", opacity: dragLeave === i ? 0.5 : 1 }}>
                   <span style={{ fontSize: 13 }}>{editable && <span style={{ color: "var(--gray)", marginRight: 6 }} title="Drag to reorder">⠿</span>}{t}</span>
-                  {editable && leaveTypes.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the chooser (existing requests keep their stored type)" onClick={() => removeLeaveType(t)}>✕</button>}
+                  <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    {/* paid/proof toggles (30 Jul 2026 list) — click to flip; stored per type name */}
+                    <button className={`pill ${leaveTypeIsPaid(group, t) ? "pill-green" : "pill-amber"}`} disabled={!editable} title={editable ? "Click to flip paid/unpaid" : ""} style={{ border: "none", cursor: editable ? "pointer" : "default" }} onClick={() => editable && toggleLeavePaid(t)}>{leaveTypeIsPaid(group, t) ? "Paid" : "Unpaid"}</button>
+                    <button className={`pill ${leaveTypeNeedsProof(group, t) ? "pill-blue" : "pill-gray"}`} disabled={!editable} title={editable ? "Click to require a screenshot/photo with requests of this type" : ""} style={{ border: "none", cursor: editable ? "pointer" : "default" }} onClick={() => editable && toggleLeaveProof(t)}>{leaveTypeNeedsProof(group, t) ? "Needs screenshot" : "No screenshot"}</button>
+                    {editable && leaveTypes.length > 1 && <button className="btn btn-sm btn-danger" title="Remove from the chooser (existing requests keep their stored type)" onClick={() => removeLeaveType(t)}>✕</button>}
+                  </span>
                 </div>
               ))}
               {editable && (

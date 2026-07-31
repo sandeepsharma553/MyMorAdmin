@@ -1,9 +1,11 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "../../firebase";
 import { useRG } from "./RGContext";
 import { venueCol } from "../../utils/restaurantGroupPaths";
 import { fullName, leaveTypePill, leaveStatusPill, leaveLabel, avatarColor, initials, downloadCsv, mondayFromWeekKey, localDateKey } from "./rgUtils";
-import { resolveLeaveTypes } from "./staffStructureUtils";
+import { resolveLeaveTypes, leaveTypeIsPaid, leaveTypeNeedsProof } from "./staffStructureUtils";
 import { sendNotification } from "./notify";
 
 // Leave TYPES are owner-editable as of Phase 4a — resolveLeaveTypes(group) (Settings →
@@ -36,6 +38,15 @@ export default function LeaveRequestsPage() {
   const typeOptions = [...leaveTypes, "Other"]; // "Other" is permanent — never in group.leaveTypes
   const [form, setForm] = useState({ venueId: "", staffId: isEmployee ? (myStaff?.id || "") : "", type: "", typeOther: "", start: "", end: "", reason: "" });
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  // proof screenshot (30 Jul 2026 list) — required for types flagged in Settings
+  // (group.leaveTypeProof). Uploaded on submit, URL stored on the request doc.
+  const [proofFile, setProofFile] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const proofRef = useRef(null);
+  const needsProof = leaveTypeNeedsProof(group, form.type);
+  // paid/unpaid for a request row: the stored flag when present, else derived from the
+  // type's Settings default (legacy rows have no `paid` field)
+  const paidOf = (l) => (typeof l.paid === "boolean" ? l.paid : leaveTypeIsPaid(group, l.type));
   // venue → staff: staff options narrow to the chosen venue (managers/owners submit for their team)
   const venueStaffOptions = useMemo(
     () => scopedStaff.filter((s) => !form.venueId || (s.venueIds || []).includes(form.venueId) || s.venueId === form.venueId),
@@ -129,20 +140,35 @@ export default function LeaveRequestsPage() {
     const vid = (form.venueId && stVenues.includes(form.venueId)) ? form.venueId
       : (selectedVenue !== "all" && stVenues.includes(selectedVenue)) ? selectedVenue : stVenues[0];
     if (!vid) return showToast("This staff member has no venue assigned");
+    if (needsProof && !proofFile) return showToast(`${form.type} needs a screenshot/photo attached — see Settings → Leave types`);
     const venueName = venues.find((v) => v.id === vid)?.name || st?.venueNames?.[0] || "";
+    setSubmitting(true);
     try {
+      // proof upload FIRST — a failed upload must fail the whole submission, never
+      // file a proof-required request without its proof
+      let proofUrl = "", proofName = "";
+      if (proofFile) {
+        const r = storageRef(storage, `rgUploads/${groupId}/leaveProofs/${staffId}/${Date.now()}_${proofFile.name.replace(/[^\w.\-]/g, "_")}`);
+        await uploadBytes(r, proofFile);
+        proofUrl = await getDownloadURL(r);
+        proofName = proofFile.name;
+      }
       await addDoc(venueCol(groupId, vid, "leaveRequests"), {
         staffId, staffName: st?.displayName || fullName(st),
         venue: venueName, venueId: vid, area: st?.area || (st?.role || "").split(" — ")[0] || "",
         type: form.type, typeOther: form.type === "Other" ? form.typeOther.trim() : "",
         dates: fmtRange(form.start, form.end), days: daysBetween(form.start, form.end),
         startDate: form.start, endDate: form.end || form.start, reason: form.reason.trim(),
+        // paid/unpaid snapshot at submit time (Settings default for the type) + proof
+        paid: leaveTypeIsPaid(group, form.type), proofUrl, proofName,
         status: "Pending", approvedBy: "", createdAt: serverTimestamp(),
       });
       showToast("Leave request submitted — manager notified");
       sendNotification(groupId, { to: "managers", type: "leave", title: "New leave request", body: `${st?.displayName || fullName(st)} · ${leaveLabel({ type: form.type, typeOther: form.typeOther })} ${fmtRange(form.start, form.end)}`, venueId: vid, by: st?.displayName || fullName(st) });
       setForm({ venueId: "", staffId: "", type: "", typeOther: "", start: "", end: "", reason: "" });
+      setProofFile(null); if (proofRef.current) proofRef.current.value = "";
     } catch { showToast("Could not submit request"); }
+    finally { setSubmitting(false); }
   };
 
   const bg = (type) => {
@@ -165,9 +191,10 @@ export default function LeaveRequestsPage() {
               <div key={l.id} className="leave-card" style={{ borderColor: bg(l.type), background: bg(l.type) }}>
                 <div className="leave-avatar" style={{ background: avatarColor(st || { venue: l.venue }) }}>{initials(st || { name: l.staffName })}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>{l.staffName} <span className={`pill ${leaveTypePill(l.type)}`} style={{ marginLeft: 4 }}>{leaveLabel(l)}</span></div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>{l.staffName} <span className={`pill ${leaveTypePill(l.type)}`} style={{ marginLeft: 4 }}>{leaveLabel(l)}</span> <span className={`pill ${paidOf(l) ? "pill-green" : "pill-amber"}`} style={{ marginLeft: 4 }}>{paidOf(l) ? "Paid" : "Unpaid"}</span></div>
                   <div style={{ fontSize: 11, color: "var(--gray)" }}>{l.venue} · {l.area} · {l.dates} ({l.days} {l.days === 1 ? "day" : "days"})</div>
                   {l.reason && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}>"{l.reason}"</div>}
+                  {l.proofUrl && <div style={{ fontSize: 11, marginTop: 2 }}><a href={l.proofUrl} target="_blank" rel="noreferrer">📎 {l.proofName || "View attachment"}</a></div>}
                 </div>
                 {canApprove ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -216,30 +243,43 @@ export default function LeaveRequestsPage() {
             {form.type === "Other" && (
               <input className="form-input" style={{ marginTop: 6 }} value={form.typeOther} onChange={setF("typeOther")} placeholder="Describe the leave type (required)" />
             )}
+            {form.type && (
+              <div style={{ fontSize: 11, marginTop: 6 }}>
+                <span className={`pill ${leaveTypeIsPaid(group, form.type) ? "pill-green" : "pill-amber"}`}>{leaveTypeIsPaid(group, form.type) ? "Paid leave" : "Unpaid leave"}</span>
+                {needsProof && <span className="pill pill-blue" style={{ marginLeft: 6 }}>Screenshot required</span>}
+              </div>
+            )}
           </div>
+          {/* proof screenshot — required for Settings-flagged types, hidden otherwise */}
+          {needsProof && (
+            <div className="form-group">
+              <label className="form-label">Screenshot / photo (required for {form.type})</label>
+              <input ref={proofRef} type="file" accept="image/*,.pdf" className="form-input" onChange={(e) => setProofFile(e.target.files?.[0] || null)} />
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div className="form-group"><label className="form-label">Start date</label><input type="date" className="form-input" value={form.start} onChange={setF("start")} /></div>
             <div className="form-group"><label className="form-label">End date</label><input type="date" className="form-input" value={form.end} onChange={setF("end")} /></div>
           </div>
           <div className="form-group"><label className="form-label">Reason</label><textarea className="form-input" rows={3} value={form.reason} onChange={setF("reason")} placeholder="Brief reason for leave request..." /></div>
-          <div className="btn-row"><button className="btn btn-primary" onClick={submit}>Submit request</button></div>
+          <div className="btn-row"><button className="btn btn-primary" disabled={submitting} onClick={submit}>{submitting ? "Submitting…" : "Submit request"}</button></div>
         </div>
       </div>
 
       {/* History */}
       <div className="card">
-        <div className="card-head"><span className="card-title">Leave history</span><button className="btn btn-sm" onClick={() => { downloadCsv("leave-history.csv", [["Staff", "Venue", "Type", "Dates", "Days", "Status", "Approved by"], ...history.map((l) => [l.staffName, l.venue, leaveLabel(l), l.dates, l.days, l.status, l.approvedBy || ""])]); showToast("Leave history exported (CSV)"); }}>Export</button></div>
+        <div className="card-head"><span className="card-title">Leave history</span><button className="btn btn-sm" onClick={() => { downloadCsv("leave-history.csv", [["Staff", "Venue", "Type", "Paid", "Dates", "Days", "Status", "Approved by"], ...history.map((l) => [l.staffName, l.venue, leaveLabel(l), paidOf(l) ? "Paid" : "Unpaid", l.dates, l.days, l.status, l.approvedBy || ""])]); showToast("Leave history exported (CSV)"); }}>Export</button></div>
         <div style={{ overflowX: "auto" }}>
           <table className="data-table">
-            <thead><tr><th>Staff</th><th>Venue</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Approved by</th>{canApprove && <th></th>}</tr></thead>
+            <thead><tr><th>Staff</th><th>Venue</th><th>Type</th><th>Paid</th><th>Dates</th><th>Days</th><th>Status</th><th>Approved by</th>{canApprove && <th></th>}</tr></thead>
             <tbody>
               {/* per-type sections (Phase 4c) — ONE "Other" section; CSV above stays flat */}
               {historySections.map(([t, rows]) => (
                 <React.Fragment key={t}>
-                  <tr><td colSpan={canApprove ? 8 : 7} style={{ padding: "6px 10px", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", textTransform: "uppercase", letterSpacing: 0.4 }}>{t} <span style={{ fontWeight: 400 }}>· {rows.length}</span></td></tr>
+                  <tr><td colSpan={canApprove ? 9 : 8} style={{ padding: "6px 10px", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", textTransform: "uppercase", letterSpacing: 0.4 }}>{t} <span style={{ fontWeight: 400 }}>· {rows.length}</span></td></tr>
                   {rows.map((l) => (
                     <tr key={l.id}>
-                      <td>{l.staffName}</td><td>{l.venue}</td><td>{leaveLabel(l)}</td><td>{l.dates}</td><td>{l.days}</td>
+                      <td>{l.staffName}</td><td>{l.venue}</td><td>{leaveLabel(l)}{l.proofUrl ? <> <a href={l.proofUrl} target="_blank" rel="noreferrer" title={l.proofName || "attachment"}>📎</a></> : null}</td><td><span className={`pill ${paidOf(l) ? "pill-green" : "pill-amber"}`}>{paidOf(l) ? "Paid" : "Unpaid"}</span></td><td>{l.dates}</td><td>{l.days}</td>
                       <td><span className={`pill ${leaveStatusPill(l.status)}`}>{l.status}</span></td><td>{l.approvedBy || "—"}</td>
                       {canApprove && <td style={{ whiteSpace: "nowrap" }}>{l.status === "Approved" ? <>
                         <button className="btn btn-sm" onClick={() => setEditLeave({ l, start: l.startDate || "", end: l.endDate || "" })}>Edit dates</button>{" "}
@@ -249,7 +289,7 @@ export default function LeaveRequestsPage() {
                   ))}
                 </React.Fragment>
               ))}
-              {history.length === 0 && <tr><td colSpan={canApprove ? 8 : 7} style={{ color: "var(--gray)" }}>No leave history yet.</td></tr>}
+              {history.length === 0 && <tr><td colSpan={canApprove ? 9 : 8} style={{ color: "var(--gray)" }}>No leave history yet.</td></tr>}
             </tbody>
           </table>
         </div>
