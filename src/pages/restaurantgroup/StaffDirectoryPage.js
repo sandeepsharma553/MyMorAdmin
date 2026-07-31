@@ -1059,11 +1059,17 @@ export default function StaffDirectoryPage() {
       const who = myStaff.displayName || fullName(myStaff);
       // edits apply INSTANTLY (no approval, no request doc, no pending dot) — but the
       // owner must still learn it happened: every owner/storeAdmin staff doc (NOT
-      // to:"managers", which also reaches plain managers). Fire-and-forget —
-      // sendNotification catches internally, so a notify failure never fails the save.
+      // to:"managers", which also reaches plain managers). The group OWNER often has NO
+      // staff doc at all (login-only — found live 31 Jul 2026: the test group has only
+      // storeAdmin docs, so the owner's bell never saw these) — when no owner-roled
+      // staff doc exists, ALSO address group.ownerUid: the feed matches me.uid whenever
+      // myStaff is absent. Fire-and-forget — sendNotification catches internally, so a
+      // notify failure never fails the save.
       // Field NAMES only — values must never enter a notification (group-readable).
-      staff.filter((x) => ["owner", "storeAdmin"].includes(x.groupRole)).forEach((x) =>
-        sendNotification(groupId, { to: x.id, type: "payroll_details_updated", title: "Personal details updated", body: `${who} updated their personal details (${labels})`, by: who })
+      const adminIds = new Set(staff.filter((x) => ["owner", "storeAdmin"].includes(x.groupRole)).map((x) => x.id));
+      if (group?.ownerUid && !staff.some((x) => x.groupRole === "owner")) adminIds.add(group.ownerUid);
+      adminIds.forEach((id) =>
+        sendNotification(groupId, { to: id, type: "payroll_details_updated", title: "Personal details updated", body: `${who} updated their personal details (${labels})`, by: who })
       );
       // audit: field names only, never values
       logChange("staff.payroll.selfedit", `${who} updated their personal details: ${labels}`, { staffId: myStaff.id });

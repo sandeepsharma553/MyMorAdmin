@@ -6,6 +6,7 @@ import { trainingStatusPill } from "./rgUtils";
 import { isAssignmentLocked } from "./assignmentUtils";
 import { archiveCompletion } from "./completionArchive";
 import { sendNotification } from "./notify";
+import { useRG } from "./RGContext";
 
 /**
  * Opened training-assignment view. TRAINER-TICKED (owner ruling, Jul 2026): a
@@ -52,6 +53,9 @@ const VARIANTS = {
 };
 
 export default function AssignmentDetail({ assignment, liveModule, groupId, canTick, canVerify, canComment, actorName, actorId, showToast, onClose, variant = "training" }) {
+  // the actor's OWN staff doc — staffId-space, so it can be compared to
+  // assignment.staffId (actorId is a UID, a different id space)
+  const { myStaff } = useRG();
   const V = VARIANTS[variant] || VARIANTS.training;
   const [vNote, setVNote] = useState("");
   const [cmt, setCmt] = useState({ i: null, text: "", priv: false });
@@ -110,6 +114,11 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
         // run); the archived copy above keeps the threads for history
         await updateDoc(ref(), { checks: Array(total).fill(false), checkMeta: Array(total).fill(null), progress: 0, status: "Not started", verified: false, verifiedBy: "", verifyNote: "", completedAt: null, comments: {}, threads: {}, ...heal });
         sendNotification(groupId, { to: "managers", type: V.notifType, title: "SOP completed", body: `${assignment.staffName} completed "${assignment.moduleTitle}" — archived & reset`, venueId: assignment.venueId, by: assignment.staffName });
+        // owner/manager completed it on the staffer's behalf (31 Jul 2026) — tell the
+        // staffer too (self-completion sends nothing extra: staffId === myStaff.id)
+        if (assignment.staffId && assignment.staffId !== myStaff?.id) {
+          sendNotification(groupId, { to: assignment.staffId, type: V.notifType, title: "SOP completed", body: `"${assignment.moduleTitle}" was completed by ${actorName || "a manager"} — archived & reset`, venueId: assignment.venueId, by: actorName || "Manager" });
+        }
       } catch { showToast?.("Could not save"); }
       return;
     }
