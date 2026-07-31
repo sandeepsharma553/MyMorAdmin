@@ -27,7 +27,7 @@ import { fmtDate } from "./dateFmt";
 
 const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent", "Urgent — today"]];
 const REC_TYPES = ["Coaching", "Mistake", "Commendation", "Incident"];
-const recPill = (t) => t === "Mistake" ? "pill-red" : t === "Incident" ? "pill-amber" : t === "Commendation" ? "pill-green" : "pill-blue";
+const recPill = (t) => (t === "Mistake" || t === "Warning") ? "pill-red" : t === "Incident" ? "pill-amber" : t === "Commendation" ? "pill-green" : "pill-blue";
 // Firestore Timestamp | {seconds} | ISO string → short date label
 const tsLabel = (t) => {
   if (!t) return "";
@@ -200,6 +200,7 @@ export default function StaffDirectoryPage() {
   const [certFileKey, setCertFileKey] = useState(0); // bump to clear the cert file input after each add
   const certOpts = (() => { const base = group?.certOptions?.length ? group.certOptions : CERT_OPTIONS; return base.includes("Other") ? base : [...base, "Other"]; })(); // owner-editable in Settings; always keep "Other"
   const [recForm, setRecForm] = useState({ type: "Coaching", note: "" });
+  const [warnForm, setWarnForm] = useState(""); // Warnings section (31 Jul 2026) — note only, type is fixed
 
   const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
   const stationName = (id) => stations.find((st) => st.id === id)?.name || "";
@@ -634,17 +635,26 @@ export default function StaffDirectoryPage() {
     } catch { showToast("Could not remove"); }
   };
   // ── coaching / mistake records (group-level staff doc) ──
-  const addRecord = async () => {
-    if (!recForm.note.trim()) return showToast("Add a note");
-    const entry = { id: `r${Date.now()}`, type: recForm.type, note: recForm.note.trim(), at: new Date().toISOString(), by: actorName };
+  // Shared writer for the coaching form AND the Warnings section (31 Jul 2026) — one
+  // `records` array, warnings are type:"Warning" entries split out at render time.
+  const addRecordEntry = async (type, note) => {
+    if (!note.trim()) { showToast("Add a note"); return false; }
+    const entry = { id: `r${Date.now()}`, type, note: note.trim(), at: new Date().toISOString(), by: actorName };
     try {
       await updateDoc(staffDoc(groupId, profile.id), { records: arrayUnion(entry) });
       setProfile((p) => ({ ...p, records: [...(p.records || []), entry] }));
-      setRecForm({ type: "Coaching", note: "" });
-      logChange("staff.record", `${entry.type} logged for ${fullName(profile)}`, { staffId: profile.id });
-      showToast("Record added");
-    } catch { showToast("Could not add record"); }
+      logChange("staff.record", `${type} logged for ${fullName(profile)}`, { staffId: profile.id });
+      if (type === "Warning") {
+        // the staffer must learn a warning exists — but notifications are group-readable,
+        // so the BODY carries no detail; they read it on their own profile (Ops tab)
+        sendNotification(groupId, { to: profile.id, type: "warning", title: "Warning added to your record", body: "A warning was added to your record — open your profile to read it.", by: actorName });
+      }
+      showToast(type === "Warning" ? "Warning added — staff member notified" : "Record added");
+      return true;
+    } catch { showToast("Could not add record"); return false; }
   };
+  const addRecord = async () => { if (await addRecordEntry(recForm.type, recForm.note)) setRecForm({ type: "Coaching", note: "" }); };
+  const addWarning = async () => { if (await addRecordEntry("Warning", warnForm)) setWarnForm(""); };
   const removeRecord = async (entry) => {
     try {
       await updateDoc(staffDoc(groupId, profile.id), { records: arrayRemove(entry) });
@@ -1401,8 +1411,13 @@ export default function StaffDirectoryPage() {
       if (a.status === "Complete") {
         await updateDoc(ref, { status: "Not started", progress: 0, completedAt: null });
       } else {
-        await updateDoc(ref, { status: "Complete", progress: 100, completedAt: serverTimestamp() });
-        archiveCompletion(groupId, "training", a, { status: "Complete", progress: 100 }).catch(() => {}); // dated completion archive (additive)
+        // complete = archive + RESET (31 Jul 2026, mirror TrainingPage.markDone)
+        archiveCompletion(groupId, "training", a, { status: "Complete", progress: 100 }).catch(() => {});
+        await updateDoc(ref, {
+          status: "Not started", progress: 0, completedAt: null,
+          checks: (a.checks || []).map(() => false),
+          verified: false, verifiedBy: "", verifyNote: "", comments: {}, threads: {},
+        });
       }
     } catch { showToast("Could not update"); }
   };
@@ -2096,23 +2111,44 @@ export default function StaffDirectoryPage() {
                   {myChecklistsActive.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No checklists assigned.</div>}
                 </div>
 
-                {/* Coaching & mistake records */}
+                {/* Coaching & mistake records — warnings are SPLIT OUT into their own
+                    section below (31 Jul 2026), same `records` array on the staff doc */}
                 <div style={{ marginTop: 16 }}>
                   <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">Coaching & mistake records</span></div>
                   {/* key carries the index too — a verify→unverify→verify cycle left some
                       profiles with two records sharing the deterministic train-<id> */}
-                  {(profile.records || []).slice().reverse().map((r, i) => (
+                  {(profile.records || []).filter((r) => r.type !== "Warning").slice().reverse().map((r, i) => (
                     <div key={`${r.id}-${i}`} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
                       <span style={{ fontSize: 12 }}><span className={`pill ${recPill(r.type)}`}>{r.type}</span> {r.note} <span style={{ color: "var(--gray)" }}>· {fmtDate(r.at)} · {r.by}</span></span>
                       {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeRecord(r)}>✕</button>}
                     </div>
                   ))}
-                  {!(profile.records || []).length && <div style={{ fontSize: 12, color: "var(--gray)" }}>No records yet.</div>}
+                  {!(profile.records || []).filter((r) => r.type !== "Warning").length && <div style={{ fontSize: 12, color: "var(--gray)" }}>No records yet.</div>}
                   {canEdit && (
                     <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                       <select className="form-input" style={{ width: 150 }} value={recForm.type} onChange={(e) => setRecForm((p) => ({ ...p, type: e.target.value }))}>{REC_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
                       <input className="form-input" value={recForm.note} onChange={(e) => setRecForm((p) => ({ ...p, note: e.target.value }))} placeholder="What happened / coaching given" onKeyDown={(e) => e.key === "Enter" && addRecord()} />
                       <button className="btn btn-primary" onClick={addRecord}>Add</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Warnings (31 Jul 2026) — own section so a formal warning never hides
+                    between coaching notes; adding one notifies the staff member (no
+                    detail in the notification body — notifications are group-readable) */}
+                <div style={{ marginTop: 16, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px" }}>
+                  <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title" style={{ color: "#991b1b" }}>Warnings</span><span className="card-sub">formal warnings — visible to the staff member on their profile</span></div>
+                  {(profile.records || []).filter((r) => r.type === "Warning").slice().reverse().map((r, i) => (
+                    <div key={`${r.id}-${i}`} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid #fecaca" }}>
+                      <span style={{ fontSize: 12 }}><span className="pill pill-red">Warning</span> {r.note} <span style={{ color: "var(--gray)" }}>· {fmtDate(r.at)} · {r.by}</span></span>
+                      {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeRecord(r)}>✕</button>}
+                    </div>
+                  ))}
+                  {!(profile.records || []).filter((r) => r.type === "Warning").length && <div style={{ fontSize: 12, color: "var(--gray)" }}>No warnings.</div>}
+                  {canEdit && (
+                    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                      <input className="form-input" value={warnForm} onChange={(e) => setWarnForm(e.target.value)} placeholder="Warning details — what happened, what must change" onKeyDown={(e) => e.key === "Enter" && addWarning()} />
+                      <button className="btn btn-danger" onClick={addWarning}>Add warning</button>
                     </div>
                   )}
                 </div>

@@ -106,7 +106,9 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
     if (V.archiveKind === "sop" && allDone) {
       try {
         archiveCompletion(groupId, "sop", assignment, { status: "Complete", checks: next, checkMeta: nextMeta, progress: 100, verified: false, completedBy: actorName || assignment.staffName || "" }).catch(() => {});
-        await updateDoc(ref(), { checks: Array(total).fill(false), checkMeta: Array(total).fill(null), progress: 0, status: "Not started", verified: false, verifiedBy: "", verifyNote: "", completedAt: null, ...heal });
+        // FULL reset — item comments too (31 Jul 2026: a leftover note read as a stale
+        // run); the archived copy above keeps the threads for history
+        await updateDoc(ref(), { checks: Array(total).fill(false), checkMeta: Array(total).fill(null), progress: 0, status: "Not started", verified: false, verifiedBy: "", verifyNote: "", completedAt: null, comments: {}, threads: {}, ...heal });
         sendNotification(groupId, { to: "managers", type: V.notifType, title: "SOP completed", body: `${assignment.staffName} completed "${assignment.moduleTitle}" — archived & reset`, venueId: assignment.venueId, by: assignment.staffName });
       } catch { showToast?.("Could not save"); }
       return;
@@ -154,18 +156,19 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
     const ms = Date.now();
     const pct = total ? Math.round((done / total) * 100) : 100;
     try {
-      await updateDoc(ref(), {
-        verified: true, verifiedBy: actorName || "Trainer", verifiedAt: serverTimestamp(),
-        verifyNote: note, status: "Complete", progress: pct,
-        completedAt: serverTimestamp(), // drives the 48h active window + completion archive
-      });
-      // on the not-verified → verified transition: write a dated completion archive entry
-      // (additive, fire-and-forget) and log a record on the staff profile
+      // Sign-off = archive + RESET (31 Jul 2026): the verified run — checks, sign-off
+      // note, item comments — lives in the dated completion archive; the active
+      // assignment resets to Not started so it can be run again.
       if (!assignment.verified) {
         archiveCompletion(groupId, V.archiveKind, assignment, {
           status: "Complete", verified: true, verifiedBy: actorName || "Trainer", verifyNote: note, checks, progress: pct,
         }, ms).catch(() => {});
       }
+      await updateDoc(ref(), {
+        checks: Array(total).fill(false), checkMeta: Array(total).fill(null), progress: 0, status: "Not started",
+        verified: false, verifiedBy: "", verifyNote: "", verifiedAt: null, completedAt: null,
+        comments: {}, threads: {},
+      });
       if (assignment.staffId && !assignment.verified) {
         await updateDoc(doc(staffCol(groupId), assignment.staffId), {
           records: arrayUnion({

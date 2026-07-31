@@ -151,9 +151,15 @@ export default function TrainingPage({ initialTab }) {
 
   const markDone = async (a) => {
     try {
-      await updateDoc(doc(venueCol(groupId, a.venueId, "trainingAssignments"), a.id), { status: "Complete", progress: 100, completedAt: serverTimestamp() });
-      if (a.status !== "Complete") archiveCompletion(groupId, "training", a, { status: "Complete", progress: 100 }).catch(() => {}); // dated completion archive (additive)
-      showToast(`Marked complete for ${a.staffName}`);
+      // complete = archive + RESET (31 Jul 2026): the dated archive entry is the record;
+      // the active assignment goes back to Not started so it can be run again
+      if (a.status !== "Complete") archiveCompletion(groupId, "training", a, { status: "Complete", progress: 100 }).catch(() => {});
+      await updateDoc(doc(venueCol(groupId, a.venueId, "trainingAssignments"), a.id), {
+        status: "Not started", progress: 0, completedAt: null,
+        checks: (a.checks || []).map(() => false),
+        verified: false, verifiedBy: "", verifyNote: "", comments: {}, threads: {},
+      });
+      showToast(`Marked complete for ${a.staffName} — archived & reset`);
     } catch { showToast("Could not update"); }
   };
   const removeAssign = async (a) => {

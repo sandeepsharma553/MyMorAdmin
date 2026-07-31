@@ -39,12 +39,19 @@ export default function ChecklistAssignmentDetail({ assignment, liveChecklist, g
     const droppedFromComplete = status !== "Complete" && assignment.status === "Complete";
     // completedAt drives the 48h active window + completion archive
     const tsPatch = becameComplete ? { completedAt: serverTimestamp() } : droppedFromComplete ? { completedAt: null } : {};
+    // Checklists archive-and-RESET on completion (31 Jul 2026 list, mirror SOPs): the
+    // finished run (ticks + comments) goes to the dated completion archive — viewable
+    // like a snapshot in Past/archived — then the assignment resets to Not started.
+    if (becameComplete) {
+      try {
+        archiveCompletion(groupId, "checklist", assignment, { status: "Complete", checks: next, progress }).catch(() => {});
+        await updateDoc(ref(), { checks: Array(total).fill(false), progress: 0, status: "Not started", completedAt: null, comments: {}, threads: {}, ...heal });
+        sendNotification(groupId, { to: "managers", type: "checklist", title: "Checklist completed", body: `${assignment.staffName} completed "${assignment.checklistTitle}" — archived & reset`, venueId: assignment.venueId, by: assignment.staffName });
+      } catch { showToast?.("Could not save"); }
+      return;
+    }
     try {
       await updateDoc(ref(), { checks: next, progress, status, ...heal, ...tsPatch });
-      if (becameComplete) {
-        archiveCompletion(groupId, "checklist", assignment, { status: "Complete", checks: next, progress }).catch(() => {}); // dated completion archive (additive)
-        sendNotification(groupId, { to: "managers", type: "checklist", title: "Checklist completed", body: `${assignment.staffName} completed "${assignment.checklistTitle}"`, venueId: assignment.venueId, by: assignment.staffName });
-      }
     } catch { showToast?.("Could not save"); }
   };
   const setCheck = (i, val) => { const next = [...checks]; next[i] = val; write(next); };
