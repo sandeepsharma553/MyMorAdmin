@@ -75,19 +75,28 @@ service cloud.firestore {
       match /staff/{staffId} {
         allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
+        // Staff Directory self-service (Jul 2026): a staffer may update their OWN
+        // phone number on the public staff doc — hasOnly() rejects any other key.
+        allow update: if rgIsOwnStaff(groupId, staffId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['phone', 'updatedAt']);
         // 🔒 Sensitive payroll (TFN / bank / super) — owner/storeAdmin only.
-        // Phase 5b: a staffer may READ their own private/details, and UPDATE it restricted
-        // to four personal keys. The whitelist below is hasOnly(), so ANY key not listed is
-        // rejected outright — including every employment term (classificationLevel,
-        // annualSalary, hourlyRate, contractedHoursMin/Max and the retired
-        // contractedMinHours), the money fields, and `password`.
+        // Phase 5b (revised Jul 2026): a staffer may READ their own private/details and
+        // UPDATE their personal + money keys directly (the owner's decision, 30 Jul 2026
+        // list: "it should just update and then send notification to admin"). The
+        // whitelist below is hasOnly(), so ANY key not listed is rejected outright —
+        // still excluding every employment term (classificationLevel, annualSalary,
+        // hourlyRate, contractedHoursMin/Max and the retired contractedMinHours) and
+        // `password`.
         match /private/details {
           allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
           allow create, delete: if rgIsSuper() || rgIsGroupAdmin(groupId);
           allow update: if rgIsSuper() || rgIsGroupAdmin(groupId)
             || (rgIsOwnStaff(groupId, staffId)
                 && request.resource.data.diff(resource.data).affectedKeys()
-                     .hasOnly(['legalName', 'dob', 'address', 'contactEmail', 'updatedAt']));
+                     .hasOnly(['legalName', 'dob', 'address', 'contactEmail',
+                               'tfn', 'superAccount', 'superUsi', 'bankBsb', 'bankAccount',
+                               'updatedAt']));
         }
         // Any OTHER doc under private/ stays owner/storeAdmin-only.
         match /private/{doc=**} {
