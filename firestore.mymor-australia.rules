@@ -27,6 +27,9 @@ service cloud.firestore {
     }
     function rgIsGroupAdmin(gid)   { return rgGroupRoleIn(gid, ['owner', 'storeAdmin']); }
     function rgCanManageStaff(gid) { return rgGroupRoleIn(gid, ['owner', 'storeAdmin', 'manager']); }
+    // Leave accrual config (Phase 2, Aug 2026): OWNER only — narrower than
+    // rgIsGroupAdmin because remapping an accrual label silently changes who accrues.
+    function rgIsGroupOwner(gid)   { return rgGroupRoleIn(gid, ['owner']); }
     function rgIsGroupUser() { return rgHasEmp() && rgEmp().get('groupId', null) != null; }
     function rgStaff(gid, sid) { return get(/databases/$(database)/documents/restaurantGroups/$(gid)/staff/$(sid)).data; }
 
@@ -146,6 +149,20 @@ service cloud.firestore {
           allow create, update: if rgIsSuper() || rgCanManageStaff(groupId) || rgIsOwnStaff(groupId, staffId);
           allow delete:         if rgIsSuper() || rgCanManageStaff(groupId);
         }
+        // ── Leave accrual ledger (NES) — SERVER-WRITTEN ONLY (Phase 2, Aug 2026) ──
+        // leaveLedger/ holds the append-only accrual/deduction trail; leave/summary is
+        // the one-doc balance read. BOTH are written EXCLUSIVELY by Admin-SDK Cloud
+        // Functions, which BYPASS these rules — that is the ENTIRE write path. The
+        // absence of any allow create/update/delete below is deliberate and
+        // load-bearing: no client may ever write a ledger entry or summary.
+        // Read: the staffer themselves + owner/storeAdmin. Plain managers DENIED
+        // (a balance is payroll-adjacent — same posture as private/details above).
+        match /leaveLedger/{entryId} {
+          allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
+        }
+        match /leave/{docId} {
+          allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
+        }
       }
       // ── Contract Generator (Documents module) — owner/storeAdmin only ──
       // Templates are seeded out-of-band (Admin SDK); the app only READS them.
@@ -177,6 +194,27 @@ service cloud.firestore {
       match /settings/labourTargets {
         allow read:  if rgIsSuper() || rgCanManageStaff(groupId);
         allow write: if rgIsSuper() || rgIsGroupAdmin(groupId);
+      }
+      // ── Leave accrual config (Phase 2, Aug 2026) — the ONLY owner-editable part of
+      // accrual: classMap (employment-type label → fixed accrual class) and bucketMap
+      // (leave-type label → fixed NES bucket). The classes, buckets and NES rates
+      // themselves are platform constants in MyMorFunction/rgLeaveAccrual.js — never
+      // configurable here, never rendered in Settings as numbers.
+      // Write: OWNER ONLY (not storeAdmin — remapping a label silently changes who
+      // accrues, so it carries the narrowest write in the group tree).
+      // Read: owner/storeAdmin (the Settings UI). Functions read via the Admin SDK.
+      match /settings/leaveAccrualConfig {
+        allow read:  if rgIsSuper() || rgIsGroupAdmin(groupId);
+        allow write: if rgIsSuper() || rgIsGroupOwner(groupId);
+        // Append-only audit trail of map changes ({at, byUid, byName, field, label,
+        // previous, next}): owner create-only, nobody edits or deletes. (A Phase 3
+        // trigger will mirror this server-side; client-written history alone can be
+        // skipped by a direct SDK write — stated boundary, not full enforcement.)
+        match /history/{entryId} {
+          allow read:   if rgIsSuper() || rgIsGroupAdmin(groupId);
+          allow create: if rgIsSuper() || rgIsGroupOwner(groupId);
+          allow update, delete: if rgIsSuper();
+        }
       }
       match /venues/{venueId} {
         allow read, write: if rgIsSuper() || rgIsGroupMember(groupId);
@@ -467,7 +505,7 @@ service cloud.firestore {
     // FCM push tokens (rgPushOnNotification reads these via the Admin SDK; the apps
     // write their own on login — MyMorOps src/lib/push.js). Own-uid only. NOTE: the
     // catch-all above denies rg-group users, so this explicit grant is what lets the
-    // Ops iPad save its token. Deployed via console 2026-07-28; file synced after.
+    // Ops iPad save its token.
     match /userTokens/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
