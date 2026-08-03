@@ -26,7 +26,12 @@ const HOURS_DAYS = [
 const blankHours = () =>
   HOURS_DAYS.reduce((acc, [k]) => ({ ...acc, [k]: { open: "09:00", close: "17:00", closed: false } }), {});
 
-const blank = (order) => ({ id: null, name: "", color: "#2563eb", type: "FOH", status: "Trading", state: "VIC", order, hours: blankHours(), clusterId: "" });
+// Day parts (owner list #3) — when "morning" ends and when "afternoon" ends; evening is
+// everything after. Drives the Shift Planner's M/A/E headcount split. Stored on the venue
+// doc as dayParts{morningEnd, afternoonEnd} ("HH:MM"); these are the READ-side defaults too.
+export const DAY_PART_DEFAULTS = { morningEnd: "12:00", afternoonEnd: "17:00" };
+
+const blank = (order) => ({ id: null, name: "", color: "#2563eb", type: "FOH", status: "Trading", state: "VIC", order, hours: blankHours(), clusterId: "", dayParts: { ...DAY_PART_DEFAULTS } });
 
 export default function VenueManager({ open, onClose }) {
   const { groupId, group, venues, staff, can, showToast, me } = useRG();
@@ -40,6 +45,7 @@ export default function VenueManager({ open, onClose }) {
     const val = e.target.type === "checkbox" ? e.target.checked : e.target.value;
     setEditor((p) => ({ ...p, hours: { ...p.hours, [day]: { ...p.hours[day], [k]: val } } }));
   };
+  const setDayPart = (k) => (e) => setEditor((p) => ({ ...p, dayParts: { ...p.dayParts, [k]: e.target.value } }));
 
   if (!open) return null;
   if (!can("settings", "edit")) {
@@ -55,10 +61,14 @@ export default function VenueManager({ open, onClose }) {
 
   const save = async () => {
     if (!editor.name.trim()) return showToast("Venue name required");
+    // day-part boundaries must stay ordered — evening is "after afternoonEnd", so an
+    // inverted pair would put every shift in one bucket ("HH:MM" compares as strings)
+    if (isOwner && editor.dayParts.afternoonEnd <= editor.dayParts.morningEnd) return showToast("Afternoon must end after morning ends");
     // hours goes in the payload ONLY for the owner: updateDoc writes named keys only, so a
     // storeAdmin save omits hours entirely and the stored value (e.g. super-admin-set) survives.
+    // dayParts rides the same owner-only gate as hours (owner ruling: owner sets the timings).
     // clusterId: "" (Unassigned) is stored as null — a valid transient state; no default cluster
-    const payload = { name: editor.name.trim(), color: editor.color, type: editor.type, status: editor.status, state: editor.state, order: Number(editor.order) || 0, clusterId: editor.clusterId || null, ...(isOwner ? { hours: editor.hours } : {}) };
+    const payload = { name: editor.name.trim(), color: editor.color, type: editor.type, status: editor.status, state: editor.state, order: Number(editor.order) || 0, clusterId: editor.clusterId || null, ...(isOwner ? { hours: editor.hours, dayParts: editor.dayParts } : {}) };
     try {
       if (editor.id) { await updateDoc(doc(groupCol(groupId, "venues"), editor.id), payload); showToast("Venue updated"); }
       else { await addDoc(venuesCol(groupId), { ...payload, createdAt: serverTimestamp() }); showToast("Venue added"); }
@@ -124,7 +134,7 @@ export default function VenueManager({ open, onClose }) {
                   </>
                 ) : (
                   <>
-                    <button className="btn btn-sm" onClick={() => setEditor({ id: v.id, name: v.name, color: v.color || "#2563eb", type: v.type || "FOH", status: v.status || "Trading", state: v.state || "VIC", order: v.order ?? venues.length, hours: { ...blankHours(), ...(v.hours || {}) }, clusterId: v.clusterId || "" })}>Edit</button>
+                    <button className="btn btn-sm" onClick={() => setEditor({ id: v.id, name: v.name, color: v.color || "#2563eb", type: v.type || "FOH", status: v.status || "Trading", state: v.state || "VIC", order: v.order ?? venues.length, hours: { ...blankHours(), ...(v.hours || {}) }, clusterId: v.clusterId || "", dayParts: { ...DAY_PART_DEFAULTS, ...(v.dayParts || {}) } })}>Edit</button>
                     <button className="btn btn-sm btn-danger" onClick={() => setConfirmId(v.id)}>✕</button>
                   </>
                 )}
@@ -185,6 +195,25 @@ export default function VenueManager({ open, onClose }) {
                       )}
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+            {/* Day parts (owner list #3) — owner-only like hours; sets where the Shift
+                Planner's morning/afternoon/evening headcount boundaries fall for THIS venue.
+                Evening needs no input: it's everything after "afternoon ends". */}
+            {isOwner && (
+              <div className="form-group">
+                <label className="form-label">Day parts (shift planner headcount)</label>
+                <div className="mt-1 rounded-lg border border-gray-200 divide-y">
+                  <div className="flex items-center gap-3 px-3 py-1.5 text-sm">
+                    <span className="w-32 text-gray-700">Morning ends</span>
+                    <input type="time" className="rounded border border-gray-200 px-2 py-1 text-sm" value={editor.dayParts.morningEnd} onChange={setDayPart("morningEnd")} />
+                  </div>
+                  <div className="flex items-center gap-3 px-3 py-1.5 text-sm">
+                    <span className="w-32 text-gray-700">Afternoon ends</span>
+                    <input type="time" className="rounded border border-gray-200 px-2 py-1 text-sm" value={editor.dayParts.afternoonEnd} onChange={setDayPart("afternoonEnd")} />
+                  </div>
+                  <div className="px-3 py-1.5 text-xs text-gray-500">Evening = after afternoon ends. A shift counts by its start time.</div>
                 </div>
               </div>
             )}

@@ -7,7 +7,7 @@ import { useRG } from "./RGContext";
 import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, sopArchiveCol, publicHolidaysDoc, payrollChangeRequestsCol, payrollChangeRequestDoc, contractsCol, docHistoryCol } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { defaultPermsForStaffRole, roleToGroupRole, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
+import { defaultPermsForStaffRole, roleToGroupRole, MANAGER_TIER_ROLES, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
 import { archiveAndRemoveTraining, archiveAndRemoveSop } from "./trainingArchiveUtils";
 import { archiveCompletion } from "./completionArchive";
 import { showInActiveList } from "./completionWindow";
@@ -201,6 +201,19 @@ export default function StaffDirectoryPage() {
   const certOpts = (() => { const base = group?.certOptions?.length ? group.certOptions : CERT_OPTIONS; return base.includes("Other") ? base : [...base, "Other"]; })(); // owner-editable in Settings; always keep "Other"
   const [recForm, setRecForm] = useState({ type: "Coaching", note: "" });
   const [warnForm, setWarnForm] = useState(""); // Warnings section (31 Jul 2026) — note only, type is fixed
+  // Warning witness (owner list #4, Aug 2026): a manager account assigned per warning who
+  // must ALSO acknowledge it. Manager ack lives ON the record entry (manager-tier can write
+  // the staff doc — rules rgCanManageStaff). STAFF ack lives in staff/{id}/acks/{recordId}
+  // (own-staff subcollection write; the staff doc itself is phone-only for self-updates).
+  const [warnManagerId, setWarnManagerId] = useState("");
+  const [profileAcks, setProfileAcks] = useState({}); // recordId -> ack data, for the OPEN profile
+  const [myAcks, setMyAcks] = useState({}); // recordId -> ack data, for the LOGGED-IN staffer's own strip
+  // witness candidates: manager-tier accounts (same tier test as rules rgCanManageStaff),
+  // never the person being warned
+  const managerOptions = useMemo(
+    () => staff.filter((s) => MANAGER_TIER_ROLES.includes(s.groupRole || roleToGroupRole(s.role)) && s.id !== profile?.id).sort((a, b) => fullName(a).localeCompare(fullName(b))),
+    [staff, profile?.id]
+  );
 
   const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
   const stationName = (id) => stations.find((st) => st.id === id)?.name || "";
@@ -637,9 +650,9 @@ export default function StaffDirectoryPage() {
   // ── coaching / mistake records (group-level staff doc) ──
   // Shared writer for the coaching form AND the Warnings section (31 Jul 2026) — one
   // `records` array, warnings are type:"Warning" entries split out at render time.
-  const addRecordEntry = async (type, note) => {
+  const addRecordEntry = async (type, note, extra = {}) => {
     if (!note.trim()) { showToast("Add a note"); return false; }
-    const entry = { id: `r${Date.now()}`, type, note: note.trim(), at: new Date().toISOString(), by: actorName };
+    const entry = { id: `r${Date.now()}`, type, note: note.trim(), at: new Date().toISOString(), by: actorName, ...extra };
     try {
       await updateDoc(staffDoc(groupId, profile.id), { records: arrayUnion(entry) });
       setProfile((p) => ({ ...p, records: [...(p.records || []), entry] }));
@@ -647,14 +660,91 @@ export default function StaffDirectoryPage() {
       if (type === "Warning") {
         // the staffer must learn a warning exists — but notifications are group-readable,
         // so the BODY carries no detail; they read it on their own profile (Ops tab)
-        sendNotification(groupId, { to: profile.id, type: "warning", title: "Warning added to your record", body: "A warning was added to your record — open your profile to read it.", by: actorName });
+        sendNotification(groupId, { to: profile.id, type: "warning", title: "Warning added to your record", body: "A warning was added to your record — open your profile to read it and acknowledge.", by: actorName });
+        // witness (#4): the assigned manager is told WHO — that's the point of a witness;
+        // still no warning detail in the group-readable body
+        if (entry.managerId) sendNotification(groupId, { to: entry.managerId, type: "warning", title: "Witness a warning", body: `You were assigned as witness to a warning for ${fullName(profile)} — open their profile to read and acknowledge it.`, by: actorName });
       }
       showToast(type === "Warning" ? "Warning added — staff member notified" : "Record added");
       return true;
     } catch { showToast("Could not add record"); return false; }
   };
   const addRecord = async () => { if (await addRecordEntry(recForm.type, recForm.note)) setRecForm({ type: "Coaching", note: "" }); };
-  const addWarning = async () => { if (await addRecordEntry("Warning", warnForm)) setWarnForm(""); };
+  const addWarning = async () => {
+    const mgr = staff.find((s) => s.id === warnManagerId);
+    if (await addRecordEntry("Warning", warnForm, mgr ? { managerId: mgr.id, managerName: fullName(mgr) } : {})) { setWarnForm(""); setWarnManagerId(""); }
+  };
+  // ── warning acknowledgements (#4) ──
+  // MANAGER tick: rewrite the target's records array with managerAckAt/managerAckBy on the
+  // one entry (full-array replace, same pattern as signSignDoc) — manager-tier staff-doc
+  // write, allowed by rules rgCanManageStaff. Callable from the profile modal AND the
+  // top-of-page witness strip, so it takes the TARGET staff doc, not `profile`.
+  const ackWarningAsManager = async (target, r) => {
+    const next = (target.records || []).map((x) => x.id === r.id ? { ...x, managerAckAt: new Date().toISOString(), managerAckBy: actorName } : x);
+    try {
+      await updateDoc(staffDoc(groupId, target.id), { records: next });
+      setProfile((p) => (p && p.id === target.id ? { ...p, records: next } : p));
+      logChange("staff.warning.ack", `${actorName} acknowledged (witness) a warning for ${fullName(target)}`, { staffId: target.id });
+      showToast("Acknowledged as witness");
+    } catch { showToast("Could not acknowledge"); }
+  };
+  // Assign/change the witness on an EXISTING warning (owner follow-up 3 Aug: "assign
+  // manager ka button ho") — same full-array rewrite + notification as at creation.
+  // Locked once the witness has acknowledged (their ack is to THAT assignment).
+  const assignWitness = async (target, r, managerId) => {
+    const mgr = staff.find((s) => s.id === managerId);
+    if (!mgr) return;
+    const next = (target.records || []).map((x) => x.id === r.id ? { ...x, managerId: mgr.id, managerName: fullName(mgr) } : x);
+    try {
+      await updateDoc(staffDoc(groupId, target.id), { records: next });
+      setProfile((p) => (p && p.id === target.id ? { ...p, records: next } : p));
+      sendNotification(groupId, { to: mgr.id, type: "warning", title: "Witness a warning", body: `You were assigned as witness to a warning for ${fullName(target)} — open their profile to read and acknowledge it.`, by: actorName });
+      logChange("staff.warning.witness", `${actorName} assigned ${fullName(mgr)} as witness to a warning for ${fullName(target)}`, { staffId: target.id });
+      showToast(`${fullName(mgr)} assigned as witness — notified`);
+    } catch { showToast("Could not assign witness"); }
+  };
+  // STAFF tick: the staffer cannot write their own staff doc (rules: phone-only), so the
+  // ack is its OWN doc at staff/{id}/acks/{recordId} — needs the acks rules block
+  // (firestore.mymor-australia.rules) DEPLOYED before staff ticks work.
+  const ackWarningAsStaff = async (r) => {
+    if (!myStaff?.id) return;
+    const ack = { type: "warning", ackAt: new Date().toISOString(), by: myStaff.displayName || fullName(myStaff) };
+    try {
+      await setDoc(doc(collection(staffDoc(groupId, myStaff.id), "acks"), r.id), ack);
+      setProfileAcks((p) => ({ ...p, [r.id]: ack }));
+      setMyAcks((p) => ({ ...p, [r.id]: ack }));
+      showToast("Warning acknowledged");
+    } catch { showToast("Could not acknowledge — access may not be enabled yet"); }
+  };
+  // staff acks for the OPEN profile (admin/manager sees the staff tick state)
+  useEffect(() => {
+    setProfileAcks({});
+    if (!groupId || !profile?.id) return;
+    let dead = false;
+    getDocs(collection(staffDoc(groupId, profile.id), "acks"))
+      .then((snap) => { if (!dead) setProfileAcks(Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]))); })
+      .catch(() => { /* acks unreadable → ticks just show pending */ });
+    return () => { dead = true; };
+  }, [groupId, profile?.id]);
+  // the logged-in staffer's own acks — drives their "warning to acknowledge" strip
+  useEffect(() => {
+    if (!groupId || !myStaff?.id) return;
+    let dead = false;
+    getDocs(collection(staffDoc(groupId, myStaff.id), "acks"))
+      .then((snap) => { if (!dead) setMyAcks(Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]))); })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [groupId, myStaff?.id]);
+  // warnings the LOGGED-IN manager still has to witness / the LOGGED-IN staffer still has
+  // to acknowledge — top-of-page strips (exception alerts, only-when-relevant rule)
+  const witnessPending = useMemo(
+    () => (myStaff?.id ? staff.flatMap((s) => (s.records || []).filter((r) => r.type === "Warning" && r.managerId === myStaff.id && !r.managerAckAt).map((r) => ({ s, r }))) : []),
+    [staff, myStaff?.id]
+  );
+  const myWarningsPending = useMemo(
+    () => (myStaff ? ((staff.find((s) => s.id === myStaff.id) || myStaff).records || []).filter((r) => r.type === "Warning" && !myAcks[r.id]) : []),
+    [staff, myStaff, myAcks]
+  );
   const removeRecord = async (entry) => {
     try {
       await updateDoc(staffDoc(groupId, profile.id), { records: arrayRemove(entry) });
@@ -1124,26 +1214,34 @@ export default function StaffDirectoryPage() {
     return () => { alive = false; };
   }, [canPayroll, groupId, staffIdsKey, profileReqs]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // fetch archived training + checklists across the staff member's venues when a profile
-  // opens. Both archives now also receive a dated entry on EACH completion (completionArchive),
-  // so a training/checklist completed N times shows N dated entries here.
+  // LIVE archived training/SOPs/checklists across the staff member's venues while the
+  // profile is open. Was a one-shot getDocs — owner list #6 (Aug 2026): signing off /
+  // completing WHILE the profile is open archives the run, and the lists had to be
+  // reopened to show it. onSnapshot per venue; per-venue parts merged so one venue's
+  // update (or failure) never blanks the others. Keyed on profile.id (not the profile
+  // OBJECT — every save re-created it and would re-subscribe all listeners).
   useEffect(() => {
     setArchivedTraining(null); setArchivedSops(null); setArchivedChecklists(null); setOpenArchiveId(null);
     if (!profile || !groupId) return;
-    let alive = true;
     const vids = profile.venueIds || (profile.venueId ? [profile.venueId] : []);
+    if (!vids.length) { setArchivedTraining([]); setArchivedSops([]); setArchivedChecklists([]); return; }
     const sortByDate = (a, b) => (b.completedAtMillis || (b.archivedAt?.seconds || 0) * 1000) - (a.completedAtMillis || (a.archivedAt?.seconds || 0) * 1000);
-    const load = (colFn, setter) => Promise.all(vids.map((vid) =>
-      getDocs(query(colFn(groupId, vid), where("staffId", "==", profile.id)))
-        .then((snap) => snap.docs.map((d) => ({ id: d.id, venueId: vid, ...d.data() })))
-        .catch(() => [])
-    )).then((lists) => { if (alive) setter(lists.flat().sort(sortByDate)); })
-      .catch(() => { if (alive) setter([]); });
-    load(trainingArchiveCol, setArchivedTraining);
-    load(sopArchiveCol, setArchivedSops);
-    load(checklistArchiveCol, setArchivedChecklists);
-    return () => { alive = false; };
-  }, [profile, groupId]);
+    const sub = (colFn, setter) => {
+      const parts = {}; // vid -> rows; merge on every venue's snapshot
+      const emit = () => setter(Object.values(parts).flat().sort(sortByDate));
+      return vids.map((vid) => onSnapshot(
+        query(colFn(groupId, vid), where("staffId", "==", profile.id)),
+        (snap) => { parts[vid] = snap.docs.map((d) => ({ id: d.id, venueId: vid, ...d.data() })); emit(); },
+        () => { parts[vid] = parts[vid] || []; emit(); } // failed venue → empty, others keep flowing
+      ));
+    };
+    const unsubs = [
+      ...sub(trainingArchiveCol, setArchivedTraining),
+      ...sub(sopArchiveCol, setArchivedSops),
+      ...sub(checklistArchiveCol, setArchivedChecklists),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [profile?.id, groupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const myTraining = useMemo(() => profile ? assignments.filter((a) => a.staffId === profile.id) : [], [profile, assignments]);
   // SOPs are DECOUPLED (Jul 2026): the profile's SOP sections read sopAssignments — the
@@ -1305,13 +1403,28 @@ export default function StaffDirectoryPage() {
             </div>
           );
         })()}
-        <Head t="Shift history" />
-        {sh.length ? sh.slice(0, 40).map((x) => (
-          <div key={x.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
-            <span>{shiftDateLabel(x)} · <strong>{x.start}–{x.end}</strong></span>
-            <span style={{ color: "var(--gray)" }}>{(x.role || "").replace(/^(FOH|BOH) — /, "")}{x.station ? ` · ${x.station}` : ""} · {x.venue} · {fmtHours(shiftHours(x))}h</span>
-          </div>
-        )) : <div style={{ fontSize: 12, color: "var(--gray)" }}>No shifts recorded yet.</div>}
+        {/* Shift history FOLLOWS the Hours-worked period/date-range (owner list #7) —
+            same inPeriod window as the hour buckets above, so the list always explains
+            the numbers. The period label repeats in the heading so the link is obvious. */}
+        {(() => {
+          const shP = sh.filter((x) => inPeriod(shiftDateOf(x)));
+          const label = useRange ? `${hoursRange.from} → ${hoursRange.to}` : (PERIODS.find(([v]) => v === hoursPeriod)?.[1] || "");
+          return (
+            <>
+              <div className="card-head" style={{ margin: "14px 0 6px" }}>
+                <span className="card-title">Shift history</span>
+                <span className="card-sub">{label} · {shP.length} shift{shP.length === 1 ? "" : "s"}</span>
+              </div>
+              {shP.length ? shP.slice(0, 40).map((x) => (
+                <div key={x.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <span>{shiftDateLabel(x)} · <strong>{x.start}–{x.end}</strong></span>
+                  <span style={{ color: "var(--gray)" }}>{(x.role || "").replace(/^(FOH|BOH) — /, "")}{x.station ? ` · ${x.station}` : ""} · {x.venue} · {fmtHours(shiftHours(x))}h</span>
+                </div>
+              )) : <div style={{ fontSize: 12, color: "var(--gray)" }}>No shifts in this period{sh.length ? " — pick a wider period or date range above" : ""}.</div>}
+              {shP.length > 40 && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 4 }}>Showing the first 40 of {shP.length} — narrow the period to see the rest.</div>}
+            </>
+          );
+        })()}
         <Head t="Completed training" top />
         {tDone.length ? <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{tDone.map((a) => <span key={a.id} className="pill pill-green">{a.moduleTitle}{a.verified ? " ✓" : ""}</span>)}</div> : <div style={{ fontSize: 12, color: "var(--gray)" }}>None yet.</div>}
         <Head t="Completed checklists" top />
@@ -1608,6 +1721,33 @@ export default function StaffDirectoryPage() {
       </div>
 
       {canPayroll && <Turning18Alert groupId={groupId} staff={scopedStaff} actorName={actorName} />}
+
+      {/* warnings-to-witness strip (#4) — the LOGGED-IN manager's pending witness acks,
+          with WHO each warning is for; tick here or from the profile modal. Exception
+          alert: renders only when something is pending. */}
+      {witnessPending.length > 0 && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 12 }}>
+          <strong>⚠ Warnings to witness ({witnessPending.length}):</strong>{" "}
+          {witnessPending.map(({ s, r }, i) => (
+            <span key={r.id}>
+              {i > 0 ? " · " : ""}
+              <strong>{fullName(s)}</strong> ({fmtDate(r.at)})
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6, cursor: "pointer" }} title="Tick to acknowledge you have seen this warning">
+                <input type="checkbox" checked={false} onChange={() => ackWarningAsManager(s, r)} /> acknowledge
+              </label>
+              <button className="btn btn-sm" style={{ marginLeft: 6 }} onClick={() => openProfile(s)}>Open</button>
+            </span>
+          ))}
+        </div>
+      )}
+      {/* the LOGGED-IN staffer's own unacknowledged warnings — read on the profile, tick there */}
+      {myWarningsPending.length > 0 && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 12 }}>
+          <strong>⚠ You have {myWarningsPending.length} warning{myWarningsPending.length === 1 ? "" : "s"} to read & acknowledge</strong>
+          {" — "}
+          <button className="btn btn-sm" onClick={() => { const s = staff.find((x) => x.id === myStaff.id) || myStaff; openProfile(s); }}>Open my profile</button>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
         <FilterBtn id="all">All</FilterBtn>
@@ -2144,16 +2284,53 @@ export default function StaffDirectoryPage() {
                     detail in the notification body — notifications are group-readable) */}
                 <div style={{ marginTop: 16, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px" }}>
                   <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title" style={{ color: "#991b1b" }}>Warnings</span><span className="card-sub">formal warnings — visible to the staff member on their profile</span></div>
-                  {(profile.records || []).filter((r) => r.type === "Warning").slice().reverse().map((r, i) => (
-                    <div key={`${r.id}-${i}`} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid #fecaca" }}>
-                      <span style={{ fontSize: 12 }}><span className="pill pill-red">Warning</span> {r.note} <span style={{ color: "var(--gray)" }}>· {fmtDate(r.at)} · {r.by}</span></span>
-                      {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeRecord(r)}>✕</button>}
-                    </div>
-                  ))}
+                  {(profile.records || []).filter((r) => r.type === "Warning").slice().reverse().map((r, i) => {
+                    const staffAck = r.staffAckAt ? { ackAt: r.staffAckAt } : profileAcks[r.id]; // staffAckAt = Ops-written mirror, acks doc = Admin path
+                    const isWitness = myStaff?.id && r.managerId === myStaff.id;
+                    const isSelf = myStaff?.id === profile.id;
+                    return (
+                      <div key={`${r.id}-${i}`} style={{ padding: "6px 0", borderBottom: "0.5px solid #fecaca" }}>
+                        <div className="staff-meta-row" style={{ justifyContent: "space-between", padding: 0 }}>
+                          <span style={{ fontSize: 12 }}><span className="pill pill-red">Warning</span> {r.note} <span style={{ color: "var(--gray)" }}>· {fmtDate(r.at)} · {r.by}</span></span>
+                          {canEdit && <button className="btn btn-sm btn-danger" title="Remove" onClick={() => removeRecord(r)}>✕</button>}
+                        </div>
+                        {/* acknowledge ticks (#4) — each checkbox is live ONLY for its own
+                            person (witness manager / the staffer); everyone else sees state */}
+                        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 4, fontSize: 11, color: "var(--gray)" }}>
+                          <label style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: isWitness && !r.managerAckAt ? "pointer" : "default" }} title={r.managerId ? (r.managerAckAt ? `Witnessed by ${r.managerAckBy}` : `Waiting on ${r.managerName}`) : "No witness assigned"}>
+                            <input type="checkbox" checked={!!r.managerAckAt} disabled={!isWitness || !!r.managerAckAt} onChange={() => ackWarningAsManager(profile, r)} />
+                            {r.managerId
+                              ? <>Witness {r.managerName}{r.managerAckAt ? <span style={{ color: "var(--green, #16a34a)" }}> — ✓ acknowledged {fmtDate(r.managerAckAt)}</span> : " — pending"}</>
+                              : "No witness assigned"}
+                          </label>
+                          {/* assign / change the witness AFTER creation — unlocked until the
+                              assigned manager has acknowledged (their ack binds to that pick) */}
+                          {canEdit && !r.managerAckAt && (
+                            <select className="form-input" style={{ width: 180, height: 24, fontSize: 11, padding: "1px 6px" }} value=""
+                              onChange={(e) => e.target.value && assignWitness(profile, r, e.target.value)}
+                              title={r.managerId ? "Change the witness manager" : "Assign a manager to witness this warning"}>
+                              <option value="">{r.managerId ? "Change manager…" : "Assign manager…"}</option>
+                              {managerOptions.filter((m) => m.id !== r.managerId).map((m) => <option key={m.id} value={m.id}>{fullName(m)}</option>)}
+                            </select>
+                          )}
+                          <label style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: isSelf && !staffAck ? "pointer" : "default" }} title={staffAck ? `Read & acknowledged ${fmtDate(staffAck.ackAt)}` : "Waiting on the staff member"}>
+                            <input type="checkbox" checked={!!staffAck} disabled={!isSelf || !!staffAck} onChange={() => ackWarningAsStaff(r)} />
+                            Staff read{staffAck ? <span style={{ color: "var(--green, #16a34a)" }}> — ✓ {fmtDate(staffAck.ackAt)}</span> : " — pending"}
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
                   {!(profile.records || []).filter((r) => r.type === "Warning").length && <div style={{ fontSize: 12, color: "var(--gray)" }}>No warnings.</div>}
                   {canEdit && (
-                    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                      <input className="form-input" value={warnForm} onChange={(e) => setWarnForm(e.target.value)} placeholder="Warning details — what happened, what must change" onKeyDown={(e) => e.key === "Enter" && addWarning()} />
+                    <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                      <input className="form-input" style={{ flex: 1, minWidth: 220 }} value={warnForm} onChange={(e) => setWarnForm(e.target.value)} placeholder="Warning details — what happened, what must change" onKeyDown={(e) => e.key === "Enter" && addWarning()} />
+                      {/* witness picker (#4) — manager-tier accounts; the witness gets a
+                          notification and must tick their acknowledge box */}
+                      <select className="form-input" style={{ width: 210 }} value={warnManagerId} onChange={(e) => setWarnManagerId(e.target.value)} title="Assign a manager to witness this warning">
+                        <option value="">Witness: — none —</option>
+                        {managerOptions.map((m) => <option key={m.id} value={m.id}>Witness: {fullName(m)}</option>)}
+                      </select>
                       <button className="btn btn-danger" onClick={addWarning}>Add warning</button>
                     </div>
                   )}
@@ -2300,10 +2477,10 @@ export default function StaffDirectoryPage() {
       )}
       {/* Archived training — strictly read-only (all caps disabled, so no writes can occur) */}
       {openArchiveRecord && (openArchiveRecord.kind === "checklist" || openArchiveRecord.checklistTitle) && (
-        <ChecklistAssignmentDetail assignment={openArchiveRecord} liveChecklist={checklists.find((c) => c.id === openArchiveRecord.checklistId) || checklists.find((c) => c.title === openArchiveRecord.checklistTitle && c.venueId === openArchiveRecord.venueId)} groupId={groupId} canTick={false} canComment={false} actorName={actorName} showToast={showToast} onClose={() => setOpenArchiveId(null)} />
+        <ChecklistAssignmentDetail assignment={openArchiveRecord} liveChecklist={checklists.find((c) => c.id === openArchiveRecord.checklistId) || checklists.find((c) => c.title === openArchiveRecord.checklistTitle && c.venueId === openArchiveRecord.venueId)} groupId={groupId} canTick={false} canComment={false} canSeePrivate={can("training", "edit")} actorName={actorName} showToast={showToast} onClose={() => setOpenArchiveId(null)} />
       )}
       {openArchiveRecord && !(openArchiveRecord.kind === "checklist" || openArchiveRecord.checklistTitle) && (
-        <AssignmentDetail assignment={openArchiveRecord} liveModule={(openArchiveIsSop ? sops : modules).find((m) => m.id === openArchiveRecord.moduleId)} groupId={groupId} canTick={false} canVerify={false} canComment={false} actorName={actorName} showToast={showToast} onClose={() => setOpenArchiveId(null)} variant={openArchiveIsSop ? "sop" : "training"} />
+        <AssignmentDetail assignment={openArchiveRecord} liveModule={(openArchiveIsSop ? sops : modules).find((m) => m.id === openArchiveRecord.moduleId)} groupId={groupId} canTick={false} canVerify={false} canComment={false} canSeePrivate={can("training", "edit")} actorName={actorName} showToast={showToast} onClose={() => setOpenArchiveId(null)} variant={openArchiveIsSop ? "sop" : "training"} />
       )}
     </>
   );

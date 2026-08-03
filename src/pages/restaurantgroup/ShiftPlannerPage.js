@@ -554,6 +554,25 @@ export default function ShiftPlannerPage() {
   );
   const dayHeadcount = (day) => new Set(weekShifts.filter((sh) => sh.day === day && rosteredIds.has(sh.staffId)).map((sh) => sh.staffId)).size;
   const weekHeadcount = new Set(weekShifts.filter((sh) => rosteredIds.has(sh.staffId)).map((sh) => sh.staffId)).size;
+  // Day-part split of the day headcount (owner list #3) — shown under the header "N on"
+  // and the footer "Staff rostered" totals. Boundaries are OWNER-CONFIGURED PER VENUE
+  // (VenueManager → Day parts, dayParts{morningEnd, afternoonEnd} "HH:MM"); unset venues
+  // fall back to 12pm / 5pm. Keyed off the shift START at the shift's OWN venue, so an
+  // "All venues" view respects each venue's boundaries. Distinct STAFF per part — one
+  // person on a morning + evening double counts once in each part.
+  const hhmmToH = (t, dflt) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || "")); return m ? Number(m[1]) + Number(m[2]) / 60 : dflt; };
+  const dayPartOf = (sh) => {
+    const dp = venues.find((v) => v.id === sh.venueId)?.dayParts || {};
+    const h = parseTime(sh.start);
+    return h < hhmmToH(dp.morningEnd, 12) ? "m" : h < hhmmToH(dp.afternoonEnd, 17) ? "a" : "e";
+  };
+  const dayPartCounts = (day, list = weekShifts, ids = rosteredIds) => {
+    const c = { m: new Set(), a: new Set(), e: new Set() };
+    list.forEach((sh) => { if (sh.day === day && ids.has(sh.staffId)) c[dayPartOf(sh)].add(sh.staffId); });
+    return { m: c.m.size, a: c.a.size, e: c.e.size };
+  };
+  // "M 2 · A 1 · E 3" — parts with 0 staff are dropped so the row stays scannable
+  const dayPartLabel = (p) => [["M", p.m], ["A", p.a], ["E", p.e]].filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(" · ");
 
   // breakOverrideMins: "" = Automatic (use the area rule); "0".."60" = the manual value
   const [form, setForm] = useState({ editId: null, staffId: "", day: "Monday", start: STARTS[0], end: ENDS[0], role: (roles && roles[0]) || ROLES[0], venueId: "", stationId: "", notes: "", breakOverrideMins: "" });
@@ -722,9 +741,15 @@ export default function ShiftPlannerPage() {
   };
 
   const th = { padding: "10px 8px", textAlign: "center", fontSize: 11, fontWeight: 600, color: "var(--gray)", borderBottom: "0.5px solid var(--border)" };
-  // #4 sticky header variant for the MAIN roster only. With borderCollapse:collapse a
-  // sticky cell drops its own border, so the divider is drawn as an inset box-shadow.
+  // #4 sticky header — MAIN roster AND the split panes (owner list Aug 2026 #1: the split
+  // header used to scroll away because the pane had no scroll container of its own). With
+  // borderCollapse:collapse a sticky cell drops its own border, so the divider is drawn
+  // as an inset box-shadow. Sticky only works inside a max-height overflow container —
+  // both grids wrap the table in one.
   const thSticky = { ...th, position: "sticky", top: 0, zIndex: 2, background: "var(--gray-light)", borderBottom: undefined, boxShadow: "inset 0 -1px 0 var(--border)" };
+  // "Mon 3 Aug" — day-of-week + date + month from the column's YYYY-MM-DD (owner list #2:
+  // date alone was ambiguous around month boundaries). Shared by both grids' headers.
+  const dayHeadLabel = (d, i) => (weekDates[i] ? `${d} ${Number(weekDates[i].slice(8, 10))} ${MONTHS[Number(weekDates[i].slice(5, 7)) - 1]}` : d);
 
   // Cell shifts scoped to a pane's venues (for the split comparison view) — START-time sorted (#1).
   const cellShiftsV = (staffId, day, vids) => weekShiftsAllVenues.filter((sh) => sh.staffId === staffId && sh.day === day && vids.includes(sh.venueId)).sort((a, b) => parseTime(a.start) - parseTime(b.start));
@@ -751,18 +776,28 @@ export default function ShiftPlannerPage() {
     // "+" adds to the venue the staffer belongs to among the pane's venues (first match);
     // a single-venue pane keeps the old behaviour exactly.
     const addVenueFor = (s) => (vids.length === 1 ? vids[0] : (vids.find((vid) => staffInVenue(s, vid)) || vids[0]));
+    // pane headcount (#1: "head count on split screen") — distinct VISIBLE staff with ≥1
+    // shift that day at the pane's venues; same distinct-staff rule as the main grid's
+    // dayHeadcount, scoped to this pane's rows + venues.
+    const gridIds = new Set(gridRows.map((s) => s.id));
+    const paneShifts = weekShiftsAllVenues.filter((sh) => vids.includes(sh.venueId));
+    const paneDayCount = (day) => new Set(paneShifts.filter((sh) => sh.day === day && gridIds.has(sh.staffId)).map((sh) => sh.staffId)).size;
     return (
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         {/* zoom applies to the split panes too — same .shift-cell class, and toggling
-            Split view must not silently lose the chosen zoom */}
-        <div style={{ overflowX: "auto", "--rg-zoom": zoom }}>
+            Split view must not silently lose the chosen zoom. maxHeight + overflowY give
+            the pane its OWN scroll so the sticky header can hold (owner list #1). */}
+        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 260px)", "--rg-zoom": zoom }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "calc(520px * var(--rg-zoom, 1))" }}>
             <thead>
               <tr style={{ background: "var(--gray-light)" }}>
-                <th style={{ ...th, textAlign: "left", width: "calc(100px * var(--rg-zoom, 1))", padding: "8px 10px" }}>Staff</th>
+                <th style={{ ...thSticky, textAlign: "left", width: "calc(100px * var(--rg-zoom, 1))", padding: "8px 10px" }}>Staff</th>
                 {/* PH header treatment mirrors the MAIN grid (8fd1887): #fef3c7 wash + 9px
                     #b45309 "PH" badge, spread BEFORE closed so closed's opacity still wins */}
-                {DAYS.map((d, i) => <th key={d} style={{ ...th, padding: "8px 4px", cursor: "pointer", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (vClosed(i) ? "Venue closed this day" : "Click for day detail")} onClick={() => setDayDetail({ day: i, vid: vids })}>{d}{weekDates[i] ? ` ${Number(weekDates[i].slice(8, 10))}` : ""}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 3 }}>PH</span>}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</th>)}
+                {DAYS.map((d, i) => <th key={d} style={{ ...thSticky, padding: "8px 4px", cursor: "pointer", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(vClosed(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (vClosed(i) ? "Venue closed this day" : "Click for day detail")} onClick={() => setDayDetail({ day: i, vid: vids })}>
+                  <div>{dayHeadLabel(d, i)}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 3 }}>PH</span>}{vClosed(i) && <span style={{ fontSize: 8, fontWeight: 700, color: "var(--gray)", marginLeft: 3 }}>Closed</span>}</div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: "var(--gray)" }}>{paneDayCount(i)} on</div>
+                </th>)}
               </tr>
             </thead>
             <tbody>
@@ -823,6 +858,22 @@ export default function ShiftPlannerPage() {
                 </React.Fragment>
               ))}
               {gridRows.length === 0 && <tr><td colSpan={8} style={{ padding: 16, color: "var(--gray)", fontSize: 12 }}>No staff here.</td></tr>}
+              {/* per-day headcount + day-part split (M/A/E) — mirror of the main grid's
+                  footer row, scoped to this pane's venues/rows */}
+              {gridRows.length > 0 && (
+                <tr>
+                  <td style={{ padding: "8px 10px", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", borderTop: "0.5px solid var(--border)" }}>Staff rostered</td>
+                  {DAYS.map((_, day) => {
+                    const n = paneDayCount(day);
+                    const p = dayPartCounts(day, paneShifts, gridIds);
+                    return (
+                      <td key={day} style={{ textAlign: "center", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", borderTop: "0.5px solid var(--border)", padding: "6px 2px" }}>
+                        {n ? <><div>{n}</div><div style={{ fontSize: 9, fontWeight: 400, whiteSpace: "nowrap" }} title="Distinct staff by shift start — Morning/Afternoon/Evening boundaries are set per venue (Venues → Edit → Day parts; default 12pm / 5pm)">{dayPartLabel(p)}</div></> : ""}
+                      </td>
+                    );
+                  })}
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -924,10 +975,11 @@ export default function ShiftPlannerPage() {
       {/* Week nav */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {/* staff are limited to the current + next week (2-week window) */}
+          {/* staff are limited to the current + next 2 weeks (3-week window, owner list #11 —
+              matches the AvailabilityEditor's 21-day window) */}
           <button className="btn btn-sm" disabled={myScope === "staff" && offset <= 0} onClick={() => setOffset((o) => (myScope === "staff" ? Math.max(0, o - 1) : o - 1))}>← Prev</button>
           <span style={{ fontSize: 13, fontWeight: 600, minWidth: 200, textAlign: "center" }}>{weekLabel}</span>
-          <button className="btn btn-sm" disabled={myScope === "staff" && offset >= 1} onClick={() => setOffset((o) => (myScope === "staff" ? Math.min(1, o + 1) : o + 1))}>Next →</button>
+          <button className="btn btn-sm" disabled={myScope === "staff" && offset >= 2} onClick={() => setOffset((o) => (myScope === "staff" ? Math.min(2, o + 1) : o + 1))}>Next →</button>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-sm" onClick={() => setSplitMode((s) => !s)} style={splitMode ? { background: "var(--red)", color: "#fff", borderColor: "var(--red)" } : undefined}>⊟ Split view</button>
@@ -1077,7 +1129,7 @@ export default function ShiftPlannerPage() {
                 <th style={{ ...thSticky, textAlign: "left", width: "calc(130px * var(--rg-zoom, 1))", padding: "10px 14px" }}>Staff</th>
                 {DAYS.map((d, i) => (
                   <th key={d} style={{ ...thSticky, cursor: "pointer", ...(dayIsPH(i) ? { background: "#fef3c7" } : {}), ...(dayClosedForSelected(i) ? { opacity: 0.45 } : {}) }} title={dayIsPH(i) ? dayPHName(i) : (dayClosedForSelected(i) ? "Venue closed this day" : "Click for day detail")} onClick={() => setDayDetail({ day: i, vid: selectedVenue })}>
-                    <div>{d}{weekDates[i] ? ` ${Number(weekDates[i].slice(8, 10))}` : ""}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 4 }}>PH</span>}{dayClosedForSelected(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "var(--gray)", marginLeft: 4 }}>Closed</span>}</div>
+                    <div>{dayHeadLabel(d, i)}{dayIsPH(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "#b45309", marginLeft: 4 }}>PH</span>}{dayClosedForSelected(i) && <span style={{ fontSize: 9, fontWeight: 700, color: "var(--gray)", marginLeft: 4 }}>Closed</span>}</div>
                     <div style={{ fontSize: 10, fontWeight: 600, color: "var(--gray)" }}>{dayHeadcount(i)} on</div>
                   </th>
                 ))}
@@ -1100,7 +1152,16 @@ export default function ShiftPlannerPage() {
               {groupedRows.length > 0 && (
                 <tr>
                   <td style={{ padding: "8px 14px", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", borderTop: "0.5px solid var(--border)" }}>Staff rostered</td>
-                  {DAYS.map((_, day) => <td key={day} style={{ textAlign: "center", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", borderTop: "0.5px solid var(--border)" }}>{dayHeadcount(day) || ""}</td>)}
+                  {/* headcount + its M/A/E day-part detail (owner list #3, display half) */}
+                  {DAYS.map((_, day) => {
+                    const n = dayHeadcount(day);
+                    const p = dayPartCounts(day);
+                    return (
+                      <td key={day} style={{ textAlign: "center", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", borderTop: "0.5px solid var(--border)", padding: "6px 2px" }}>
+                        {n ? <><div>{n}</div><div style={{ fontSize: 9, fontWeight: 400, whiteSpace: "nowrap" }} title="Distinct staff by shift start — Morning/Afternoon/Evening boundaries are set per venue (Venues → Edit → Day parts; default 12pm / 5pm)">{dayPartLabel(p)}</div></> : ""}
+                      </td>
+                    );
+                  })}
                   <td style={{ textAlign: "center", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", borderTop: "0.5px solid var(--border)" }}>{weekHeadcount || ""}</td>
                 </tr>
               )}
@@ -1337,6 +1398,23 @@ export default function ShiftPlannerPage() {
             <div className="rg-modal" style={{ maxWidth: 440 }}>
               <div className="modal-head"><span className="modal-title">{FULL_DAYS[dayDetail.day]} {fmt(dDate)} · {vName}</span><button className="modal-close" onClick={() => setDayDetail(null)}>✕</button></div>
               {dShifts.length + dLeave.length === 0 && <div style={{ fontSize: 13, color: "var(--gray)" }}>Nothing scheduled.</div>}
+              {/* day-part headcount (owner list #3) — the header "N on" detail lives HERE
+                  (moved out of the day header, owner request 3 Aug). Same distinct-staff
+                  rule as the header count, boundaries per venue (VenueManager → Day parts). */}
+              {dShifts.length > 0 && (() => {
+                const c = { m: new Set(), a: new Set(), e: new Set() };
+                dShifts.forEach((sh) => c[dayPartOf(sh)].add(sh.staffId));
+                const total = new Set(dShifts.map((sh) => sh.staffId)).size;
+                return (
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, background: "var(--gray-light)", borderRadius: 8, padding: "8px 12px", marginBottom: 8 }}
+                    title="Distinct staff by shift start — boundaries are set per venue (Venues → Edit → Day parts; default 12pm / 5pm)">
+                    <span><strong>{total}</strong> <span style={{ color: "var(--gray)" }}>on</span></span>
+                    <span style={{ color: "var(--gray)" }}>Morning <strong style={{ color: "var(--ink)" }}>{c.m.size}</strong></span>
+                    <span style={{ color: "var(--gray)" }}>Afternoon <strong style={{ color: "var(--ink)" }}>{c.a.size}</strong></span>
+                    <span style={{ color: "var(--gray)" }}>Evening <strong style={{ color: "var(--ink)" }}>{c.e.size}</strong></span>
+                  </div>
+                );
+              })()}
               {dShifts.length > 0 && <><div className="form-label" style={{ marginTop: 4 }}>Shifts</div>
                 {detailShiftSections(dShifts).map(([area, rows]) => <React.Fragment key={area}>
                   <div className="form-label" style={{ marginTop: 6, fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: 0.4 }}>{area} · {rows.length}</div>

@@ -251,12 +251,11 @@ describe("Scenario 5: SOP (training modules) and Checklist (own collection) reso
     expect(RG_MODULES.find((m) => m.key === "checklists").label).toBe("Checklists");
   });
 
-  test("/rg/sops maps to the training-module library and respects the TRAINING permission", () => {
-    expect(SOPS_NAV.permKey).toBe("training"); // SOPs reuse training's data + permission
+  test("/rg/sops carries its OWN permission module (3 Aug 2026 split from training)", () => {
+    expect(SOPS_NAV.permKey).toBe("sops"); // owner request: SOPs permissioned separately
     expect(RG_MODULE_KEYS).toContain("training");
+    expect(RG_MODULE_KEYS).toContain("sops");
     expect(RG_MODULE_KEYS).toContain("checklists");
-    // SOPs is NOT a separate permission/data module — no new collection, no shared data with checklists
-    expect(RG_MODULE_KEYS).not.toContain("sops");
   });
 
   test("no shared data: a training module (cat) and a checklist (area) are routed by different fields", () => {

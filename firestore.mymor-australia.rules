@@ -102,6 +102,20 @@ service cloud.firestore {
         match /private/{doc=**} {
           allow read, write: if rgIsSuper() || rgIsGroupAdmin(groupId);
         }
+        // Warning acknowledgements (owner list #4, Aug 2026): the staffer's "read &
+        // acknowledged" tick for a warning on their record. Its own subcollection because
+        // the staff doc's self-update stays phone-only — a staffer must never be able to
+        // rewrite the records array itself. Doc id = the warning record id. Create-only
+        // for the staffer (an ack can't be edited or retracted); managers/admins read the
+        // tick state. The manager-witness ack lives ON the record entry (manager-tier
+        // staff-doc write above covers it).
+        match /acks/{recordId} {
+          allow read: if rgIsSuper() || rgIsGroupMember(groupId);
+          allow create: if rgIsSuper() || rgIsGroupAdmin(groupId)
+            || (rgIsOwnStaff(groupId, staffId)
+                && request.resource.data.keys().hasOnly(['type', 'ackAt', 'by']));
+          allow update, delete: if rgIsSuper() || rgIsGroupAdmin(groupId);
+        }
         // Phase 5b: payroll change requests (TFN / super / bank). The staffer submits;
         // owner/storeAdmin applies. These docs CONTAIN payroll values, so read is
         // owner/storeAdmin or the staffer themselves — NOT plain managers.

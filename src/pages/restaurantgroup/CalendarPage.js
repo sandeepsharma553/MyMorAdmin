@@ -197,7 +197,9 @@ export default function CalendarPage() {
               const { sh, lv, tr, bd } = eventsFor(d);
               const items = [
                 ...bd.filter((s) => (isUnder18(s) ? cats.u18 : cats.bday)).map((s) => { const j = isUnder18(s); return { t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d" }; }),
-                ...(cats.shift ? sh.sort((a, b) => (a.start || "").localeCompare(b.start || "")).map((s) => ({ t: `${s.start}–${s.end} ${isStaff ? "" : nameOf(s.staffId)}${s.station ? ` · ${s.station}` : ""}`, bg: "var(--blue-light)", color: "var(--ink)" })) : []),
+                // 📝 marker mirrors the Shift Planner chip (owner list #9) — staff viewers
+                // see it on their OWN shifts only (roster privacy, same rule as the planner)
+                ...(cats.shift ? sh.sort((a, b) => (a.start || "").localeCompare(b.start || "")).map((s) => ({ t: `${s.start}–${s.end} ${isStaff ? "" : nameOf(s.staffId)}${s.station ? ` · ${s.station}` : ""}${s.notes && (!isStaff || s.staffId === myStaff?.id) ? " 📝" : ""}`, bg: "var(--blue-light)", color: "var(--ink)" })) : []),
                 ...(cats.leave ? lv.map((l) => ({ t: `${isStaff ? "" : nameOf(l.staffId) + " "}${leaveLabel(l)}`, bg: "var(--amber-light)", color: "var(--ink)" })) : []),
                 ...(cats.train ? tr.map((a) => ({ t: `${a.moduleTitle} due${isStaff ? "" : ` · ${nameOf(a.staffId)}`}`, bg: "#fee2e2", color: "#991b1b" })) : []),
               ];
@@ -222,7 +224,9 @@ export default function CalendarPage() {
             const { sh, lv, tr, bd } = eventsFor(d);
             const items = [
               ...bd.filter((s) => (isUnder18(s) ? cats.u18 : cats.bday)).map((s) => { const j = isUnder18(s); return { type: "bday", t: `${j ? "🎉" : "🎂"} ${nameOf(s.id)}${j ? " · turning 18" : ""}`, bg: j ? "#dcfce7" : "#fce7f3", color: j ? "#166534" : "#9d174d", title: j ? `${nameOf(s.id)} — turning 18` : `${nameOf(s.id)}'s birthday` }; }),
-              ...(cats.shift ? sh.map((s) => ({ type: "shift", t: `${isStaff ? "" : nameOf(s.staffId) + " "}${s.start}–${s.end}`, bg: "var(--blue-light)", color: "var(--ink)", title: `${nameOf(s.staffId)} · ${shortRole(s.role)} · ${s.venue}` })) : []),
+              // 📝 marker mirrors the Shift Planner chip (owner list #9) — same own-shift
+              // privacy rule for staff viewers as the week view above; hover shows the note
+              ...(cats.shift ? sh.map((s) => ({ type: "shift", t: `${isStaff ? "" : nameOf(s.staffId) + " "}${s.start}–${s.end}${s.notes && (!isStaff || s.staffId === myStaff?.id) ? " 📝" : ""}`, bg: "var(--blue-light)", color: "var(--ink)", title: `${nameOf(s.staffId)} · ${shortRole(s.role)} · ${s.venue}${s.notes && (!isStaff || s.staffId === myStaff?.id) ? ` · 📝 ${s.notes}` : ""}` })) : []),
               ...(cats.leave ? lv.map((l) => ({ type: "leave", t: `${isStaff ? "" : nameOf(l.staffId) + " "}${leaveLabel(l)}`, bg: "var(--amber-light)", color: "var(--ink)", title: `${nameOf(l.staffId)} · ${leaveLabel(l)}` })) : []),
               ...(cats.train ? tr.map((a) => ({ type: "train", t: `${isStaff ? "" : nameOf(a.staffId) + " "}${a.moduleTitle} due`, bg: "#fee2e2", color: "#991b1b", title: `Training due: ${a.moduleTitle}` })) : []),
             ];

@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { RGProvider, useRG } from "../pages/restaurantgroup/RGContext";
 import { SOPS_NAV, CHECKLISTS_NAV_LABEL } from "../pages/restaurantgroup/rgConfig";
+import { fullName } from "../pages/restaurantgroup/rgUtils";
 import { markNotificationRead } from "../pages/restaurantgroup/notify";
 import VenueManager from "../pages/restaurantgroup/VenueManager";
 import { staffInVenue } from "../utils/restaurantGroupPaths";
@@ -151,6 +152,7 @@ function Shell({ children }) {
     group, venues, staff, leave, assignments, unreadMessages,
     stock, purchaseOrders,
     selectedVenue, setSelectedVenue, selectedVenueName, can, myVenues, myScope,
+    me, myStaff,
   } = useRG();
   // staff-tier with exactly ONE venue: no "All venues" option — the context pins their
   // selection to that venue (managers always keep "All", even in a one-venue group)
@@ -179,6 +181,13 @@ function Shell({ children }) {
 
   const groupName = group?.name || "Group Operations";
   const initials = groupName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  // WHO is logged in (owner list #8) — the sub-line under the group name identifies the
+  // account on a shared screen: the linked staff member's name (with their job role), else
+  // the admin login's name/email. Falls back to the old static label only when neither
+  // resolves (e.g. superadmin acting without a linked login doc).
+  const whoName = myStaff?.displayName || (myStaff ? fullName(myStaff) : "") || me?.displayName || me?.name || me?.email || "";
+  const whoRole = myStaff?.role || ({ owner: "Owner", storeAdmin: "Store admin", manager: "Manager", staff: "Staff" })[me?.groupRole] || "";
+  const whoLabel = whoName ? `${whoName}${whoRole ? ` · ${whoRole}` : ""}` : "Group Operations";
 
   const venueStaffCount = (vId) =>
     vId === "all" ? staff.length : staff.filter((s) => staffInVenue(s, vId)).length;
@@ -205,7 +214,8 @@ function Shell({ children }) {
           <div className="sb-logo-icon">{initials}</div>
           <div>
             <div className="sb-logo-text">{groupName}</div>
-            <div className="sb-logo-sub">Group Operations</div>
+            {/* logged-in identity, not the static "Group Operations" (owner list #8) */}
+            <div className="sb-logo-sub" title="Logged in as">{whoLabel}</div>
           </div>
         </div>
 

@@ -20,8 +20,13 @@ import { fullName, localDateKey } from "./rgUtils";
 const EMPTY = { venueId: "", staffId: "", holderName: "", keys: [{ label: "", qty: 1 }], issuedOn: "", notes: "" };
 
 export default function KeysPage() {
-  const { groupId, venues, scopedStaff, selectedVenue, can, showToast, noteErr } = useRG();
+  const { groupId, venues, scopedStaff, selectedVenue, can, showToast, noteErr, myScope, myStaff } = useRG();
   const editable = can("keys", "edit");
+  // Owner list #10: a STAFF-tier login sees ONLY their own keys (records linked to their
+  // staffId) — the register of who else holds what is management info. Managers/owners
+  // keep the full list. Defensive even while staff default to keys:"none" — the owner
+  // can grant keys:view per person in User Management.
+  const staffViewer = myScope === "staff";
 
   // one listener per venue; rows merged per-venue so a single failing venue
   // can't blank the others. Listener failures surface via noteErr (convention).
@@ -39,9 +44,10 @@ export default function KeysPage() {
   const venueName = (vid) => venues.find((v) => v.id === vid)?.name || "—";
   const rows = useMemo(() => {
     const all = Object.values(byVenue).flat();
-    const scoped = selectedVenue === "all" ? all : all.filter((r) => r.venueId === selectedVenue);
+    let scoped = selectedVenue === "all" ? all : all.filter((r) => r.venueId === selectedVenue);
+    if (staffViewer) scoped = scoped.filter((r) => myStaff?.id && r.staffId === myStaff.id); // own keys only (#10)
     return scoped.sort((a, b) => venueName(a.venueId).localeCompare(venueName(b.venueId)) || (a.keyLabel || "").localeCompare(b.keyLabel || ""));
-  }, [byVenue, selectedVenue, venues]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [byVenue, selectedVenue, venues, staffViewer, myStaff?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── add / edit form (inline card; editing loads the record into it) ──
   const [form, setForm] = useState(null); // null = closed; {id?} = edit
@@ -129,7 +135,9 @@ export default function KeysPage() {
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
         <div style={{ fontSize: 11, color: "var(--gray)" }}>
-          A record of who holds physical keys to which store. {selectedVenue === "all" ? "All venues shown." : `Showing ${venueName(selectedVenue)} — switch the venue picker for others.`}
+          {staffViewer
+            ? "Keys you hold — your own key records only."
+            : <>A record of who holds physical keys to which store. {selectedVenue === "all" ? "All venues shown." : `Showing ${venueName(selectedVenue)} — switch the venue picker for others.`}</>}
         </div>
         {editable && !form && <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add key record</button>}
       </div>
@@ -195,6 +203,8 @@ export default function KeysPage() {
               <tr style={{ background: "var(--gray-light)" }}>
                 <th style={th}>Held by</th>
                 <th style={th}>Keys</th>
+                {/* store as its OWN column (owner follow-up 3 Aug) — keys stay clean */}
+                <th style={th}>Store</th>
                 <th style={th}>Count</th>
               </tr>
             </thead>
@@ -209,6 +219,8 @@ export default function KeysPage() {
                     {g.records.slice(0, 2).map((r) => `${r.keyLabel}${(Number(r.qty) || 1) > 1 ? ` ×${r.qty}` : ""}`).join(", ")}
                     {g.records.length > 2 ? " …" : ""}
                   </td>
+                  {/* which store(s) this person's keys belong to (owner list #10) */}
+                  <td style={td}>{[...new Set(g.records.map((r) => venueName(r.venueId)))].join(", ")}</td>
                   <td style={td}>
                     <button className="pill pill-blue" style={{ border: "none", cursor: "pointer" }} title="Click to see all keys" onClick={() => setHolderPopup(g.key)}>
                       {g.count} key{g.count === 1 ? "" : "s"}
@@ -217,8 +229,8 @@ export default function KeysPage() {
                 </tr>
               ))}
               {grouped.length === 0 && (
-                <tr><td colSpan={3} style={{ padding: 20, color: "var(--gray)", fontSize: 13 }}>
-                  No key records yet{editable ? " — add who holds each store key." : "."}
+                <tr><td colSpan={4} style={{ padding: 20, color: "var(--gray)", fontSize: 13 }}>
+                  {staffViewer ? "You don't hold any store keys." : <>No key records yet{editable ? " — add who holds each store key." : "."}</>}
                 </td></tr>
               )}
             </tbody>

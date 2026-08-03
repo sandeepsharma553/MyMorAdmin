@@ -82,11 +82,11 @@ describe("lock — a Complete assignment is read-only; reassign stays separate",
   });
 });
 
-describe("SOP / Checklist nav split — presentation only, data intact", () => {
-  test("SOPs is a distinct nav item from Checklists, reusing the training permission", () => {
+describe("SOP / Checklist nav split — SOPs carry their own permission (3 Aug 2026)", () => {
+  test("SOPs is a distinct nav item from Checklists, with its OWN permission module", () => {
     expect(SOPS_NAV.path).toBe("/rg/sops");
     expect(SOPS_NAV.path).not.toBe("/rg/checklists");
-    expect(SOPS_NAV.permKey).toBe("training");           // reuses training data/permission — no new module
+    expect(SOPS_NAV.permKey).toBe("sops");               // owner request 3 Aug 2026 — split out of training
     expect(SOPS_NAV.label).toBe("SOPs");
   });
   test("the Checklists item is now plainly 'Checklists' (no 'SOPs' in the label)", () => {
@@ -94,9 +94,9 @@ describe("SOP / Checklist nav split — presentation only, data intact", () => {
     expect(/sop/i.test(CHECKLISTS_NAV_LABEL)).toBe(false);
     expect(RG_MODULES.find((m) => m.key === "checklists").label).toBe("Checklists");
   });
-  test("no new permission/data module was added (SOPs is NOT a module key)", () => {
+  test("sops is a real permission module beside training and checklists", () => {
     expect(RG_MODULE_KEYS).toContain("training");
+    expect(RG_MODULE_KEYS).toContain("sops");
     expect(RG_MODULE_KEYS).toContain("checklists");
-    expect(RG_MODULE_KEYS).not.toContain("sops");        // data intact: checklists + training only
   });
 });

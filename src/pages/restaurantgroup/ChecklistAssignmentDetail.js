@@ -11,7 +11,10 @@ import { sendNotification } from "./notify";
  * get their own % (independent of the shared daily board). Falls back to the live
  * checklist's current items if the snapshot was empty.
  */
-export default function ChecklistAssignmentDetail({ assignment, liveChecklist, groupId, canTick, canComment, actorName, showToast, onClose }) {
+// canSeePrivate (owner list #5, Aug 2026): show 🔒 trainer-only notes WITHOUT enabling
+// commenting — the archived-run viewer passes canComment=false but a manager-tier viewer
+// must still SEE private notes (mirror AssignmentDetail).
+export default function ChecklistAssignmentDetail({ assignment, liveChecklist, groupId, canTick, canComment, canSeePrivate = false, actorName, showToast, onClose }) {
   const [cmt, setCmt] = useState({ i: null, text: "", priv: false });
   const [confirmFinish, setConfirmFinish] = useState(false); // #4 finish-incomplete confirm
   if (!assignment) return null;
@@ -19,7 +22,7 @@ export default function ChecklistAssignmentDetail({ assignment, liveChecklist, g
   const threads = assignment.threads || {}; // v2: threads.{i} = [{ text, by, at, private }]
   const threadFor = (i) => {
     const legacy = comments[i] ? [{ text: comments[i], by: "Trainer", at: "", private: false }] : [];
-    return [...legacy, ...(threads[i] || [])].filter((c) => canComment || !c.private);
+    return [...legacy, ...(threads[i] || [])].filter((c) => canComment || canSeePrivate || !c.private);
   };
   const items = (assignment.items && assignment.items.length) ? assignment.items : (liveChecklist?.items || []);
   const total = items.length;

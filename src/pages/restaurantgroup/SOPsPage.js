@@ -39,7 +39,7 @@ const editorToSteps = (steps) => (steps || [])
 
 export default function SOPsPage({ initialTab = "modules" }) {
   const { groupId, staff, scopedStaff: roleStaff, venues, sops, sopAssignments, stations, areas, selectedVenue, matchVenue, showToast, can, me } = useRG();
-  const canEdit = can("training", "edit"); // SOPs keep the `training` permission module (SOPS_NAV.permKey) — data is separate, the gate is not
+  const canEdit = can("sops", "edit"); // SOPs' OWN permission since 3 Aug 2026 (SOPS_NAV.permKey) — hasLevel falls back to `training` for pre-split stored maps
 
   const myUid = me?.uid || me?.id;
   const myStaff = useMemo(() => staff.find((s) => (s.adminUid && s.adminUid === myUid) || (s.email && me?.email && s.email.toLowerCase() === me.email.toLowerCase())), [staff, myUid, me]);
@@ -525,6 +525,7 @@ export default function SOPsPage({ initialTab = "modules" }) {
           canTick={canEdit}
           canVerify={canEdit}
           canComment={isMgr}
+          canSeePrivate={canEdit}
           actorName={me?.displayName || me?.name || me?.email || "Trainer"}
           actorId={myUid}
           showToast={showToast}

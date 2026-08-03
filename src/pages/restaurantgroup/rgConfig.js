@@ -24,6 +24,10 @@ export const RG_MODULES = [
   { key: "leave", label: "Leave Requests", path: "/rg/leave" },
   { key: "availability", label: "Availability", path: "/rg/availability" }, // mirrors Ops lib/rgConfig — keep levels in sync
   { key: "training", label: "Training", path: "/rg/training" },
+  // SOPs' OWN permission (owner request 3 Aug 2026 — was riding `training`). Stored
+  // maps predating the split have no `sops` key: hasLevel falls back to the person's
+  // training level, so nobody's access changes until their permissions are re-saved.
+  { key: "sops", label: "SOPs", path: "/rg/sops" },
   { key: "checklists", label: "Checklists", path: "/rg/checklists" },
   { key: "temperature", label: "Temperature Log", path: "/rg/temperature" },
   { key: "performance", label: "Performance", path: "/rg/performance" },
@@ -76,11 +80,11 @@ export const RG_MODULES = [
 ];
 
 // SOPs are their OWN page + data (SOPsPage over venues/{v}/sops + sopAssignments —
-// decoupled from Training's trainingModules/trainingAssignments in Jul 2026). The nav
-// item still reuses the `training` PERMISSION (permKey — no new permission module);
-// only the permission is shared, not the data. Checklists keep their own collection +
-// the `checklists` permission, plainly labelled "Checklists".
-export const SOPS_NAV = { key: "sops", path: "/rg/sops", permKey: "training", label: "SOPs", title: "SOPs — Procedures" };
+// decoupled from Training's trainingModules/trainingAssignments in Jul 2026). Since
+// 3 Aug 2026 they also carry their OWN `sops` PERMISSION (owner request — was riding
+// `training`); hasLevel's training fallback keeps stored pre-split maps working.
+// Checklists keep their own collection + the `checklists` permission.
+export const SOPS_NAV = { key: "sops", path: "/rg/sops", permKey: "sops", label: "SOPs", title: "SOPs — Procedures" };
 export const CHECKLISTS_NAV_LABEL = "Checklists";
 
 // Editable in Settings; these are the seed defaults.
@@ -135,10 +139,10 @@ export const RG_ROLES = [
 
 // Default permission matrix per role (per module → level).
 export const DEFAULT_PERMISSIONS = {
-  owner: { dashboard: "view", staff: "edit", shifts: "edit", clockin: "view", leave: "approve", availability: "approve", training: "edit", checklists: "edit", temperature: "edit", performance: "edit", reports: "view", messages: "edit", notifications: "edit", pay: "view", hoursOwed: "edit", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", pos: "edit", supplier: "edit", keys: "edit", compliance: "edit", contracts: "edit" },
-  storeAdmin: { dashboard: "view", staff: "edit", shifts: "edit", clockin: "view", leave: "approve", availability: "approve", training: "edit", checklists: "edit", temperature: "edit", performance: "view", reports: "view", messages: "edit", notifications: "edit", pay: "view", hoursOwed: "none", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", pos: "edit", supplier: "edit", keys: "edit", compliance: "edit", contracts: "edit" },
-  manager: { dashboard: "view", staff: "view", shifts: "edit", clockin: "view", leave: "edit", availability: "approve", training: "edit", checklists: "edit", temperature: "edit", performance: "view", reports: "view", messages: "edit", notifications: "view", pay: "none", hoursOwed: "none", calendar: "view", usermgmt: "none", settings: "none", stock: "edit", menus: "edit", pos: "edit", supplier: "view", keys: "view", compliance: "edit", contracts: "none" },
-  staff: { dashboard: "view", staff: "none", shifts: "view", clockin: "view", leave: "view", availability: "view", training: "view", checklists: "edit", temperature: "edit", performance: "none", reports: "none", messages: "view", notifications: "none", pay: "none", hoursOwed: "none", calendar: "view", usermgmt: "none", settings: "none", stock: "none", menus: "none", pos: "view", supplier: "none", keys: "none", compliance: "view", contracts: "none" },
+  owner: { dashboard: "view", staff: "edit", shifts: "edit", clockin: "view", leave: "approve", availability: "approve", training: "edit", sops: "edit", checklists: "edit", temperature: "edit", performance: "edit", reports: "view", messages: "edit", notifications: "edit", pay: "view", hoursOwed: "edit", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", pos: "edit", supplier: "edit", keys: "edit", compliance: "edit", contracts: "edit" },
+  storeAdmin: { dashboard: "view", staff: "edit", shifts: "edit", clockin: "view", leave: "approve", availability: "approve", training: "edit", sops: "edit", checklists: "edit", temperature: "edit", performance: "view", reports: "view", messages: "edit", notifications: "edit", pay: "view", hoursOwed: "none", calendar: "view", usermgmt: "edit", settings: "edit", stock: "edit", menus: "edit", pos: "edit", supplier: "edit", keys: "edit", compliance: "edit", contracts: "edit" },
+  manager: { dashboard: "view", staff: "view", shifts: "edit", clockin: "view", leave: "edit", availability: "approve", training: "edit", sops: "edit", checklists: "edit", temperature: "edit", performance: "view", reports: "view", messages: "edit", notifications: "view", pay: "none", hoursOwed: "none", calendar: "view", usermgmt: "none", settings: "none", stock: "edit", menus: "edit", pos: "edit", supplier: "view", keys: "view", compliance: "edit", contracts: "none" },
+  staff: { dashboard: "view", staff: "none", shifts: "view", clockin: "view", leave: "view", availability: "view", training: "view", sops: "view", checklists: "edit", temperature: "edit", performance: "none", reports: "none", messages: "view", notifications: "none", pay: "none", hoursOwed: "none", calendar: "view", usermgmt: "none", settings: "none", stock: "none", menus: "none", pos: "view", supplier: "none", keys: "none", compliance: "view", contracts: "none" },
 };
 
 export const defaultPermsForRole = (role) => ({ ...(DEFAULT_PERMISSIONS[role] || DEFAULT_PERMISSIONS.staff) });
@@ -187,6 +191,10 @@ export const roleMeta = (role) => RG_ROLES.find((r) => r.key === role) || RG_ROL
 // self < view, no staff-list gate or other module's check changes behaviour.
 export const hasLevel = (perms, moduleKey, required = "view") => {
   let have = perms?.[moduleKey] || "none";
+  // SOPs split out of `training` (3 Aug 2026): stored maps predating the split have no
+  // `sops` key — fall back to the person's training level so nobody loses SOPs access
+  // until their permissions are re-saved (which snapshots the full map incl. sops).
+  if (moduleKey === "sops" && perms?.sops == null) have = perms?.training || "none";
   if (moduleKey === "staff" && order[have] < order.self) have = "self";
   return order[have] >= order[required];
 };

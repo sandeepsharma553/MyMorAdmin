@@ -647,6 +647,7 @@ export default function TrainingPage({ initialTab }) {
           canTick={canEdit}
           canVerify={canEdit}
           canComment={isMgr}
+          canSeePrivate={canEdit}
           actorName={me?.displayName || me?.name || me?.email || "Trainer"}
           actorId={myUid}
           showToast={showToast}

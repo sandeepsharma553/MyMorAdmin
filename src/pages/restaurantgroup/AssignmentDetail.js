@@ -52,7 +52,11 @@ const VARIANTS = {
   },
 };
 
-export default function AssignmentDetail({ assignment, liveModule, groupId, canTick, canVerify, canComment, actorName, actorId, showToast, onClose, variant = "training" }) {
+// canSeePrivate (owner list #5, Aug 2026): show 🔒 trainer-only notes WITHOUT enabling
+// commenting — the archived-run viewer passes canComment=false (read-only) but a
+// manager-tier viewer must still SEE the private notes; they looked "disappeared"
+// after sign-off because the archive view filtered them out.
+export default function AssignmentDetail({ assignment, liveModule, groupId, canTick, canVerify, canComment, canSeePrivate = false, actorName, actorId, showToast, onClose, variant = "training" }) {
   // the actor's OWN staff doc — staffId-space, so it can be compared to
   // assignment.staffId (actorId is a UID, a different id space)
   const { myStaff } = useRG();
@@ -73,7 +77,7 @@ export default function AssignmentDetail({ assignment, liveModule, groupId, canT
   // merged thread per item; private entries are trainer-only
   const threadFor = (i) => {
     const legacy = comments[i] ? [{ text: comments[i], by: "Trainer", at: "", private: false }] : [];
-    return [...legacy, ...(threads[i] || [])].filter((c) => canComment || !c.private);
+    return [...legacy, ...(threads[i] || [])].filter((c) => canComment || canSeePrivate || !c.private);
   };
 
   // Resolve sections: prefer the snapshot, fall back to the live module's steps.
