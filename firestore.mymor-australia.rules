@@ -160,7 +160,11 @@ service cloud.firestore {
         match /leaveLedger/{entryId} {
           allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
         }
-        match /leave/{docId} {
+        // NARROWED (review ruling): summary ONLY — never a wildcard. Future docs
+        // under leave/ (e.g. payout worksheets) must be opted in one by one; a
+        // worksheet is exactly what a staffer must not read before a termination
+        // conversation. Widening later costs one line; un-leaking costs an incident.
+        match /leave/summary {
           allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
         }
       }
