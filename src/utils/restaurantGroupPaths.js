@@ -173,6 +173,23 @@ export const payrollChangeRequestDoc = (groupId, staffId, reqId) => doc(payrollC
 export const docHistoryCol = (groupId, staffId) => collection(staffDoc(groupId, staffId), "docHistory");
 export const docHistoryDoc = (groupId, staffId, id) => doc(docHistoryCol(groupId, staffId), id);
 
+/* ── Leave accrual ledger (NES) — SERVER-WRITTEN ONLY (Phase 2) ────────
+ * ⚠ KEEP byte-identical to MyMorOps src/lib/restaurantGroupPaths.js
+ * (drift-guard convention). Entries + summary are written EXCLUSIVELY by
+ * Admin-SDK Cloud Functions (client create/update/delete is rules-denied
+ * — these paths exist for READS only). The ledger is append-only per
+ * person GROUP-WIDE (staff docs are group-level, so one balance across
+ * venues); leave/summary is the single-doc balance read per profile.
+ * Config: settings/leaveAccrualConfig holds the owner's label→class and
+ * label→bucket maps (owner-write; history/ is the append-only audit
+ * trail). The classes/buckets/rates themselves are platform constants in
+ * MyMorFunction/rgLeaveAccrual.js — never configurable from any client. */
+export const leaveLedgerCol = (groupId, staffId) => collection(staffDoc(groupId, staffId), "leaveLedger");
+export const leaveLedgerEntryDoc = (groupId, staffId, entryId) => doc(leaveLedgerCol(groupId, staffId), String(entryId));
+export const leaveSummaryDoc = (groupId, staffId) => doc(db, "restaurantGroups", String(groupId), "staff", String(staffId), "leave", "summary");
+export const leaveAccrualConfigDoc = (groupId) => doc(db, "restaurantGroups", String(groupId), "settings", "leaveAccrualConfig");
+export const leaveAccrualConfigHistoryCol = (groupId) => collection(leaveAccrualConfigDoc(groupId), "history");
+
 /* ── Contract Generator (Documents module) ────────────────────────────
  * Templates are group-level master docs (seeded out-of-band); contract
  * defaults live in a gated settings/ subcollection (NOT the group doc,
