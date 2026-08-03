@@ -269,8 +269,25 @@ service cloud.firestore {
         // matching the app's `approve` permission level. Submit-your-own unchanged.
         match /leaveRequests/{leaveId} {
           allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
-          allow create: if rgIsSuper() || rgCanManageStaff(groupId)
-                        || (rgIsGroupMember(groupId) && rgIsOwnStaff(groupId, request.resource.data.staffId));
+          // ── HARDENED (Phase 0, Aug 2026) ── create now VALIDATES: status must be
+          // "Pending", approvedBy must be the empty string (both submit sites write
+          // exactly that — Admin LeaveRequestsPage.js:164, Ops LeaveRequestsScreen.js:229),
+          // and the payload is key-for-key the 18 fields the two submit sites write.
+          // Managers DO create on behalf of staff (both apps' staff pickers), so the
+          // manager-tier arm stays — but the validation applies to them too.
+          // The approver-only update below already means a non-approver can never touch
+          // status/approvedBy/decidedAt after create. NB Phase 4: the future manual
+          // `deductMinutes` field is NOT whitelisted yet — widen when the UI ships.
+          allow create: if rgIsSuper()
+            || ((rgCanManageStaff(groupId)
+                 || (rgIsGroupMember(groupId) && rgIsOwnStaff(groupId, request.resource.data.staffId)))
+                && request.resource.data.status == 'Pending'
+                && request.resource.data.approvedBy == ''
+                && request.resource.data.keys().hasOnly([
+                     'staffId', 'staffName', 'venue', 'venueId', 'area',
+                     'type', 'typeOther', 'dates', 'days', 'startDate', 'endDate', 'reason',
+                     'paid', 'proofUrl', 'proofName',
+                     'status', 'approvedBy', 'createdAt']));
           allow update, delete: if rgIsSuper() || rgCanApproveLeave(groupId);
         }
         // ── END CHANGED BLOCK ──
@@ -289,11 +306,42 @@ service cloud.firestore {
 
         allow read:   if rgIsSuper() || rgIsGroupMember(groupId);
           allow create: if rgIsSuper() || rgIsGroupMember(groupId);
-          allow update: if rgIsSuper() || rgIsGroupMember(groupId);
+          // ── HARDENED (Phase 0, Aug 2026) ── the APPROVAL fields (approved/approvedBy/
+          // approvedAt) are no longer member-writable: the member arm is a diff-based
+          // hasOnly whitelist (the staff phone rule's idiom) covering exactly what the
+          // clock flows write — status (pause/resume/clock-out, both apps via
+          // reduceState), clockOutAt + staffMealCleared + staffMealConfirmedAt (Ops
+          // confirmClockOut step 1), workedMinutes + unpaidBreakMinutes (step 2's
+          // best-effort persist), updatedAt (every write). Approving — and any write
+          // touching the approval fields — needs the availability-approve grant (what
+          // Ops's approve button checks today; a dedicated timesheets:approve module
+          // does not exist yet).
+          // Reviewer ruling (same publish): once APPROVED, the entry is immutable to
+          // members entirely — not just the approval fields. Otherwise a member could
+          // rewrite workedMinutes/status directly on an approved entry: the same
+          // ledger-drift exposure as the break edit, through the front door. The fix
+          // path stays un-approve (approver) → edit → re-approve.
+          allow update: if rgIsSuper() || rgCanApproveAvailability(groupId)
+            || (rgIsGroupMember(groupId)
+                && resource.data.approved != true
+                && request.resource.data.diff(resource.data).affectedKeys()
+                     .hasOnly(['status', 'clockOutAt', 'staffMealCleared',
+                               'staffMealConfirmedAt', 'workedMinutes',
+                               'unpaidBreakMinutes', 'updatedAt']));
           allow delete: if rgIsSuper() || rgCanManageStaff(groupId);
+          // ── HARDENED (Phase 0, Aug 2026) ── break writes are DENIED once the parent
+          // entry is approved — closes the Phase 3 break-edit exposure (a break edited
+          // under an approved entry silently diverges workedMinutes from the accrual
+          // ledger's approved snapshot). No legitimate flow writes breaks after
+          // approval: approve is only offered once clocked_out, and clock-out closes
+          // any open break first (Ops AvailabilityScreen confirmClockOut). The correct
+          // post-approval fix is un-approve → edit → re-approve, which the accrual
+          // trigger handles exactly. Costs one get() per break write.
           match /breaks/{breakId} {
             allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
-            allow write: if rgIsSuper() || rgIsGroupMember(groupId);
+            allow write: if rgIsSuper()
+              || (rgIsGroupMember(groupId)
+                  && get(/databases/$(database)/documents/restaurantGroups/$(groupId)/venues/$(venueId)/timeEntries/$(entryId)).data.approved != true);
           }
         }
         // Availability posting: shared-kiosk model — the device account posts on behalf of
