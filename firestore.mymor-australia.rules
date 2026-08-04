@@ -519,14 +519,15 @@ service cloud.firestore {
         || (rgCanManageStaff(request.resource.data.groupId)
             && request.resource.data.get('groupRole', 'staff') != 'owner');
       // ⬅ CHANGED: same escalation via update — a manager could rewrite their OWN doc to
-      // groupRole:'owner'. In the whole rg product there is exactly ONE client update to
-      // employees (UserManagementPage, writing `permissions` only, gated usermgmt:edit =
-      // owner/storeAdmin). groupRole is never updated from a client anywhere. So: restricted
-      // to owner/storeAdmin, with a key whitelist that excludes groupRole and type.
+      // groupRole:'owner'. The client updates to employees are: UserManagementPage
+      // (`permissions`, gated usermgmt:edit = owner/storeAdmin) and StaffDirectory's
+      // changeLoginEmail (`email` mirror after the Auth email is changed server-side).
+      // groupRole is never updated from a client anywhere. So: restricted to
+      // owner/storeAdmin, with a key whitelist that excludes groupRole and type.
       allow update: if rgIsSuper()
         || (rgIsGroupAdmin(resource.data.groupId)
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['permissions', 'venueId', 'venueIds', 'isActive', 'status', 'name', 'updatedAt']));
+                 .hasOnly(['permissions', 'venueId', 'venueIds', 'isActive', 'status', 'name', 'email', 'updatedAt']));
     }
     match /users/{uid} {
       allow read, write: if isSignedIn() && userHostelId() != null
