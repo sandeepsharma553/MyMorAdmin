@@ -656,7 +656,23 @@ export default function PosPage() {
         const m = comboModal.item;
         const cgs = (m.comboGroups || []).filter((g) => g && (g.options || []).length);
         const nameOf = (id) => (menuItems.find((t) => t.id === id)?.displayName) || id;
+        // Menus-audit defect 3 (Aug 2026): components pass the SAME availability
+        // predicate as standalone tiles — menuLive membership (instance exists at
+        // this venue, not soft-removed) plus the tapTile gate (e86 / available
+        // === false). Server mirrors the instance/removed half in rgSellOrder.
+        // livePicks re-filters picks so a component 86'd while the modal is open
+        // drops out of chosen/unmet too. DRIFT-GUARD: keep this logic identical
+        // to the Ops twin (MyMorOps src/screens/PosScreen.js combo chooser).
+        const compOffReason = (id) => {
+          const c = menuLive.find((t) => (t.templateId || t.id) === id) || null;
+          if (!c) return "not sold here";
+          if (c.e86) return "86’d";
+          if (c.available === false) return "hidden";
+          return null;
+        };
+        const livePicks = (gi) => (comboModal.picks[gi] || []).filter((id) => !compOffReason(id));
         const pickToggle = (gi, g, optId) => setComboModal((p) => {
+          if (compOffReason(optId)) return p; // same silent refusal as tapTile
           const cur = p.picks[gi] || [];
           const max = g.maxChoice == null || Number(g.maxChoice) <= 0 ? 1 : Number(g.maxChoice);
           if (cur.includes(optId)) return { ...p, picks: { ...p.picks, [gi]: cur.filter((x) => x !== optId) } };
@@ -664,11 +680,11 @@ export default function PosPage() {
           if (cur.length >= max) { showToast(`Max ${max} for ${g.name || "this group"}`); return p; }
           return { ...p, picks: { ...p.picks, [gi]: [...cur, optId] } };
         });
-        const chosen = cgs.flatMap((g, gi) => (comboModal.picks[gi] || []).map((optId) => {
+        const chosen = cgs.flatMap((g, gi) => livePicks(gi).map((optId) => {
           const opt = (g.options || []).find((o) => o && o.menuItemId === optId);
           return { group: g.name || `Group ${gi + 1}`, menuItemId: optId, name: nameOf(optId), priceDelta: Number(opt?.priceDelta) || 0 };
         }));
-        const unmetGroups = cgs.filter((g, gi) => g.optional !== true && (comboModal.picks[gi] || []).length === 0);
+        const unmetGroups = cgs.filter((g, gi) => g.optional !== true && livePicks(gi).length === 0);
         const ok = unmetGroups.length === 0;
         const estUnit = sellAt(m) + chosen.reduce((s, c) => s + c.priceDelta, 0);
         const confirmCombo = () => {
@@ -686,7 +702,7 @@ export default function PosPage() {
               <div className="modal-head"><span className="modal-title">{m.displayName}</span><button className="modal-close" onClick={() => setComboModal(null)}>✕</button></div>
               {cgs.map((g, gi) => {
                 const max = g.maxChoice == null || Number(g.maxChoice) <= 0 ? 1 : Number(g.maxChoice);
-                const cur = comboModal.picks[gi] || [];
+                const cur = livePicks(gi);
                 return (
                   <div key={gi} style={{ marginBottom: 12 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -696,14 +712,18 @@ export default function PosPage() {
                       </span>
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {(g.options || []).filter((o) => o && o.menuItemId).map((o) => (
-                        <button key={o.menuItemId} className="pos-mode" style={{
-                          border: cur.includes(o.menuItemId) ? "1.5px solid #9A1BA8" : "1px solid var(--pos-line, #e5e5e5)",
-                          background: cur.includes(o.menuItemId) ? "#f7dcfa" : "#fff", padding: "6px 10px", borderRadius: 8, fontSize: 12 }}
-                          onClick={() => pickToggle(gi, g, o.menuItemId)}>
-                          {nameOf(o.menuItemId)}{Number(o.priceDelta) ? ` +${money(incGst(Number(o.priceDelta), m.gstApplicable !== false))}` : ""}
-                        </button>
-                      ))}
+                      {(g.options || []).filter((o) => o && o.menuItemId).map((o) => {
+                        const off = compOffReason(o.menuItemId); // defect 3: unavailable components grey out, same flag wording as the tiles
+                        return (
+                          <button key={o.menuItemId} className="pos-mode" disabled={!!off} style={{
+                            border: cur.includes(o.menuItemId) ? "1.5px solid #9A1BA8" : "1px solid var(--pos-line, #e5e5e5)",
+                            background: cur.includes(o.menuItemId) ? "#f7dcfa" : "#fff", padding: "6px 10px", borderRadius: 8, fontSize: 12,
+                            ...(off ? { opacity: 0.45 } : {}) }}
+                            onClick={() => pickToggle(gi, g, o.menuItemId)}>
+                            {nameOf(o.menuItemId)}{Number(o.priceDelta) ? ` +${money(incGst(Number(o.priceDelta), m.gstApplicable !== false))}` : ""}{off ? ` · ${off}` : ""}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 );
