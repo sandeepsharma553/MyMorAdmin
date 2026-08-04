@@ -8,6 +8,7 @@ import LoginPage from "./auth/LoginPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import SupportPage from "./pages/SupportPage";
 import AccountDeletionPage from "./pages/admin/AccountDeletionPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 
 import Layout from "./components/Layout";
 import SuperAdminLayout from "./components/SuperAdminLayout";
@@ -85,6 +86,8 @@ function AppWrapper() {
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/support" element={<SupportPage />} />
       <Route path="/requestdelete" element={<AccountDeletionPage />} />
+      {/* public — the branded password-reset emails land here (?oobCode=…) */}
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {!isLoggedIn && <Route path="*" element={<LoginPage />} />}
 
