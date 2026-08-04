@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, updateDoc, deleteDoc, doc, collection, getDoc, getDocs, query, where, setDoc, serverTimestamp, arrayUnion, arrayRemove, onSnapshot } from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail, updatePassword } from "firebase/auth";
+import { useDispatch } from "react-redux";
+import { logoutAdmin } from "../../app/features/AuthSlice";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
 import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, sopArchiveCol, publicHolidaysDoc, payrollChangeRequestsCol, payrollChangeRequestDoc, contractsCol, docHistoryCol } from "../../utils/restaurantGroupPaths";
@@ -153,6 +155,7 @@ export default function StaffDirectoryPage() {
   // matching the Firestore rule on staff/{id}/private. Managers manage staff but not payroll.
   const canPayroll = ["owner", "storeAdmin"].includes(me?.groupRole) || me?.type === "superadmin";
   const actorName = me?.displayName || me?.name || me?.email || "Admin";
+  const dispatch = useDispatch(); // for logoutAdmin — the app's real logout (listeners + redux + redirect)
   const logChange = async (action, summary, extra = {}) => {
     try {
       await addDoc(auditLogCol(groupId), {
@@ -187,6 +190,8 @@ export default function StaffDirectoryPage() {
   const [saving, setSaving] = useState(false);
   const [showPayroll, setShowPayroll] = useState(false);
   const [payroll, setPayroll] = useState(null); // private payroll doc for the open profile
+  const [loginEmailEdit, setLoginEmailEdit] = useState(""); // new website-login email being typed (existing-login block)
+  const [changingEmail, setChangingEmail] = useState(false);
   const [profileTab, setProfileTab] = useState("profile"); // profile | history
   // ── Hours owed (Job 7A) — owner records how many hours a staffer is short over a
   // date range. `hoursOwed` permission module (owner-only by default, grantable in
@@ -363,17 +368,22 @@ export default function StaffDirectoryPage() {
     </div>
   );
 
-  // Payroll & personal details block, shared by Add + Edit forms.
-  const renderPayroll = (state, handler) => (
+  // Payroll & personal details block, shared by Add + Edit forms. emailSynced: a website
+  // login exists, so contactEmail is locked to it — changes go through changeLoginEmail only.
+  const renderPayroll = (state, handler, emailSynced = false) => (
     <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
       <label className="form-label" style={{ marginBottom: 8, display: "block" }}>Payroll &amp; personal details <span style={{ color: "var(--gray)", fontWeight: 400 }}>(private — managers/admins only)</span></label>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        {PAYROLL_FIELDS.map((f) => (
-          <div key={f.key} className="form-group" style={{ margin: 0, gridColumn: f.full ? "1 / -1" : "auto" }}>
-            <label className="form-label">{f.label}</label>
-            <input className="form-input" type={f.type || "text"} value={state[f.key] || ""} onChange={handler(f.key)} placeholder={f.ph || ""} autoComplete="off" />
-          </div>
-        ))}
+        {PAYROLL_FIELDS.map((f) => {
+          const locked = emailSynced && f.key === "contactEmail";
+          return (
+            <div key={f.key} className="form-group" style={{ margin: 0, gridColumn: f.full ? "1 / -1" : "auto" }}>
+              <label className="form-label">{f.label}</label>
+              <input className="form-input" type={f.type || "text"} value={state[f.key] || ""} onChange={handler(f.key)} placeholder={f.ph || ""} autoComplete="off" disabled={locked} />
+              {locked && <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 2 }}>Synced with the website login email — use “Change email” under Admin website access.</div>}
+            </div>
+          );
+        })}
       </div>
       <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 6 }}>Sensitive data (TFN, super, bank). Used for payroll/onboarding only.</div>
     </div>
@@ -422,6 +432,49 @@ export default function StaffDirectoryPage() {
     if (!email) return showToast("No login email on file");
     try { await sendPasswordResetEmail(getAuth(), email); showToast(`Password reset email sent to ${email}`); }
     catch { showToast("Could not send reset email"); }
+  };
+  // change the website LOGIN email in one action: the deployed updateUserEmailByUid Cloud
+  // Function flips the Firebase Auth email (client SDK can't, for another user), then the
+  // three Firestore mirrors (staff doc, employees/{uid}, users/{uid}) are updated so
+  // own-profile matching (me.email === staff.email) keeps working. The payroll contactEmail
+  // (private/details) is synced to the same address too, so login and profile email stay one.
+  const changeLoginEmail = async () => {
+    if (!canPayroll) return showToast("Only owner/admin can change a login email");
+    const uid = profile?.adminUid;
+    if (!uid) return showToast("No website login on file");
+    const next = loginEmailEdit.toLowerCase().trim();
+    if (!isEmail(next)) return showToast("Enter a valid email");
+    if (next === (profile.email || "").toLowerCase().trim()) return showToast("That is already the login email");
+    if (staff.some((s) => s.id !== profile.id && (s.email || "").toLowerCase().trim() === next)) return showToast("That email is already used by another staff member");
+    if (!window.confirm(`Change ${fullName(profile)}'s login email from ${profile.email || "(none)"} to ${next}?`)) return;
+    setChangingEmail(true);
+    try {
+      const resp = await fetch("https://us-central1-mymor-one.cloudfunctions.net/updateUserEmailByUid", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid, newEmail: next }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Failed to update auth email");
+      // Auth changed — mirror everywhere the login email is copied (see createAdminLogin),
+      // plus the payroll contactEmail so profile and login email stay the same address
+      await Promise.all([
+        updateDoc(staffDoc(groupId, profile.id), { email: next, updatedAt: serverTimestamp() }),
+        updateDoc(doc(db, "employees", uid), { email: next }),
+        updateDoc(doc(db, "users", uid), { email: next }),
+        setDoc(staffPrivateDoc(groupId, profile.id), { contactEmail: next, updatedAt: serverTimestamp() }, { merge: true }),
+      ]);
+      setProfile((p) => ({ ...p, email: next }));
+      setEdit((p) => (p ? { ...p, email: next, contactEmail: next } : p));
+      setPayroll((p) => ({ ...(p || {}), contactEmail: next }));
+      // no email value in the log — auditLog is group-readable
+      logChange("staff.login.email", `Changed website login email for ${fullName(profile)}`, { staffId: profile.id, venueIds: profile.venueIds || [] });
+      setLoginEmailEdit("");
+      showToast("Login email updated");
+    } catch (e) {
+      const msg = String(e?.message || "");
+      showToast(/already|in.?use/i.test(msg) ? "That email is already used by another account" : "Could not change login email");
+    } finally { setChangingEmail(false); }
   };
   // create the linked Firebase Auth (email+password) admin account + permissions
   const createAdminLogin = async ({ email, password, name, role, venueIds, permissions }) => {
@@ -1107,6 +1160,10 @@ export default function StaffDirectoryPage() {
   const [selfDirect, setSelfDirect] = useState(null); // form state for the nine private keys
   const [selfPhone, setSelfPhone] = useState("");
   const [selfBusy, setSelfBusy] = useState(false);
+  // self-service login security: the staffer changes their OWN login email/password
+  const [selfNewEmail, setSelfNewEmail] = useState("");
+  const [selfNewPwd, setSelfNewPwd] = useState("");
+  const [selfSecBusy, setSelfSecBusy] = useState(false);
   useEffect(() => {
     if (canViewAll || !groupId || !myStaff?.id) return;
     let alive = true;
@@ -1166,6 +1223,67 @@ export default function StaffDirectoryPage() {
       showToast("Your details were updated");
     } catch { showToast("Could not save — your access may not be enabled yet"); }
     finally { setSelfBusy(false); }
+  };
+  // ── self-service login security ── the staffer changes their OWN login email/password.
+  // No current-password prompt (owner's call, Aug 2026): the email change runs through the
+  // server-side Cloud Function (no reauth needed), and the password change relies on the
+  // session being recent — Firebase itself rejects a stale one (requires-recent-login),
+  // which we surface as "log out and log in again first". Both force a sign-out afterwards —
+  // Firebase revokes the session on email/password changes anyway, so a clean re-login
+  // beats a half-dead one.
+  const changeMyPassword = async () => {
+    const u = getAuth().currentUser;
+    if (!u) return showToast("Not logged in");
+    if ((selfNewPwd || "").length < 6) return showToast("New password must be at least 6 characters");
+    if (!window.confirm("Change your password? You will be logged out and must log in again.")) return;
+    setSelfSecBusy(true);
+    try {
+      await updatePassword(u, selfNewPwd);
+      // audit the EVENT only — never a password value (auditLog is group-readable)
+      await logChange("staff.login.password.self", `${actorName} changed their website password`, { staffId: myStaff?.id || "" });
+      showToast("Password changed — log in again with the new password");
+      dispatch(logoutAdmin()); // tears listeners down + clears redux, so ProtectedRoute redirects to login
+    } catch (e) {
+      const m = String(e?.code || e?.message || "");
+      showToast(/requires-recent-login/i.test(m) ? "For security, log out and log in again first, then change your password"
+        : /weak-password/i.test(m) ? "That password is too weak"
+        : "Could not change password");
+    } finally { setSelfSecBusy(false); }
+  };
+  const changeMyLoginEmail = async () => {
+    const u = getAuth().currentUser;
+    if (!u) return showToast("Not logged in");
+    const next = selfNewEmail.toLowerCase().trim();
+    if (!isEmail(next)) return showToast("Enter a valid email");
+    if (next === (u.email || "").toLowerCase()) return showToast("That is already your login email");
+    if (staff.some((x) => x.id !== myStaff?.id && (x.email || "").toLowerCase().trim() === next)) return showToast("That email is already used by another staff member");
+    if (!window.confirm(`Change your login email to ${next}? You will be logged out and must log in again.`)) return;
+    setSelfSecBusy(true);
+    try {
+      const resp = await fetch("https://us-central1-mymor-one.cloudfunctions.net/updateUserEmailByUid", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: u.uid, newEmail: next }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Failed to update auth email");
+      // mirror everywhere the login email lives — same set as the admin changeLoginEmail
+      await Promise.all([
+        myStaff?.id ? updateDoc(staffDoc(groupId, myStaff.id), { email: next, updatedAt: serverTimestamp() }) : Promise.resolve(),
+        updateDoc(doc(db, "employees", u.uid), { email: next }),
+        updateDoc(doc(db, "users", u.uid), { email: next }),
+        myStaff?.id ? setDoc(staffPrivateDoc(groupId, myStaff.id), { contactEmail: next, updatedAt: serverTimestamp() }, { merge: true }) : Promise.resolve(),
+      ]);
+      // audit the EVENT only — never the address (auditLog is group-readable)
+      await logChange("staff.login.email.self", `${actorName} changed their website login email`, { staffId: myStaff?.id || "" });
+      showToast("Login email changed — log in again with the new email");
+      dispatch(logoutAdmin()); // tears listeners down + clears redux, so ProtectedRoute redirects to login
+    } catch (e) {
+      const m = String(e?.code || e?.message || "");
+      showToast(/wrong-password|invalid-credential/i.test(m) ? "Current password is incorrect"
+        : /already|in.?use/i.test(m) ? "That email is already used by another account"
+        : "Could not change login email");
+    } finally { setSelfSecBusy(false); }
   };
   // owner/storeAdmin side: live-listen to the open profile's change requests
   const [profileReqs, setProfileReqs] = useState([]);
@@ -1674,10 +1792,14 @@ export default function StaffDirectoryPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   {SELF_DIRECT_KEYS.map((k) => {
                     const f = PAYROLL_FIELDS.find((x) => x.key === k);
+                    // contactEmail is synced to the website login email once a login exists —
+                    // only an admin can change it (Change email in Admin website access)
+                    const locked = k === "contactEmail" && !!s.adminUid;
                     return (
                       <div key={k} className="form-group" style={{ margin: 0, gridColumn: f?.full ? "1 / -1" : "auto" }}>
                         <label className="form-label">{f?.label || k}</label>
-                        <input className="form-input" type={f?.type || "text"} value={selfDirect[k] || ""} onChange={(e) => setSelfDirect((p) => ({ ...p, [k]: e.target.value }))} placeholder={f?.ph || ""} autoComplete="off" />
+                        <input className="form-input" type={f?.type || "text"} value={selfDirect[k] || ""} onChange={(e) => setSelfDirect((p) => ({ ...p, [k]: e.target.value }))} placeholder={f?.ph || ""} autoComplete="off" disabled={locked} />
+                        {locked && <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 2 }}>This is your login email — change it under Login &amp; security below.</div>}
                       </div>
                     );
                   })}
@@ -1704,6 +1826,28 @@ export default function StaffDirectoryPage() {
                 <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>Changes save straight away and your managers are notified.</div>
               </>
             )}
+            {/* ── login & security: change your OWN login email / password, then forced
+                sign-out — log in again with the new details. */}
+            <div className="form-label" style={{ marginTop: 14 }}>Login &amp; security</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">New login email</label>
+                <input className="form-input" type="email" value={selfNewEmail} onChange={(e) => setSelfNewEmail(e.target.value)} placeholder={getAuth().currentUser?.email || ""} autoComplete="off" />
+              </div>
+              <div className="form-group" style={{ margin: 0, alignSelf: "end" }}>
+                <button type="button" className="btn btn-sm" disabled={selfSecBusy || !selfNewEmail.trim()} onClick={changeMyLoginEmail}>{selfSecBusy ? "Working…" : "Change login email"}</button>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">New password</label>
+                <input className="form-input" type="password" value={selfNewPwd} onChange={(e) => setSelfNewPwd(e.target.value)} placeholder="min 6 characters" autoComplete="new-password" />
+              </div>
+              <div className="form-group" style={{ margin: 0, alignSelf: "end" }}>
+                <button type="button" className="btn btn-sm" disabled={selfSecBusy || !selfNewPwd} onClick={changeMyPassword}>{selfSecBusy ? "Working…" : "Change password"}</button>
+              </div>
+            </div>
+            <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>After changing your email or password you&rsquo;ll be logged out — log in again with the new details.</div>
             <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 14 }}>Roster &amp; profile details above are read-only — ask a manager to update them.</div>
           </div>
         )}
@@ -2385,7 +2529,7 @@ export default function StaffDirectoryPage() {
                   </div>
                 </div>
                 {renderCerts(edit, setEdit)}
-                {canPayroll && renderPayroll(edit, setE)}
+                {canPayroll && renderPayroll(edit, setE, !!profile.adminUid)}
                 {canPayroll && renderEmploymentTerms(edit, setE)}
                 <div className="form-group" style={{ border: "0.5px solid var(--border)", borderRadius: 10, padding: 10 }}>
                   <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -2400,7 +2544,15 @@ export default function StaffDirectoryPage() {
                   {profile.adminUid && (
                     <div style={{ marginTop: 4 }}>
                       <div style={{ fontSize: 10, color: "var(--gray)" }}>Login exists ({profile.email}) — manage permissions in User Management.</div>
-                      <button type="button" className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => resetPassword(profile.email)}>Send password reset email</button>
+                      {canPayroll && (
+                        <div style={{ display: "flex", gap: 8, marginTop: 6, alignItems: "center" }}>
+                          <input className="form-input" type="email" value={loginEmailEdit} onChange={(e) => setLoginEmailEdit(e.target.value)} placeholder={profile.email} style={{ maxWidth: 260 }} />
+                          <button type="button" className="btn btn-sm" onClick={changeLoginEmail} disabled={changingEmail || !loginEmailEdit.trim()}>{changingEmail ? "Changing..." : "Change email"}</button>
+                        </div>
+                      )}
+                      <div>
+                        <button type="button" className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => resetPassword(profile.email)}>Send password reset email</button>
+                      </div>
                     </div>
                   )}
                 </div>
