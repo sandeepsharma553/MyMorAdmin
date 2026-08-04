@@ -234,7 +234,7 @@ service cloud.firestore {
 
 
           allow read, write: if (rgIsSuper() || rgIsGroupMember(groupId))
-            && !(coll in ['leaveRequests', 'shifts', 'timeEntries', 'availability', 'stock', 'stockMovements', 'stocktakes', 'batches', 'production', 'orders', 'menuItems', 'performanceNotes', 'kpis']); // ⬅ ADDED 'performanceNotes', 'kpis'
+            && !(coll in ['leaveRequests', 'shifts', 'timeEntries', 'availability', 'stock', 'stockMovements', 'stocktakes', 'batches', 'production', 'orders', 'menuItems', 'menuCategories', 'performanceNotes', 'kpis']); // ⬅ ADDED 'menuCategories' (menus audit defect 1, Aug 2026)
         }
         // ── Stock / cost collections — manager+ ONLY (matches can('stock') =
         // owner/storeAdmin/manager; staff is stock:none). Holds cost, weighted-avg,
@@ -257,6 +257,16 @@ service cloud.firestore {
         // need sellPrice/variants/86/availability), manager+ WRITE (no staff price-forging).
         // Mirrors the group-level menuItems gate. Server (rgSellOrder, Admin SDK) bypasses.
         match /menuItems/{docId=**} {
+          allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
+          allow write: if rgIsSuper() || rgCanManageStaff(groupId);
+        }
+        // ── Per-venue MENU CATEGORIES (Job 3 category docs) — member-READ (the POS
+        // category tiles and the Menus left pane render them), manager+ WRITE. These
+        // previously rode the venue catch-all at member read+WRITE — any staff-tier
+        // member could rename, reorder or DELETE any venue's categories with a direct
+        // SDK call (the can("menus","edit") gate is UI-only). Mirrors the menuItems
+        // instance gate above. (Menus audit defect 1, Aug 2026.)
+        match /menuCategories/{docId=**} {
           allow read:  if rgIsSuper() || rgIsGroupMember(groupId);
           allow write: if rgIsSuper() || rgCanManageStaff(groupId);
         }
