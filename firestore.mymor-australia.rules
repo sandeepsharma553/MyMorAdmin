@@ -80,9 +80,12 @@ service cloud.firestore {
         allow write: if rgIsSuper() || rgCanManageStaff(groupId);
         // Staff Directory self-service (Jul 2026): a staffer may update their OWN
         // phone number on the public staff doc — hasOnly() rejects any other key.
+        // Aug 2026: + `email`, the mirror write of the self change-login-email flow
+        // (the Auth email is changed server-side first; this keeps own-row matching
+        // and the directory in sync). Still no other key.
         allow update: if rgIsOwnStaff(groupId, staffId)
           && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['phone', 'updatedAt']);
+               .hasOnly(['phone', 'email', 'updatedAt']);
         // 🔒 Sensitive payroll (TFN / bank / super) — owner/storeAdmin only.
         // Phase 5b (revised Jul 2026): a staffer may READ their own private/details and
         // UPDATE their personal + money keys directly (the owner's decision, 30 Jul 2026
@@ -528,6 +531,11 @@ service cloud.firestore {
         || (rgIsGroupAdmin(resource.data.groupId)
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['permissions', 'venueId', 'venueIds', 'isActive', 'status', 'name', 'email', 'updatedAt']));
+      // Aug 2026: self change-login-email flow — the account holder mirrors their OWN
+      // new email onto their employees doc (Auth already changed server-side). Email
+      // only: groupRole/type/permissions stay unreachable.
+      allow update: if isSignedIn() && request.auth.uid == empId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email']);
     }
     match /users/{uid} {
       allow read, write: if isSignedIn() && userHostelId() != null
