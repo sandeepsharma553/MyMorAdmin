@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, updateDoc, deleteDoc, doc, collection, getDoc, getDocs, query, where, setDoc, serverTimestamp, arrayUnion, arrayRemove, onSnapshot } from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail, updatePassword } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, updateProfile, updatePassword } from "firebase/auth";
 import { useDispatch } from "react-redux";
 import { logoutAdmin } from "../../app/features/AuthSlice";
 import { db, firebaseConfig } from "../../firebase";
@@ -426,12 +426,21 @@ export default function StaffDirectoryPage() {
     return { ...p, venueIds, venueRoles };
   });
 
-  // send a Firebase password-reset email to an existing login (client-doable; setting a
-  // new password directly for another user needs the Admin SDK / a Cloud Function).
+  // send a BRANDED password-reset email (Aug 2026): the sendBrandedPasswordReset Cloud
+  // Function mints the reset link server-side and mails a MyMor-branded email whose
+  // button lands on https://mymor.com.au/reset-password — replaces Firebase's default
+  // sendPasswordResetEmail (raw project id, firebaseapp.com link).
   const resetPassword = async (email) => {
     if (!email) return showToast("No login email on file");
-    try { await sendPasswordResetEmail(getAuth(), email); showToast(`Password reset email sent to ${email}`); }
-    catch { showToast("Could not send reset email"); }
+    try {
+      const resp = await fetch("https://us-central1-mymor-one.cloudfunctions.net/sendBrandedPasswordReset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!resp.ok) throw new Error("send failed");
+      showToast(`Password reset email sent to ${email}`);
+    } catch { showToast("Could not send reset email"); }
   };
   // change the website LOGIN email in one action: the deployed updateUserEmailByUid Cloud
   // Function flips the Firebase Auth email (client SDK can't, for another user), then the
