@@ -6,7 +6,7 @@ import { useDispatch } from "react-redux";
 import { logoutAdmin } from "../../app/features/AuthSlice";
 import { db, firebaseConfig } from "../../firebase";
 import { useRG } from "./RGContext";
-import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, sopArchiveCol, publicHolidaysDoc, payrollChangeRequestsCol, payrollChangeRequestDoc, contractsCol, docHistoryCol } from "../../utils/restaurantGroupPaths";
+import { staffCol, staffDoc, staffPrivateDoc, auditLogCol, staffInVenue, venueCol, venueColor, trainingArchiveCol, checklistArchiveCol, sopArchiveCol, publicHolidaysDoc, payrollChangeRequestsCol, payrollChangeRequestDoc, contractsCol, docHistoryCol, leaveSummaryDoc, leaveLedgerCol } from "../../utils/restaurantGroupPaths";
 import { isPublicHoliday, AU_PUBLIC_HOLIDAYS_SEED, venueState } from "./publicHolidays";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { defaultPermsForStaffRole, roleToGroupRole, MANAGER_TIER_ROLES, SIGNED_UPLOAD_ENABLED } from "./rgConfig";
@@ -19,7 +19,7 @@ import { staffAreas, roleConfiguredArea, isMultiArea, stationsForVenue, empTypeI
 import { contractedNum, contractedSplitFromPrivate, contractedWeekStatus } from "./contractedHours";
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
-import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, weekKeyOf, localDateKey, fmtHours, effectiveBreak } from "./rgUtils";
+import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, weekKeyOf, localDateKey, fmtHours, fmtLeaveMinutes, effectiveBreak } from "./rgUtils";
 import { computeWorked, toMillis } from "./timeEntry";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
@@ -30,6 +30,33 @@ import { fmtDate } from "./dateFmt";
 const PRIORITIES = [["normal", "Normal"], ["high", "High — 3 days"], ["urgent", "Urgent — today"]];
 const REC_TYPES = ["Coaching", "Mistake", "Commendation", "Incident"];
 const recPill = (t) => (t === "Mistake" || t === "Warning") ? "pill-red" : t === "Incident" ? "pill-amber" : t === "Commendation" ? "pill-green" : "pill-blue";
+// ── Leave ledger row display (Phase 5 Job 2) ── each kind carries its number in
+// a DIFFERENT field: accrual/adjustment move WORKED-TIME minutes (sourceMinutes —
+// the bank that becomes leave at the NES divisors), deduction/reversal move
+// BALANCE minutes directly (minutes). Accrual rows show BOTH numbers
+// ("7.6h worked → 0.6h annual") because the worked figure sits right under a
+// leave-hours balance 13x smaller — same event, two units. Signs are stored
+// (deductions negative, reversals positive) and fmtLeaveMinutes keeps them.
+// NES accrual divisors — MIRROR of ANNUAL_DIVISOR / PERSONAL_DIVISOR in
+// MyMorFunction/rgLeaveAccrual.js (if those ever change, change these WITH
+// them): annual 1/13 of worked time (NES s.87 — 4 weeks per year), personal
+// 1/26 (NES s.96 — 10 days per year).
+// ⚠ DISPLAY-ONLY arithmetic on a SINGLE row: the server floors the CUMULATIVE
+// worked-minute total, not each entry, so a row's converted figure will not
+// always equal the balance movement it caused. That is expected — do NOT
+// "fix" this rounding to reconcile row-by-row.
+const LEAVE_DISPLAY_DIVISORS = { annual: 13, personal: 26 };
+const leaveLedgerValue = (e) => {
+  if (e.kind === "accrual" || e.kind === "adjustment") {
+    const div = LEAVE_DISPLAY_DIVISORS[e.bucket];
+    const worked = `${fmtLeaveMinutes(e.sourceMinutes)} worked${e.kind === "adjustment" ? " adjusted" : ""}`;
+    if (!div) return worked; // unknown bucket — show the worked figure alone
+    return `${worked} → ${fmtLeaveMinutes(Math.floor((Number(e.sourceMinutes) || 0) / div))} ${e.bucket}`;
+  }
+  if (e.kind === "deduction" || e.kind === "reversal") return `${fmtLeaveMinutes(e.minutes)} leave ${e.kind === "reversal" ? "restored" : "taken"}`;
+  return "";
+};
+const leaveKindPill = { accrual: "pill-green", deduction: "pill-amber", reversal: "pill-blue", adjustment: "pill-gray" };
 // Firestore Timestamp | {seconds} | ISO string → short date label
 const tsLabel = (t) => {
   if (!t) return "";
@@ -200,6 +227,15 @@ export default function StaffDirectoryPage() {
   const canHoursOwed = can("hoursOwed", "edit");
   const [hoForm, setHoForm] = useState({ from: "", to: "", override: "", note: "" });
   const [hoCalc, setHoCalc] = useState(null); // { calculated, weeks[] } after Calculate
+  // ── Leave balance (Phase 5 Job 2) — READ-ONLY, no write control ever. Gate is
+  // can("leave","edit"): true for exactly owner/storeAdmin/manager, the same tier
+  // the leaveLedger/leave-summary rules allow (staff are seeded leave:"view" and
+  // must NOT see colleagues' balances). leaveSum: null = not loaded OR read
+  // denied/failed → section renders NOTHING (silent, the acks posture);
+  // {exists:false} = no summary doc (normal, "No leave accrued yet.").
+  const canLeaveBalance = can("leave", "edit");
+  const [leaveSum, setLeaveSum] = useState(null);
+  const [leaveLedger, setLeaveLedger] = useState(null); // null = not requested (lazy — loads on Show history)
   const [certDraft, setCertDraft] = useState({ name: "RSA", other: "", expiry: "", file: null });
   const [docFile, setDocFile] = useState(null); // a document to upload for the staff to sign
   const [certFileKey, setCertFileKey] = useState(0); // bump to clear the cert file input after each add
@@ -788,6 +824,37 @@ export default function StaffDirectoryPage() {
       .catch(() => { /* acks unreadable → ticks just show pending */ });
     return () => { dead = true; };
   }, [groupId, profile?.id]);
+  // leave summary for the OPEN profile (Phase 5 Job 2) — one-shot getDoc on open,
+  // acks pattern: reset first, dead flag, silent catch (denied/failed → leaveSum
+  // stays null and the section renders nothing). No listener.
+  useEffect(() => {
+    setLeaveSum(null); setLeaveLedger(null);
+    if (!groupId || !profile?.id || !canLeaveBalance) return;
+    let dead = false;
+    getDoc(leaveSummaryDoc(groupId, profile.id))
+      .then((d) => { if (!dead) setLeaveSum(d.exists() ? { exists: true, ...(d.data() || {}) } : { exists: false }); })
+      .catch(() => { /* unreadable → render nothing, silently */ });
+    return () => { dead = true; };
+  }, [groupId, profile?.id, canLeaveBalance]);
+  // ledger history — LAZY: fetched only on the first "Show history" press
+  const loadLeaveLedger = async () => {
+    if (!groupId || !profile?.id) return;
+    try {
+      const snap = await getDocs(leaveLedgerCol(groupId, profile.id));
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      rows.sort((a, b) => String(b.effectiveDate || "").localeCompare(String(a.effectiveDate || ""))); // newest first
+      setLeaveLedger(rows);
+    } catch { setLeaveLedger([]); }
+  };
+  // Subtitle date: a per-staff summary.asOfDate WINS when it ever exists (absent on
+  // every doc today — group-wide start only), else group.leaveAccrualStartDate.
+  // The stored value is the LAST DAY THAT DOES NOT COUNT (floor is date <= asOfDate),
+  // so the day accrual actually started is the stored date PLUS ONE DAY.
+  const leaveAccruedSince = (sum) => {
+    const stored = (sum && sum.asOfDate) || group?.leaveAccrualStartDate || "";
+    const [y, m, d] = String(stored).split("-").map(Number);
+    return y && m && d ? new Date(y, m - 1, d + 1).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+  };
   // the logged-in staffer's own acks — drives their "warning to acknowledge" strip
   useEffect(() => {
     if (!groupId || !myStaff?.id) return;
@@ -2141,6 +2208,54 @@ export default function StaffDirectoryPage() {
                           <button className="btn btn-sm btn-primary" onClick={saveHoursOwed}>Save entry</button>
                         </div>
                       </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Leave balance (Phase 5 Job 2) — READ-ONLY view of the server-written
+                    accrual ledger. "Accrued in MyMor" deliberately: this is what accrued
+                    INSIDE MyMor since the group's start date, not a legal entitlement.
+                    leaveSum null (unloaded/denied/failed) → whole section silent. */}
+                {canLeaveBalance && leaveSum !== null && (
+                  <div style={{ marginTop: 16 }}>
+                    <div className="card-head" style={{ marginBottom: 8 }}><span className="card-title">Leave balance</span><span className="card-sub">{leaveAccruedSince(leaveSum) ? `Accrued in MyMor since ${leaveAccruedSince(leaveSum)}` : "Accrued in MyMor"}</span></div>
+                    {group?.leaveAccrualEnabled !== true ? (
+                      <div style={{ fontSize: 12, color: "var(--gray)" }}>Leave accrual is not switched on for this group.</div>
+                    ) : !leaveSum.exists ? (
+                      <div style={{ fontSize: 12, color: "var(--gray)" }}>No leave accrued yet.</div>
+                    ) : (
+                      <>
+                        {leaveSum.classStatus === "unresolved" && (
+                          <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8 }}>
+                            This employment type is not mapped — nothing is accruing for this person. Set it in Settings → Leave accrual.
+                          </div>
+                        )}
+                        {[["Annual", leaveSum.annual], ["Personal", leaveSum.personal]].map(([label, b]) => (
+                          <div key={label} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                            <span style={{ fontSize: 13 }}>{label}</span>
+                            <span style={{ fontSize: 13, fontWeight: 600 }}>{fmtLeaveMinutes(b?.balanceMinutes)}</span>
+                          </div>
+                        ))}
+                        {leaveLedger === null ? (
+                          <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={loadLeaveLedger}>Show history</button>
+                        ) : leaveLedger.length === 0 ? (
+                          <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 8 }}>No entries yet.</div>
+                        ) : (
+                          <div style={{ marginTop: 8 }}>
+                            {leaveLedger.map((e) => (
+                              <div key={e.id} className="staff-meta-row" style={{ justifyContent: "space-between", fontSize: 12, padding: "5px 0", borderBottom: "0.5px solid var(--gray-light)", gap: 8, flexWrap: "wrap" }}>
+                                <span>
+                                  <strong>{e.effectiveDate || tsLabel(e.createdAt) || "—"}</strong>
+                                  <span className={`pill ${leaveKindPill[e.kind] || "pill-gray"}`} style={{ marginLeft: 6 }}>{e.kind}</span>
+                                  <span style={{ color: "var(--gray)", marginLeft: 6 }}>{e.bucket}</span>
+                                  {e.note ? <span style={{ color: "var(--gray)" }}> — {e.note}</span> : null}
+                                </span>
+                                <span>{leaveLedgerValue(e)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
