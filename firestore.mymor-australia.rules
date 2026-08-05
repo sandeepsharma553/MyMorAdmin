@@ -158,8 +158,10 @@ service cloud.firestore {
         // Functions, which BYPASS these rules — that is the ENTIRE write path. The
         // absence of any allow create/update/delete below is deliberate and
         // load-bearing: no client may ever write a ledger entry or summary.
-        // Read: the staffer themselves + owner/storeAdmin. Plain managers DENIED
-        // (a balance is payroll-adjacent — same posture as private/details above).
+        // Read: the staffer themselves + manager and above. WIDENED from
+        // owner/storeAdmin to rgCanManageStaff (5 Aug 2026, published live by
+        // Chirag from the console; repo synced after): a manager approves
+        // leave, so a manager must be able to read the balance.
         match /leaveLedger/{entryId} {
           allow read: if rgIsSuper() || rgCanManageStaff(groupId) || rgIsOwnStaff(groupId, staffId);
         }
@@ -167,6 +169,8 @@ service cloud.firestore {
         // under leave/ (e.g. payout worksheets) must be opted in one by one; a
         // worksheet is exactly what a staffer must not read before a termination
         // conversation. Widening later costs one line; un-leaking costs an incident.
+        // Read widened to rgCanManageStaff with leaveLedger above (5 Aug 2026):
+        // a manager approves leave, so a manager must be able to read the balance.
         match /leave/summary {
           allow read: if rgIsSuper() || rgCanManageStaff(groupId) || rgIsOwnStaff(groupId, staffId);
         }
