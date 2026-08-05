@@ -54,9 +54,12 @@ const leaveLedgerValue = (e) => {
     return `${worked} → ${fmtLeaveMinutes(Math.floor((Number(e.sourceMinutes) || 0) / div))} ${e.bucket}`;
   }
   if (e.kind === "deduction" || e.kind === "reversal") return `${fmtLeaveMinutes(e.minutes)} leave ${e.kind === "reversal" ? "restored" : "taken"}`;
+  // "manual" (Phase 6): an owner correction — BALANCE minutes in `minutes`,
+  // 1:1, no divisor (unlike accrual/adjustment rows, which carry worked time).
+  if (e.kind === "manual") return `${(Number(e.minutes) || 0) > 0 ? "+" : ""}${fmtLeaveMinutes(e.minutes)} ${e.bucket} ${(Number(e.minutes) || 0) > 0 ? "added" : "removed"} by hand`;
   return "";
 };
-const leaveKindPill = { accrual: "pill-green", deduction: "pill-amber", reversal: "pill-blue", adjustment: "pill-gray" };
+const leaveKindPill = { accrual: "pill-green", deduction: "pill-amber", reversal: "pill-blue", adjustment: "pill-gray", manual: "pill-purple" };
 // Firestore Timestamp | {seconds} | ISO string → short date label
 const tsLabel = (t) => {
   if (!t) return "";
@@ -236,6 +239,14 @@ export default function StaffDirectoryPage() {
   const canLeaveBalance = can("leave", "edit");
   const [leaveSum, setLeaveSum] = useState(null);
   const [leaveLedger, setLeaveLedger] = useState(null); // null = not requested (lazy — loads on Show history)
+  // ── Manual adjustment form (Phase 6 Job 2) — OWNER ONLY, strictly: the
+  // rgLeaveManualAdjust callable rejects everyone else (superadmin included),
+  // and a form that always fails is a bug. No owner-only check existed in this
+  // file (canPayroll is owner-or-storeAdmin), hence the direct groupRole test.
+  const isLeaveAdjustOwner = me?.groupRole === "owner";
+  const [adjOpen, setAdjOpen] = useState(false);
+  const [adjForm, setAdjForm] = useState({ bucket: "annual", hours: "", note: "" });
+  const [adjBusy, setAdjBusy] = useState(false);
   const [certDraft, setCertDraft] = useState({ name: "RSA", other: "", expiry: "", file: null });
   const [docFile, setDocFile] = useState(null); // a document to upload for the staff to sign
   const [certFileKey, setCertFileKey] = useState(0); // bump to clear the cert file input after each add
@@ -829,6 +840,7 @@ export default function StaffDirectoryPage() {
   // stays null and the section renders nothing). No listener.
   useEffect(() => {
     setLeaveSum(null); setLeaveLedger(null);
+    setAdjOpen(false); setAdjForm({ bucket: "annual", hours: "", note: "" }); // never carry a draft across profiles
     if (!groupId || !profile?.id || !canLeaveBalance) return;
     let dead = false;
     getDoc(leaveSummaryDoc(groupId, profile.id))
@@ -846,6 +858,46 @@ export default function StaffDirectoryPage() {
       setLeaveLedger(rows);
     } catch { setLeaveLedger([]); }
   };
+  // Apply the manual adjustment via the owner-only callable. The owner types
+  // HOURS OF LEAVE (not worked hours); the callable takes integer minutes.
+  const applyAdjustment = async () => {
+    const hours = Number(adjForm.hours);
+    if (!isFinite(hours) || hours === 0) return showToast("Enter a non-zero number of leave hours");
+    const minutes = Math.round(hours * 60); // callable rejects non-integers — round before sending
+    if (minutes === 0) return showToast("Too small — enter at least 0.02 hours (about a minute)");
+    const note = adjForm.note.trim();
+    if (!note) return showToast("A reason is required");
+    if (note.length > 200) return showToast("Reason too long (max 200 characters)");
+    setAdjBusy(true);
+    try {
+      const fn = httpsCallable(getFunctions(undefined, "us-central1"), "rgLeaveManualAdjust");
+      await fn({ groupId, staffId: profile.id, bucket: adjForm.bucket, minutes, note, effectiveDate: localDateKey(new Date()) });
+      // success: close + clear, re-read the summary so the balance updates, and
+      // drop the loaded ledger so the next "Show history" refetches the new row
+      setAdjOpen(false); setAdjForm({ bucket: "annual", hours: "", note: "" });
+      setLeaveLedger(null);
+      try {
+        const d = await getDoc(leaveSummaryDoc(groupId, profile.id));
+        setLeaveSum(d.exists() ? { exists: true, ...(d.data() || {}) } : { exists: false });
+      } catch { /* re-read failed — display stays stale until the profile reopens */ }
+      showToast("Balance adjusted");
+    } catch (e) {
+      // surface the callable's OWN message — permission vs validation vs
+      // accrual-not-enabled matters to the owner; never swallow it
+      showToast(String(e?.message || "Could not apply adjustment"));
+    } finally { setAdjBusy(false); }
+  };
+  // DISPLAY-ONLY preview: computed from the already-loaded leaveSum. The server
+  // recomputes from the ledger inside its transaction, so if another entry
+  // lands between reading and applying, the final number can differ — no
+  // reconciliation is built for that, by design.
+  const adjPreview = (() => {
+    const hours = Number(adjForm.hours);
+    if (!adjOpen || !isFinite(hours) || hours === 0) return "";
+    const cur = leaveSum?.exists ? (Number(leaveSum?.[adjForm.bucket]?.balanceMinutes) || 0) : 0;
+    const next = cur + Math.round(hours * 60);
+    return `${adjForm.bucket === "annual" ? "Annual" : "Personal"} will go from ${fmtLeaveMinutes(cur)} to ${fmtLeaveMinutes(next)}.`;
+  })();
   // Subtitle date: a per-staff summary.asOfDate WINS when it ever exists (absent on
   // every doc today — group-wide start only), else group.leaveAccrualStartDate.
   // The stored value is the LAST DAY THAT DOES NOT COUNT (floor is date <= asOfDate),
@@ -2256,6 +2308,39 @@ export default function StaffDirectoryPage() {
                           </div>
                         )}
                       </>
+                    )}
+                    {/* ── Manual adjustment (Phase 6 Job 2) — OWNER ONLY (strict groupRole,
+                        matching the callable; superadmin deliberately excluded). Renders in
+                        the no-summary state too: seeding an opening balance is the main use.
+                        Collapsed behind "Adjust balance"; no confirmation dialog — the
+                        warning text is the guard and the callable is idempotent on
+                        identical same-day payloads. */}
+                    {group?.leaveAccrualEnabled === true && isLeaveAdjustOwner && (
+                      !adjOpen ? (
+                        <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={() => setAdjOpen(true)}>Adjust balance</button>
+                      ) : (
+                        <div style={{ marginTop: 10, background: "var(--gray-light)", borderRadius: 8, padding: "10px 12px" }}>
+                          <div style={{ display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap" }}>
+                            <div className="form-group" style={{ margin: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Bucket</label>
+                              <select className="form-input" style={{ width: 120 }} value={adjForm.bucket} onChange={(e) => setAdjForm((p) => ({ ...p, bucket: e.target.value }))}>
+                                <option value="annual">Annual</option>
+                                <option value="personal">Personal</option>
+                              </select></div>
+                            <div className="form-group" style={{ margin: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Hours of leave</label>
+                              <input type="number" step="0.25" className="form-input" style={{ width: 120 }} value={adjForm.hours} onChange={(e) => setAdjForm((p) => ({ ...p, hours: e.target.value }))} placeholder="+ adds, - removes" /></div>
+                            <div className="form-group" style={{ margin: 0, flex: 1, minWidth: 180 }}><label className="form-label" style={{ fontSize: 11 }}>Reason (required, max 200)</label>
+                              <input className="form-input" maxLength={200} value={adjForm.note} onChange={(e) => setAdjForm((p) => ({ ...p, note: e.target.value }))} placeholder="e.g. opening balance from previous system" /></div>
+                          </div>
+                          {adjPreview && <div style={{ fontSize: 12, fontWeight: 600, marginTop: 8 }}>{adjPreview}</div>}
+                          <div style={{ fontSize: 11, color: "var(--gray)", margin: "8px 0" }}>
+                            This writes a permanent entry to the leave ledger. It cannot be undone — a mistake is corrected with a second adjustment. This is leave hours, not hours worked.
+                          </div>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button className="btn btn-sm" disabled={adjBusy} onClick={() => { setAdjOpen(false); setAdjForm({ bucket: "annual", hours: "", note: "" }); }}>Cancel</button>
+                            <button className="btn btn-sm btn-primary" disabled={adjBusy} onClick={applyAdjustment}>Apply adjustment</button>
+                          </div>
+                        </div>
+                      )
                     )}
                   </div>
                 )}
