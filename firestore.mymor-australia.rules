@@ -295,12 +295,13 @@ service cloud.firestore {
           // The approver-only update below already means a non-approver can never touch
           // status/approvedBy/decidedAt after create. NB Phase 4: the future manual
           // `deductMinutes` field is NOT whitelisted yet — widen when the UI ships.
-          // ── TRANSITIONAL WHITELIST (Phase 6 Job 4b) ── 'hasProof' ADDED (the
-          // boolean paperclip flag that stays on the parent); 'reason'/'proofUrl'/
-          // 'proofName' KEPT so OLD deployed clients (Ops ships via TestFlight —
-          // not same-day) can still submit. TIGHTEN once both apps have shipped:
-          // remove the three legacy keys in a second publish. New clients write
-          // those fields to private/details below, never here.
+          // ── TIGHTENED WHITELIST (Phase 6 Job 4b step 6, 5 Aug 2026) ── the
+          // legacy 'reason'/'proofUrl'/'proofName' keys are RETIRED: both apps
+          // now write them ONLY to private/details below, and the migration
+          // stripped every existing parent (verify pass: 0 residuals, both
+          // groups). A parent carrying any of the three is an OLD build or a
+          // hand-crafted write — REJECT it. 'hasProof' (boolean paperclip flag)
+          // is the only proof-related field that lives on the parent.
           allow create: if rgIsSuper()
             || ((rgCanManageStaff(groupId)
                  || (rgIsGroupMember(groupId) && rgIsOwnStaff(groupId, request.resource.data.staffId)))
@@ -308,8 +309,8 @@ service cloud.firestore {
                 && request.resource.data.approvedBy == ''
                 && request.resource.data.keys().hasOnly([
                      'staffId', 'staffName', 'venue', 'venueId', 'area',
-                     'type', 'typeOther', 'dates', 'days', 'startDate', 'endDate', 'reason',
-                     'paid', 'proofUrl', 'proofName', 'hasProof',
+                     'type', 'typeOther', 'dates', 'days', 'startDate', 'endDate',
+                     'paid', 'hasProof',
                      'status', 'approvedBy', 'createdAt']));
           // staffId is IMMUTABLE on update (Phase 6 Job 4b): private/details
           // carries a validated COPY of it — if the parent's could move after
