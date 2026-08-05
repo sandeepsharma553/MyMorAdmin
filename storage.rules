@@ -1,24 +1,74 @@
 rules_version = '2';
 
-// Craft rules based on data in your Firestore database
-// allow write: if firestore.get(
-//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
+// ⚠ THIS FILE IS THE LIVE RULESET for bucket mymor-one — MyMorAdmin/firebase.json
+// wires it ("storage": [{ "bucket": "mymor-one", "rules": "storage.rules" }]).
+// The old MyMorFunction/storage.rules copy is RETIRED (it deployed from nowhere —
+// functions/firebase.json has no storage entry). Synced to the live ruleset
+// 5 Aug 2026, then the leaveProofs read exclusion added (Phase 6 Job 4a).
+// Publish this file COMPLETE from the console — never hand-copied lines.
+
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+
+    // 🔒 Signed employment contracts (pay + PII): NO client access. Created/read ONLY by
+    // Cloud Functions via the Admin SDK (which bypass Storage rules and re-check
+    // owner/storeAdmin). Must be paired with the guard on the catch-all below.
+    match /restaurantGroups/{groupId}/contracts/{rest=**} {
+      allow read, write: if false;
     }
+
+    // Catch-all. The exclusions live HERE, inside this block's conditions, and
+    // NOT in standalone deny blocks: Storage ORs overlapping matches, so an
+    // `if false` block never revokes what another match grants — the only way
+    // to deny is for every matching block to refuse to grant.
+    //
+    // leaveProofs (Phase 6 Job 4a, Aug 2026): SDK read/list of
+    // rgUploads/{gid}/leaveProofs/** is DENIED — a leave proof can be a medical
+    // certificate, and this bucket serves every vertical, so the old grant let
+    // ANY signed-in platform user (students included) browse them. WRITE stays
+    // allowed: both apps upload proofs (Admin nests a staffId segment, Ops
+    // writes flat — segment 2 is 'leaveProofs' in both layouts, so one
+    // condition covers both). NOTE this denies SDK browsing ONLY: existing
+    // getDownloadURL tokens bypass rules entirely and must be rotated per file.
+    // REAL per-group scoping ("members of this group only") is NOT possible
+    // here: cross-service firestore.get() reads only the (default) database,
+    // while membership lives in employees/* on mymor-australia — it needs a
+    // groupId CUSTOM CLAIM first, which is the dedicated Storage-security job,
+    // not this change.
+    match /{allPaths=**} {
+      allow read: if request.auth != null
+        && !(allPaths.size() >= 3 && allPaths[0] == 'restaurantGroups' && allPaths[2] == 'contracts')
+        && !(allPaths.size() >= 3 && allPaths[0] == 'rgUploads' && allPaths[2] == 'leaveProofs');
+      allow write: if request.auth != null
+        && !(allPaths.size() >= 3 && allPaths[0] == 'restaurantGroups' && allPaths[2] == 'contracts');
+    }
+
     match /chat_media/{groupId}/{fileName} {
      allow write: if request.auth != null;
      allow read: if request.auth != null;
      }
-     
+
     match /community_chat_media/{fileName} {
      allow write: if request.auth != null;
      allow read: if request.auth != null;
      }
-     match /rgMessages/{groupId}/{file=**} {
+
+    match /rgMessages/{groupId}/{file=**} {
       allow read, write: if request.auth != null;
+    }
+
+    match /restaurantGroups/{groupId}/staffCerts/{p=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*|application/pdf');
+    }
+
+    match /restaurantGroups/{groupId}/staffDocs/{p=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*|application/pdf');
     }
   }
 }
