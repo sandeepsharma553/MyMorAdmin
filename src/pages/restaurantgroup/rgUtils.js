@@ -278,6 +278,19 @@ export const fmtHours = (n) => {
   if (!isFinite(v)) return "0";
   return String(Math.round(v * 100) / 100);
 };
+// CROSS-REPO SHARED — must stay BYTE-IDENTICAL to Ops lib/rgUtils (drift-guard
+// convention). Leave balances are stored as integer MINUTES; this is the ONE
+// minutes→hours display conversion (an inline /60 is how "35 minutes" once
+// read as "35 hours" in a status report). Unlike fmtHours it ALWAYS carries
+// the "h": fmtHours is embedded in `${…}h` templates where the caller owns
+// the unit, but a leave balance is read on its own, so the unit travels with
+// the value. One decimal, trailing ".0" dropped; negative keeps its sign;
+// null/undefined/NaN/0 → "0h".
+export const fmtLeaveMinutes = (min) => {
+  const v = Number(min);
+  if (!isFinite(v) || v === 0) return "0h";
+  return `${Math.round((v / 60) * 10) / 10}h`;
+};
 
 // ── certificate expiry status ──
 // CROSS-REPO SHARED PREDICATE — logic must stay IDENTICAL to Ops lib/rgUtils
