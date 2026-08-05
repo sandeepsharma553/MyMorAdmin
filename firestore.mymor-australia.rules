@@ -295,6 +295,12 @@ service cloud.firestore {
           // The approver-only update below already means a non-approver can never touch
           // status/approvedBy/decidedAt after create. NB Phase 4: the future manual
           // `deductMinutes` field is NOT whitelisted yet — widen when the UI ships.
+          // ── TRANSITIONAL WHITELIST (Phase 6 Job 4b) ── 'hasProof' ADDED (the
+          // boolean paperclip flag that stays on the parent); 'reason'/'proofUrl'/
+          // 'proofName' KEPT so OLD deployed clients (Ops ships via TestFlight —
+          // not same-day) can still submit. TIGHTEN once both apps have shipped:
+          // remove the three legacy keys in a second publish. New clients write
+          // those fields to private/details below, never here.
           allow create: if rgIsSuper()
             || ((rgCanManageStaff(groupId)
                  || (rgIsGroupMember(groupId) && rgIsOwnStaff(groupId, request.resource.data.staffId)))
@@ -303,9 +309,45 @@ service cloud.firestore {
                 && request.resource.data.keys().hasOnly([
                      'staffId', 'staffName', 'venue', 'venueId', 'area',
                      'type', 'typeOther', 'dates', 'days', 'startDate', 'endDate', 'reason',
-                     'paid', 'proofUrl', 'proofName',
+                     'paid', 'proofUrl', 'proofName', 'hasProof',
                      'status', 'approvedBy', 'createdAt']));
-          allow update, delete: if rgIsSuper() || rgCanApproveLeave(groupId);
+          // staffId is IMMUTABLE on update (Phase 6 Job 4b): private/details
+          // carries a validated COPY of it — if the parent's could move after
+          // create, the copy could silently drift. Supers bypass (migrations).
+          allow update: if rgIsSuper()
+            || (rgCanApproveLeave(groupId)
+                && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['staffId']));
+          allow delete: if rgIsSuper() || rgCanApproveLeave(groupId);
+
+          // ── Leave request PRIVATE details (Phase 6 Job 4b) ── reason + the
+          // proof pointer live HERE, not on the member-readable parent. This
+          // block starts from DEFAULT-DENY — nothing is being narrowed:
+          // (1) the per-venue catch-all EXCLUDES 'leaveRequests', so no child
+          //     of it inherits anything; and
+          // (2) the parent match above is single-segment ({leaveId}) and never
+          //     reaches children. Before this block, NO rule matched this path.
+          // staffId here is a COPY of the parent's (the requester's id is a
+          // field, not a path segment). The create validates the copy via
+          // getAfter — getAfter, NOT get: both docs are written in ONE
+          // writeBatch, and get() would evaluate pre-batch state where the
+          // parent does not exist yet. One parent fetch at CREATE only; reads
+          // never fetch the parent. Create arms MIRROR the parent create
+          // (rgCanManageStaff — managers submit on behalf of their team WITH a
+          // reason; requiring approve here would atomically fail a plain
+          // manager's whole submission batch). Read stays NARROWER by design:
+          // approvers + the requester only. update/delete: SUPER only — a
+          // reason is a record, not a draft.
+          match /private/details {
+            allow read: if rgIsSuper() || rgCanApproveLeave(groupId)
+              || rgIsOwnStaff(groupId, resource.data.staffId);
+            allow create: if rgIsSuper()
+              || ((rgCanManageStaff(groupId)
+                   || (rgIsGroupMember(groupId) && rgIsOwnStaff(groupId, request.resource.data.staffId)))
+                  && request.resource.data.staffId ==
+                       getAfter(/databases/$(database)/documents/restaurantGroups/$(groupId)/venues/$(venueId)/leaveRequests/$(leaveId)).data.staffId
+                  && request.resource.data.keys().hasOnly(['staffId', 'reason', 'proofUrl', 'proofName', 'createdAt']));
+            allow update, delete: if rgIsSuper();
+          }
         }
         // ── END CHANGED BLOCK ──
         // ── Availability feature (kiosk clock + availability + assignment) ──
