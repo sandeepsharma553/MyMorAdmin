@@ -161,14 +161,14 @@ service cloud.firestore {
         // Read: the staffer themselves + owner/storeAdmin. Plain managers DENIED
         // (a balance is payroll-adjacent — same posture as private/details above).
         match /leaveLedger/{entryId} {
-          allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
+          allow read: if rgIsSuper() || rgCanManageStaff(groupId) || rgIsOwnStaff(groupId, staffId);
         }
         // NARROWED (review ruling): summary ONLY — never a wildcard. Future docs
         // under leave/ (e.g. payout worksheets) must be opted in one by one; a
         // worksheet is exactly what a staffer must not read before a termination
         // conversation. Widening later costs one line; un-leaking costs an incident.
         match /leave/summary {
-          allow read: if rgIsSuper() || rgIsGroupAdmin(groupId) || rgIsOwnStaff(groupId, staffId);
+          allow read: if rgIsSuper() || rgCanManageStaff(groupId) || rgIsOwnStaff(groupId, staffId);
         }
       }
       // ── Contract Generator (Documents module) — owner/storeAdmin only ──
