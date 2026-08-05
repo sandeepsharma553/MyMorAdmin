@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { useRG } from "./RGContext";
-import { venueCol, venueDoc, groupDoc, contractClassificationsDoc, contractDefaultsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc } from "../../utils/restaurantGroupPaths";
+import { venueCol, venueDoc, groupDoc, contractClassificationsDoc, contractDefaultsDoc, legalEntitiesDoc, publicHolidaysDoc, labourTargetsDoc, leaveAccrualConfigDoc } from "../../utils/restaurantGroupPaths";
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS, DEFAULT_UNIT_TYPES } from "./rgConfig";
 import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaBreakRule, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, leaveTypeIsPaid, leaveTypeNeedsProof, empTypeIsSalaried } from "./staffStructureUtils";
@@ -15,7 +15,7 @@ const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").r
 const LOCATION_TYPES_SEED = ["Single Location", "Multiple Locations"];
 
 export default function SettingsPage() {
-  const { groupId, group, venues, stations, equipment, roles, areas, empTypes, selectedVenue, can, showToast, me } = useRG();
+  const { groupId, group, venues, staff, leave, stations, equipment, roles, areas, empTypes, selectedVenue, can, showToast, me } = useRG();
   const editable = can("settings", "edit");
   const isOwner = me?.groupRole === "owner"; // legal-entity editing is owner-only
   const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
@@ -43,6 +43,12 @@ export default function SettingsPage() {
   // group-readable: staff must not read $/hr + weekly revenue). Editor is ADMIN-ONLY;
   // the Ops group-doc editor still coexists until Step 2 removes it (different docs).
   const [labour, setLabour] = useState({ hourlyRate: "", weeklyRevenue: "" });
+  // ── Leave accrual config (Job 1) ── gated settings/leaveAccrualConfig doc:
+  // laCfg = the SAVED doc ({classMap, bucketMap, …}); laEdits = unsaved row
+  // choices, keyed by label. Effective value: edit → saved → suggestion.
+  const [laCfg, setLaCfg] = useState({});
+  const [laDocExists, setLaDocExists] = useState(false); // updateDoc vs first-save setDoc
+  const [laEdits, setLaEdits] = useState({ class: {}, bucket: {} });
   useEffect(() => {
     if (!groupId) return;
     getDoc(contractClassificationsDoc(groupId)).then((d) => setClassLevels(d.exists() ? (d.data().levels || []) : [])).catch(() => {});
@@ -55,6 +61,7 @@ export default function SettingsPage() {
       const x = d.exists() ? d.data() : {};
       setLabour({ hourlyRate: x.hourlyRate ?? "", weeklyRevenue: x.weeklyRevenue ?? "" });
     }).catch(() => {});
+    getDoc(leaveAccrualConfigDoc(groupId)).then((d) => { setLaDocExists(d.exists()); setLaCfg(d.exists() ? (d.data() || {}) : {}); }).catch(() => {});
     getDoc(publicHolidaysDoc(groupId)).then((d) => {
       const list = d.exists() ? (d.data().holidays || []) : [];
       if (list.length) { setHolidays(list); setPhSeeded(false); }
@@ -400,6 +407,88 @@ export default function SettingsPage() {
     await saveLeaveTypes(next);
   };
 
+  // ── Leave accrual mappings (Job 1) ── settings/leaveAccrualConfig: classMap
+  // (employment-type label → accrues | casual-no-accrual) and bucketMap (leave-type
+  // label → annual | personal | other-paid | unpaid). Values are the engine's exact
+  // strings (rgLeaveAccrual.js) — never shown as numbers here. Write is OWNER-ONLY
+  // (rules: rgIsGroupOwner); storeAdmin/manager see current values, controls disabled.
+  // WHOLE-MAP writes only — labels are free text and may contain dots (mirror
+  // toggleEmpTypeSalaried, never dot-notation). Suggestions are in-memory prefills:
+  // nothing is stored until the owner saves; saved values always win.
+  // Card 1 rows: every DISTINCT staff.type on the books, with a group-wide count.
+  const laStaffTypes = useMemo(() => {
+    const m = new Map();
+    for (const s of staff || []) { const t = String(s.type || "").trim(); if (t) m.set(t, (m.get(t) || 0) + 1); }
+    return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [staff]);
+  // Card 2 rows: the CONFIGURED list (leaveTypes above — group.leaveTypes → seed)
+  // plus any label found on real requests but missing from it ("in use but not
+  // configured") — a new group with zero requests still gets a full, usable card.
+  const laLeaveTypes = useMemo(() => {
+    const configured = new Set(leaveTypes);
+    const used = new Set((leave || []).map((l) => String(l.type || "").trim()).filter(Boolean));
+    return [
+      ...leaveTypes.map((t) => ({ label: t, unconfigured: false })),
+      ...[...used].filter((t) => !configured.has(t)).sort().map((t) => ({ label: t, unconfigured: true })),
+    ];
+  }, [leaveTypes, leave]);
+  // Suggestions (prefill only). A label matching NO pattern stays UNSET ("") —
+  // shown blank, no suggested pill, and NOT written to the map on Save (Job 2
+  // surfaces unset labels as "needs a decision"; other-paid is not neutral — it
+  // books a deduction AND a companion accrual, so it must never be a default).
+  const laClassSuggest = (t) => {
+    if (/casual/i.test(t)) return "casual-no-accrual";
+    if (/full.?time|part.?time|permanent/i.test(t)) return "accrues";
+    return "";
+  };
+  // No unpaid shortcut here: leaveTypePaid is the group's REAL setting, not a
+  // suggestion — writing "unpaid" for it would look like a decision and hide the
+  // row from Job 2. The server enforces paid === false regardless (leaveBucketFor).
+  const laBucketSuggest = (t) => {
+    if (/annual/i.test(t)) return "annual";
+    if (/sick|personal|carer/i.test(t)) return "personal";
+    return "";
+  };
+  const laClassOf = (t) => laEdits.class[t] ?? (laCfg.classMap || {})[t] ?? laClassSuggest(t);
+  const laBucketOf = (t) => laEdits.bucket[t] ?? (laCfg.bucketMap || {})[t] ?? laBucketSuggest(t);
+  const laIsSuggested = (kind, mapField, t) => !(t in laEdits[kind]) && !(t in (laCfg[mapField] || {}));
+  const setLaEdit = (kind, label, value) => setLaEdits((p) => ({ ...p, [kind]: { ...p[kind], [label]: value } }));
+  const saveLeaveAccrual = async () => {
+    // Build the COMPLETE intended map: seeded from the SAVED maps (labels no
+    // longer displayed — e.g. a type with no staff left — keep their stored
+    // mapping), then every displayed label is set (has a value) or REMOVED
+    // ("— not set —" must clear a stored key, never silently survive).
+    const classMap = { ...(laCfg.classMap || {}) };
+    for (const [t] of laStaffTypes) { const v = laClassOf(t); if (v) classMap[t] = v; else delete classMap[t]; }
+    const bucketMap = { ...(laCfg.bucketMap || {}) };
+    for (const { label } of laLeaveTypes) { const v = laBucketOf(label); if (v) bucketMap[label] = v; else delete bucketMap[label]; }
+    // updateDoc REPLACES a field's value wholesale (setDoc {merge:true} would
+    // DEEP-MERGE the nested maps, resurrecting removed keys). Labels are only
+    // ever object keys in the VALUE — never field-path strings — so free-text
+    // dots are safe (same convention as toggleEmpTypeSalaried). updateDoc
+    // fails on a missing doc: the first-ever save uses plain setDoc instead
+    // (nothing to preserve).
+    const payload = {
+      classMap, bucketMap, updatedAt: serverTimestamp(),
+      updatedBy: me?.uid || me?.id || "", updatedByName: me?.name || me?.email || "",
+    };
+    try {
+      if (laDocExists) await updateDoc(leaveAccrualConfigDoc(groupId), payload);
+      else await setDoc(leaveAccrualConfigDoc(groupId), payload);
+      setLaDocExists(true);
+      setLaCfg((p) => ({ ...p, classMap, bucketMap }));
+      // Keep explicitly-CLEARED edits ("") — those labels have no saved value, so
+      // dropping them would re-resolve to the suggestion and the row the owner
+      // just cleared would render "suggested" again. Persisted values are dropped
+      // (laCfg now carries them).
+      setLaEdits((p) => ({
+        class: Object.fromEntries(Object.entries(p.class).filter(([, v]) => v === "")),
+        bucket: Object.fromEntries(Object.entries(p.bucket).filter(([, v]) => v === "")),
+      }));
+      showToast("Leave accrual mappings saved");
+    } catch { showToast("Could not save leave accrual mappings"); }
+  };
+
   // ── POS kitchen-note presets ── group.posNotePresets = string[] (mirror Leave types:
   // whole-array writes; order here = chip order on the POS; resolver seeds defaults).
   const posNotePresets = resolvePosNotePresets(group);
@@ -491,7 +580,7 @@ export default function SettingsPage() {
   return (
     <>
       <div className="tabs" style={{ marginBottom: 16 }}>
-        {[["structure", "Staff structure"], ["stations", "Stations"], ["units", "Temperature units"], ["stock", "Stock lists"], ["holidays", "Public Holidays"], ["contracts", "Contracts"]].map(([id, l]) => (
+        {[["structure", "Staff structure"], ["stations", "Stations"], ["units", "Temperature units"], ["stock", "Stock lists"], ["holidays", "Public Holidays"], ["contracts", "Contracts"], ["leaveaccrual", "Leave accrual"]].map(([id, l]) => (
           <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
@@ -1106,6 +1195,70 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </>
+      )}
+
+      {/* ── LEAVE ACCRUAL (Job 1) — classMap + bucketMap on settings/leaveAccrualConfig.
+          Owner-only write (rules: rgIsGroupOwner); admins see values, controls disabled. */}
+      {tab === "leaveaccrual" && (
+        <>
+          <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 12 }}>
+            Map your <strong>employment types</strong> and <strong>leave types</strong> onto the leave accrual engine. Rows marked <span className="pill pill-amber">suggested</span> are prefills — nothing is stored until you Save; saved values always win.
+          </div>
+          {!isOwner && <div style={{ fontSize: 10, color: "var(--gray)", marginBottom: 12 }}>Only the owner can change leave accrual settings.</div>}
+          <div className="grid-2">
+            {/* CARD 1 — employment types, derived from the group's real staff docs */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Employment types</span><span className="card-sub">Which types accrue leave — every distinct type on the staff on the books</span></div></div>
+              {laStaffTypes.map(([t, n]) => (
+                <div key={t} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)" }}>
+                  <span style={{ fontSize: 13 }}>
+                    {t} <span style={{ fontSize: 11, color: "var(--gray)" }}>· {n} staff</span>
+                    {laIsSuggested("class", "classMap", t) && laClassOf(t) !== "" && <span className="pill pill-amber" style={{ marginLeft: 6 }}>suggested</span>}
+                  </span>
+                  <span style={{ display: "inline-flex", gap: 4 }}>
+                    <button className={`btn btn-sm ${laClassOf(t) === "accrues" ? "btn-primary" : ""}`} disabled={!isOwner}
+                      onClick={() => isOwner && setLaEdit("class", t, "accrues")}>Accrues leave</button>
+                    <button className={`btn btn-sm ${laClassOf(t) === "casual-no-accrual" ? "btn-primary" : ""}`} disabled={!isOwner}
+                      onClick={() => isOwner && setLaEdit("class", t, "casual-no-accrual")}>No accrual</button>
+                  </span>
+                </div>
+              ))}
+              {laStaffTypes.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No staff with an employment type yet.</div>}
+            </div>
+            {/* CARD 2 — leave types: configured list ∪ labels used on real requests.
+                Paid flag is DISPLAY-ONLY here (edit it on Staff structure → Leave types);
+                paid === false always wins server-side, so the bucket has no effect. */}
+            <div className="card">
+              <div className="card-head"><div><span className="card-title">Leave types</span><span className="card-sub">Which balance bucket each leave type draws from</span></div></div>
+              {laLeaveTypes.map(({ label, unconfigured }) => {
+                const paid = leaveTypeIsPaid(group, label);
+                return (
+                  <div key={label} className="staff-meta-row" style={{ justifyContent: "space-between", padding: "7px 0", borderBottom: "0.5px solid var(--gray-light)", gap: 8 }}>
+                    <span style={{ fontSize: 13 }}>
+                      {label}
+                      <span className={`pill ${paid ? "pill-green" : "pill-amber"}`} style={{ marginLeft: 6 }}>{paid ? "Paid" : "Unpaid"}</span>
+                      {unconfigured && <span className="pill pill-amber" style={{ marginLeft: 6 }} title="Appears on real leave requests but is not in Settings → Staff structure → Leave types">in use but not configured</span>}
+                      {laIsSuggested("bucket", "bucketMap", label) && laBucketOf(label) !== "" && <span className="pill pill-amber" style={{ marginLeft: 6 }}>suggested</span>}
+                      {!paid && <span style={{ display: "block", fontSize: 10, color: "var(--gray)", marginTop: 2 }}>Unpaid — bucket has no effect.</span>}
+                    </span>
+                    <select className="form-input" style={{ width: 130 }} disabled={!isOwner} value={laBucketOf(label)}
+                      onChange={(e) => setLaEdit("bucket", label, e.target.value)}>
+                      <option value="">— not set —</option>
+                      <option value="annual">Annual</option>
+                      <option value="personal">Personal</option>
+                      <option value="other-paid">Other paid</option>
+                      <option value="unpaid">Unpaid</option>
+                    </select>
+                  </div>
+                );
+              })}
+              {laLeaveTypes.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No leave types yet — add them on Staff structure → Leave types.</div>}
+            </div>
+          </div>
+          <div className="btn-row" style={{ marginTop: 12 }}>
+            <button className="btn btn-primary" disabled={!isOwner} onClick={saveLeaveAccrual}>Save leave accrual mappings</button>
+          </div>
         </>
       )}
     </>
