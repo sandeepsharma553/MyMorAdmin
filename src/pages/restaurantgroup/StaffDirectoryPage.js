@@ -19,7 +19,7 @@ import { staffAreas, roleConfiguredArea, isMultiArea, stationsForVenue, empTypeI
 import { contractedNum, contractedSplitFromPrivate, contractedWeekStatus } from "./contractedHours";
 import { uploadRefImage } from "./RefImages";
 import { stationsForArea, GENERAL_KEY } from "./itemDrilldown";
-import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, weekKeyOf, localDateKey, fmtHours, fmtLeaveMinutes, effectiveBreak } from "./rgUtils";
+import { fullName, initials, certPill, progressColor, trainingStatusPill, moduleForStaff, checklistForStaff, trainingPct, checklistPct, staffSeesAll, snapshotForAssign, snapshotForChecklist, weeklyHours, certStatus, shiftHours, mondayFromWeekKey, weekKeyOf, localDateKey, fmtHours, fmtLeaveMinutes, leaveLabel, effectiveBreak } from "./rgUtils";
 import { computeWorked, toMillis } from "./timeEntry";
 import { sendNotification } from "./notify";
 import AssignmentDetail from "./AssignmentDetail";
@@ -247,6 +247,34 @@ export default function StaffDirectoryPage() {
   const [adjOpen, setAdjOpen] = useState(false);
   const [adjForm, setAdjForm] = useState({ bucket: "annual", hours: "", note: "" });
   const [adjBusy, setAdjBusy] = useState(false);
+  // ── Accrual review card (Phase 6 Job 3) ── group-wide attention list built
+  // from the per-staff leave summaries: (1) review.zeroBasis non-empty — leave
+  // approved with no roster and no contracted hours, so nothing was deducted;
+  // (2) classStatus === "unresolved" — employment type unmapped, accruing
+  // nothing. One-shot bulk read over scopedStaff (the minors-bulk-load
+  // pattern), keyed on the staff-ids string, fail-soft per row, NO listeners.
+  // READ-ONLY — the fix happens through the profile's adjustment form.
+  const [reviewRows, setReviewRows] = useState([]);
+  const reviewStaffKey = scopedStaff.map((s) => s.id).join(",");
+  useEffect(() => {
+    if (!groupId || !canLeaveBalance || group?.leaveAccrualEnabled !== true || !scopedStaff.length) { setReviewRows([]); return; }
+    let alive = true;
+    Promise.all(scopedStaff.map((s) => getDoc(leaveSummaryDoc(groupId, s.id))
+      .then((d) => ({ s, sum: d.exists() ? (d.data() || {}) : null }))
+      .catch(() => ({ s, sum: null }))))
+      .then((rows) => {
+        if (!alive) return;
+        const out = [];
+        for (const { s, sum } of rows) {
+          if (!sum) continue;
+          const zeroIds = Array.isArray(sum.review?.zeroBasis) ? sum.review.zeroBasis : [];
+          const unresolved = sum.classStatus === "unresolved";
+          if (zeroIds.length || unresolved) out.push({ staff: s, zeroIds, unresolved });
+        }
+        setReviewRows(out);
+      });
+    return () => { alive = false; };
+  }, [groupId, reviewStaffKey, canLeaveBalance, group?.leaveAccrualEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
   const [certDraft, setCertDraft] = useState({ name: "RSA", other: "", expiry: "", file: null });
   const [docFile, setDocFile] = useState(null); // a document to upload for the staff to sign
   const [certFileKey, setCertFileKey] = useState(0); // bump to clear the cert file input after each add
@@ -1993,6 +2021,45 @@ export default function StaffDirectoryPage() {
       </div>
 
       {canPayroll && <Turning18Alert groupId={groupId} staff={scopedStaff} actorName={actorName} />}
+
+      {/* ── Leave accrual review (Phase 6 Job 3) — Turning18Alert placement.
+          Renders ONLY when accrual is on AND something needs attention (never
+          an empty card). Rows are HISTORICAL flags: zeroBasis is append-only
+          and nothing ever clears it, so "booked nothing" is a fact about what
+          happened, not a current state — a row stays after the owner fixes it
+          by adjustment. Row click opens the profile (openProfile in scope). */}
+      {canLeaveBalance && group?.leaveAccrualEnabled === true && reviewRows.length > 0 && (
+        <div className="card" style={{ marginBottom: 16, borderColor: "var(--amber)" }}>
+          <div className="card-head">
+            <div><span className="card-title">Leave accrual — needs attention</span><span className="card-sub">Historical flags from the accrual ledger — a row stays listed after it has been fixed by adjustment</span></div>
+          </div>
+          {reviewRows.map(({ staff: s, zeroIds, unresolved }) => {
+            // resolve zeroBasis ids against the already-loaded context `leave`;
+            // an id outside the viewer's venue scope (or deleted) shows in the
+            // count only — never a raw Firestore id in a manager's face
+            const resolved = zeroIds.map((id) => (leave || []).find((l) => l.id === id)).filter(Boolean);
+            const reasons = [];
+            if (zeroIds.length) reasons.push(`${zeroIds.length} leave request${zeroIds.length === 1 ? "" : "s"} booked nothing (no roster, no contracted hours)`);
+            if (unresolved) reasons.push("employment type not mapped, accruing nothing");
+            return (
+              <div key={s.id} className="staff-meta-row" onClick={() => openProfile(s)}
+                role="button" tabIndex={0}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProfile(s); } }}
+                style={{ justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)", gap: 8, flexWrap: "wrap", cursor: "pointer" }}
+                title="Open the profile — corrections are made with an adjustment on the Leave balance card">
+                <span>
+                  <strong>{s.displayName || s.name}</strong> — {reasons.join(" · ")}
+                  {resolved.length > 0 && <span style={{ color: "var(--gray)" }}> · {resolved.map((l) => `${leaveLabel(l)} ${l.dates}`).join(", ")}</span>}
+                </span>
+                <span className="pill pill-amber">fix with an adjustment on the profile</span>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 8 }}>
+            This list only covers people who have had a timesheet approved. Check Settings → Leave accrual for employment types that still need a decision.
+          </div>
+        </div>
+      )}
 
       {/* warnings-to-witness strip (#4) — the LOGGED-IN manager's pending witness acks,
           with WHO each warning is for; tick here or from the profile modal. Exception
