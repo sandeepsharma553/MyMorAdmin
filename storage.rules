@@ -22,21 +22,27 @@ service firebase.storage {
     // `if false` block never revokes what another match grants — the only way
     // to deny is for every matching block to refuse to grant.
     //
-    // leaveProofs (Phase 6 Job 4a, Aug 2026): SDK read/list of
-    // rgUploads/{gid}/leaveProofs/** is DENIED — a leave proof can be a medical
-    // certificate, and this bucket serves every vertical, so the old grant let
-    // ANY signed-in platform user (students included) browse them. WRITE stays
-    // allowed: both apps upload proofs (Admin nests a staffId segment, Ops
-    // writes flat — segment 2 is 'leaveProofs' in both layouts, so one
-    // condition covers both). NOTE this denies SDK browsing ONLY: existing
-    // getDownloadURL tokens bypass rules entirely and must be rotated per file.
-    // REAL per-group scoping ("members of this group only") is NOT possible
-    // here: cross-service firestore.get() reads only the (default) database,
-    // while membership lives in employees/* on mymor-australia — it needs a
-    // groupId CUSTOM CLAIM first, which is the dedicated Storage-security job,
-    // not this change.
+    // leaveProofs (Phase 6 Job 4a, REVISED 5 Aug 2026 after the test-8 incident):
+    // LIST of rgUploads/{gid}/leaveProofs/** is DENIED — enumeration is the
+    // browsing attack (a leave proof can be a medical certificate, and this
+    // bucket serves every vertical). GET stays ALLOWED: the first published
+    // version denied all reads, which broke every proof-carrying submission in
+    // BOTH apps — the submit flow uploads and then immediately calls
+    // getDownloadURL on its own file, and getDownloadURL is an SDK GET. With
+    // list denied, filenames ({Date.now()}_{name}) are not enumerable; the
+    // private/details doc gates who ever sees a stored URL. WRITE stays allowed
+    // (Admin nests a staffId segment, Ops was unified to match — segment 2 is
+    // 'leaveProofs' in both layouts). NOTE: existing getDownloadURL tokens
+    // bypass rules entirely and must be rotated per file. REAL per-group
+    // scoping ("members of this group only") is NOT possible here:
+    // cross-service firestore.get() reads only the (default) database, while
+    // membership lives in employees/* on mymor-australia — it needs a groupId
+    // CUSTOM CLAIM first, which is the dedicated Storage-security job, not
+    // this change.
     match /{allPaths=**} {
-      allow read: if request.auth != null
+      allow get: if request.auth != null
+        && !(allPaths.size() >= 3 && allPaths[0] == 'restaurantGroups' && allPaths[2] == 'contracts');
+      allow list: if request.auth != null
         && !(allPaths.size() >= 3 && allPaths[0] == 'restaurantGroups' && allPaths[2] == 'contracts')
         && !(allPaths.size() >= 3 && allPaths[0] == 'rgUploads' && allPaths[2] == 'leaveProofs');
       allow write: if request.auth != null
