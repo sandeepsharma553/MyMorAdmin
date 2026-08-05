@@ -5,6 +5,7 @@ import { venueCol, venueDoc, groupDoc, contractClassificationsDoc, contractDefau
 import { AU_STATES, AU_PUBLIC_HOLIDAYS_SEED } from "./publicHolidays";
 import { SUGGESTED_STATIONS, DEFAULT_UNIT_TYPES } from "./rgConfig";
 import { addToList, removeFromList, stationsInVenueArea, orphanStationsInVenue, buildStationPayload, areaBreakRule, areaPinned, areaExclusive, orderedAreas, groupClusters, resolveLeaveTypes, leaveTypeIsPaid, leaveTypeNeedsProof, empTypeIsSalaried } from "./staffStructureUtils";
+import { localDateKey } from "./rgUtils";
 import { DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_UNITS, resolvePosNotePresets, resolvePrepMinutes } from "./rgStockUtils";
 
 const DEFAULT_ITEM_TYPES = ["ingredient", "product", "both"];
@@ -15,7 +16,7 @@ const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").r
 const LOCATION_TYPES_SEED = ["Single Location", "Multiple Locations"];
 
 export default function SettingsPage() {
-  const { groupId, group, venues, staff, leave, stations, equipment, roles, areas, empTypes, selectedVenue, can, showToast, me } = useRG();
+  const { groupId, group, venues, staff, leave, timeEntries, stations, equipment, roles, areas, empTypes, selectedVenue, can, showToast, me } = useRG();
   const editable = can("settings", "edit");
   const isOwner = me?.groupRole === "owner"; // legal-entity editing is owner-only
   const venueName = (id) => venues.find((v) => v.id === id)?.name || "";
@@ -49,6 +50,9 @@ export default function SettingsPage() {
   const [laCfg, setLaCfg] = useState({});
   const [laDocExists, setLaDocExists] = useState(false); // updateDoc vs first-save setDoc
   const [laEdits, setLaEdits] = useState({ class: {}, bucket: {} });
+  // Start-accrual modal (Job 4): typed confirmation, owner-only
+  const [laStartOpen, setLaStartOpen] = useState(false);
+  const [laStartTyped, setLaStartTyped] = useState("");
   useEffect(() => {
     if (!groupId) return;
     getDoc(contractClassificationsDoc(groupId)).then((d) => setClassLevels(d.exists() ? (d.data().levels || []) : [])).catch(() => {});
@@ -467,6 +471,66 @@ export default function SettingsPage() {
   // new employment type can appear at any time.
   const laClassUndecided = laStaffTypes.filter(([t]) => laClassOf(t) === "").length;
   const laBucketUndecided = laLeaveTypes.filter(({ label }) => laBucketOf(label) === "").length;
+
+  // ── Accrual start (Job 4) ── ONE-WAY: no stop/disable control exists anywhere —
+  // turning accrual off would leave a hole in the ledger nothing can fill.
+  const laRunning = group?.leaveAccrualEnabled === true;
+  // Approved timesheets in the last 7 days. businessDate is a LOCAL "YYYY-MM-DD"
+  // STRING (timeEntry.js) — compare strings against localDateKey bounds, never
+  // Dates. Empty/missing timeEntries → 0 → the warning SHOWS; missing data must
+  // never suppress it.
+  const laApproved7d = useMemo(() => {
+    const today = localDateKey(new Date());
+    const fromD = new Date(); fromD.setDate(fromD.getDate() - 6);
+    const from = localDateKey(fromD);
+    return (timeEntries || []).filter((e) => e && e.approved === true && typeof e.businessDate === "string" && e.businessDate >= from && e.businessDate <= today).length;
+  }, [timeEntries]);
+  // Blockers (disable Start) vs warnings (show, never disable)
+  const laBlockReason = (() => {
+    const parts = [];
+    if (laClassUndecided > 0) parts.push(`${laClassUndecided} employment type${laClassUndecided === 1 ? "" : "s"}`);
+    if (laBucketUndecided > 0) parts.push(`${laBucketUndecided} leave type${laBucketUndecided === 1 ? "" : "s"}`);
+    if (!parts.length) return "";
+    return `${parts.join(" and ")} still need${laClassUndecided + laBucketUndecided === 1 ? "s" : ""} a decision.`;
+  })();
+  // "5 August 2026" from a local "YYYY-MM-DD" key — by parts, never new Date(string)
+  const laFmtDate = (key) => {
+    const [y, m, d] = String(key || "").split("-").map(Number);
+    return y && m && d ? new Date(y, m - 1, d).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" }) : "";
+  };
+  // Displayed start date = STORED DATE + 1 DAY: the stored leaveAccrualStartDate
+  // is the last day that does NOT count (the floor is date <= asOfDate), so the
+  // day accrual actually began is the day after it.
+  const laAccruesFromKey = (() => {
+    const [y, m, d] = String(group?.leaveAccrualStartDate || "").split("-").map(Number);
+    return y && m && d ? localDateKey(new Date(y, m - 1, d + 1)) : "";
+  })();
+  const laStartMatch = laStartTyped.trim().toLowerCase() === String(group?.name || "").trim().toLowerCase() && !!String(group?.name || "").trim();
+  const startLeaveAccrual = async () => {
+    if (!isOwner || !laStartMatch || laRunning) return;
+    // ⚠ The owner-only gate on this button is UI-ONLY — a deliberate-action
+    // guard, not a security boundary: the group-doc rules allow storeAdmin
+    // (rgIsGroupAdmin) to write these fields too. Same stated boundary as the
+    // cluster availability-lock writes above.
+    // THE DATE IS YESTERDAY, in plain words: the accrual floor compares
+    // date <= asOfDate, so the stored value is the LAST DAY THAT DOES NOT
+    // COUNT. Pressing start on 5 August must store "2026-08-04" so the 5th
+    // accrues. Built with localDateKey on a Date wound back one day — never
+    // toISOString(), which is UTC and can shift the day.
+    const yd = new Date(); yd.setDate(yd.getDate() - 1);
+    try {
+      // ONE updateDoc — the flag and the floor stand or fail together
+      await updateDoc(groupDoc(groupId), {
+        leaveAccrualEnabled: true,
+        leaveAccrualStartDate: localDateKey(yd),
+        leaveAccrualStartedBy: me?.uid || me?.id || "",
+        leaveAccrualStartedByName: me?.name || me?.email || "",
+        leaveAccrualStartedAt: serverTimestamp(),
+      });
+      setLaStartOpen(false); setLaStartTyped("");
+      showToast("Leave accrual started");
+    } catch { showToast("Could not start leave accrual"); }
+  };
   const setLaEdit = (kind, label, value) => setLaEdits((p) => ({ ...p, [kind]: { ...p[kind], [label]: value } }));
   const saveLeaveAccrual = async () => {
     // Build the COMPLETE intended map: seeded from the SAVED maps (labels no
@@ -1301,6 +1365,58 @@ export default function SettingsPage() {
           <div className="btn-row" style={{ marginTop: 12 }}>
             <button className="btn btn-primary" disabled={!isOwner} onClick={saveLeaveAccrual}>Save leave accrual mappings</button>
           </div>
+
+          {/* ── CARD 3 (Job 4): the start switch — ONE-WAY. No stop/disable control:
+              turning accrual off leaves a hole in the ledger nothing can fill. */}
+          <div className="card" style={{ marginTop: 14 }}>
+            {laRunning ? (
+              <div className="card-head"><div><span className="card-title">Accruing since {laFmtDate(laAccruesFromKey) || "—"}</span><span className="card-sub">Started by {group?.leaveAccrualStartedByName || "—"}</span></div></div>
+            ) : (
+              <div className="card-head"><div><span className="card-title">Leave accrual is off</span><span className="card-sub">Nothing is accruing. Press start when you are ready.</span></div></div>
+            )}
+            {/* warnings show in BOTH states — a new employment type can appear any time */}
+            {laApproved7d === 0 && (
+              <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8 }}>
+                No approved timesheets in the last 7 days — nothing will accrue until staff start clocking in and their timesheets are approved.
+              </div>
+            )}
+            {laNoTypeCount > 0 && (
+              <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8 }}>
+                {laNoTypeCount === 1
+                  ? "1 staff member has no employment type — they will not accrue until it is set."
+                  : `${laNoTypeCount} staff have no employment type — they will not accrue until it is set.`}
+              </div>
+            )}
+            {!laRunning && (
+              <>
+                {laBlockReason && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 8 }}>{laBlockReason}</div>}
+                <button className="btn btn-primary" disabled={!isOwner || !!laBlockReason} onClick={() => setLaStartOpen(true)}>Start leave accrual</button>
+              </>
+            )}
+          </div>
+
+          {/* typed-confirmation modal — existing rg-modal chrome */}
+          {laStartOpen && !laRunning && (
+            <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setLaStartOpen(false)}>
+              <div className="rg-modal" style={{ maxWidth: 460 }}>
+                <div className="modal-head"><span className="modal-title">Start leave accrual</span><button className="modal-close" onClick={() => { setLaStartOpen(false); setLaStartTyped(""); }}>✕</button></div>
+                <div style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
+                  Leave will accrue from today, <strong>{laFmtDate(localDateKey(new Date()))}</strong>.<br />
+                  Anything worked before today will not count.<br />
+                  This cannot be undone from here.
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Type {String(group?.name || "").toUpperCase()} to confirm</label>
+                  {/* no placeholder — showing the answer in grey text would defeat the typed confirmation */}
+                  <input className="form-input" value={laStartTyped} onChange={(e) => setLaStartTyped(e.target.value)} autoFocus />
+                </div>
+                <div className="btn-row">
+                  <button className="btn btn-primary" disabled={!isOwner || !laStartMatch} onClick={startLeaveAccrual}>Start leave accrual</button>
+                  <button className="btn" onClick={() => { setLaStartOpen(false); setLaStartTyped(""); }}>Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </>
