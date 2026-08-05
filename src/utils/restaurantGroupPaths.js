@@ -189,6 +189,14 @@ export const leaveLedgerEntryDoc = (groupId, staffId, entryId) => doc(leaveLedge
 export const leaveSummaryDoc = (groupId, staffId) => doc(db, "restaurantGroups", String(groupId), "staff", String(staffId), "leave", "summary");
 export const leaveAccrualConfigDoc = (groupId) => doc(db, "restaurantGroups", String(groupId), "settings", "leaveAccrualConfig");
 export const leaveAccrualConfigHistoryCol = (groupId) => collection(leaveAccrualConfigDoc(groupId), "history");
+/* ── Leave request PRIVATE details (Phase 6 Job 4b) ───────────────────
+ * ⚠ KEEP byte-identical to MyMorOps src/lib/restaurantGroupPaths.js
+ * (drift-guard convention). reason + proofUrl/proofName live HERE, not on
+ * the member-readable parent — readable by approvers + the requester only.
+ * The doc carries a COPY of the parent's staffId (the requester's id is a
+ * field, not a path segment; the create rule validates the copy via
+ * getAfter). Written in the SAME writeBatch as the parent create. */
+export const leaveRequestPrivateDoc = (groupId, venueId, leaveId) => doc(venueCol(groupId, venueId, "leaveRequests"), String(leaveId), "private", "details");
 
 /* ── Contract Generator (Documents module) ────────────────────────────
  * Templates are group-level master docs (seeded out-of-band); contract

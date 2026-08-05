@@ -1,9 +1,9 @@
 import React, { useMemo, useRef, useState } from "react";
-import { addDoc, updateDoc, getDoc, doc, serverTimestamp } from "firebase/firestore";
+import { updateDoc, getDoc, doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "../../firebase";
+import { storage, db } from "../../firebase";
 import { useRG } from "./RGContext";
-import { venueCol, leaveSummaryDoc, leaveAccrualConfigDoc } from "../../utils/restaurantGroupPaths";
+import { venueCol, leaveSummaryDoc, leaveAccrualConfigDoc, leaveRequestPrivateDoc } from "../../utils/restaurantGroupPaths";
 import { fullName, leaveTypePill, leaveStatusPill, leaveLabel, avatarColor, initials, downloadCsv, mondayFromWeekKey, localDateKey, fmtLeaveMinutes, shiftDateStr, shiftHours } from "./rgUtils";
 import { resolveLeaveTypes, leaveTypeIsPaid, leaveTypeNeedsProof } from "./staffStructureUtils";
 import { sendNotification } from "./notify";
@@ -100,6 +100,23 @@ export default function LeaveRequestsPage() {
     () => scopedStaff.filter((s) => !form.venueId || (s.venueIds || []).includes(form.venueId) || s.venueId === form.venueId),
     [scopedStaff, form.venueId]
   );
+
+  // ── Private details (Phase 6 Job 4b) ── reason + proof live in
+  // leaveRequests/{id}/private/details. LAZY: fetched only when a card's
+  // "View reason & proof" is pressed — never bulk-loaded for a list (that
+  // would be 50 reads to show a page). Denied/failed → render NOTHING for
+  // those fields (acks posture; plain managers without leave:approve are
+  // denied by design). Legacy pre-migration rows still carry the fields on
+  // the parent and render directly with no fetch.
+  const [privDetails, setPrivDetails] = useState({});
+  const loadPrivate = async (l) => {
+    if (privDetails[l.id]) return;
+    setPrivDetails((p) => ({ ...p, [l.id]: { loading: true } }));
+    try {
+      const d = await getDoc(leaveRequestPrivateDoc(groupId, l.venueId, l.id));
+      setPrivDetails((p) => ({ ...p, [l.id]: { loaded: true, ...(d.exists() ? (d.data() || {}) : {}) } }));
+    } catch { setPrivDetails((p) => ({ ...p, [l.id]: { denied: true } })); }
+  };
 
   // who this user is allowed to submit-for / see leave of
   const scopedIds = useMemo(() => new Set(scopedStaff.map((s) => s.id)), [scopedStaff]);
@@ -235,16 +252,29 @@ export default function LeaveRequestsPage() {
         proofUrl = await getDownloadURL(r);
         proofName = proofFile.name;
       }
-      await addDoc(venueCol(groupId, vid, "leaveRequests"), {
+      // ── Field split (Phase 6 Job 4b) ── reason + the proof pointer go to the
+      // PRIVATE subcollection (approvers + the requester only); the parent stays
+      // member-readable and carries only hasProof (a boolean leaks nothing — it
+      // drives the history paperclip). ONE atomic writeBatch: both docs land or
+      // neither, so a request can never exist without its reason. The private
+      // create rule validates the staffId copy against the parent via getAfter
+      // (which sees batch state). doc() mints the parent id without writing.
+      const reqRef = doc(venueCol(groupId, vid, "leaveRequests"));
+      const batch = writeBatch(db);
+      batch.set(reqRef, {
         staffId, staffName: st?.displayName || fullName(st),
         venue: venueName, venueId: vid, area: st?.area || (st?.role || "").split(" — ")[0] || "",
         type: form.type, typeOther: form.type === "Other" ? form.typeOther.trim() : "",
         dates: fmtRange(form.start, form.end), days: daysBetween(form.start, form.end),
-        startDate: form.start, endDate: form.end || form.start, reason: form.reason.trim(),
-        // paid/unpaid snapshot at submit time (Settings default for the type) + proof
-        paid: leaveTypeIsPaid(group, form.type), proofUrl, proofName,
+        startDate: form.start, endDate: form.end || form.start,
+        // paid/unpaid snapshot at submit time (Settings default for the type)
+        paid: leaveTypeIsPaid(group, form.type), hasProof: !!proofUrl,
         status: "Pending", approvedBy: "", createdAt: serverTimestamp(),
       });
+      batch.set(leaveRequestPrivateDoc(groupId, vid, reqRef.id), {
+        staffId, reason: form.reason.trim(), proofUrl, proofName, createdAt: serverTimestamp(),
+      });
+      await batch.commit();
       showToast("Leave request submitted — manager notified");
       sendNotification(groupId, { to: "managers", type: "leave", title: "New leave request", body: `${st?.displayName || fullName(st)} · ${leaveLabel({ type: form.type, typeOther: form.typeOther })} ${fmtRange(form.start, form.end)}`, venueId: vid, by: st?.displayName || fullName(st) });
       setForm({ venueId: "", staffId: "", type: "", typeOther: "", start: "", end: "", reason: "" });
@@ -275,8 +305,24 @@ export default function LeaveRequestsPage() {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 600 }}>{l.staffName} <span className={`pill ${leaveTypePill(l.type)}`} style={{ marginLeft: 4 }}>{leaveLabel(l)}</span> <span className={`pill ${paidOf(l) ? "pill-green" : "pill-amber"}`} style={{ marginLeft: 4 }}>{paidOf(l) ? "Paid" : "Unpaid"}</span></div>
                   <div style={{ fontSize: 11, color: "var(--gray)" }}>{l.venue} · {l.area} · {l.dates} ({l.days} {l.days === 1 ? "day" : "days"})</div>
-                  {l.reason && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}>"{l.reason}"</div>}
-                  {l.proofUrl && <div style={{ fontSize: 11, marginTop: 2 }}><a href={l.proofUrl} target="_blank" rel="noreferrer">📎 {l.proofName || "View attachment"}</a></div>}
+                  {(() => {
+                    // legacy rows carry the fields on the parent; new rows lazy-load
+                    const pv = privDetails[l.id];
+                    const reason = l.reason !== undefined ? l.reason : (pv?.loaded ? pv.reason : undefined);
+                    const proofUrl = l.proofUrl || (pv?.loaded ? pv.proofUrl : "");
+                    const proofName = l.proofName || (pv?.loaded ? pv.proofName : "");
+                    return (
+                      <>
+                        {reason ? <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}>"{reason}"</div> : null}
+                        {proofUrl ? <div style={{ fontSize: 11, marginTop: 2 }}><a href={proofUrl} target="_blank" rel="noreferrer">📎 {proofName || "View attachment"}</a></div> : null}
+                        {l.reason === undefined && !pv && (
+                          <button className="btn btn-sm" style={{ marginTop: 4 }} onClick={() => loadPrivate(l)}>View reason &amp; proof</button>
+                        )}
+                        {pv?.loaded && !reason && !proofUrl ? <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}>No reason given.</div> : null}
+                        {/* pv.denied → nothing at all (acks posture) */}
+                      </>
+                    );
+                  })()}
                 </div>
                 {canApprove ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -361,7 +407,11 @@ export default function LeaveRequestsPage() {
                   <tr><td colSpan={canApprove ? 9 : 8} style={{ padding: "6px 10px", background: "var(--gray-light)", fontSize: 11, fontWeight: 700, color: "var(--gray)", textTransform: "uppercase", letterSpacing: 0.4 }}>{t} <span style={{ fontWeight: 400 }}>· {rows.length}</span></td></tr>
                   {rows.map((l) => (
                     <tr key={l.id}>
-                      <td>{l.staffName}</td><td>{l.venue}</td><td>{leaveLabel(l)}{l.proofUrl ? <> <a href={l.proofUrl} target="_blank" rel="noreferrer" title={l.proofName || "attachment"}>📎</a></> : null}</td><td><span className={`pill ${paidOf(l) ? "pill-green" : "pill-amber"}`}>{paidOf(l) ? "Paid" : "Unpaid"}</span></td><td>{l.dates}</td><td>{l.days}</td>
+                      {/* history paperclip is ICON-ONLY (Phase 6 Job 4b): the URL lives in
+                          private/details now — a click that triggers a fetch in a table row
+                          is worse than no click. hasProof drives it; l.proofUrl is the
+                          legacy pre-migration fallback. */}
+                      <td>{l.staffName}</td><td>{l.venue}</td><td>{leaveLabel(l)}{(l.hasProof || l.proofUrl) ? <span title="proof attached"> 📎</span> : null}</td><td><span className={`pill ${paidOf(l) ? "pill-green" : "pill-amber"}`}>{paidOf(l) ? "Paid" : "Unpaid"}</span></td><td>{l.dates}</td><td>{l.days}</td>
                       <td><span className={`pill ${leaveStatusPill(l.status)}`}>{l.status}</span></td><td>{l.approvedBy || "—"}</td>
                       {canApprove && <td style={{ whiteSpace: "nowrap" }}>{l.status === "Approved" ? <>
                         <button className="btn btn-sm" onClick={() => setEditLeave({ l, start: l.startDate || "", end: l.endDate || "" })}>Edit dates</button>{" "}
