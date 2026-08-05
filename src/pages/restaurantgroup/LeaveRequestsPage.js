@@ -1,10 +1,10 @@
 import React, { useMemo, useRef, useState } from "react";
-import { addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
+import { addDoc, updateDoc, getDoc, doc, serverTimestamp } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
 import { useRG } from "./RGContext";
-import { venueCol } from "../../utils/restaurantGroupPaths";
-import { fullName, leaveTypePill, leaveStatusPill, leaveLabel, avatarColor, initials, downloadCsv, mondayFromWeekKey, localDateKey } from "./rgUtils";
+import { venueCol, leaveSummaryDoc, leaveAccrualConfigDoc } from "../../utils/restaurantGroupPaths";
+import { fullName, leaveTypePill, leaveStatusPill, leaveLabel, avatarColor, initials, downloadCsv, mondayFromWeekKey, localDateKey, fmtLeaveMinutes, shiftDateStr, shiftHours } from "./rgUtils";
 import { resolveLeaveTypes, leaveTypeIsPaid, leaveTypeNeedsProof } from "./staffStructureUtils";
 import { sendNotification } from "./notify";
 
@@ -25,6 +25,54 @@ const daysBetween = (s, e) => {
   if (!e || s === e) return 1;
   return Math.max(1, Math.round((new Date(e) - new Date(s)) / 86400000) + 1);
 };
+
+// ── Balance-check estimate (Phase 5 Job 3) ── ⚠ KEEP the three helpers below
+// byte-identical to Ops LeaveRequestsScreen.js (drift-guard convention), and
+// KEEP them a MIRROR of the SERVER's basis code in MyMorFunction/
+// rgLeaveAccrual.js (datesInRange / rosterDeductionMinutes /
+// contractedDeductionMinutes / resolveDeductionMinutes / leaveBucketFor) — if
+// the server changes, this must change with it or the dialog lies.
+// Basis order, exactly the server's: 1. roster ∩ range (paid minutes = gross −
+// stored breakMins, shifts dated inside startDate..endDate); 2. contracted
+// proration (trunc(weekly×60/5) per Mon–Fri day in range); 3. NOTHING — the
+// server's third step is an approver-entered deductMinutes no UI writes yet,
+// and it returns null rather than invent a basis (resolveDeductionMinutes).
+// Same refusal here: null → the balance check is SKIPPED entirely; an invented
+// number in a warning dialog is worse than no dialog. ESTIMATE only — the
+// ledger's real deduction is computed server-side at approval.
+const leaveDaysInRange = (startDate, endDate) => {
+  const parse = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || "").trim()); if (!m) return null; const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])); return isNaN(d.getTime()) ? null : d; };
+  const s = parse(startDate); const e = parse(endDate || startDate) || s;
+  if (!s || !e || e < s) return [];
+  const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const out = []; const d = new Date(s);
+  while (d <= e && out.length < 400) { out.push(key(d)); d.setDate(d.getDate() + 1); }
+  return out;
+};
+const estimateLeaveMinutes = (l, staffRec, shifts) => {
+  const days = leaveDaysInRange(l.startDate, l.endDate);
+  if (!days.length) return null;
+  const daySet = new Set(days);
+  let roster = 0;
+  for (const sh of (shifts || [])) {
+    if (!sh || sh.staffId !== l.staffId) continue;
+    const dk = shiftDateStr(sh.weekKey, sh.day);
+    if (!dk || !daySet.has(dk)) continue;
+    roster += Math.max(0, Math.round(shiftHours(sh) * 60) - (Number(sh.breakMins) || 0));
+  }
+  if (roster > 0) return { minutes: roster, basis: "roster" };
+  const weekly = Number(staffRec?.contractedWeeklyHours);
+  if (Number.isFinite(weekly) && weekly > 0) {
+    const perDay = Math.trunc((weekly * 60) / 5);
+    let weekdays = 0;
+    for (const dk of days) { const [y, m, dd] = dk.split("-").map(Number); const wd = new Date(y, m - 1, dd).getDay(); if (wd >= 1 && wd <= 5) weekdays++; }
+    if (weekdays * perDay > 0) return { minutes: weekdays * perDay, basis: "contracted" };
+  }
+  return null; // no reliable basis — mirror the server's refusal to guess
+};
+// Bucket mirror of the server's leaveBucketFor: paid === false ALWAYS wins →
+// unpaid; else the owner's bucketMap; unmapped paid types fall to other-paid.
+const leaveBucketOf = (l, bucketMap) => (l.paid === false ? "unpaid" : ((bucketMap || {})[l.type] || "other-paid"));
 
 export default function LeaveRequestsPage() {
   const { groupId, group, staff, venues, leave, shifts, selectedVenue, matchVenue, showToast, can, me, myStaff, myScope, scopedStaff } = useRG();
@@ -125,6 +173,40 @@ export default function LeaveRequestsPage() {
     } catch { showToast("Could not update request"); }
   };
 
+  // ── Balance check before approval (Phase 5 Job 3) ── WARNS, never blocks: the
+  // entitlement outside MyMor may be larger than what MyMor has tracked, and a
+  // manager may have a legitimate reason. SKIP the check entirely (approve
+  // straight through, existing behaviour untouched) on ANY of: accrual not
+  // enabled · legacy request without a boolean paid flag (the server excludes
+  // those from the ledger) · bucket is unpaid/other-paid (neither draws on
+  // annual/personal) · unmapped type or missing config (falls to other-paid) ·
+  // no summary doc · any read fails · no reliable duration basis · balance
+  // sufficient. Only a genuine "this will go negative" reaches the dialog.
+  const [balWarn, setBalWarn] = useState(null); // {l, bucket, balanceMinutes, estMinutes, basis}
+  const leaveAccruedSinceLabel = () => {
+    // stored start date is the LAST DAY THAT DOES NOT COUNT → display + 1 day
+    const [y, m, d] = String(group?.leaveAccrualStartDate || "").split("-").map(Number);
+    return y && m && d ? new Date(y, m - 1, d + 1).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : "";
+  };
+  const approveWithBalanceCheck = async (l) => {
+    try {
+      if (group?.leaveAccrualEnabled !== true) return decide(l, "Approved");
+      if (typeof l.paid !== "boolean") return decide(l, "Approved"); // legacy — server books nothing for these
+      const [cfgSnap, sumSnap] = await Promise.all([
+        getDoc(leaveAccrualConfigDoc(groupId)),
+        getDoc(leaveSummaryDoc(groupId, l.staffId)),
+      ]);
+      if (!sumSnap.exists()) return decide(l, "Approved"); // no summary yet — normal, not an error
+      const bucket = leaveBucketOf(l, cfgSnap.exists() ? (cfgSnap.data() || {}).bucketMap : undefined);
+      if (bucket !== "annual" && bucket !== "personal") return decide(l, "Approved");
+      const est = estimateLeaveMinutes(l, staff.find((s) => s.id === l.staffId), shifts);
+      if (!est) return decide(l, "Approved"); // no roster and no contracted hours — never invent a number
+      const balanceMinutes = Number(sumSnap.data()?.[bucket]?.balanceMinutes) || 0;
+      if (balanceMinutes >= est.minutes) return decide(l, "Approved");
+      setBalWarn({ l, bucket, balanceMinutes, estMinutes: est.minutes, basis: est.basis });
+    } catch { decide(l, "Approved"); } // a failed lookup must never block approval
+  };
+
   const submit = async () => {
     const staffId = isEmployee ? (myStaff?.id || "") : form.staffId;
     if (!staffId) return showToast("Select a staff member");
@@ -198,7 +280,7 @@ export default function LeaveRequestsPage() {
                 </div>
                 {canApprove ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <button className="btn btn-sm btn-primary" onClick={() => decide(l, "Approved")}>Approve</button>
+                    <button className="btn btn-sm btn-primary" onClick={() => approveWithBalanceCheck(l)}>Approve</button>
                     <button className="btn btn-sm btn-danger" onClick={() => decide(l, "Declined")}>Decline</button>
                   </div>
                 ) : (
@@ -308,6 +390,30 @@ export default function LeaveRequestsPage() {
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
               <button className="btn btn-sm" onClick={() => setEditLeave(null)}>Cancel</button>
               <button className="btn btn-sm btn-primary" onClick={saveLeaveEdit}>Save — stays approved</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Balance warning (Phase 5 Job 3) — warns, never blocks. The "may be
+          higher" caveat is the point: MyMor balances start at the accrual start
+          date, so a low number does NOT mean the person has no leave. */}
+      {balWarn && (
+        <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setBalWarn(null)}>
+          <div className="rg-modal" style={{ maxWidth: 460 }}>
+            <div className="modal-head"><span className="modal-title">Balance check</span><button className="modal-close" onClick={() => setBalWarn(null)}>✕</button></div>
+            <div style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
+              {balWarn.l.staffName || "This person"} has <strong>{fmtLeaveMinutes(balWarn.balanceMinutes)}</strong> {balWarn.bucket} accrued in MyMor.
+              This request is about <strong>{fmtLeaveMinutes(balWarn.estMinutes)}</strong> ({balWarn.basis === "roster" ? "based on their rostered shifts" : "based on their contracted hours"}).
+              The exact amount is worked out when the approval is saved.<br />
+              Approving will take the balance negative.<br />
+              {leaveAccruedSinceLabel()
+                ? <>MyMor only counts leave accrued since {leaveAccruedSinceLabel()} — their real entitlement may be higher.</>
+                : <>MyMor only counts leave accrued since the group's start date — their real entitlement may be higher.</>}
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-sm" onClick={() => setBalWarn(null)}>Cancel</button>
+              <button className="btn btn-sm btn-primary" onClick={() => { const l = balWarn.l; setBalWarn(null); decide(l, "Approved"); }}>Approve anyway</button>
             </div>
           </div>
         </div>
