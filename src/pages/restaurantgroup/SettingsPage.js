@@ -416,11 +416,20 @@ export default function SettingsPage() {
   // toggleEmpTypeSalaried, never dot-notation). Suggestions are in-memory prefills:
   // nothing is stored until the owner saves; saved values always win.
   // Card 1 rows: every DISTINCT staff.type on the books, with a group-wide count.
+  // "Left" staff are excluded from this tab's counts (Job 2 ruling): accrual only
+  // fires on timesheet approval and nobody approves new timesheets for departed
+  // staff, so their type cannot affect any balance. A type existing ONLY on Left
+  // staff vanishes from Card 1 — its stored mapping still survives Save via the
+  // saved-map spread in saveLeaveAccrual (undisplayed labels are never deleted).
+  const laActiveStaff = useMemo(() => (staff || []).filter((s) => String(s.status || "").toLowerCase() !== "left"), [staff]);
   const laStaffTypes = useMemo(() => {
     const m = new Map();
-    for (const s of staff || []) { const t = String(s.type || "").trim(); if (t) m.set(t, (m.get(t) || 0) + 1); }
+    for (const s of laActiveStaff) { const t = String(s.type || "").trim(); if (t) m.set(t, (m.get(t) || 0) + 1); }
     return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [staff]);
+  }, [laActiveStaff]);
+  // Warning B (Job 2): the type is missing ON THE STAFF RECORD — a different
+  // problem from an unmapped label. Real data, never the config doc.
+  const laNoTypeCount = useMemo(() => laActiveStaff.filter((s) => !String(s.type || "").trim()).length, [laActiveStaff]);
   // Card 2 rows: the CONFIGURED list (leaveTypes above — group.leaveTypes → seed)
   // plus any label found on real requests but missing from it ("in use but not
   // configured") — a new group with zero requests still gets a full, usable card.
@@ -452,6 +461,12 @@ export default function SettingsPage() {
   const laClassOf = (t) => laEdits.class[t] ?? (laCfg.classMap || {})[t] ?? laClassSuggest(t);
   const laBucketOf = (t) => laEdits.bucket[t] ?? (laCfg.bucketMap || {})[t] ?? laBucketSuggest(t);
   const laIsSuggested = (kind, mapField, t) => !(t in laEdits[kind]) && !(t in (laCfg[mapField] || {}));
+  // Warning A counts (Job 2): rows with NO effective value — the same "" test the
+  // suggested pill uses. Shown to EVERYONE who can see the tab (a manager should
+  // see that something needs attention), and always — even once accrual runs, a
+  // new employment type can appear at any time.
+  const laClassUndecided = laStaffTypes.filter(([t]) => laClassOf(t) === "").length;
+  const laBucketUndecided = laLeaveTypes.filter(({ label }) => laBucketOf(label) === "").length;
   const setLaEdit = (kind, label, value) => setLaEdits((p) => ({ ...p, [kind]: { ...p[kind], [label]: value } }));
   const saveLeaveAccrual = async () => {
     // Build the COMPLETE intended map: seeded from the SAVED maps (labels no
@@ -1207,7 +1222,23 @@ export default function SettingsPage() {
           </div>
           {!isOwner && <div style={{ fontSize: 10, color: "var(--gray)", marginBottom: 12 }}>Only the owner can change leave accrual settings.</div>}
           <div className="grid-2">
-            {/* CARD 1 — employment types, derived from the group's real staff docs */}
+            {/* CARD 1 — employment types, derived from the group's real staff docs.
+                Warnings (Job 2) sit above the card, phSeeded banner pattern. */}
+            <div>
+              {laClassUndecided > 0 && (
+                <div className="card" style={{ background: "var(--amber-light, #fffbeb)", fontSize: 12, marginBottom: 12 }}>
+                  {laClassUndecided === 1
+                    ? "1 employment type needs a decision — staff with this type will not accrue anything."
+                    : `${laClassUndecided} employment types need a decision — staff with these types will not accrue anything.`}
+                </div>
+              )}
+              {laNoTypeCount > 0 && (
+                <div className="card" style={{ background: "var(--amber-light, #fffbeb)", fontSize: 12, marginBottom: 12 }}>
+                  {laNoTypeCount === 1
+                    ? "1 staff member has no employment type — they cannot accrue until this is set."
+                    : `${laNoTypeCount} staff have no employment type — they cannot accrue until this is set.`}
+                </div>
+              )}
             <div className="card">
               <div className="card-head"><div><span className="card-title">Employment types</span><span className="card-sub">Which types accrue leave — every distinct type on the staff on the books</span></div></div>
               {laStaffTypes.map(([t, n]) => (
@@ -1215,6 +1246,7 @@ export default function SettingsPage() {
                   <span style={{ fontSize: 13 }}>
                     {t} <span style={{ fontSize: 11, color: "var(--gray)" }}>· {n} staff</span>
                     {laIsSuggested("class", "classMap", t) && laClassOf(t) !== "" && <span className="pill pill-amber" style={{ marginLeft: 6 }}>suggested</span>}
+                    {laClassOf(t) === "" && <span className="pill pill-red" style={{ marginLeft: 6 }}>Not set</span>}
                   </span>
                   <span style={{ display: "inline-flex", gap: 4 }}>
                     <button className={`btn btn-sm ${laClassOf(t) === "accrues" ? "btn-primary" : ""}`} disabled={!isOwner}
@@ -1226,9 +1258,18 @@ export default function SettingsPage() {
               ))}
               {laStaffTypes.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No staff with an employment type yet.</div>}
             </div>
+            </div>
             {/* CARD 2 — leave types: configured list ∪ labels used on real requests.
                 Paid flag is DISPLAY-ONLY here (edit it on Staff structure → Leave types);
                 paid === false always wins server-side, so the bucket has no effect. */}
+            <div>
+              {laBucketUndecided > 0 && (
+                <div className="card" style={{ background: "var(--amber-light, #fffbeb)", fontSize: 12, marginBottom: 12 }}>
+                  {laBucketUndecided === 1
+                    ? "1 leave type needs a decision — leave of this type will not touch any balance."
+                    : `${laBucketUndecided} leave types need a decision — leave of these types will not touch any balance.`}
+                </div>
+              )}
             <div className="card">
               <div className="card-head"><div><span className="card-title">Leave types</span><span className="card-sub">Which balance bucket each leave type draws from</span></div></div>
               {laLeaveTypes.map(({ label, unconfigured }) => {
@@ -1254,6 +1295,7 @@ export default function SettingsPage() {
                 );
               })}
               {laLeaveTypes.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)" }}>No leave types yet — add them on Staff structure → Leave types.</div>}
+            </div>
             </div>
           </div>
           <div className="btn-row" style={{ marginTop: 12 }}>
