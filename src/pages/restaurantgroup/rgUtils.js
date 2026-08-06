@@ -178,19 +178,41 @@ export const weekKeyOf = (date = new Date()) => {
 };
 export const weekDayIndex = (date = new Date()) => (new Date(date).getDay() + 6) % 7; // 0 = Monday
 export const currentWeekKey = () => weekKeyOf();
-// Invert weekKeyOf: recover the LOCAL Monday Date from a stored weekKey. The
-// stored key is toISOString().slice(0,10) of a LOCAL Monday midnight, so in
-// UTC+X (X>0 — all of Australia) it names the PREVIOUS day. A candidate must
-// be a local Monday AND round-trip through weekKeyOf — exact in any timezone,
-// no hardcoded offset, stored key format untouched. (Ops has the same inverse
-// in its pure timeEntry.js — keep the algorithms in sync.)
+// Invert weekKeyOf: recover the LOCAL Monday Date from a stored weekKey.
+//
+// THE INVARIANT: the stored key is toISOString().slice(0,10) of a LOCAL Monday
+// midnight. At EVERY offset the world uses (-12 through +14) that instant lands
+// on either the Monday itself (offset <= 0) or the Sunday immediately before it
+// (offset > 0 — all of Australia). Never any other weekday. So the Monday is
+// recoverable from the key's CALENDAR properties alone, with no knowledge of
+// who wrote it: read its day-of-week offset-free (Date.UTC — a pure function of
+// y/m/d) and advance to the next Monday, which is 0 days from a Monday and 1
+// from a Sunday. The reader's own timezone never enters the arithmetic.
+//
+// THIS READS KEYS AND NEVER WRITES THEM. weekKeyOf above keeps its frozen
+// toISOString format, every stored key keeps its meaning, and NO MIGRATION is
+// needed — the "Issue 18" freeze is about the WRITTEN format and must not talk
+// anyone out of correcting this reader.
+//
+// REPLACED (Aug 2026) a guard that re-derived the key through weekKeyOf under
+// the READER's offset and compared the two. That tests the reader's
+// self-consistency, never the writer's intent: it always held at positive
+// offsets (so it never revealed itself in any browser here) and never held in
+// UTC — where Cloud Functions run — so the server silently fell through to
+// `return base` and read every rostered shift ONE DAY EARLY. The comment
+// claiming "exact in any timezone" was true only for positive offsets.
+//
+// TWINS — byte-identical body, only the declaration wrapper differs:
+//   MyMorOps/src/lib/timeEntry.js
+//   MyMorFunction/rgLeaveAccrual.js
 export const mondayFromWeekKey = (weekKey) => {
-  const base = new Date(`${weekKey}T00:00:00`);
-  for (const add of [0, 1]) {
-    const c = new Date(base); c.setDate(base.getDate() + add); c.setHours(0, 0, 0, 0);
-    if (c.getDay() === 1 && weekKeyOf(c) === weekKey) return c;
-  }
-  return base; // unreachable for keys written by weekKeyOf; safe fallback
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(weekKey || "").trim());
+  if (!m) return new Date(NaN);
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const probe = new Date(Date.UTC(y, mo - 1, d));
+  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== mo - 1 || probe.getUTCDate() !== d) return new Date(NaN);
+  const mon = new Date(Date.UTC(y, mo - 1, d + ((8 - probe.getUTCDay()) % 7)));
+  return new Date(mon.getUTCFullYear(), mon.getUTCMonth(), mon.getUTCDate());
 };
 // LOCAL business-date string (YYYY-MM-DD) — the ONLY correct way to turn a local
 // Date into a calendar-date key. NEVER use toISOString() for a business date: in
