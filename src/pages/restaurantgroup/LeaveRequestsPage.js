@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { updateDoc, getDoc, doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, db } from "../../firebase";
@@ -200,6 +200,64 @@ export default function LeaveRequestsPage() {
   // no summary doc · any read fails · no reliable duration basis · balance
   // sufficient. Only a genuine "this will go negative" reaches the dialog.
   const [balWarn, setBalWarn] = useState(null); // {l, bucket, balanceMinutes, estMinutes, basis}
+
+  // ── Inline deduction estimate on every pending card ──────────────────────
+  // The balance check above only speaks when the balance FALLS SHORT. Every
+  // other approval — the overwhelming majority once balances build — commits a
+  // number the approver never saw. That is how a 960-vs-288 disagreement lived
+  // in the ledger instead of on screen. This says the same thing BEFORE the
+  // click, on every card, and changes nothing about what the click does.
+  //
+  // ONE page-level read of the config, into state — never per card. It is
+  // display-only and deliberately NOT shared with approveWithBalanceCheck:
+  // that one re-reads at click time because a stale page-level read must never
+  // gate a write. null = still loading OR the read failed → render NO line at
+  // all (silent, like the acks posture); a wrong estimate is worse than none.
+  // An absent config doc is NOT a failure — {} is correct, and leaveBucketOf
+  // then falls every paid type to other-paid exactly as the server does.
+  //
+  // TWIN — identical logic and wording in MyMorOps
+  // src/screens/LeaveRequestsScreen.js (deductionNote). Keep them in step.
+  const [laBucketMap, setLaBucketMap] = useState(null);
+  useEffect(() => {
+    if (!groupId) { setLaBucketMap(null); return undefined; }
+    let alive = true;
+    getDoc(leaveAccrualConfigDoc(groupId))
+      .then((s) => { if (alive) setLaBucketMap(s.exists() ? ((s.data() || {}).bucketMap || {}) : {}); })
+      .catch(() => { if (alive) setLaBucketMap(null); });
+    return () => { alive = false; };
+  }, [groupId]);
+
+  // What the server will actually book, in the order the server decides it.
+  // Every branch that books NOTHING says so in plain words — the silent-nothing
+  // cases are the whole point, not an afterthought.
+  const deductionNote = (l, st) => {
+    if (laBucketMap === null) return null;                       // not loaded / read failed → say nothing
+    if (group?.leaveAccrualEnabled !== true) return "Leave accrual is off — nothing will be deducted";
+    // legacy rows carry no boolean paid flag; the server excludes them entirely
+    // (planLeaveTransition → review "legacy-paid"). Its OWN string: this is a
+    // broken record needing repair, not a rule being applied, and the review
+    // card names it the same way ("no paid/unpaid flag").
+    if (typeof l.paid !== "boolean") return "No paid/unpaid flag — nothing will be deducted";
+    // ACCRUAL FLOOR — the stored date is the LAST DAY THAT DOES NOT COUNT
+    // (comparison is `date <= asOfDate`), so a leave ENDING on it books nothing.
+    // A leave that STRADDLES it books nothing either — the server refuses to
+    // part-book (skipped "straddles-asOfDate"), which is its own sentence
+    // because "before accrual started" would be untrue of the later days.
+    const floor = String(group?.leaveAccrualStartDate || "");
+    const start = String(l.startDate || ""), end = String(l.endDate || l.startDate || "");
+    if (floor && end && end <= floor) return "Before accrual started — nothing will be deducted";
+    if (floor && start && start <= floor) return "Starts before accrual began — nothing will be deducted";
+    const bucket = leaveBucketOf(l, laBucketMap);
+    if (bucket === "unpaid") return "Unpaid — nothing will be deducted";
+    const est = estimateLeaveMinutes(l, st, shifts);
+    if (!est) return "No roster or contracted hours — nothing will be deducted";
+    // other-paid deductions are RECORD-ONLY (summaryDeltasFor skips any bucket
+    // outside annual/personal). The ledger gets the row; no balance moves — and
+    // for an accruing staff member the companion accrual actually raises it.
+    if (bucket === "other-paid") return `About ${fmtLeaveMinutes(est.minutes)} — recorded, but no balance is deducted`;
+    return `About ${fmtLeaveMinutes(est.minutes)}, based on their ${est.basis === "roster" ? "rostered shifts" : "contracted hours"}`;
+  };
   const leaveAccruedSinceLabel = () => {
     // stored start date is the LAST DAY THAT DOES NOT COUNT → display + 1 day
     const [y, m, d] = String(group?.leaveAccrualStartDate || "").split("-").map(Number);
@@ -305,6 +363,11 @@ export default function LeaveRequestsPage() {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 600 }}>{l.staffName} <span className={`pill ${leaveTypePill(l.type)}`} style={{ marginLeft: 4 }}>{leaveLabel(l)}</span> <span className={`pill ${paidOf(l) ? "pill-green" : "pill-amber"}`} style={{ marginLeft: 4 }}>{paidOf(l) ? "Paid" : "Unpaid"}</span></div>
                   <div style={{ fontSize: 11, color: "var(--gray)" }}>{l.venue} · {l.area} · {l.dates} ({l.days} {l.days === 1 ? "day" : "days"})</div>
+                  {(() => {
+                    // "About" on every figure — the server recomputes at approval.
+                    const note = deductionNote(l, st);
+                    return note ? <div style={{ fontSize: 11, marginTop: 2, color: /nothing will be deducted|no balance is deducted/.test(note) ? "var(--amber)" : "inherit" }}>{note}</div> : null;
+                  })()}
                   {(() => {
                     // legacy rows carry the fields on the parent; new rows lazy-load
                     const pv = privDetails[l.id];
