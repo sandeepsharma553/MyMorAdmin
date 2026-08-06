@@ -15,6 +15,14 @@ const slug = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").r
 // Location-type dropdown seed — shown in-memory when the settings doc has none (never auto-written).
 const LOCATION_TYPES_SEED = ["Single Location", "Multiple Locations"];
 
+// Leave-accrual stored value → human label. ONE source of truth: the Card 1
+// buttons, the Card 2 dropdown and the unreviewed-suggestions dialog all render
+// from these. That dialog exists to be READ — a label saying "Other paid" there
+// while the control it describes says something else would be worse than no
+// dialog at all. Key order IS the render order of the controls.
+const LA_CLASS_LABELS = { accrues: "Accrues leave", "casual-no-accrual": "No accrual" };
+const LA_BUCKET_LABELS = { annual: "Annual", personal: "Personal", "other-paid": "Other paid", unpaid: "Unpaid" };
+
 export default function SettingsPage() {
   const { groupId, group, venues, staff, leave, timeEntries, stations, equipment, roles, areas, empTypes, selectedVenue, can, showToast, me } = useRG();
   const editable = can("settings", "edit");
@@ -472,6 +480,30 @@ export default function SettingsPage() {
   const laClassUndecided = laStaffTypes.filter(([t]) => laClassOf(t) === "").length;
   const laBucketUndecided = laLeaveTypes.filter(({ label }) => laBucketOf(label) === "").length;
 
+  // ── Unreviewed suggestions ──────────────────────────────────────────────
+  // Rows that Save would write PURELY from a suggestion. saveLeaveAccrual can't
+  // tell where a value came from — laEdits, laCfg or a suggest() — so before
+  // this, one Save (including one triggered by work on the OTHER card) silently
+  // committed prefills nobody had looked at. Zero exposure on either group
+  // today; it bites at the next onboarding, where every row is unmapped and
+  // every suggestion is live at once.
+  // The test is the SAME two conditions the amber "suggested" pill already
+  // uses — laIsSuggested AND a non-empty effective value — reused, not
+  // restated, so the dialog can never disagree with the pill beside the row.
+  // DISPLAYED rows only: laStaffTypes/laLeaveTypes are exactly what the save
+  // loops over, and a label seeded from laCfg is by definition already stored.
+  // Order follows the PAGE (employment types, then leave types) so the list
+  // reads in the order the owner just scrolled past.
+  const laUnreviewed = useMemo(() => [
+    ...laStaffTypes
+      .filter(([t]) => laIsSuggested("class", "classMap", t) && laClassOf(t) !== "")
+      .map(([t]) => ({ kind: "class", label: t, valueLabel: LA_CLASS_LABELS[laClassOf(t)] || laClassOf(t) })),
+    ...laLeaveTypes
+      .filter(({ label }) => laIsSuggested("bucket", "bucketMap", label) && laBucketOf(label) !== "")
+      .map(({ label }) => ({ kind: "bucket", label, valueLabel: LA_BUCKET_LABELS[laBucketOf(label)] || laBucketOf(label) })),
+  ], [laStaffTypes, laLeaveTypes, laEdits, laCfg]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [laConfirm, setLaConfirm] = useState(false);
+
   // ── Accrual start (Job 4) ── ONE-WAY: no stop/disable control exists anywhere —
   // turning accrual off would leave a hole in the ledger nothing can fill.
   const laRunning = group?.leaveAccrualEnabled === true;
@@ -532,15 +564,22 @@ export default function SettingsPage() {
     } catch { showToast("Could not start leave accrual"); }
   };
   const setLaEdit = (kind, label, value) => setLaEdits((p) => ({ ...p, [kind]: { ...p[kind], [label]: value } }));
-  const saveLeaveAccrual = async () => {
+  // skipUnreviewed = the dialog's "Save without them": the unreviewed-suggestion
+  // labels are left OUT of the map entirely. No delete is needed and none is
+  // correct — laIsSuggested being true already means laCfg holds no value for
+  // that label, so the seed spread never put the key there. Skipping the
+  // assignment leaves it ABSENT, which is what makes it unset (accrualClassFor
+  // uses hasOwnProperty: absent → "unresolved" → fail closed) rather than "".
+  const saveLeaveAccrual = async ({ skipUnreviewed = false } = {}) => {
+    const skip = new Set(skipUnreviewed ? laUnreviewed.map((u) => `${u.kind}:${u.label}`) : []);
     // Build the COMPLETE intended map: seeded from the SAVED maps (labels no
     // longer displayed — e.g. a type with no staff left — keep their stored
     // mapping), then every displayed label is set (has a value) or REMOVED
     // ("— not set —" must clear a stored key, never silently survive).
     const classMap = { ...(laCfg.classMap || {}) };
-    for (const [t] of laStaffTypes) { const v = laClassOf(t); if (v) classMap[t] = v; else delete classMap[t]; }
+    for (const [t] of laStaffTypes) { if (skip.has(`class:${t}`)) continue; const v = laClassOf(t); if (v) classMap[t] = v; else delete classMap[t]; }
     const bucketMap = { ...(laCfg.bucketMap || {}) };
-    for (const { label } of laLeaveTypes) { const v = laBucketOf(label); if (v) bucketMap[label] = v; else delete bucketMap[label]; }
+    for (const { label } of laLeaveTypes) { if (skip.has(`bucket:${label}`)) continue; const v = laBucketOf(label); if (v) bucketMap[label] = v; else delete bucketMap[label]; }
     // updateDoc REPLACES a field's value wholesale (setDoc {merge:true} would
     // DEEP-MERGE the nested maps, resurrecting removed keys). Labels are only
     // ever object keys in the VALUE — never field-path strings — so free-text
@@ -564,8 +603,19 @@ export default function SettingsPage() {
         class: Object.fromEntries(Object.entries(p.class).filter(([, v]) => v === "")),
         bucket: Object.fromEntries(Object.entries(p.bucket).filter(([, v]) => v === "")),
       }));
-      showToast("Leave accrual mappings saved");
+      // The two save paths must be distinguishable AFTER the fact — an owner who
+      // picked "Save without them" needs to see that those rows are still open,
+      // not a toast identical to the one that accepted them.
+      const n = laUnreviewed.length, s = n === 1 ? "" : "s";
+      showToast(n === 0
+        ? "Leave accrual mappings saved"
+        : skipUnreviewed
+          ? `Leave accrual mappings saved — ${n} suggested value${s} left unset`
+          : `Leave accrual mappings saved — ${n} suggested value${s} accepted`);
     } catch { showToast("Could not save leave accrual mappings"); }
+    // Closed on failure too: nothing was written, so the form is intact and
+    // pressing Save again re-opens this with the list rebuilt from live state.
+    finally { setLaConfirm(false); }
   };
 
   // ── POS kitchen-note presets ── group.posNotePresets = string[] (mirror Leave types:
@@ -1313,10 +1363,10 @@ export default function SettingsPage() {
                     {laClassOf(t) === "" && <span className="pill pill-red" style={{ marginLeft: 6 }}>Not set</span>}
                   </span>
                   <span style={{ display: "inline-flex", gap: 4 }}>
-                    <button className={`btn btn-sm ${laClassOf(t) === "accrues" ? "btn-primary" : ""}`} disabled={!isOwner}
-                      onClick={() => isOwner && setLaEdit("class", t, "accrues")}>Accrues leave</button>
-                    <button className={`btn btn-sm ${laClassOf(t) === "casual-no-accrual" ? "btn-primary" : ""}`} disabled={!isOwner}
-                      onClick={() => isOwner && setLaEdit("class", t, "casual-no-accrual")}>No accrual</button>
+                    {Object.entries(LA_CLASS_LABELS).map(([value, text]) => (
+                      <button key={value} className={`btn btn-sm ${laClassOf(t) === value ? "btn-primary" : ""}`} disabled={!isOwner}
+                        onClick={() => isOwner && setLaEdit("class", t, value)}>{text}</button>
+                    ))}
                   </span>
                 </div>
               ))}
@@ -1349,11 +1399,9 @@ export default function SettingsPage() {
                     </span>
                     <select className="form-input" style={{ width: 130 }} disabled={!isOwner} value={laBucketOf(label)}
                       onChange={(e) => setLaEdit("bucket", label, e.target.value)}>
+                      {/* "text", not "label" — `label` is the leave-type name from the enclosing map */}
                       <option value="">— not set —</option>
-                      <option value="annual">Annual</option>
-                      <option value="personal">Personal</option>
-                      <option value="other-paid">Other paid</option>
-                      <option value="unpaid">Unpaid</option>
+                      {Object.entries(LA_BUCKET_LABELS).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
                     </select>
                   </div>
                 );
@@ -1363,8 +1411,46 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className="btn-row" style={{ marginTop: 12 }}>
-            <button className="btn btn-primary" disabled={!isOwner} onClick={saveLeaveAccrual}>Save leave accrual mappings</button>
+            {/* Nothing unreviewed → straight through, no dialog. */}
+            <button className="btn btn-primary" disabled={!isOwner}
+              onClick={() => (laUnreviewed.length ? setLaConfirm(true) : saveLeaveAccrual())}>Save leave accrual mappings</button>
           </div>
+
+          {/* Unreviewed-suggestion confirmation. laIsSuggested cannot tell "read it
+              and agreed" from "never scrolled to it" — seeing the rows is what turns
+              the second into the first, so this LISTS every one. A count would be
+              one more unread click, which is the failure being fixed.
+              All three buttons are always enabled and TWO of them complete the save:
+              a dialog that blocks gets dismissed reflexively, and a reflex is exactly
+              what this exists to prevent. */}
+          {laConfirm && (
+            <div className="rg-modal-overlay" onClick={(e) => e.target === e.currentTarget && setLaConfirm(false)}>
+              <div className="rg-modal" style={{ maxWidth: 460 }}>
+                <div className="modal-head">
+                  <span className="modal-title">
+                    {laUnreviewed.length} suggested value{laUnreviewed.length === 1 ? " has" : "s have"} not been reviewed
+                  </span>
+                  <button className="modal-close" onClick={() => setLaConfirm(false)}>✕</button>
+                </div>
+                <div style={{ fontSize: 13, lineHeight: 1.8, marginBottom: 12 }}>
+                  {laUnreviewed.map((u) => (
+                    <div key={`${u.kind}:${u.label}`}>
+                      {u.label} <span style={{ color: "var(--gray)" }}>→</span> <strong>{u.valueLabel}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 12 }}>
+                  Left unset, these keep showing as needing a decision — staff on an unset
+                  employment type accrue nothing, and leave of an unset type touches no balance.
+                </div>
+                <div className="btn-row">
+                  <button className="btn btn-primary" onClick={() => saveLeaveAccrual()}>Save these too</button>
+                  <button className="btn" onClick={() => saveLeaveAccrual({ skipUnreviewed: true })}>Save without them</button>
+                  <button className="btn" onClick={() => setLaConfirm(false)}>Back</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── CARD 3 (Job 4): the start switch — ONE-WAY. No stop/disable control:
               turning accrual off leaves a hole in the ledger nothing can fill. */}
