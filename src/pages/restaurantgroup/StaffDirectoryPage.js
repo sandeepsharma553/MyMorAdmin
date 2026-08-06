@@ -270,7 +270,13 @@ export default function StaffDirectoryPage() {
           if (!sum) continue;
           const zeroIds = Array.isArray(sum.review?.zeroBasis) ? sum.review.zeroBasis : [];
           const unresolved = sum.classStatus === "unresolved";
-          if (zeroIds.length || unresolved) out.push({ staff: s, zeroIds, unresolved });
+          // Phase 9: the nightly detector's CURRENT-STATE findings. Unlike
+          // zeroBasis (historical, never cleared) these keys are deleted the
+          // night the condition resolves — the card must say so, or a fixed
+          // drift lingering in a reader's memory reads as a broken detector.
+          const drift = sum.review?.drift && typeof sum.review.drift === "object" ? sum.review.drift : null;
+          const orphans = Array.isArray(sum.review?.orphans) ? sum.review.orphans : [];
+          if (zeroIds.length || unresolved || drift || orphans.length) out.push({ staff: s, zeroIds, unresolved, drift, orphans });
         }
         setReviewRows(out);
       });
@@ -303,7 +309,7 @@ export default function StaffDirectoryPage() {
       const st = scopedStaff.find((s) => s.id === sid);
       if (!st) continue; // outside this viewer's scope — not theirs to action
       if (byId.has(sid)) byId.get(sid).excluded = ls;
-      else byId.set(sid, { staff: st, zeroIds: [], unresolved: false, excluded: ls });
+      else byId.set(sid, { staff: st, zeroIds: [], unresolved: false, drift: null, orphans: [], excluded: ls });
     }
     return [...byId.values()];
   }, [reviewRows, laExcludedByStaff, scopedStaff]);
@@ -2112,9 +2118,9 @@ export default function StaffDirectoryPage() {
       {canLeaveBalance && group?.leaveAccrualEnabled === true && reviewRowsAll.length > 0 && (
         <div className="card" style={{ marginBottom: 16, borderColor: "var(--amber)" }}>
           <div className="card-head">
-            <div><span className="card-title">Leave accrual — needs attention</span><span className="card-sub">Historical flags from the accrual ledger — a row stays listed after it has been fixed by adjustment</span></div>
+            <div><span className="card-title">Leave accrual — needs attention</span><span className="card-sub">Historical flags stay listed after being fixed; drift and orphan rows are current and clear when resolved</span></div>
           </div>
-          {reviewRowsAll.map(({ staff: s, zeroIds, unresolved, excluded }) => {
+          {reviewRowsAll.map(({ staff: s, zeroIds, unresolved, drift, orphans, excluded }) => {
             // resolve zeroBasis ids against the already-loaded context `leave`;
             // an id outside the viewer's venue scope (or deleted) shows in the
             // count only — never a raw Firestore id in a manager's face
@@ -2128,6 +2134,18 @@ export default function StaffDirectoryPage() {
             // handling, so cancelling and re-approving is skipped too. An
             // adjustment is the only correction.
             if (ex.length) reasons.push(`${ex.length} approved leave request${ex.length === 1 ? " was" : "s were"} excluded from the ledger (no paid/unpaid flag) — re-approving won't re-book ${ex.length === 1 ? "it" : "them"}, correct by adjustment if the balance matters`);
+            // Phase 9 rows — CURRENT state, not history: these clear on their
+            // own the night after the condition resolves.
+            if (drift) {
+              for (const b of ["annual", "personal"]) {
+                const d = drift[b];
+                if (!d) continue;
+                reasons.push(`${b} balance disagrees NOW — summary says ${fmtLeaveMinutes(d.storedBalance)}, the ledger recomputes ${fmtLeaveMinutes(d.computedBalance)} — fix with a manual adjustment`);
+              }
+            }
+            // orphans carries SOURCE refs, not entry ids — one deleted source
+            // usually strands 2+ ledger entries, so count what the field holds.
+            if (orphans.length) reasons.push(`${orphans.length} deleted source${orphans.length === 1 ? "" : "s"} still ${orphans.length === 1 ? "has" : "have"} ledger entries pointing at ${orphans.length === 1 ? "it" : "them"} — the ledger cannot be recomputed for ${orphans.length === 1 ? "it" : "them"}`);
             return (
               <div key={s.id} className="staff-meta-row" onClick={() => openProfile(s)}
                 role="button" tabIndex={0}
