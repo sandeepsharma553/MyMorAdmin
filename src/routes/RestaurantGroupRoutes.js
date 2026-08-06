@@ -3,6 +3,7 @@ import StaffDirectoryPage from "../pages/restaurantgroup/StaffDirectoryPage";
 import ShiftPlannerPage from "../pages/restaurantgroup/ShiftPlannerPage";
 import LeaveRequestsPage from "../pages/restaurantgroup/LeaveRequestsPage";
 import AvailabilityPage from "../pages/restaurantgroup/AvailabilityPage";
+import TimesheetsPage from "../pages/restaurantgroup/TimesheetsPage";
 import TrainingPage from "../pages/restaurantgroup/TrainingPage";
 import SOPsPage from "../pages/restaurantgroup/SOPsPage";
 import ChecklistsPage from "../pages/restaurantgroup/ChecklistsPage";
@@ -39,6 +40,11 @@ export default function RestaurantGroupRoutes() {
       <Route path="/rg/leave" element={P("leave", <LeaveRequestsPage />)} />
       {/* staff-SELF availability posting + manager-proposal accept/decline (fills the RG_MODULES slot) */}
       <Route path="/rg/availability" element={P("availability", <AvailabilityPage />)} />
+      {/* Timesheet approval (Clock module, Job 1) — gated on the SAME `availability`
+          key the rules check (rgCanApproveAvailability), at the APPROVE level:
+          hiding the nav item is not a gate, so the route carries it too. The page
+          then re-checks can("availability","approve") before any Approve button. */}
+      <Route path="/rg/timesheets" element={P("availability", <TimesheetsPage />, "approve")} />
       <Route path="/rg/training" element={P("training", <TrainingPage />)} />
       {/* SOPs — its OWN page + data (venues/{v}/sops + sopAssignments), decoupled from
           Training. Still gated by the `training` permission (SOPS_NAV.permKey — no new

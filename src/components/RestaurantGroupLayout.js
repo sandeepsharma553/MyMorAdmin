@@ -21,6 +21,12 @@ const NAV = [
   { key: "shifts", path: "/rg/shifts", label: "Shift Planner", Icon: CalendarDays, title: "Shift Planner" },
   { key: "leave", path: "/rg/leave", label: "Leave Requests", Icon: FileText, title: "Leave Requests" },
   { key: "availability", path: "/rg/availability", label: "Availability", Icon: CalendarClock, title: "My Availability" },
+  // Timesheets (Clock module, Job 1) — the web twin of Ops's Availability →
+  // Manager tab. Reuses the `availability` permission via permKey (the SAME key
+  // the rules check, rgCanApproveAvailability) — no new permission module. NOT
+  // in STAFF_NAV_KEYS: a manager opens this to approve other people's shifts,
+  // unlike /rg/availability which is the staffer's own poster.
+  { key: "timesheets", permKey: "availability", level: "approve", path: "/rg/timesheets", label: "Timesheets", Icon: CalendarClock, title: "Timesheets — approval" },
   { key: "training", path: "/rg/training", label: "Training", Icon: GraduationCap, title: "Training & Development" },
   // SOPs — own page + data (SOPsPage over venues/{v}/sops); still gated by the
   // `training` permission (permKey) — no new permission module, data no longer shared.
@@ -162,7 +168,13 @@ function Shell({ children }) {
 
   // The staff item needs only "self" (Phase 5a — every group member may open their OWN
   // read-only profile there); every other item still requires at least "view".
-  const visibleNav = useMemo(() => NAV.filter((n) => can(n.permKey || n.key, n.key === "staff" ? "self" : "view")), [can]);
+  // `n.level` is an OPTIONAL per-entry required level (Clock module Job 1). No
+  // existing entry sets it, so every one of them still resolves to exactly the
+  // old expression — the only entry with a level today is `timesheets`
+  // ("approve"), because a page titled "approval" that offers a staffer nothing
+  // is the same dead-switch we removed from Settings for stock/supplier. The
+  // ROUTE is gated on the same level too: hiding a nav item is not a gate.
+  const visibleNav = useMemo(() => NAV.filter((n) => can(n.permKey || n.key, n.level || (n.key === "staff" ? "self" : "view"))), [can]);
   // presentational split into two labelled groups; unlisted keys default to Operations
   const staffNav = useMemo(() => visibleNav.filter((n) => STAFF_NAV_KEYS.includes(n.key)), [visibleNav]);
   const docsNav = useMemo(() => visibleNav.filter((n) => DOCS_NAV_KEYS.includes(n.key)), [visibleNav]);
