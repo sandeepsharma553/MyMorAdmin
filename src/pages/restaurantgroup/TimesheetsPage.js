@@ -414,7 +414,15 @@ export default function TimesheetsPage() {
 
                 <div className="btn-row" style={{ marginTop: 12 }}>
                   <button className="btn" onClick={() => setCloser(null)}>Cancel</button>
+                  {/* .rg-scope .btn has NO :disabled rule (restaurantGroup.css:160-171), so a
+                      disabled button renders identically to a live one — full colour, pointer
+                      cursor. Everywhere else in the app that state is momentary; here it is the
+                      DEFAULT, because the time field starts deliberately blank. Without this the
+                      manager's first sight of the dialog is a red primary button that silently
+                      does nothing. Styled locally rather than adding a global rule: that gap
+                      affects every RG page and deserves its own change. */}
                   <button className="btn btn-primary" disabled={!closerCheck?.ok}
+                    style={closerCheck?.ok ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
                     onClick={() => setCloser((p) => ({ ...p, confirm: true }))}>Close entry…</button>
                 </div>
               </>
