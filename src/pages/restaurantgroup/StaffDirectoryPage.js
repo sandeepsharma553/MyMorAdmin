@@ -275,6 +275,37 @@ export default function StaffDirectoryPage() {
       });
     return () => { alive = false; };
   }, [groupId, reviewStaffKey, canLeaveBalance, group?.leaveAccrualEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  // (3) SILENTLY EXCLUDED requests — the trigger's D3 rule drops an approved
+  // leave request whose parent carries no BOOLEAN `paid`, before any planner
+  // runs: loudly logged, surfaced nowhere until now. NOT a purely historical
+  // condition — the rules' create whitelist is hasOnly(), which permits a
+  // payload that simply OMITS `paid`, and Admin-SDK writes bypass rules
+  // entirely; the two UI submit paths always write a boolean, so today's rows
+  // are legacy, but the door is open. Read straight off the context `leave`
+  // array: `paid` stayed on the member-readable PARENT in the 4b field split,
+  // so this costs NO extra read and never touches private/details.
+  const laExcludedByStaff = useMemo(() => {
+    const m = new Map();
+    for (const l of (leave || [])) {
+      if (!l || l.status !== "Approved" || typeof l.paid === "boolean") continue;
+      if (!m.has(l.staffId)) m.set(l.staffId, []);
+      m.get(l.staffId).push(l);
+    }
+    return m;
+  }, [leave]);
+  // merge: a staffer can be flagged by the summary read, by an excluded request,
+  // or both. Excluded-only people have no summary doc at all (no timesheet ever
+  // approved), so they must be added rather than filtered in.
+  const reviewRowsAll = useMemo(() => {
+    const byId = new Map(reviewRows.map((r) => [r.staff.id, { ...r, excluded: [] }]));
+    for (const [sid, ls] of laExcludedByStaff) {
+      const st = scopedStaff.find((s) => s.id === sid);
+      if (!st) continue; // outside this viewer's scope — not theirs to action
+      if (byId.has(sid)) byId.get(sid).excluded = ls;
+      else byId.set(sid, { staff: st, zeroIds: [], unresolved: false, excluded: ls });
+    }
+    return [...byId.values()];
+  }, [reviewRows, laExcludedByStaff, scopedStaff]);
   const [certDraft, setCertDraft] = useState({ name: "RSA", other: "", expiry: "", file: null });
   const [docFile, setDocFile] = useState(null); // a document to upload for the staff to sign
   const [certFileKey, setCertFileKey] = useState(0); // bump to clear the cert file input after each add
@@ -2028,19 +2059,25 @@ export default function StaffDirectoryPage() {
           and nothing ever clears it, so "booked nothing" is a fact about what
           happened, not a current state — a row stays after the owner fixes it
           by adjustment. Row click opens the profile (openProfile in scope). */}
-      {canLeaveBalance && group?.leaveAccrualEnabled === true && reviewRows.length > 0 && (
+      {canLeaveBalance && group?.leaveAccrualEnabled === true && reviewRowsAll.length > 0 && (
         <div className="card" style={{ marginBottom: 16, borderColor: "var(--amber)" }}>
           <div className="card-head">
             <div><span className="card-title">Leave accrual — needs attention</span><span className="card-sub">Historical flags from the accrual ledger — a row stays listed after it has been fixed by adjustment</span></div>
           </div>
-          {reviewRows.map(({ staff: s, zeroIds, unresolved }) => {
+          {reviewRowsAll.map(({ staff: s, zeroIds, unresolved, excluded }) => {
             // resolve zeroBasis ids against the already-loaded context `leave`;
             // an id outside the viewer's venue scope (or deleted) shows in the
             // count only — never a raw Firestore id in a manager's face
             const resolved = zeroIds.map((id) => (leave || []).find((l) => l.id === id)).filter(Boolean);
+            const ex = excluded || [];
             const reasons = [];
             if (zeroIds.length) reasons.push(`${zeroIds.length} leave request${zeroIds.length === 1 ? "" : "s"} booked nothing (no roster, no contracted hours)`);
             if (unresolved) reasons.push("employment type not mapped, accruing nothing");
+            // NO repair path for this one, unlike the other two: the request is
+            // already Approved and the D3 check runs BEFORE any transition
+            // handling, so cancelling and re-approving is skipped too. An
+            // adjustment is the only correction.
+            if (ex.length) reasons.push(`${ex.length} approved leave request${ex.length === 1 ? " was" : "s were"} excluded from the ledger (no paid/unpaid flag) — re-approving won't re-book ${ex.length === 1 ? "it" : "them"}, correct by adjustment if the balance matters`);
             return (
               <div key={s.id} className="staff-meta-row" onClick={() => openProfile(s)}
                 role="button" tabIndex={0}
@@ -2050,13 +2087,14 @@ export default function StaffDirectoryPage() {
                 <span>
                   <strong>{s.displayName || s.name}</strong> — {reasons.join(" · ")}
                   {resolved.length > 0 && <span style={{ color: "var(--gray)" }}> · {resolved.map((l) => `${leaveLabel(l)} ${l.dates}`).join(", ")}</span>}
+                  {ex.length > 0 && <span style={{ color: "var(--gray)" }}> · {ex.map((l) => `${leaveLabel(l)} ${l.dates}`).join(", ")}</span>}
                 </span>
                 <span className="pill pill-amber">fix with an adjustment on the profile</span>
               </div>
             );
           })}
           <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 8 }}>
-            This list only covers people who have had a timesheet approved. Check Settings → Leave accrual for employment types that still need a decision.
+            Accrual flags only cover people who have had a timesheet approved; excluded-request flags do not. Check Settings → Leave accrual for employment types that still need a decision.
           </div>
         </div>
       )}
