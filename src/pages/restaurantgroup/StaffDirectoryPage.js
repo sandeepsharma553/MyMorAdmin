@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { addDoc, updateDoc, deleteDoc, doc, collection, getDoc, getDocs, query, where, setDoc, serverTimestamp, arrayUnion, arrayRemove, onSnapshot } from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, updateProfile, updatePassword } from "firebase/auth";
@@ -306,6 +307,55 @@ export default function StaffDirectoryPage() {
     }
     return [...byId.values()];
   }, [reviewRows, laExcludedByStaff, scopedStaff]);
+  // ── Time clock visibility card (Clock module, Job 3) ── two facts nobody
+  // could see: staff with no PIN (they cannot clock in AT ALL — the kiosk name
+  // grid only lists PIN-holders) and the approval backlog (the original 55%
+  // leak: finished entries nobody approved, so nothing reached the ledger).
+  // Both computed from CONTEXT — zero new reads. Gate is availability:approve —
+  // the same key the Timesheets page and the rules' approver arm use — because
+  // the person who sees these problems is the person who can fix both.
+  // READ-ONLY, and deliberately NO writes of any kind — no audit log, no bell
+  // notification (unlike Turning18Alert). It is a mirror, not an actor.
+  const navigate = useNavigate();
+  const canClockCard = can("availability", "approve");
+  // The canonical has-a-PIN test, shared verbatim by the three Ops consumers
+  // (PinIdentify.js:19, PosScreen.js:181, AvailabilityScreen.js:105).
+  // TWIN FACT — Ops AvailabilityScreen.js:60-61 computes the same thing for
+  // its kiosk banner ("N staff don't have a PIN yet and can't clock in. Add
+  // PINs in Staff."), venue-scoped, shown to whoever is at the iPad. This card
+  // is the OWNER-FACING half: group-wide over scopedStaff, with names. Two
+  // surfaces state this fact — keep their meaning in step.
+  // Known gap, out of scope here: PIN uniqueness is only enforced client-side
+  // at write time (StaffFormModal / the profile form), so duplicates are
+  // possible under concurrent edits — and this card would still read clean,
+  // because it counts coverage, not collisions.
+  const noPinStaff = useMemo(
+    () => (canClockCard ? scopedStaff.filter((s) => !(typeof s.pin === "string" && s.pin.length > 0)) : []),
+    [scopedStaff, canClockCard]
+  );
+  // The approval backlog — the SAME status filter TimesheetsPage's queue uses
+  // (status "clocked_out" && approved !== true), scoped to the staff this
+  // viewer may act on (scopedIds, like the page) but NOT to the venue picker:
+  // a backlog hiding behind a venue filter is exactly the invisibility this
+  // card exists to end. businessDate is a local "YYYY-MM-DD" string, so plain
+  // string compare finds the oldest.
+  const tsBacklog = useMemo(() => {
+    if (!canClockCard) return { count: 0, oldest: "" };
+    const ids = new Set(scopedStaff.map((s) => s.id));
+    let count = 0; let oldest = "";
+    for (const e of (timeEntries || [])) {
+      if (!e || e.status !== "clocked_out" || e.approved === true || !ids.has(e.staffId)) continue;
+      count++;
+      const d = String(e.businessDate || "");
+      if (d && (!oldest || d < oldest)) oldest = d;
+    }
+    return { count, oldest };
+  }, [timeEntries, scopedStaff, canClockCard]);
+  // "2026-06-26" → "26 Jun" — the age is what makes a backlog urgent.
+  const tsOldestLabel = useMemo(() => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(tsBacklog.oldest);
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "";
+  }, [tsBacklog.oldest]);
   const [certDraft, setCertDraft] = useState({ name: "RSA", other: "", expiry: "", file: null });
   const [docFile, setDocFile] = useState(null); // a document to upload for the staff to sign
   const [certFileKey, setCertFileKey] = useState(0); // bump to clear the cert file input after each add
@@ -2096,6 +2146,42 @@ export default function StaffDirectoryPage() {
           <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 8 }}>
             Accrual flags only cover people who have had a timesheet approved; excluded-request flags do not. Check Settings → Leave accrual for employment types that still need a decision.
           </div>
+        </div>
+      )}
+
+      {/* ── Time clock — needs attention (Clock module, Job 3) ── same posture as
+          the review card above: renders NOTHING when both facts are clean — never
+          an empty card, never an all-clear. The two facts are independent;
+          whichever applies is shown. */}
+      {canClockCard && (noPinStaff.length > 0 || tsBacklog.count > 0) && (
+        <div className="card" style={{ marginBottom: 16, borderColor: "var(--amber)" }}>
+          <div className="card-head">
+            <div><span className="card-title">Time clock — needs attention</span><span className="card-sub">Staff who can't clock in, and finished timesheets nobody has approved</span></div>
+          </div>
+          {noPinStaff.map((s) => (
+            <div key={s.id} className="staff-meta-row" onClick={() => openProfile(s)}
+              role="button" tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProfile(s); } }}
+              style={{ justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "0.5px solid var(--gray-light)", gap: 8, cursor: "pointer" }}
+              title="Open the profile — set a PIN in Edit">
+              <span><strong>{s.displayName || s.name}</strong> <span style={{ color: "var(--gray)" }}>· {(s.venueNames || []).join(", ") || s.venue || ""}</span></span>
+              {/* kiosk banner's words, singularised — "don't have a PIN yet and can't clock in" */}
+              <span className="pill pill-amber">no PIN yet — can't clock in</span>
+            </div>
+          ))}
+          {tsBacklog.count > 0 && (
+            <div className="staff-meta-row" onClick={() => navigate("/rg/timesheets")}
+              role="button" tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate("/rg/timesheets"); } }}
+              style={{ justifyContent: "space-between", fontSize: 12, padding: "6px 0", gap: 8, cursor: "pointer" }}
+              title="Open Timesheets — approving is what sends worked time to the leave ledger">
+              <span>
+                <strong>{tsBacklog.count}</strong> finished timesheet{tsBacklog.count === 1 ? " is" : "s are"} waiting for approval
+                {tsOldestLabel && <span style={{ color: "var(--gray)" }}> · oldest {tsOldestLabel}</span>}
+              </span>
+              <span className="pill pill-amber">open Timesheets</span>
+            </div>
+          )}
         </div>
       )}
 
